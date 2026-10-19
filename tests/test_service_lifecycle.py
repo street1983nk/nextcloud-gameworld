@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import cast
 
@@ -20,6 +20,8 @@ from gameworld.provisioner.client import (
     ProvisionerError,
     WorldNotFoundError,
 )
+from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
+from gameworld.worlds import service as service_module
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldStore
 from tests.conftest import appapi_headers
@@ -101,6 +103,106 @@ def store(app_env: Path) -> WorldStore:
 @pytest.fixture
 def service(store: WorldStore, fake: FakeProvisioner) -> WorldService:
     return WorldService(store, cast(DockerProvisioner, fake), load_settings())
+
+
+@pytest.fixture
+def payload_args(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
+    """Zeichnet alle Positionsargumente von build_world_payload auf und ruft die echte Funktion."""
+    calls: list[tuple[object, ...]] = []
+    real = service_module.build_world_payload
+
+    def wrapper(*args: object) -> bytes:
+        calls.append(args)
+        return real(*args)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(service_module, "build_world_payload", wrapper)
+    return calls
+
+
+def _has_arg_line(calls: list[tuple[object, ...]], line: str) -> bool:
+    return any(isinstance(arg, str) and line in arg.splitlines() for args in calls for arg in args)
+
+
+async def test_new_world_defaults_to_kreativ_payload(
+    service: WorldService, store: WorldStore, payload_args: list[tuple[object, ...]]
+) -> None:
+    created = await service.create_world("Welt")
+    assert created.preset == "mtg_kreativ"
+    assert created.preset_title == "Bauen (kreativ)"
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.preset == "mtg_kreativ"
+    assert _has_arg_line(payload_args, "creative_mode = true")
+
+
+async def test_unknown_preset_is_rejected_before_anything(service: WorldService, store: WorldStore) -> None:
+    with pytest.raises(ValueError, match="Unbekannte Spielart"):
+        await service.create_world("Welt", "survival_hart")
+    assert store.list_worlds() == []
+
+
+async def test_list_worlds_carries_preset(service: WorldService) -> None:
+    await service.create_world("Welt", "mtg_kreativ")
+    views = await service.list_worlds()
+    assert [(view.preset, view.preset_title) for view in views] == [("mtg_kreativ", "Bauen (kreativ)")]
+
+
+async def test_saga_recreation_uses_row_preset(
+    service: WorldService,
+    fake: FakeProvisioner,
+    store: WorldStore,
+    payload_args: list[tuple[object, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Die Neuerzeugung in der Port-Saga baut aus row.preset, nie aus einer Vorgabe (Pitfall 2)."""
+    marker = replace(MTG_KREATIV, id="test_spiel", conf_lines=("creative_mode = false",))
+    monkeypatch.setitem(PRESETS, marker.id, marker)
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+    store.update_world(created.id, preset=marker.id)
+    payload_args.clear()
+    fake.start_errors = [PortInUseError(30015)]
+
+    await service.start_world(created.id)
+
+    assert _has_arg_line(payload_args, "creative_mode = false")
+    assert not _has_arg_line(payload_args, "creative_mode = true")
+
+
+async def test_failed_create_with_successful_cleanup_leaves_no_row(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    fake.start_errors = [DockerUnavailableError("Proxy weg")]
+    with pytest.raises(DockerUnavailableError):
+        await service.create_world("Welt")
+    assert len(fake.removed) == 1
+    assert fake.removed[0][1] is False
+    assert store.list_worlds() == []
+    assert store.used_ports() == set()
+
+
+async def test_failed_container_creation_is_cleaned_up(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Scheitert create_world_container, kann ein Volume übrig sein: Aufräumen läuft, dann keine Zeile."""
+    fake.create_errors = [DockerUnavailableError("Proxy weg")]
+    with pytest.raises(DockerUnavailableError):
+        await service.create_world("Welt")
+    assert len(fake.removed) == 1
+    assert store.list_worlds() == []
+
+
+async def test_failed_create_with_failed_cleanup_keeps_failed_row(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    fake.start_errors = [DockerUnavailableError("Proxy weg")]
+    fake.remove_error = ProvisionerError("Aufräumen kaputt")
+    with pytest.raises(DockerUnavailableError):
+        await service.create_world("Welt")
+    rows = store.list_worlds()
+    assert len(rows) == 1
+    assert rows[0].op_state == "failed"
+    assert rows[0].last_error == "Proxy weg"
 
 
 async def test_two_worlds_get_different_ports(service: WorldService) -> None:
@@ -325,6 +427,8 @@ async def test_unknown_world_returns_404(client: httpx.AsyncClient, method: str,
 async def test_api_lifecycle_round_trip(client: httpx.AsyncClient) -> None:
     created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
     assert created.status_code == 201
+    assert created.json()["preset"] == "mtg_kreativ"
+    assert created.json()["preset_title"] == "Bauen (kreativ)"
     world_id = created.json()["id"]
 
     stopped = await client.post(f"/api/worlds/{world_id}/stop", headers=appapi_headers())

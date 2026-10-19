@@ -30,6 +30,7 @@ class FakeProvisioner:
         self.fail_image = False
         self.fail_discard = False
         self.created: list[str] = []
+        self.removed: list[str] = []
 
     def ensure_image(self) -> None:
         if self.fail_image:
@@ -47,7 +48,8 @@ class FakeProvisioner:
         raise DockerUnavailableError(MESSAGE)
 
     def remove_world(self, world_id: str, *, keep_volume: bool) -> None:
-        del world_id, keep_volume
+        del keep_volume
+        self.removed.append(world_id)
         if self.fail_discard:
             raise DockerUnavailableError("zweiter Fehler beim Aufräumen")
 
@@ -99,6 +101,7 @@ def _seed(store: WorldStore) -> None:
             op_state="ready",
             last_error=None,
             created_at="2026-10-19T10:00:00+00:00",
+            preset="mtg_kreativ",
         )
     )
 
@@ -114,6 +117,8 @@ async def test_list_shows_unknown_when_proxy_is_down(
     worlds = response.json()["worlds"]
     assert len(worlds) == 1
     assert worlds[0]["docker_status"] == "unknown"
+    assert worlds[0]["preset"] == "mtg_kreativ"
+    assert worlds[0]["preset_title"] == "Bauen (kreativ)"
     assert "world_key" not in worlds[0]
 
 
@@ -126,10 +131,11 @@ async def test_create_returns_503_when_proxy_is_down(
     assert response.status_code == 503
     assert "gameworld-docker-proxy" in response.json()["detail"]
     assert "Traceback" not in response.text
-    rows = store.list_worlds()
-    assert len(rows) == 1
-    assert rows[0].op_state == "failed"
-    assert rows[0].last_error == MESSAGE
+    # Nichts in Docker entstanden: keine failed-Zeile, Port wieder frei.
+    assert store.list_worlds() == []
+    assert store.used_ports() == set()
+    assert fake.created == []
+    assert fake.removed == []
 
 
 @pytest.mark.usefixtures("_override")
@@ -141,6 +147,22 @@ async def test_failed_cleanup_keeps_original_error(
     assert response.status_code == 503
     assert response.json()["detail"] == MESSAGE
     assert len(fake.created) == 1
+    # Aufräumen gescheitert: Die Zeile bleibt als failed mit der Originalmeldung, Löschen räumt später auf.
+    assert fake.removed == fake.created
     rows = store.list_worlds()
+    assert len(rows) == 1
     assert rows[0].op_state == "failed"
     assert rows[0].last_error == MESSAGE
+
+
+@pytest.mark.usefixtures("_override")
+async def test_successful_cleanup_removes_failed_row(
+    client: httpx.AsyncClient, store: WorldStore, fake: FakeProvisioner
+) -> None:
+    """Start scheitert, Aufräumen gelingt: keine Zeile, Port frei, Eltern sehen nur die Meldung."""
+    response = await client.post("/api/worlds", json={"name": "Testwelt"}, headers=appapi_headers())
+    assert response.status_code == 503
+    assert response.json()["detail"] == MESSAGE
+    assert fake.removed == fake.created
+    assert store.list_worlds() == []
+    assert store.used_ports() == set()

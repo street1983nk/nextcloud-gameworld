@@ -1,4 +1,4 @@
-"""API-Vertrag ohne Docker: kein Sichtbarkeitsfeld, keine Injection, nur signierte Aufrufe."""
+"""API-Vertrag ohne Docker: kein Sichtbarkeitsfeld, keine Injection, nur Registry-Presets, nur signierte Aufrufe."""
 
 import httpx
 import pytest
@@ -12,6 +12,7 @@ from tests.conftest import appapi_headers
         {"name": "x", "server_announce": True},
         {"name": "x", "public": True},
         {"name": "Welt\nserver_announce = true"},
+        {"name": "x", "preset": "mtg_kreativ", "mem_limit": "8g"},
     ],
 )
 async def test_rejected_bodies_return_422(client: httpx.AsyncClient, body: dict[str, object]) -> None:
@@ -31,3 +32,19 @@ async def test_invalid_name_detail_carries_german_message(client: httpx.AsyncCli
 async def test_unsigned_request_returns_401(client: httpx.AsyncClient) -> None:
     response = await client.post("/api/worlds", json={"name": "x"})
     assert response.status_code == 401
+
+
+async def test_unknown_preset_returns_422_with_german_message(client: httpx.AsyncClient) -> None:
+    response = await client.post("/api/worlds", json={"name": "x", "preset": "survival_hart"}, headers=appapi_headers())
+    assert response.status_code == 422
+    assert "Unbekannte Spielart" in response.json()["detail"][0]["msg"]
+
+
+async def test_presets_lists_registry_without_internals(client: httpx.AsyncClient) -> None:
+    response = await client.get("/api/presets", headers=appapi_headers())
+    assert response.status_code == 200
+    presets = response.json()["presets"]
+    assert [preset["id"] for preset in presets] == ["mtg_kreativ"]
+    assert presets[0]["title"] == "Bauen (kreativ)"
+    assert presets[0]["description"]
+    assert set(presets[0]) == {"id", "title", "description"}
