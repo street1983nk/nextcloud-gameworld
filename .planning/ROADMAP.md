@@ -124,7 +124,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md , Durchsetzung im Spielserver: Welt-Mod gameworld_access, SRP-Verifier, Zugangsdatei per put_archive, Negativ-Join per UDP-Prober (MTG und VoxeLibre)
+- [x] 03-01-PLAN.md , Durchsetzung im Spielserver: Welt-Mod gameworld_access, SRP-Verifier, Zugangsdatei per put_archive, Negativ-Join per UDP-Prober (MTG und VoxeLibre)
 
 **Wave 2** *(blocked on Wave 1 completion; seriell wegen gemeinsamem Live-Dev-Stack)*
 
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
-| 3. Zugang und Rollen | 0/7 | Not started | - |
+| 3. Zugang und Rollen | 1/7 | In Progress | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |

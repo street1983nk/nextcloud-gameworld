@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 02 complete (7/7) , verified passed 4/4, ready for secure-phase and Phase 3
-last_updated: "2026-10-19T20:32:54.760Z"
-last_activity: 2026-10-19
+status: executing
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-10-19T22:35:00.000Z"
+last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 19
+  completed_plans: 13
   percent: 33
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 3, Zugang und Rollen (noch nicht geplant)
+**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 1 von 7 Plänen)
 
 ## Current Position
 
-Phase: 2 complete (verified passed 4/4, Owner-Abnahme 19.10.2026, Review-Fixes CR-01/WR-01..05 drin)
-Plan: -
-Status: Ready to plan Phase 3
-Last activity: 2026-10-19
+Phase: 3 (Zugang und Rollen), In Progress
+Plan: 03-01 complete, nächster 03-02
+Status: Executing Phase 3
+Last activity: 2026-10-20
 
 Progress: [███░░░░░░░] 33% (2 von 6 Phasen)
 
@@ -64,6 +64,7 @@ Progress: [███░░░░░░░] 33% (2 von 6 Phasen)
 | Phase 02 P05 | 15 min | 2 tasks | 9 files |
 | Phase 02 P06 | 25 min | 2 tasks | 7 files |
 | Phase 02 P07 | 60 min | 2 tasks | 4 files |
+| Phase 03 P01 | 30 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,10 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-06: Abgleich-Aufrufe mit abandon_on_cancel, Herunterfahren wartet nie auf Docker; Dev-Proxy restart unless-stopped
 - [Phase 02]: 02-07: Owner-Abnahme 19.10.2026 erteilt; A1 (fly, fast im Kreativ-Preset), A2 (Sanft-Schalter), A8 (Hunger an) und failed-Zeilen-Regel bestätigt; acceptance-phase2.sh 104/104
 - [Phase 02]: 02-07: Live-Join mit echtem Luanti-Client offen (kein Client vorhanden), Nachholung bei nächster Gelegenheit
+- [Phase 03]: 03-01: Eigener Welt-Mod gameworld_access (Prejoin-Whitelist, set_player_password, Sperre 5 Fehlversuche/10 min, Kick-Takt 5 s, State-Datei mit Generation); Label gameworld.schema bleibt 2
+- [Phase 03]: 03-01: Lua-Quelltext reines ASCII, Kindertexte als Python-Konstanten mit Umlauten, im Mod als Lua-Dezimal-Escapes (UTF-8)
+- [Phase 03]: 03-01: _launch schreibt vor jedem start_world beide Mods und die Zugangsdatei per put_archive; WorldNotFoundError beim Schreiben nimmt den Neuerzeugungspfad
+- [Phase 03]: 03-01: Deutscher Groß-/Kleinschreibungs-Hinweis greift nur, solange das Konto in richtiger Schreibweise noch nicht existiert; danach gewinnt Luantis englischer Builtin-Text
 
 ### Pending Todos
 
@@ -129,6 +134,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-19T20:35:00.000Z
-Stopped at: Completed 02-07-PLAN.md
+Last session: 2026-10-19T22:35:00.000Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None
