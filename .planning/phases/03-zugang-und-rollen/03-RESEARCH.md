@@ -584,18 +584,18 @@ class MyWorldOut(BaseModel):
 | A9 | UTF-8-Umlaute in Ablehnungs-/Kicktexten werden im Luanti-Client korrekt angezeigt | Pattern 1 | Kosmetisch; Fallback ae/oe/ue |
 | A10 | Fehlversuch-Sperre (5 in 10 min) ist als LAN-DoS-Risiko akzeptabel (jemand im Heimnetz kann ein Kind 10 min aussperren) | Pattern 1 | Familien-LAN, geringes Risiko; Werte konfigurierbar im Code |
 
-## Open Questions
+## Open Questions (RESOLVED oder bewusst DEFERRED)
 
-1. **Eltern ohne Nextcloud-Admin-Rechte als Verwalter?** (DEFERRED, Begründung)
+1. **Eltern ohne Nextcloud-Admin-Rechte als Verwalter?** (DEFERRED; für v1 durch Owner-Entscheid A1 vom 19.10.2026 gedeckt: Verwalter = Gruppe admin)
    - What we know: Nicht-Admins dürfen Gruppenmitglieder nicht auflösen (403 live) und keine fremden Konten lesen; Verwaltungsrouten müssten auf USER und hingen allein an Python.
    - Recommendation: v1 Verwalter = Admin-Gruppe (A1). Erweiterung "Gruppe gameworld-eltern" nur mit Gruppen-Einladung als Admin-Funktion oder Subadmin-Modell; erst bei Nachfrage echter Familien. Owner-Bestätigung im discuss/plan-Schritt.
 2. **Welche Whitelist-Lösung?** (RESOLVED) Eigener Mod `gameworld_access`; Whiter List technisch gleichwertig für die reine Liste, aber ohne Integritätsprüfung, Passwort, Kick, Rückkanal und seit 2022 ohne Release; Zughy/whitelist nicht von außen steuerbar; ct_whitelist nicht auffindbar.
 3. **Zusammenspiel Whitelist und Auth-Provisionierung, Rolle von `default_password`?** (RESOLVED) Ein Prejoin-Callback erledigt beides in der richtigen Reihenfolge (vor `getAuth`); `default_password` bleibt als unsichtbare zweite Sperre, öffnet provisionierte Konten nicht (Spike A9).
-4. **Periodische Gruppen-Synchronisierung im Hintergrund?** (DEFERRED) Ohne Nutzer-Kontext sind Provisioning-Endpunkte gesperrt; ein Hintergrundlauf müsste als gespeicherter Admin handeln. Die Synchronisierung bei Einladungsänderung, Verwalter-Besuch (gedrosselt) und Spieler-Besuch deckt den Familienalltag ab. Wiedervorlage, falls Austritte aus Gruppen spät wirken.
+4. **Periodische Gruppen-Synchronisierung im Hintergrund?** (DEFERRED; Restrisiko als T-03-27 und T-03-44 in 03-04/03-06 akzeptiert) Ohne Nutzer-Kontext sind Provisioning-Endpunkte gesperrt; ein Hintergrundlauf müsste als gespeicherter Admin handeln. Die Synchronisierung bei Einladungsänderung, Verwalter-Besuch (gedrosselt) und Spieler-Besuch deckt den Familienalltag ab. Wiedervorlage, falls Austritte aus Gruppen spät wirken.
 5. **Reload ohne Neustart?** (RESOLVED) Zugangsdatei: ja, sofort beim nächsten Join und im 5-s-Takt. Mod-Code: nur beim Start (Pitfall 4).
 6. **Wie wird SC 2 ohne Luanti-Client getestet?** (RESOLVED) `tests/e2e/luanti_probe.py` (MTP + SRP) gegen eine echte Welt; zusätzlich Client-Abnahme durch den Owner (offen seit Phase 2) für Join, Kick und Anleitungstexte.
 7. **Spieler-Adresse automatisch ermitteln?** (RESOLVED) Nicht zuverlässig möglich; Einstellung plus Browser-Hostname plus Warnhinweise.
-8. **Darf ein Kind seine Welt starten?** (DEFERRED) Nicht gefordert; Kinderansicht zeigt nur Status. Kandidat für Rückmeldungen echter Familien.
+8. **Darf ein Kind seine Welt starten?** (DEFERRED; Kind-Ansicht ohne Steuerknöpfe, 03-06) Nicht gefordert; Kinderansicht zeigt nur Status. Kandidat für Rückmeldungen echter Familien.
 
 ## Environment Availability
 
