@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-10-19T19:13:16.571Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-10-19T19:30:32.325Z"
 last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 9
   percent: 17
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 2
-Plan: 02-03 complete (3 von 7 Plänen der Phase 2), nächster Plan 02-04 (Welle 4)
+Plan: 02-04 complete (4 von 7 Plänen der Phase 2), nächster Plan 02-05 (Welle 5)
 Status: Executing
 Last activity: 2026-10-19
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [███████░░░] 67%
 | Phase 02 P02 | 10 min | 2 tasks | 6 files |
 | Phase 02 P01 | 25 min | 2 tasks | 11 files |
 | Phase 02 P03 | 10 min | 2 tasks | 14 files |
+| Phase 02 P04 | 14 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,9 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-03: put_archive nimmt das Tar als Datei-Objekt (SpooledTemporaryFile) durch den Proxy an (A5 live bestätigt), VoxeLibre-Erzeugen 6,8 s
 - [Phase 02]: 02-03: Label gameworld.schema 2 = Preset gesetzt und Welt-Mod gameworld_status vorhanden; 02-04 wertet Bereitschaft nur ab Schema 2 aus
 - [Phase 02]: 02-03: WorldPayload(preset, archive) in spec.py; Spec und Payload kommen aus derselben WorldPayload, Neuerzeugung behält Spiel und Limit
+- [Phase 02]: 02-04: Status nur aus Docker (derive_status in worlds/status.py), DB nur für creating/failed; Neustart = stop plus _launch, nie container.restart
+- [Phase 02]: 02-04: Lese-Retry genau einmal nur bei ConnectionError/ProtocolError (Keep-Alive), Timeouts und Mutationen nie wiederholt
+- [Phase 02]: 02-04: Status-Datei gekappt (64 KiB Tar-Strom, 4096 Bytes Inhalt); Privacy-Grep nimmt nur die DOM-Page-Visibility-API aus
 
 ### Pending Todos
 
@@ -114,6 +118,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-19T19:14:00.000Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-10-19T19:31:00.000Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

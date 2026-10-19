@@ -90,7 +90,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02-04-PLAN.md , Status aus Docker (läuft/startet/gestoppt/Fehler), Neustart, Dashboard mit Preset-Auswahl und Polling
+- [x] 02-04-PLAN.md , Status aus Docker (läuft/startet/gestoppt/Fehler), Neustart, Dashboard mit Preset-Auswahl und Polling
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
-| 2. One-Click-Welten | 3/7 | In Progress|  |
+| 2. One-Click-Welten | 4/7 | In Progress|  |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
