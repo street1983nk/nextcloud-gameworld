@@ -15,6 +15,7 @@ from gameworld.config import load_settings
 from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
+    DockerUnavailableError,
     PortInUseError,
     ProvisionerError,
     WorldNotFoundError,
@@ -29,6 +30,7 @@ class FakeProvisioner:
     """Bildet die Schnittstelle von DockerProvisioner nach und protokolliert jeden Aufruf."""
 
     start_errors: list[ProvisionerError] = field(default_factory=list)
+    create_errors: list[ProvisionerError] = field(default_factory=list)
     remove_error: ProvisionerError | None = None
     host_ports: set[int] = field(default_factory=set)
     containers: dict[str, tuple[int, str]] = field(default_factory=dict)
@@ -44,6 +46,8 @@ class FakeProvisioner:
         self, world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False
     ) -> str:
         assert payload
+        if self.create_errors:
+            raise self.create_errors.pop(0)
         self.created.append((world_id, host_port, reuse_volume))
         self.containers[world_id] = (host_port, "created")
         return f"cid-{world_id}"
@@ -162,6 +166,86 @@ async def test_three_port_conflicts_give_up(service: WorldService, fake: FakePro
     assert len(fake.started) == 3
 
 
+async def test_start_recreates_missing_container_from_volume(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Container weg (docker rm von außen oder Saga-Fehlerpfad), Volume da: Start erzeugt neu."""
+    created = await service.create_world("Welt")
+    fake.containers.pop(created.id)
+    fake.created.clear()
+
+    view = await service.start_world(created.id)
+
+    assert fake.created == [(created.id, created.port, True)]
+    assert view.docker_status == "running"
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "ready"
+    assert row.last_error is None
+
+
+async def test_saga_failure_leaves_recoverable_world(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Scheitert die Neuerzeugung in der Port-Saga, rettet der nächste Start die Welt (CR-01)."""
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+    fake.start_errors = [PortInUseError(30015)]
+    fake.create_errors = [DockerUnavailableError("Proxy weg")]
+
+    with pytest.raises(DockerUnavailableError):
+        await service.start_world(created.id)
+
+    # Der Fehlerpfad hinterlässt genau den kritischen Zustand: Volume ohne Container.
+    assert created.id not in fake.containers
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "failed"
+
+    fake.created.clear()
+    view = await service.start_world(created.id)
+
+    assert view.docker_status == "running"
+    assert fake.created == [(created.id, row.port, True)]
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "ready"
+    assert row.last_error is None
+
+
+async def test_recreated_container_still_runs_port_saga(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Auch der neu erzeugte Container durchläuft bei Port-Kollision die Saga."""
+    created = await service.create_world("Welt")
+    fake.containers.pop(created.id)
+    fake.created.clear()
+    fake.start_errors = [PortInUseError(30015)]
+
+    view = await service.start_world(created.id)
+
+    assert view.port == 30016
+    assert view.docker_status == "running"
+    assert fake.created == [(created.id, 30015, True), (created.id, 30016, True)]
+
+
+async def test_stop_with_missing_container_is_noop(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Ein fehlender Container ist bereits gestoppt: Stoppen ist Erfolg, kein 404."""
+    created = await service.create_world("Welt")
+    fake.containers.pop(created.id)
+
+    view = await service.stop_world(created.id)
+
+    assert view.docker_status == "missing"
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.desired_state == "stopped"
+    assert row.op_state == "ready"
+    assert row.last_error is None
+
+
 async def test_stop_and_start_set_desired_state(service: WorldService, store: WorldStore) -> None:
     created = await service.create_world("Welt")
 
@@ -256,3 +340,19 @@ async def test_api_lifecycle_round_trip(client: httpx.AsyncClient) -> None:
     assert deleted.status_code == 204
     listing = await client.get("/api/worlds", headers=appapi_headers())
     assert listing.json()["worlds"] == []
+
+
+@pytest.mark.usefixtures("_override")
+@pytest.mark.parametrize(("suffix", "expected_status"), [("/start", "running"), ("/stop", "missing")])
+async def test_world_without_container_is_recoverable_via_api(
+    client: httpx.AsyncClient, fake: FakeProvisioner, suffix: str, expected_status: str
+) -> None:
+    """Welt mit Volume, aber ohne Container: Start und Stop antworten 200, nie 404 (CR-01)."""
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    world_id = created.json()["id"]
+    fake.containers.pop(world_id)
+
+    response = await client.post(f"/api/worlds/{world_id}{suffix}", headers=appapi_headers())
+
+    assert response.status_code == 200
+    assert response.json()["docker_status"] == expected_status

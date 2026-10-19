@@ -127,14 +127,31 @@ class WorldService:
 
         Das Volume mit den Weltdaten bleibt dabei erhalten; nur minetest.conf,
         world.mt und das Spiel werden neu eingespielt (deterministischer Inhalt).
-        Höchstens MAX_START_ATTEMPTS Startversuche insgesamt, danach NoFreePortError.
+        Fehlt der Container ganz (Fehlerpfad der Port-Saga oder docker rm von
+        außen), wird er aus dem vorhandenen Volume neu erzeugt statt die Welt
+        als verschwunden zu melden. Höchstens MAX_START_ATTEMPTS Startversuche
+        bei belegtem Port, danach NoFreePortError.
         """
         tried = {row.port}
-        for attempt in range(1, MAX_START_ATTEMPTS + 1):
+        recreated = False
+        attempt = 0
+        while True:
             try:
                 self._provisioner.start_world(row.id)
                 return
+            except WorldNotFoundError:
+                # Volume vorhanden, Container weg: aus dem Volume neu erzeugen.
+                # Höchstens einmal pro Start; die Neuerzeugung durchläuft beim
+                # nächsten Schleifendurchlauf weiter die Port-Saga.
+                if recreated:
+                    raise
+                recreated = True
+                LOG.warning("Welt %s: Container fehlt, erzeuge ihn aus dem Volume neu", row.id)
+                self._provisioner.ensure_image()
+                self._provisioner.create_world_container(row.id, row.port, _payload(row), reuse_volume=True)
+                continue
             except PortInUseError as exc:
+                attempt += 1
                 LOG.warning("Welt %s: Startversuch %d gescheitert: %s", row.id, attempt, exc)
                 if attempt == MAX_START_ATTEMPTS:
                     break
@@ -228,6 +245,10 @@ class WorldService:
             self._store.update_world(world_id, desired_state="stopped")
             try:
                 self._provisioner.stop(world_id)
+            except WorldNotFoundError:
+                # Die DB-Zeile existiert (oben geprüft): Ein fehlender Container
+                # ist bereits gestoppt, Stoppen ist dann ein No-op.
+                LOG.info("Welt %s: Container fehlt, Stoppen ist ein No-op", world_id)
             except ProvisionerError as exc:
                 self._fail(world_id, exc)
                 raise
