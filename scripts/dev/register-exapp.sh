@@ -167,7 +167,7 @@ build_frontend() {
 	fi
 	printf 'baue das Frontend nach %s\n' "${BUNDLE}"
 	if [ ! -d "${REPO_ROOT}/frontend/node_modules" ]; then
-		npm --prefix "${REPO_ROOT}/frontend" ci
+		npm --prefix "${REPO_ROOT}/frontend" ci --ignore-scripts
 	fi
 	npm --prefix "${REPO_ROOT}/frontend" run build
 	if [ ! -f "${BUNDLE}" ]; then
@@ -228,6 +228,9 @@ fi
 
 printf 'aktiviere app_api\n'
 nextcloud_occ app:enable app_api
+# Der Einrichtungsassistent legt sich beim ersten Login über jede Seite und
+# blockiert damit Browser-Prüfungen (Playwright); in der Dev-Nextcloud aus.
+nextcloud_occ app:disable firstrunwizard >/dev/null 2>&1 || true
 
 REUSE_BACKEND=0
 BACKEND_SECRET=""
