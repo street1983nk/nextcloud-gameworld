@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Roadmap und STATE initialisiert, Traceability in REQUIREMENTS.md eingetragen
-last_updated: "2026-10-19T09:30:53.747Z"
-last_activity: 2026-10-19 -- Phase 1 planning complete
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-10-19T09:55:03.638Z"
+last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 1: Fundament (ExApp-Gerüst + Provisioner-Kern)
+**Current focus:** Phase 01 — Fundament
 
 ## Current Position
 
-Phase: 1 of 6 (Fundament)
-Plan: 0 of TBD in current phase
+Phase: 01 (Fundament) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-10-19 -- Phase 1 planning complete
+Last activity: 2026-10-19
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 01 P01 | 11 min | 3 tasks | 34 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,9 @@ Recent decisions affecting current work:
 - [Init]: Spielzeitlimits in v1 statt v1.x (Owner 19.10.2026, größte Elternsorge)
 - [Init]: Container-Provisionierung via gescopten Socket-Proxy; finaler Entscheid wird in Phase 1 praktisch validiert (Phasen-Research: Daten-Ablage, Image-Wahl)
 - [Init]: MVP-Scope Erreichbarkeit: LAN zuerst, VPN dokumentiert, kein UPnP
+- [Phase 01]: Provisioner-Guard bildet auch APIError ab (NotFound -> WorldNotFoundError, sonst ProvisionerError), nie roher docker-Fehler in der API
+- [Phase 01]: start/discard prüfen gameworld.managed und eigene gameworld.instance vor jeder Mutation
+- [Phase 01]: uvicorn[standard]==0.54.0 direkt gepinnt (mit nc-py-api 0.30.3 auflösbar)
 
 ### Pending Todos
 
@@ -85,6 +89,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-19
-Stopped at: Roadmap und STATE initialisiert, Traceability in REQUIREMENTS.md eingetragen
+Last session: 2026-10-19T09:55:03.612Z
+Stopped at: Completed 01-01-PLAN.md
 Resume file: None

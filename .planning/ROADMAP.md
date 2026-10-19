@@ -40,7 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md , Walking Skeleton A: gehärtete private Welt per API erzeugen (Provisioner, SQLite, Dev-Proxy)
+- [x] 01-01-PLAN.md , Walking Skeleton A: gehärtete private Welt per API erzeugen (Provisioner, SQLite, Dev-Proxy)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -147,7 +147,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fundament | 0/5 | Planned | - |
+| 1. Fundament | 1/5 | In Progress|  |
 | 2. One-Click-Welten | 0/TBD | Not started | - |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |

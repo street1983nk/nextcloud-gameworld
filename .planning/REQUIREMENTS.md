@@ -11,11 +11,11 @@
 - [ ] **WELT-02**: Elternteil kann eine Welt starten, stoppen und neu starten und sieht den Status (läuft / gestoppt / startet / Fehler) verständlich im UI
 - [ ] **WELT-03**: Elternteil sieht pro Welt, welche Spieler gerade online sind und den RAM-Verbrauch
 - [ ] **WELT-04**: Mehrere Welten können parallel laufen (ein Container pro Welt)
-- [ ] **WELT-05**: Jede Welt läuft mit konservativen Ressourcenlimits (RAM/CPU), ohne dass Eltern etwas einstellen müssen
+- [x] **WELT-05**: Jede Welt läuft mit konservativen Ressourcenlimits (RAM/CPU), ohne dass Eltern etwas einstellen müssen
 
 ### Zugang & Sicherheit
 
-- [ ] **ZUGANG-01**: Welten sind privat per Default: kein `server_announce`, keine öffentliche Sichtbarkeit, keine "öffentlich machen"-Option im UI
+- [x] **ZUGANG-01**: Welten sind privat per Default: kein `server_announce`, keine öffentliche Sichtbarkeit, keine "öffentlich machen"-Option im UI
 - [ ] **ZUGANG-02**: Elternteil kann Nextcloud-Benutzer und -Gruppen in eine Welt einladen; Gameworld provisioniert dafür Luanti-Spieler-Accounts (Name und Passwort)
 - [ ] **ZUGANG-03**: Nicht eingeladene Spieler werden serverseitig am Join gehindert (Whitelist-Durchsetzung, nicht nur UI)
 - [ ] **ZUGANG-04**: Jeder eingeladene Spieler sieht eine Verbindungsinfo-Ansicht (Adresse, Port, Spielername, Schritt-für-Schritt-Anleitung für den Luanti-Client)
@@ -73,8 +73,8 @@
 | WELT-02 | Phase 2 | Pending |
 | WELT-03 | Phase 2 | Pending |
 | WELT-04 | Phase 1 | Pending |
-| WELT-05 | Phase 1 | Pending |
-| ZUGANG-01 | Phase 1 | Pending |
+| WELT-05 | Phase 1 | Complete |
+| ZUGANG-01 | Phase 1 | Complete |
 | ZUGANG-02 | Phase 3 | Pending |
 | ZUGANG-03 | Phase 3 | Pending |
 | ZUGANG-04 | Phase 3 | Pending |
