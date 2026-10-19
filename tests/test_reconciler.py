@@ -26,8 +26,11 @@ from gameworld.worlds import service as service_module
 from gameworld.worlds.reconciler import ReconcileAction, decide_boot, decide_periodic, reconcile_forever
 from gameworld.worlds.service import (
     RECONCILE_DATA_MISSING,
+    RECONCILE_FAILED,
     RECONCILE_INTERRUPTED,
     RECONCILE_OOM,
+    TEXT_UNKNOWN_PRESET,
+    UNKNOWN_PRESET_TITLE,
     DeleteOnlyError,
     WorldService,
 )
@@ -407,6 +410,60 @@ async def test_interrupted_world_can_only_be_deleted(
     await service.delete_world("a")
     assert store.get_world("a") is None
     assert fake.removed == [("a", False)]
+
+
+# WR-02 (Phase-2-Review): Eine kaputte Welt bricht weder den Abgleich noch die Liste.
+
+
+async def test_boot_isolates_unexpected_error_of_one_world(
+    service: WorldService, fake: ReconcileFake, store: WorldStore
+) -> None:
+    """Unbekannte Spielart (ValueError beim Neuerzeugen): Welt b dahinter startet trotzdem."""
+    _insert(store, "a", port=30015)
+    store.update_world("a", preset="entfernt")
+    _insert(store, "b", port=30016)
+    fake.volumes = {"a"}
+    fake.containers = {"b": (30016, "exited")}
+
+    assert await service.boot_reconcile() is True
+
+    row_a = _get(store, "a")
+    assert (row_a.op_state, row_a.last_error) == ("failed", RECONCILE_FAILED)
+    assert fake.created == []
+    assert fake.containers["b"] == (30016, "running")
+    assert _get(store, "b").op_state == "ready"
+
+
+async def test_boot_reconcile_completes_with_broken_world(
+    service: WorldService, fake: ReconcileFake, store: WorldStore
+) -> None:
+    """Der Fehler bleibt an der Welt: Ein zweiter Boot-Abgleich fasst sie nicht erneut an."""
+    _insert(store, "a", port=30015)
+    store.update_world("a", preset="entfernt")
+    fake.volumes = {"a"}
+    assert await service.boot_reconcile() is True
+    checks = list(fake.volume_checks)
+
+    assert await service.boot_reconcile() is True
+
+    assert fake.volume_checks == checks
+    assert fake.created == []
+
+
+async def test_unknown_preset_is_error_of_one_world_only(
+    service: WorldService, fake: ReconcileFake, store: WorldStore
+) -> None:
+    _insert(store, "a", port=30015)
+    store.update_world("a", preset="entfernt")
+    _insert(store, "b", port=30016)
+    fake.containers = {"a": (30015, "running"), "b": (30016, "running")}
+
+    views = {view.id: view for view in await service.list_worlds()}
+
+    assert (views["a"].status, views["a"].status_text) == ("error", TEXT_UNKNOWN_PRESET)
+    assert views["a"].preset_title == UNKNOWN_PRESET_TITLE
+    assert views["a"].players == []
+    assert (views["b"].status, views["b"].preset_title) == ("running", "Bauen (kreativ)")
 
 
 # Schleife

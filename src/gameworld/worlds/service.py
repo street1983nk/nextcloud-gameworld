@@ -35,12 +35,19 @@ from gameworld.provisioner.client import (
     WorldNotFoundError,
 )
 from gameworld.provisioner.luanti_conf import normalize_world_name, render_minetest_conf, render_world_mt
-from gameworld.provisioner.presets import DEFAULT_PRESET_ID, get_preset
+from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_name
 from gameworld.provisioner.status_mod import parse_players
 from gameworld.worlds.ports import NoFreePortError, allocate_port
 from gameworld.worlds.reconciler import ReconcileAction, decide_boot, decide_periodic, needs_volume_check
-from gameworld.worlds.status import RUNNING, STATUS_MOD_SCHEMA, WorldStatus, derive_status, schema_version
+from gameworld.worlds.status import (
+    ERROR,
+    RUNNING,
+    STATUS_MOD_SCHEMA,
+    WorldStatus,
+    derive_status,
+    schema_version,
+)
 from gameworld.worlds.store import WorldRow, WorldStore
 
 LOG = logging.getLogger(__name__)
@@ -67,6 +74,13 @@ CREATE_FAILED = "Die Welt konnte nicht erstellt werden. Bitte es später erneut 
 RECONCILE_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
 RECONCILE_DATA_MISSING = "Die Weltdaten fehlen. Die Welt kann nur gelöscht werden."
 RECONCILE_INTERRUPTED = "Das Erstellen wurde unterbrochen. Bitte die Welt löschen und neu erstellen."
+# Unerwarteter Fehler im Boot-Abgleich einer Welt; Details nur im Log (WR-02).
+RECONCILE_FAILED = "Die Welt konnte nach dem Neustart des Servers nicht wiederhergestellt werden."
+# Zeile mit einer Spielart, die diese Version nicht kennt (Preset entfernt oder umbenannt, WR-02).
+UNKNOWN_PRESET_TITLE = "Unbekannte Spielart"
+TEXT_UNKNOWN_PRESET = (
+    "Die Spielart dieser Welt kennt Gameworld nicht. Bitte Gameworld aktualisieren oder die Welt löschen."
+)
 # In diesen Zuständen würde Starten eine leere Welt unter altem Namen erzeugen
 # (CR-01) oder ein nur teilweise eingespieltes Spiel starten und die
 # Abbruchmeldung löschen (WR-05); es bleibt nur Löschen.
@@ -120,6 +134,12 @@ def _view(
     players: list[str] | None = None,
     memory: MemoryUsage | None = None,
 ) -> WorldView:
+    preset = PRESETS.get(row.preset)
+    # UNKNOWN (Docker nicht erreichbar) behält Vorrang vor dem Preset-Fehler.
+    if preset is None and status.code != UNKNOWN:
+        # Nur diese eine Welt zeigt den Fehler; die Liste aller Welten bleibt lesbar (WR-02).
+        status = WorldStatus(ERROR, TEXT_UNKNOWN_PRESET)
+        players = None
     return WorldView(
         id=row.id,
         name=row.name,
@@ -130,7 +150,7 @@ def _view(
         last_error=row.last_error,
         created_at=row.created_at,
         preset=row.preset,
-        preset_title=get_preset(row.preset).title,
+        preset_title=UNKNOWN_PRESET_TITLE if preset is None else preset.title,
         status=status.code,
         status_text=status.text,
         players=players or [],
@@ -551,6 +571,11 @@ class WorldService:
         except ProvisionerError as exc:
             LOG.warning("Abgleich Welt %s (%s) gescheitert: %s", row.id, action.value, exc)
             self._fail(row.id, exc)
+        except Exception:
+            # Etwa ValueError aus get_preset (unbekannte Spielart): Sonst bräche der
+            # ganze Boot-Abgleich ab, alle 5 s erneut, und keine Welt dahinter startete (WR-02).
+            LOG.exception("Abgleich Welt %s (%s) scheiterte unerwartet", row.id, action.value)
+            self._fail(row.id, ProvisionerError(RECONCILE_FAILED))
 
     def _apply(self, row: WorldRow, action: ReconcileAction) -> None:
         match action:

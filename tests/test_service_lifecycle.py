@@ -1061,3 +1061,19 @@ async def test_api_create_with_payload_error_answers_german_500(
     assert response.status_code == 500
     assert response.json() == {"detail": PAYLOAD_FAILED}
     assert store.list_worlds() == []
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_list_survives_unknown_preset(client: httpx.AsyncClient, store: WorldStore) -> None:
+    """WR-02: Eine Zeile mit unbekannter Spielart macht GET /api/worlds nicht zum 500er."""
+    first = (await client.post("/api/worlds", json={"name": "Alt"}, headers=appapi_headers())).json()
+    second = (await client.post("/api/worlds", json={"name": "Neu"}, headers=appapi_headers())).json()
+    store.update_world(first["id"], preset="entfernt")
+
+    response = await client.get("/api/worlds", headers=appapi_headers())
+
+    assert response.status_code == 200
+    worlds = {world["id"]: world for world in response.json()["worlds"]}
+    assert worlds[first["id"]]["status"] == "error"
+    assert worlds[first["id"]]["preset_title"] == "Unbekannte Spielart"
+    assert worlds[second["id"]]["status"] == "running"
