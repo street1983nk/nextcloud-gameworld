@@ -24,7 +24,7 @@ import anyio.to_thread
 
 from gameworld.config import Settings
 from gameworld.provisioner.access_mod import render_access_file
-from gameworld.provisioner.archive import build_world_files, build_world_payload
+from gameworld.provisioner.archive import build_access_tar, build_world_files, build_world_payload
 from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
@@ -213,13 +213,45 @@ class WorldService:
 
     # Hilfen
 
-    def _access_file(self, row: WorldRow) -> bytes:
-        """Zugangsdatei der Welt. In 03-01 immer leer (niemand eingeladen, Generation 0).
+    @property
+    def store(self) -> WorldStore:
+        """Gemeinsame Ablage für den Zugangsdienst (access/service.py)."""
+        return self._store
 
-        03-03 liest hier Generation und Einträge aus Schema 3.
+    def _access_file(self, row: WorldRow) -> bytes:
+        """Zugangsdatei der Welt, frisch aus Schema 3 (Generation und Verifier je Spielername).
+
+        Gleicher Soll-Zustand ergibt dieselben Bytes: Die Verifier liegen mit
+        ihrem Salz in der Datenbank und werden nicht bei jedem Rendern neu gesalzen.
         """
-        del row
-        return render_access_file(0, {})
+        fresh = self._store.get_world(row.id)
+        generation = row.access_generation if fresh is None else fresh.access_generation
+        return render_access_file(generation, self._store.access_entries(row.id))
+
+    def mutation(self) -> contextlib.AbstractContextManager[None]:
+        """Dieselbe Sperre wie Welt-Mutationen, mit Cache-Verwurf (für den Zugangsdienst).
+
+        Nur aus einem Worker-Thread betreten (anyio.to_thread), nie im Event-Loop.
+        """
+        return self._mutating()
+
+    def push_access(self, world_id: str) -> bool:
+        """Schreibt die aktuelle Zugangsdatei in die laufende oder gestoppte Welt.
+
+        Nur innerhalb von mutation() aufrufen. False heißt: Die Datei liegt noch
+        nicht in der Welt; die Datenbank bleibt maßgeblich, und der nächste Start
+        schreibt sie (_launch). Inhalte der Datei werden nie protokolliert.
+        """
+        access_file = self._access_file(self._row(world_id))
+        try:
+            self._provisioner.write_world_files(world_id, build_access_tar(access_file))
+        except WorldNotFoundError:
+            LOG.info("Welt %s: kein Container, die Zugangsdatei kommt beim nächsten Start", world_id)
+            return False
+        except ProvisionerError as exc:
+            LOG.warning("Welt %s: Zugangsdatei nicht geschrieben, sie kommt beim nächsten Start: %s", world_id, exc)
+            return False
+        return True
 
     @contextlib.contextmanager
     def _payload(self, row: WorldRow) -> Iterator[WorldPayload]:
@@ -608,6 +640,7 @@ class WorldService:
             case ReconcileAction.RETRY_DELETE:
                 self._provisioner.remove_world(row.id, keep_volume=False)
                 self._store.delete_world(row.id)
+                self._store.delete_access_data(row.id)
             case ReconcileAction.ADOPT_RUNNING:
                 self._store.update_world(row.id, desired_state="running")
             case ReconcileAction.NONE:
@@ -640,3 +673,5 @@ class WorldService:
                 raise
             # Erst nach erfolgreichem Aufräumen: kein Volume ohne Eintrag (T-01-21).
             self._store.delete_world(world_id)
+            # Kein PRAGMA foreign_keys: Einladungen und Zugang der Welt explizit löschen.
+            self._store.delete_access_data(world_id)

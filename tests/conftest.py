@@ -13,7 +13,9 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
+from gameworld.access.directory import DirectoryUser
 from gameworld.access.roles import Profile
+from gameworld.access.secret import PlayerSecret
 
 APP_ID = "gameworld"
 APP_VERSION = "0.1.0"
@@ -81,12 +83,69 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("GAMEWORLD_DOCKER_URL", docker_url())
     monkeypatch.setenv("GAMEWORLD_PORT_RANGE", "30015-30019")
 
-    from gameworld.access import roles
+    from gameworld.access import directory, roles, secret
     from gameworld.api import worlds
 
     monkeypatch.setattr(worlds, "_service", None)
     monkeypatch.setattr(roles, "_role_service", roles.RoleService(fake_lookup))
+    monkeypatch.setattr(directory, "_directory", FakeDirectory())
+    monkeypatch.setattr(secret, "_player_secret", StaticSecret())
     return tmp_path
+
+
+# Geheimnis der Tests; das echte liegt nur in Nextcloud (appconfig_ex).
+TEST_SECRET = bytes(range(32))
+
+
+class FakeDirectory:
+    """Nextcloud-Konten ohne Nextcloud: gw-kind aktiv, gw-aus deaktiviert, alles andere fehlt."""
+
+    def __init__(self) -> None:
+        self.users: dict[str, tuple[str, bool]] = {
+            "gw-kind": ("Kind (Dev)", True),
+            "gw-aus": ("Aus (Dev)", False),
+        }
+        self.calls: list[tuple[str, str]] = []
+        self.error: Exception | None = None
+
+    async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
+        self.calls.append((acting_uid, uid))
+        if self.error is not None:
+            raise self.error
+        entry = self.users.get(uid)
+        return None if entry is None else DirectoryUser(uid=uid, display_name=entry[0], enabled=entry[1])
+
+
+class StaticSecret(PlayerSecret):
+    """Festes Geheimnis statt appconfig_ex; error simuliert eine Störung."""
+
+    def __init__(self, value: bytes = TEST_SECRET) -> None:
+        super().__init__()
+        self.value = value
+        self.error: Exception | None = None
+
+    async def get(self) -> bytes:
+        if self.error is not None:
+            raise self.error
+        return self.value
+
+
+@pytest.fixture
+def fake_directory(app_env: Path) -> FakeDirectory:
+    del app_env
+    from gameworld.access import directory
+
+    assert isinstance(directory._directory, FakeDirectory)  # pyright: ignore[reportPrivateUsage]
+    return directory._directory  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.fixture
+def fake_secret(app_env: Path) -> StaticSecret:
+    del app_env
+    from gameworld.access import secret
+
+    assert isinstance(secret._player_secret, StaticSecret)  # pyright: ignore[reportPrivateUsage]
+    return secret._player_secret  # pyright: ignore[reportPrivateUsage]
 
 
 FAKE_PROFILES: dict[str, tuple[str, tuple[str, ...]]] = {

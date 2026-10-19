@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
-from gameworld.api import me, setup_check, worlds
+from gameworld.api import invites, me, setup_check, worlds
 from gameworld.lifecycle import enabled_handler
 from gameworld.worlds.reconciler import reconcile_forever
 
@@ -75,6 +75,7 @@ APP.add_middleware(AppAPIAuthMiddleware)
 APP.include_router(me.router)
 APP.include_router(worlds.router)
 APP.include_router(setup_check.router)
+APP.include_router(invites.router)
 
 
 if __name__ == "__main__":
