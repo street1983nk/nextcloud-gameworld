@@ -138,6 +138,14 @@ def test_port_conflict_on_start(prov: DockerProvisioner, fake: FakeClient) -> No
     assert prov._client is not None
 
 
+def test_vanished_container_on_start_is_not_found(prov: DockerProvisioner, fake: FakeClient) -> None:
+    """NotFound zwischen _owned() und start() bleibt WorldNotFoundError (404), kein 500 (WR-02)."""
+    container = FakeContainer(start_error=docker.errors.NotFound("weg"))
+    fake.containers.list = _listing(container)
+    with pytest.raises(WorldNotFoundError):
+        prov.start_world(WORLD)
+
+
 def test_other_api_error_on_start(prov: DockerProvisioner, fake: FakeClient) -> None:
     container = FakeContainer(start_error=_api_error("boom"))
     fake.containers.list = _listing(container)

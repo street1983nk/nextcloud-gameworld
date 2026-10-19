@@ -196,6 +196,12 @@ class DockerProvisioner:
             container = self._owned(world_id)
             try:
                 container.start()
+            except docker.errors.NotFound:
+                # Container zwischen _owned() und start() verschwunden (Race mit
+                # Löschen/Prune): _guarded bildet das auf WorldNotFoundError ab,
+                # nicht auf einen 500er. NotFound erbt von APIError, der Zweig
+                # muss deshalb vor dem APIError-Zweig stehen.
+                raise
             except docker.errors.APIError as exc:
                 explanation = _explanation(exc)
                 if exc.status_code == 500 and any(marker in explanation for marker in PORT_CONFLICT_MARKERS):
