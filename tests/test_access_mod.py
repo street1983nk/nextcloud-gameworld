@@ -41,7 +41,7 @@ def test_entries_sorted_ascii_and_deterministic() -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ["Mia Leo", "Mia\nLeo", "a" * 21, "Mäx", "", "Mia\r"],
+    ["Mia Leo", "Mia\nLeo", "a" * 21, "M" + chr(0xE4) + "x", "", "Mia\r"],
 )
 def test_invalid_name_raises(name: str) -> None:
     with pytest.raises(ValueError, match="Zugangseintrag"):
@@ -84,21 +84,31 @@ def test_lua_has_no_dangerous_calls(forbidden: str) -> None:
 
 
 def test_lua_texts_and_limits() -> None:
-    assert "Du bist in diese Welt nicht eingeladen. Frag deine Eltern." in MOD_INIT_LUA
-    assert "Deine Einladung für diese Welt wurde beendet." in MOD_INIT_LUA
-    assert "Zu viele falsche Passwörter. Bitte in 10 Minuten nochmal versuchen." in MOD_INIT_LUA
-    assert "Achte auf Groß- und Kleinschreibung: " in MOD_INIT_LUA
+    assert access_mod.TEXT_DENY == "Du bist in diese Welt nicht eingeladen. Frag deine Eltern."
+    assert access_mod.TEXT_KICK == "Deine Einladung für diese Welt wurde beendet."
+    assert access_mod.TEXT_LOCKED == "Zu viele falsche Passwörter. Bitte in 10 Minuten nochmal versuchen."
+    assert access_mod.TEXT_CASE_HINT == "Achte auf Groß- und Kleinschreibung: "
+    for text in (access_mod.TEXT_DENY, access_mod.TEXT_KICK, access_mod.TEXT_LOCKED, access_mod.TEXT_CASE_HINT):
+        assert access_mod._lua_string(text) in MOD_INIT_LUA
     assert "local FAIL_LIMIT = 5" in MOD_INIT_LUA
     assert "local LOCK_SECONDS = 600" in MOD_INIT_LUA
-    # Keine IP-Adressen und kein Debug-Log aus dem Spike.
+    # Kein Debug-Log aus dem Spike.
     assert "gameworld_spike" not in MOD_INIT_LUA
     assert "check_password_entry" not in MOD_INIT_LUA
 
 
-def test_lua_is_ascii_safe_outside_texts() -> None:
-    # Gedankenstriche sind verboten (Owner-Regel).
-    assert "–" not in MOD_INIT_LUA
-    assert "—" not in MOD_INIT_LUA
+def test_lua_string_escapes_utf8_as_decimal() -> None:
+    assert access_mod._lua_string("f" + chr(0xFC) + "r") == r'"f\195\188r"'
+    assert access_mod._lua_string('a"b' + chr(0x5C) + "c") == r'"a\034b\092c"'
+
+
+def test_lua_source_is_ascii_without_dashes() -> None:
+    assert MOD_INIT_LUA.isascii()
+    assert MOD_CONF.isascii()
+    # Gedankenstriche sind verboten (Owner-Regel), auch in den Texten.
+    for text in (access_mod.TEXT_DENY, access_mod.TEXT_KICK, access_mod.TEXT_LOCKED, access_mod.TEXT_CASE_HINT):
+        assert chr(0x2013) not in text
+        assert chr(0x2014) not in text
 
 
 def test_paths_and_conf() -> None:
