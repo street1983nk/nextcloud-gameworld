@@ -48,7 +48,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md , Lebenszyklus: parallele Welten starten, stoppen, löschen, Port-Kollision, Instanz-Schutz
+- [x] 01-03-PLAN.md , Lebenszyklus: parallele Welten starten, stoppen, löschen, Port-Kollision, Instanz-Schutz
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -147,7 +147,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fundament | 2/5 | In Progress|  |
+| 1. Fundament | 3/5 | In Progress|  |
 | 2. One-Click-Welten | 0/TBD | Not started | - |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |

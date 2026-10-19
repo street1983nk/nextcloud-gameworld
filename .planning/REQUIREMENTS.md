@@ -10,7 +10,7 @@
 - [ ] **WELT-01**: Elternteil kann eine Luanti-Welt per One-Click mit kindgerechtem Preset erstellen (Minetest Game kreativ, VoxeLibre überleben-sanft), ohne Konfigfragen
 - [ ] **WELT-02**: Elternteil kann eine Welt starten, stoppen und neu starten und sieht den Status (läuft / gestoppt / startet / Fehler) verständlich im UI
 - [ ] **WELT-03**: Elternteil sieht pro Welt, welche Spieler gerade online sind und den RAM-Verbrauch
-- [ ] **WELT-04**: Mehrere Welten können parallel laufen (ein Container pro Welt)
+- [x] **WELT-04**: Mehrere Welten können parallel laufen (ein Container pro Welt)
 - [x] **WELT-05**: Jede Welt läuft mit konservativen Ressourcenlimits (RAM/CPU), ohne dass Eltern etwas einstellen müssen
 
 ### Zugang & Sicherheit
@@ -72,7 +72,7 @@
 | WELT-01 | Phase 2 | Pending |
 | WELT-02 | Phase 2 | Pending |
 | WELT-03 | Phase 2 | Pending |
-| WELT-04 | Phase 1 | Pending |
+| WELT-04 | Phase 1 | Complete |
 | WELT-05 | Phase 1 | Complete |
 | ZUGANG-01 | Phase 1 | Complete |
 | ZUGANG-02 | Phase 3 | Pending |
