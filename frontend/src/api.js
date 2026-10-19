@@ -27,6 +27,11 @@ function readConfig() {
 
 export const apiBase = readConfig().apiBase ?? fallback.apiBase
 
+export async function getSetupCheck() {
+	const response = await axios.get(`${apiBase}/api/setup-check`)
+	return response.data
+}
+
 export async function listWorlds() {
 	const response = await axios.get(`${apiBase}/api/worlds`)
 	return response.data.worlds

@@ -7,6 +7,8 @@
 					Jede Welt ist privat: Nur wer den Weltschlüssel kennt, kann beitreten. Gameworld kündigt keine Welt im Internet an.
 				</p>
 
+				<SetupCheck @update:ok="setupOk = $event" />
+
 				<form class="gameworld__form" @submit.prevent="submit">
 					<NcTextField
 						v-model="name"
@@ -16,7 +18,7 @@
 					<NcButton
 						type="submit"
 						variant="primary"
-						:disabled="creating || name.trim() === ''">
+						:disabled="!setupOk || creating || name.trim() === ''">
 						<template v-if="creating" #icon>
 							<NcLoadingIcon :size="20" />
 						</template>
@@ -95,6 +97,7 @@ import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
+import SetupCheck from './components/SetupCheck.vue'
 import { createWorld, deleteWorld, listWorlds, startWorld, stopWorld } from './api.js'
 
 const STATUS_TEXT = {
@@ -108,6 +111,8 @@ const STATUS_TEXT = {
 const worlds = ref([])
 const loading = ref(true)
 const creating = ref(false)
+// Bis der Setup-Check bestanden ist, bleibt "Welt erstellen" gesperrt.
+const setupOk = ref(false)
 const name = ref('')
 const createdKey = ref('')
 const error = ref('')
@@ -184,7 +189,7 @@ async function run(world, action) {
 }
 
 async function submit() {
-	if (creating.value || name.value.trim() === '') {
+	if (!setupOk.value || creating.value || name.value.trim() === '') {
 		return
 	}
 	creating.value = true
