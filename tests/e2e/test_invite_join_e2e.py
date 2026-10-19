@@ -1,5 +1,6 @@
 """Live-Nachweis ZUGANG-02/03: Ein per API eingeladenes Konto kommt mit genau den
 provisionierten Daten in die laufende Welt, ohne Neustart; Widerruf sperrt wieder.
+Dazu 03-04: Gruppe, Passwort neu, Umbenennen und Austritt wirken ohne Neustart.
 
 Nextcloud-Verzeichnis und Geheimnis sind die Fakes aus tests/conftest.py
 (gw-kind aktiv, Geheimnis bytes(range(32))); Welt, Mod und Join sind echt.
@@ -15,7 +16,7 @@ import httpx
 import pytest
 
 from gameworld.worlds.store import WorldStore
-from tests.conftest import appapi_headers, docker_url
+from tests.conftest import FakeDirectory, appapi_headers, docker_url
 from tests.e2e.luanti_probe import join
 from tests.e2e.test_access_e2e import assert_denied, wait_for_state
 from tests.e2e.test_status_e2e import wait_for_status
@@ -26,6 +27,7 @@ HOST = "127.0.0.1"
 MTG_READY = 30.0
 NOT_INVITED = "nicht eingeladen"
 INVITE = {"kind": "user", "target": "gw-kind"}
+GROUP = {"kind": "group", "target": "familie"}
 # Passt nie: Das Alphabet der echten Passwörter kennt kein "0" und kein "1".
 WRONG_PASSWORD = "0000-1111-0000"  # noqa: S105
 
@@ -45,6 +47,11 @@ async def _create_running(client: httpx.AsyncClient, name: str) -> tuple[str, in
     body = created.json()
     await wait_for_status(client, str(body["id"]), "running", MTG_READY)
     return str(body["id"]), int(str(body["port"]))
+
+
+def _started_at(api: docker.DockerClient, world_id: str) -> tuple[str, str]:
+    [container] = api.containers.list(filters={"label": [f"gameworld.world_id={world_id}"]})
+    return str(container.id), str(container.attrs["State"]["StartedAt"])
 
 
 def _generation(app_env: Path, world_id: str) -> int:
@@ -106,3 +113,56 @@ async def test_invited_account_joins_and_revoked_one_cannot(
     raw = (app_env / "gameworld.sqlite3").read_bytes()
     assert password.encode() not in raw
     assert name.encode() in raw
+
+
+async def test_group_rotation_rename_and_sync_in_running_world(
+    client: httpx.AsyncClient,
+    app_env: Path,
+    api: docker.DockerClient,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """03-04 gegen eine echte Welt: Gruppe, Passwort neu, Umbenennen, Austritt; nie ein Neustart."""
+    world_id, port = await _create_running(client, "Gruppenwelt")
+    started = _started_at(api, world_id)
+
+    # Gruppe familie einladen: gw-kind (aktiv) kommt rein, gw-aus (deaktiviert) nicht.
+    invited = await client.post(f"/api/worlds/{world_id}/invites", json=GROUP, headers=appapi_headers())
+    assert invited.status_code == 200, invited.text
+    [player] = invited.json()["players"]
+    assert (player["nc_user"], player["via"]) == ("gw-kind", "group:familie")
+    name, old_password = str(player["player_name"]), str(player["password"])
+    assert join(HOST, port, name, old_password)["result"] == "auth_accept"
+
+    # Passwort neu: das alte scheitert sofort, das neue gilt; kein POST /restart dazwischen.
+    rotated = await client.post("/api/players/password", json={"nc_user": "gw-kind"}, headers=appapi_headers())
+    assert rotated.status_code == 200, rotated.text
+    assert rotated.json()["applied"] is True
+    new_password = str(rotated.json()["password"])
+    assert new_password != old_password
+    wait_for_state(api, world_id, str(_generation(app_env, world_id)))
+    assert_denied(join(HOST, port, name, old_password), "WRONG_PASSWORD")
+    assert join(HOST, port, name, new_password)["result"] == "auth_accept"
+
+    # Umbenennen: der neue Name gilt, der alte ist nicht mehr eingeladen.
+    renamed = await client.post(
+        "/api/players/name", json={"nc_user": "gw-kind", "player_name": "KindNeu"}, headers=appapi_headers()
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["applied"] is True
+    wait_for_state(api, world_id, str(_generation(app_env, world_id)))
+    assert join(HOST, port, "KindNeu", new_password)["result"] == "auth_accept"
+    assert_denied(join(HOST, port, name, new_password), "CUSTOM_STRING", NOT_INVITED)
+
+    # Austritt aus der Gruppe wirkt beim nächsten Verwalter-Besuch (Drossel hier aus).
+    from gameworld.access import service as access_service
+
+    monkeypatch.setattr(access_service, "SYNC_INTERVAL_SECONDS", 0)
+    fake_directory.groups["familie"].remove("gw-kind")
+    listed = await client.get("/api/worlds", headers=appapi_headers())
+    assert listed.status_code == 200
+    wait_for_state(api, world_id, str(_generation(app_env, world_id)))
+    assert_denied(join(HOST, port, "KindNeu", new_password), "CUSTOM_STRING", NOT_INVITED)
+
+    # Kein Neustart im ganzen Ablauf: derselbe Container, derselbe Startzeitpunkt.
+    assert _started_at(api, world_id) == started

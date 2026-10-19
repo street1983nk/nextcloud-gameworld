@@ -22,7 +22,11 @@ from tests.test_service_lifecycle import FakeProvisioner
 
 W1 = "aaaaaaaaaaa1"
 PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0)
+PASSWORD_1 = derive_password(TEST_SECRET, "gw-kind", 1)
+PASSWORD_2 = derive_password(TEST_SECRET, "gw-kind", 2)
 INVITE = {"kind": "user", "target": "gw-kind"}
+GROUP = {"kind": "group", "target": "familie"}
+KIND = {"nc_user": "gw-kind"}
 
 
 @pytest.fixture
@@ -125,7 +129,7 @@ async def test_child_gets_403(client: httpx.AsyncClient, service: WorldService, 
         {"kind": "user", "target": "x" * 65},
         {"kind": "user", "target": ""},
         {"kind": "user", "target": "   "},
-        {"kind": "group", "target": "familie"},
+        {"kind": "team", "target": "familie"},
         {"kind": "user", "target": "gw-kind", "admin": True},
         {"target": "gw-kind"},
     ],
@@ -224,6 +228,227 @@ async def test_nothing_secret_leaks_into_logs_or_errors(
     forbidden = [PASSWORD, TEST_SECRET.hex(), repr(TEST_SECRET), *verifiers]
     # Auch Teile des Verifiers (Salz, v) dürfen nicht auftauchen.
     forbidden += [part for verifier in verifiers for part in verifier.split("#") if len(part) > 8]
+    for needle in forbidden:
+        assert needle not in caplog.text
+        for body in error_bodies:
+            assert needle not in body
+    assert caplog.records, "Ohne Log-Einträge wäre der Test wertlos"
+
+
+# 03-04: Gruppen, Passwort neu, Umbenennen, Abgleich beim Verwalter-Besuch
+
+
+async def test_admin_invites_group(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
+    del service
+    response = await _invite(client, GROUP)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert [(p["nc_user"], p["via"], p["password"]) for p in data["players"]] == [
+        ("gw-kind", "group:familie", PASSWORD)
+    ]
+    assert [(i["kind"], i["target"]) for i in data["invites"]] == [("group", "familie")]
+    assert set(store.world_access(W1)) == {"gw-kind"}
+    removed = await client.post(f"/api/worlds/{W1}/invites/remove", json=GROUP, headers=appapi_headers())
+    assert removed.status_code == 200
+    assert store.world_access(W1) == {}
+
+
+async def test_unknown_group_is_422(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
+    del service
+    response = await _invite(client, {"kind": "group", "target": "fremde-gruppe"})
+    assert response.status_code == 422
+    assert "Gruppe" in response.json()["detail"]
+    assert store.list_invites(W1) == []
+
+
+async def test_password_reset_gives_new_password(client: httpx.AsyncClient, service: WorldService) -> None:
+    del service
+    await _invite(client)
+    response = await client.post("/api/players/password", json=KIND, headers=appapi_headers())
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "nc_user": "gw-kind",
+        "display_name": "Kind (Dev)",
+        "player_name": "Kind",
+        "password": PASSWORD_1,
+        "applied": True,
+    }
+    assert PASSWORD_1 != PASSWORD
+    listed = await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())
+    assert listed.json()["players"][0]["password"] == PASSWORD_1
+
+
+async def test_password_reset_unknown_player_is_404(client: httpx.AsyncClient, service: WorldService) -> None:
+    del service
+    response = await client.post("/api/players/password", json={"nc_user": "niemand"}, headers=appapi_headers())
+    assert response.status_code == 404
+
+
+async def _rename(client: httpx.AsyncClient, nc_user: str, player_name: str) -> httpx.Response:
+    return await client.post(
+        "/api/players/name", json={"nc_user": nc_user, "player_name": player_name}, headers=appapi_headers()
+    )
+
+
+async def test_rename(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_directory: FakeDirectory
+) -> None:
+    del service
+    fake_directory.users["gw-mia"] = ("Mia", True)
+    await _invite(client)
+    await _invite(client, {"kind": "user", "target": "gw-mia"})
+
+    ok = await _rename(client, "gw-kind", "KindNeu")
+    assert ok.status_code == 200, ok.text
+    assert (ok.json()["player_name"], ok.json()["password"]) == ("KindNeu", PASSWORD)
+    assert set(store.access_entries(W1)) == {"KindNeu", "Mia"}
+
+    assert (await _rename(client, "gw-kind", "mia")).status_code == 409
+    for bad in ("singleplayer", "Mia Neu", "Müller", "x" * 21, ""):
+        assert (await _rename(client, "gw-kind", bad)).status_code == 422, bad
+    assert set(store.access_entries(W1)) == {"KindNeu", "Mia"}
+    assert (await _rename(client, "niemand", "Neu")).status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        (f"/api/worlds/{W1}/invites", GROUP),
+        ("/api/players/password", KIND),
+        ("/api/players/name", {"nc_user": "gw-kind", "player_name": "Hack"}),
+    ],
+)
+async def test_child_gets_403_on_new_routes(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, path: str, body: object
+) -> None:
+    del service
+    response = await client.post(path, json=body, headers=appapi_headers("gw-kind"))
+    assert response.status_code == 403
+    assert store.list_invites(W1) == []
+    assert store.get_player("gw-kind") is None
+
+
+async def test_world_list_syncs_group_membership_throttled(
+    client: httpx.AsyncClient,
+    service: WorldService,
+    store: WorldStore,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del service
+    from gameworld.access import service as access_service
+
+    clock = [5000.0]
+    monkeypatch.setattr(access_service, "monotonic", lambda: clock[0])
+    await _invite(client, GROUP)
+    assert (await client.get("/api/worlds", headers=appapi_headers())).status_code == 200
+
+    fake_directory.groups["familie"].remove("gw-kind")
+    clock[0] += 30
+    assert (await client.get("/api/worlds", headers=appapi_headers())).status_code == 200
+    assert set(store.world_access(W1)) == {"gw-kind"}, "innerhalb der Drossel kein Abgleich"
+
+    clock[0] += 31
+    assert (await client.get("/api/worlds", headers=appapi_headers())).status_code == 200
+    assert store.world_access(W1) == {}
+
+
+async def test_world_list_survives_sync_failure(
+    client: httpx.AsyncClient,
+    service: WorldService,
+    store: WorldStore,
+    fake_directory: FakeDirectory,
+    fake_secret: StaticSecret,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    del service
+    from gameworld.access import service as access_service
+
+    await _invite(client, GROUP)
+    fake_directory.error = DirectoryUnavailableError("weg")
+    caplog.set_level(logging.WARNING)
+    response = await client.get("/api/worlds", headers=appapi_headers())
+    assert response.status_code == 200
+    assert [world["id"] for world in response.json()["worlds"]] == [W1]
+    assert set(store.world_access(W1)) == {"gw-kind"}, "Nextcloud weg entfernt niemanden"
+
+    access_service.SYNC_STATE.last = None
+    fake_directory.error = None
+    fake_secret.error = SecretUnavailableError("weg")
+    response = await client.get("/api/worlds", headers=appapi_headers())
+    assert response.status_code == 200
+    assert "Abgleich" in caplog.text
+
+
+async def test_rotation_rename_and_groups_leak_nothing(
+    client: httpx.AsyncClient,
+    service: WorldService,
+    store: WorldStore,
+    fake: FakeProvisioner,
+    fake_directory: FakeDirectory,
+    fake_secret: StaticSecret,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    del service
+    caplog.set_level(logging.DEBUG)
+    error_bodies: list[str] = []
+    verifiers: set[str] = set()
+    fake_directory.users["gw-mia"] = ("Mia", True)
+
+    # Erfolgspfade: Gruppe, direkt, Passwort neu (zweimal), Umbenennen, Abgleich.
+    assert (await _invite(client, GROUP)).status_code == 200
+    assert (await _invite(client, {"kind": "user", "target": "gw-mia"})).status_code == 200
+    verifiers |= set(store.world_access(W1).values())
+    for _ in range(2):
+        response = await client.post("/api/players/password", json=KIND, headers=appapi_headers())
+        assert response.status_code == 200
+        verifiers |= set(store.world_access(W1).values())
+    assert (await _rename(client, "gw-kind", "KindNeu")).status_code == 200
+    verifiers |= set(store.world_access(W1).values())
+    assert (await client.get("/api/worlds", headers=appapi_headers())).status_code == 200
+
+    # Fehlerpfade mit Body.
+    for path, body, code in [
+        ("/api/players/name", {"nc_user": "gw-kind", "player_name": "mia"}, 409),
+        ("/api/players/name", {"nc_user": "gw-kind", "player_name": "singleplayer"}, 422),
+        ("/api/players/name", {"nc_user": "niemand", "player_name": "Neu"}, 404),
+        ("/api/players/password", {"nc_user": "niemand"}, 404),
+        (f"/api/worlds/{W1}/invites", {"kind": "group", "target": "fremde-gruppe"}, 422),
+    ]:
+        response = await client.post(path, json=body, headers=appapi_headers())
+        assert response.status_code == code, (path, body)
+        error_bodies.append(response.text)
+
+    fake_secret.error = SecretUnavailableError("weg")
+    for path, body in [("/api/players/password", KIND), (f"/api/worlds/{W1}/invites", GROUP)]:
+        response = await client.post(path, json=body, headers=appapi_headers())
+        assert response.status_code == 503
+        error_bodies.append(response.text)
+    fake_secret.error = None
+
+    fake_directory.error = DirectoryUnavailableError("weg")
+    response = await _invite(client, GROUP)
+    assert response.status_code == 503
+    error_bodies.append(response.text)
+    fake_directory.error = None
+
+    def broken(world_id: str, archive: bytes) -> None:
+        del world_id, archive
+        raise DockerUnavailableError("Der Docker-Proxy ist nicht erreichbar.")
+
+    monkeypatch.setattr(fake, "write_world_files", broken)
+    docker_gone = await client.post("/api/players/password", json=KIND, headers=appapi_headers())
+    assert docker_gone.status_code == 200
+    assert docker_gone.json()["applied"] is False
+    verifiers |= set(store.world_access(W1).values())
+
+    passwords = [PASSWORD, PASSWORD_1, PASSWORD_2, derive_password(TEST_SECRET, "gw-kind", 3)]
+    passwords.append(derive_password(TEST_SECRET, "gw-mia", 0))
+    forbidden = [*passwords, TEST_SECRET.hex(), repr(TEST_SECRET), *verifiers]
+    # Auch Teile der Verifier (Salz, v) dürfen nicht auftauchen.
+    forbidden += [part for verifier in verifiers for part in verifier.split("#") if len(part) > 8]
+    assert len(verifiers) >= 4
     for needle in forbidden:
         assert needle not in caplog.text
         for body in error_bodies:

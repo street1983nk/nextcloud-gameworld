@@ -1,8 +1,10 @@
-"""Einladungen und Spieler einer Welt (Verwaltung, ZUGANG-02).
+"""Einladungen und Spieler (Verwaltung, ZUGANG-02, ROLLE-02).
 
-Der Browser liefert nur Konto-IDs; das Backend lädt nur ein, was Nextcloud dem
-Verwalter als vorhandenes, aktives Konto bestätigt. Entfernen läuft als POST
-mit Body, weil Konto- und Gruppen-IDs Sonderzeichen enthalten dürfen.
+Der Browser liefert nur Konto- und Gruppen-IDs; das Backend lädt nur ein, was
+Nextcloud dem Verwalter als vorhandenes, aktives Konto oder als Gruppe
+bestätigt. Entfernen läuft als POST mit Body, weil Konto- und Gruppen-IDs
+Sonderzeichen enthalten dürfen. Passwort neu und Umbenennen gelten für alle
+Welten eines Kontos (A2).
 """
 
 from __future__ import annotations
@@ -17,7 +19,15 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from gameworld.access.directory import Directory, DirectoryUnavailableError, get_directory
 from gameworld.access.roles import require_verwalter
 from gameworld.access.secret import PlayerSecret, SecretUnavailableError, get_player_secret
-from gameworld.access.service import AccessResult, AccessService, InviteTargetError
+from gameworld.access.service import (
+    KIND_GROUP,
+    AccessResult,
+    AccessService,
+    InviteTargetError,
+    PlayerChange,
+    PlayerNameTakenError,
+    PlayerNotFoundError,
+)
 from gameworld.api.worlds import ServiceDep, WorldId
 from gameworld.provisioner.client import WorldNotFoundError
 from gameworld.worlds.service import NOT_FOUND
@@ -26,7 +36,7 @@ from gameworld.worlds.service import NOT_FOUND
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
-MSG_INVALID_TARGET = "Ungültige Konto-ID."
+MSG_INVALID_TARGET = "Ungültige Konto- oder Gruppen-ID."
 
 
 def _clean_target(value: str) -> str:
@@ -39,9 +49,19 @@ def _clean_target(value: str) -> str:
 class InviteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Nur Konten in diesem Stand; Gruppen folgen in 03-04.
-    kind: Literal["user"]
+    kind: Literal["user", "group"]
     target: Annotated[str, Field(max_length=64), AfterValidator(_clean_target)]
+
+
+class PlayerRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nc_user: Annotated[str, Field(max_length=64), AfterValidator(_clean_target)]
+
+
+class RenameRequest(PlayerRef):
+    # Die Luanti-Regel prüft der Dienst (validate_player_name, 422 mit deutscher Meldung).
+    player_name: Annotated[str, Field(max_length=20)]
 
 
 class PlayerOut(BaseModel):
@@ -50,6 +70,16 @@ class PlayerOut(BaseModel):
     player_name: str
     password: str
     via: str
+
+
+class PlayerChangeOut(BaseModel):
+    """Spieler nach Passwort neu oder Umbenennen; applied: in allen Welten schon wirksam."""
+
+    nc_user: str
+    display_name: str
+    player_name: str
+    password: str
+    applied: bool
 
 
 class InviteOut(BaseModel):
@@ -104,12 +134,19 @@ def _http_error(exc: Exception) -> HTTPException:
     """Feste deutsche Meldungen; nie Ausnahmetexte mit Daten aus Nextcloud."""
     if isinstance(exc, WorldNotFoundError):
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    if isinstance(exc, InviteTargetError):
+    if isinstance(exc, PlayerNotFoundError):
+        return HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, PlayerNameTakenError):
+        return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, (InviteTargetError, ValueError)):
+        # Nur eigene, feste Meldungen (MSG_UNKNOWN_*, MSG_INVALID_NAME).
         return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE)
 
 
 _ERRORS = (WorldNotFoundError, InviteTargetError, DirectoryUnavailableError, SecretUnavailableError)
+# Passwort neu und Umbenennen: dazu Spieler fehlt, Name vergeben, Name ungültig.
+_PLAYER_ERRORS = (*_ERRORS, PlayerNotFoundError, PlayerNameTakenError, ValueError)
 VerwalterDep = Annotated[str, Depends(require_verwalter)]
 
 
@@ -124,7 +161,10 @@ async def list_players(world_id: WorldId, access: AccessDep, uid: VerwalterDep) 
 @router.post("/worlds/{world_id}/invites")
 async def invite(world_id: WorldId, body: InviteRequest, access: AccessDep, uid: VerwalterDep) -> PlayersOut:
     try:
-        result = await access.invite_user(world_id, uid, body.target)
+        if body.kind == KIND_GROUP:
+            result = await access.invite_group(world_id, uid, body.target)
+        else:
+            result = await access.invite_user(world_id, uid, body.target)
         return await _players(access, world_id, uid, result)
     except _ERRORS as exc:
         raise _http_error(exc) from None
@@ -136,4 +176,31 @@ async def remove_invite(world_id: WorldId, body: InviteRequest, access: AccessDe
         result = await access.revoke(world_id, uid, body.kind, body.target)
         return await _players(access, world_id, uid, result)
     except _ERRORS as exc:
+        raise _http_error(exc) from None
+
+
+def _change_out(change: PlayerChange) -> PlayerChangeOut:
+    return PlayerChangeOut(
+        nc_user=change.nc_user,
+        display_name=change.display_name,
+        player_name=change.player_name,
+        password=change.password,
+        applied=change.applied,
+    )
+
+
+@router.post("/players/password")
+async def reset_password(body: PlayerRef, access: AccessDep, uid: VerwalterDep) -> PlayerChangeOut:
+    """Passwort neu (T-03-29): Das alte gilt sofort nicht mehr, in allen Welten, ohne Neustart."""
+    try:
+        return _change_out(await access.rotate_password(uid, body.nc_user))
+    except _PLAYER_ERRORS as exc:
+        raise _http_error(exc) from None
+
+
+@router.post("/players/name")
+async def rename_player(body: RenameRequest, access: AccessDep, uid: VerwalterDep) -> PlayerChangeOut:
+    try:
+        return _change_out(await access.rename_player(uid, body.nc_user, body.player_name))
+    except _PLAYER_ERRORS as exc:
         raise _http_error(exc) from None

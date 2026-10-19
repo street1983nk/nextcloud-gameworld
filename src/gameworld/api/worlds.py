@@ -6,6 +6,7 @@ Es gibt bewusst kein Feld für Sichtbarkeit (ZUGANG-01): unbekannte Felder wie
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import asdict
 from typing import Annotated
@@ -13,7 +14,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
+from gameworld.access.directory import Directory, get_directory
 from gameworld.access.roles import require_verwalter
+from gameworld.access.secret import PlayerSecret, get_player_secret
+from gameworld.access.service import AccessService
 from gameworld.config import load_settings
 from gameworld.provisioner.client import (
     DockerProvisioner,
@@ -26,6 +30,8 @@ from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, validate_p
 from gameworld.worlds.ports import NoFreePortError
 from gameworld.worlds.service import NOT_FOUND, DeleteOnlyError, WorldService, WorldView
 from gameworld.worlds.store import WorldStore
+
+LOG = logging.getLogger(__name__)
 
 # Jede Route dieses Routers ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
@@ -122,7 +128,18 @@ async def list_presets() -> PresetListOut:
 
 
 @router.get("/worlds")
-async def list_worlds(service: ServiceDep) -> WorldListOut:
+async def list_worlds(
+    service: ServiceDep,
+    uid: Annotated[str, Depends(require_verwalter)],
+    directory: Annotated[Directory, Depends(get_directory)],
+    secret: Annotated[PlayerSecret, Depends(get_player_secret)],
+) -> WorldListOut:
+    # Abgleich beim Verwalter-Besuch (T-03-26), gedrosselt auf einmal pro Minute.
+    # Er darf die Weltenliste nie blockieren (T-03-33): Fehler nur als Warnung.
+    try:
+        await AccessService(service.store, service, directory, secret).sync_all(uid)
+    except Exception as exc:
+        LOG.warning("Abgleich der Einladungen beim Verwalter-Besuch gescheitert: %s", type(exc).__name__)
     views = await service.list_worlds()
     return WorldListOut(worlds=[WorldOut(**asdict(view)) for view in views])
 
