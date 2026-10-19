@@ -21,12 +21,14 @@ import requests.exceptions
 import urllib3.exceptions
 from docker.models.containers import Container
 
-from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, world_spec
+from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, resource_name, world_spec
 
 LOG = logging.getLogger(__name__)
 
 PORT_CONFLICT_MARKERS = ("port is already allocated", "Bind for", "address already in use")
 CLIENT_TIMEOUT = 60
+STOP_TIMEOUT = 30
+NOT_FOUND_MESSAGE = "Diese Welt gibt es nicht (mehr)."
 
 
 class ProvisionerError(Exception):
@@ -60,6 +62,17 @@ class ContainerInfo:
 
 def _explanation(exc: docker.errors.APIError) -> str:
     return str(exc.explanation or exc)
+
+
+def _host_ports(raw: str, lo: int, hi: int) -> set[int]:
+    """HostPort-Wert ("30015" oder "30015-30017") als Ports im Bereich."""
+    first, _, last = raw.partition("-")
+    try:
+        start = int(first)
+        end = int(last) if last else start
+    except ValueError:
+        return set()
+    return set(range(max(start, lo), min(end, hi) + 1))
 
 
 def _label_port(labels: dict[str, str]) -> int:
@@ -111,12 +124,36 @@ class DockerProvisioner:
                 "Bitte prüfen, ob der Dienst gameworld-docker-proxy läuft."
             ) from exc
 
-    def _owned(self, container: Container) -> Container:
-        """Jede Mutation nur an Containern mit eigenem Label und eigener Instanz."""
+    def _is_owned(self, container: Container, world_id: str) -> bool:
+        """Zweite Prüfung am Ergebnis, falls ein Filter des Proxys ignoriert würde."""
         labels = container.labels or {}
-        if labels.get("gameworld.managed") != "true" or labels.get("gameworld.instance") != self._instance_id:
-            raise WorldNotFoundError("Der Container gehört nicht zu dieser Gameworld-Instanz.")
-        return container
+        return (
+            labels.get("gameworld.managed") == "true"
+            and labels.get("gameworld.instance") == self._instance_id
+            and labels.get("gameworld.world_id") == world_id
+        )
+
+    def _owned(self, world_id: str) -> Container:
+        """Der Container dieser Welt, nur mit eigenem Label und eigener Instanz.
+
+        Jede Mutation löst den Container hierüber auf, nie über einen Namen oder
+        eine ID von außen: Über den pfadbasierten Proxy dürfen nie fremde
+        Container (Nextcloud, Findling, andere Gameworld-Instanzen) angefasst werden.
+        """
+        containers = self._docker().containers.list(
+            all=True,
+            filters={
+                "label": [
+                    "gameworld.managed=true",
+                    f"gameworld.instance={self._instance_id}",
+                    f"gameworld.world_id={world_id}",
+                ]
+            },
+        )
+        owned = [container for container in containers if self._is_owned(container, world_id)]
+        if not owned:
+            raise WorldNotFoundError(NOT_FOUND_MESSAGE)
+        return owned[0]
 
     # Öffentliche Operationen
 
@@ -128,7 +165,15 @@ class DockerProvisioner:
             except docker.errors.ImageNotFound:
                 images.pull(LUANTI_IMAGE)
 
-    def create_world_container(self, world_id: str, host_port: int, payload: bytes) -> str:
+    def create_world_container(
+        self, world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False
+    ) -> str:
+        """Erzeugt den Container der Welt und spielt die Weltdateien ein.
+
+        ``reuse_volume`` steht für eine Neuerzeugung mit vorhandenem Volume (etwa
+        nach einer Port-Kollision): Scheitert dann das Einspielen, bleibt das
+        Volume mit den Weltdaten erhalten und nur der Container wird entfernt.
+        """
         with self._guarded():
             api = self._docker()
             spec = cast(dict[str, Any], world_spec(self._instance_id, world_id, host_port))
@@ -139,14 +184,16 @@ class DockerProvisioner:
             except Exception:
                 # Halb erzeugte Welt nicht liegen lassen; der Aufrufer kennt die ID noch nicht.
                 with contextlib.suppress(Exception):
-                    container.remove(force=True, v=True)
-                    api.volumes.get(str(spec["name"])).remove(force=True)
+                    container.remove(force=True, v=False)
+                if not reuse_volume:
+                    with contextlib.suppress(Exception):
+                        api.volumes.get(str(spec["name"])).remove(force=True)
                 raise
             return str(container.id)
 
-    def start(self, container_id: str) -> None:
+    def start_world(self, world_id: str) -> None:
         with self._guarded():
-            container = self._owned(self._docker().containers.get(container_id))
+            container = self._owned(world_id)
             try:
                 container.start()
             except docker.errors.APIError as exc:
@@ -155,21 +202,38 @@ class DockerProvisioner:
                     raise PortInUseError(_label_port(container.labels or {})) from exc
                 raise ProvisionerError(f"Docker hat den Start der Welt abgelehnt: {explanation}") from exc
 
-    def discard(self, container_id: str, *, keep_volume: bool) -> None:
+    def stop(self, world_id: str) -> None:
+        with self._guarded():
+            # Client-Timeout (60 s) liegt über dem Stop-Timeout, Luanti speichert vorher.
+            self._owned(world_id).stop(timeout=STOP_TIMEOUT)
+
+    def remove_world(self, world_id: str, *, keep_volume: bool) -> None:
+        """Entfernt den Container der Welt und auf Wunsch ihr Volume.
+
+        Fehlt der Container schon, ist das kein Fehler: Löschen soll auch eine
+        Welt mit verschwundenem Container aufräumen. Das Volume trägt immer das
+        Präfix der eigenen Instanz, ein fremdes Volume kann so nicht getroffen werden.
+        """
         with self._guarded():
             api = self._docker()
             try:
-                container = self._owned(api.containers.get(container_id))
-            except WorldNotFoundError:
-                LOG.warning("Container %s gehört nicht zu dieser Instanz, wird nicht entfernt", container_id)
-                return
-            except docker.errors.NotFound:
-                return
-            name = container.name
-            container.remove(force=True, v=False)
-            if not keep_volume and name:
+                self._owned(world_id).remove(force=True, v=False)
+            except (WorldNotFoundError, docker.errors.NotFound):
+                LOG.info("Welt %s hat keinen eigenen Container mehr", world_id)
+            if not keep_volume:
                 with contextlib.suppress(docker.errors.NotFound):
-                    api.volumes.get(name).remove()
+                    api.volumes.get(resource_name(self._instance_id, world_id)).remove()
+
+    def used_host_ports(self, lo: int, hi: int) -> set[int]:
+        """Host-Ports im Bereich, die irgendein Container des Hosts bindet (auch fremde)."""
+        with self._guarded():
+            used: set[int] = set()
+            for container in self._docker().containers.list(all=True, ignore_removed=True):
+                bindings = (container.attrs.get("HostConfig") or {}).get("PortBindings") or {}
+                for entries in bindings.values():
+                    for entry in entries or []:
+                        used.update(_host_ports(str(entry.get("HostPort") or ""), lo, hi))
+            return used
 
     def list_managed(self) -> dict[str, ContainerInfo]:
         with self._guarded():

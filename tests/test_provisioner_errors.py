@@ -17,10 +17,17 @@ from gameworld.provisioner.client import (
     DockerUnavailableError,
     PortInUseError,
     ProvisionerError,
+    WorldNotFoundError,
 )
 
 INSTANCE = "ab12cd34"
-LABELS = {"gameworld.managed": "true", "gameworld.instance": INSTANCE, "gameworld.port": "30015"}
+WORLD = "0123456789ab"
+LABELS = {
+    "gameworld.managed": "true",
+    "gameworld.instance": INSTANCE,
+    "gameworld.world_id": WORLD,
+    "gameworld.port": "30015",
+}
 
 
 def _raise(exc: BaseException) -> Any:
@@ -40,7 +47,7 @@ def _api_error(explanation: str, status: int = 500) -> docker.errors.APIError:
 class FakeContainer:
     def __init__(self, *, start_error: BaseException | None = None) -> None:
         self.id = "cid"
-        self.name = f"gameworld-{INSTANCE}-0123456789ab"
+        self.name = f"gameworld-{INSTANCE}-{WORLD}"
         self.labels = dict(LABELS)
         self.status = "created"
         self._start_error = start_error
@@ -84,9 +91,9 @@ def test_connection_error_on_list(prov: DockerProvisioner, fake: FakeClient) -> 
 
 
 def test_read_timeout_on_start(prov: DockerProvisioner, fake: FakeClient) -> None:
-    fake.containers.get = _raise(requests.exceptions.ReadTimeout("langsam"))
+    fake.containers.list = _raise(requests.exceptions.ReadTimeout("langsam"))
     with pytest.raises(DockerUnavailableError):
-        prov.start("cid")
+        prov.start_world(WORLD)
     assert prov._client is None
 
 
@@ -100,24 +107,32 @@ def test_docker_exception_on_ensure_image(prov: DockerProvisioner, fake: FakeCli
 def test_protocol_error_on_create(prov: DockerProvisioner, fake: FakeClient) -> None:
     fake.containers.create = _raise(urllib3.exceptions.ProtocolError("abgerissen"))
     with pytest.raises(DockerUnavailableError):
-        prov.create_world_container("0123456789ab", 30015, b"")
+        prov.create_world_container(WORLD, 30015, b"")
     assert prov._client is None
 
 
-def test_missing_volume_on_discard_is_ignored(prov: DockerProvisioner, fake: FakeClient) -> None:
+def _listing(*containers: FakeContainer) -> Any:
+    def call(*args: object, **kwargs: object) -> list[FakeContainer]:
+        del args, kwargs
+        return list(containers)
+
+    return call
+
+
+def test_missing_volume_on_remove_is_ignored(prov: DockerProvisioner, fake: FakeClient) -> None:
     container = FakeContainer()
-    fake.containers.get = lambda *_: container
+    fake.containers.list = _listing(container)
     fake.volumes.get = _raise(docker.errors.NotFound("kein Volume"))
-    prov.discard("cid", keep_volume=False)
+    prov.remove_world(WORLD, keep_volume=False)
     assert container.removed
 
 
 def test_port_conflict_on_start(prov: DockerProvisioner, fake: FakeClient) -> None:
     error = _api_error("Bind for 0.0.0.0:30015 failed: port is already allocated")
     container = FakeContainer(start_error=error)
-    fake.containers.get = lambda *_: container
+    fake.containers.list = _listing(container)
     with pytest.raises(PortInUseError) as info:
-        prov.start("cid")
+        prov.start_world(WORLD)
     assert info.value.port == 30015
     assert not isinstance(info.value, DockerUnavailableError)
     assert prov._client is not None
@@ -125,18 +140,46 @@ def test_port_conflict_on_start(prov: DockerProvisioner, fake: FakeClient) -> No
 
 def test_other_api_error_on_start(prov: DockerProvisioner, fake: FakeClient) -> None:
     container = FakeContainer(start_error=_api_error("boom"))
-    fake.containers.get = lambda *_: container
+    fake.containers.list = _listing(container)
     with pytest.raises(ProvisionerError, match="Docker hat den Start der Welt abgelehnt") as info:
-        prov.start("cid")
+        prov.start_world(WORLD)
     assert not isinstance(info.value, DockerUnavailableError)
 
 
-def test_foreign_container_is_not_started(prov: DockerProvisioner, fake: FakeClient) -> None:
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [("gameworld.instance", "fremd000"), ("gameworld.managed", "false"), ("gameworld.world_id", "ffffffffffff")],
+)
+def test_foreign_container_is_never_touched(prov: DockerProvisioner, fake: FakeClient, label: str, value: str) -> None:
+    """Auch wenn der Proxy einen Filter ignorierte, prüft der Provisioner die Labels selbst."""
     container = FakeContainer()
-    container.labels["gameworld.instance"] = "fremd000"
-    fake.containers.get = lambda *_: container
-    with pytest.raises(ProvisionerError, match="Instanz"):
-        prov.start("cid")
+    container.labels[label] = value
+    fake.containers.list = _listing(container)
+    fake.volumes.get = _raise(docker.errors.NotFound("kein Volume"))
+    with pytest.raises(WorldNotFoundError):
+        prov.start_world(WORLD)
+    with pytest.raises(WorldNotFoundError):
+        prov.stop(WORLD)
+    prov.remove_world(WORLD, keep_volume=False)
+    assert not container.removed
+
+
+def test_used_host_ports_reads_all_bindings(prov: DockerProvisioner, fake: FakeClient) -> None:
+    foreign = SimpleNamespace(
+        attrs={
+            "HostConfig": {
+                "PortBindings": {
+                    "30000/udp": [{"HostIp": "0.0.0.0", "HostPort": "30015"}],  # noqa: S104
+                    "80/tcp": [{"HostIp": "", "HostPort": "8090"}],
+                    "9000/tcp": [{"HostIp": "", "HostPort": "30018-30030"}],
+                    "9001/tcp": None,
+                }
+            }
+        }
+    )
+    plain = SimpleNamespace(attrs={"HostConfig": {"PortBindings": None}})
+    fake.containers.list = lambda **_: [foreign, plain]
+    assert prov.used_host_ports(30015, 30019) == {30015, 30018, 30019}
 
 
 def test_unreachable_server_without_cached_client() -> None:

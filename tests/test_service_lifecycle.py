@@ -40,7 +40,9 @@ class FakeProvisioner:
     def ensure_image(self) -> None:
         return None
 
-    def create_world_container(self, world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False) -> str:
+    def create_world_container(
+        self, world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False
+    ) -> str:
         assert payload
         self.created.append((world_id, host_port, reuse_volume))
         self.containers[world_id] = (host_port, "created")

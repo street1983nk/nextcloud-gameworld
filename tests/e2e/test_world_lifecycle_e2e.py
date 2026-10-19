@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 from collections.abc import Iterator
 
@@ -125,7 +126,5 @@ async def test_foreign_instance_container_is_untouchable(client: httpx.AsyncClie
         assert foreign.attrs["State"]["Status"] == before["Status"] == "created"
         assert foreign.attrs["State"]["StartedAt"] == before["StartedAt"]
     finally:
-        try:
+        with contextlib.suppress(docker.errors.NotFound):
             foreign.remove(force=True, v=True)
-        except docker.errors.NotFound:
-            pass

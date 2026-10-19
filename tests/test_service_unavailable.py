@@ -35,19 +35,27 @@ class FakeProvisioner:
         if self.fail_image:
             raise DockerUnavailableError(MESSAGE)
 
-    def create_world_container(self, world_id: str, host_port: int, payload: bytes) -> str:
-        del host_port, payload
+    def create_world_container(
+        self, world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False
+    ) -> str:
+        del host_port, payload, reuse_volume
         self.created.append(world_id)
         return f"cid-{world_id}"
 
-    def start(self, container_id: str) -> None:
-        del container_id
+    def start_world(self, world_id: str) -> None:
+        del world_id
         raise DockerUnavailableError(MESSAGE)
 
-    def discard(self, container_id: str, *, keep_volume: bool) -> None:
-        del container_id, keep_volume
+    def remove_world(self, world_id: str, *, keep_volume: bool) -> None:
+        del world_id, keep_volume
         if self.fail_discard:
             raise DockerUnavailableError("zweiter Fehler beim Aufräumen")
+
+    def used_host_ports(self, lo: int, hi: int) -> set[int]:
+        del lo, hi
+        if self.fail_image:
+            raise DockerUnavailableError(MESSAGE)
+        return set()
 
     def list_managed(self) -> dict[str, ContainerInfo]:
         if self.fail_list:
