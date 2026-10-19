@@ -1,8 +1,8 @@
 ---
 phase: 02
 slug: one-click-welten
-status: open_threats
-threats_open: 1
+status: verified
+threats_open: 0
 asvs_level: 1
 created: 2026-10-19
 ---
@@ -10,7 +10,7 @@ created: 2026-10-19
 # Phase 02: Security
 
 > Sicherheitsvertrag der Phase: Threat Register, akzeptierte Risiken und Audit-Trail.
-> Geprüft gegen den Code nach den Review-Fixes (Commits 611744e, 320136f, 4ae11c0, 6f5c0a0, 36c7a34, e5772a6; Stand 8c198b7). Jede Mitigation ist mit Datei:Zeile im Implementierungscode belegt, nicht nur über SUMMARY-Aussagen. Testlauf des Auditors: `GAMEWORLD_REQUIRE_DOCKER=1 uv run pytest -q` 363 passed, nichts übersprungen.
+> Geprüft gegen den Code nach den Review-Fixes (Commits 611744e, 320136f, 4ae11c0, 6f5c0a0, 36c7a34, e5772a6; Stand 8c198b7) sowie gegen den T-02-32-Fix 0caf7c6. Jede Mitigation ist mit Datei:Zeile im Implementierungscode belegt, nicht nur über SUMMARY-Aussagen. Testläufe des Auditors: `GAMEWORLD_REQUIRE_DOCKER=1 uv run pytest -q` 363 passed (Stand 8c198b7), nach 0caf7c6 366 passed, nichts übersprungen.
 
 ---
 
@@ -66,7 +66,7 @@ created: 2026-10-19
 | T-02-29 | Denial of Service | ExApp-Start blockiert | mitigate | `asyncio.create_task(reconcile_forever(...))` (src/gameworld/main.py:45), Docker über `to_thread` mit `abandon_on_cancel` (service.py:227-233), Task-Abbruch im finally (main.py:48-52); Test < 2 s mit unerreichbarem Proxy (tests/test_reconciler.py:524-539) | closed |
 | T-02-30 | Tampering | Race Reconciler gegen Elternaktion | mitigate | `_LOCK.acquire(blocking=False)` in Boot und periodisch (service.py:540,601), Elternaktionen unter `_LOCK` (:264); Test tests/test_reconciler.py:310-322 | closed |
 | T-02-31 | Tampering | Neuerzeugung ohne Weltdaten | mitigate | `volume_exists` vor RECREATE (service.py:562, reconciler.py:75), MARK_DATA_MISSING statt leerer Welt; seit CR-01 zusätzlich direkt vor jeder Neuerzeugung in `_launch` (service.py:367-370) und Abweisen von Start/Neustart im Zustand "nur löschen" (:420-423,491,524), API 409 (api/worlds.py:154-155); Tests tests/test_service_lifecycle.py:881-964, tests/test_reconciler.py:376 | closed |
-| T-02-32 | Repudiation | Automatische Aktionen ohne Spur | mitigate | **OPEN.** Der Aufruf existiert (`LOG.info("Abgleich Welt %s: %s", ...)` service.py:566, ADOPT periodisch :608), wird aber nie geschrieben: Gameworld konfiguriert kein Logging (kein `basicConfig`/`setLevel`/Handler in src/), `run_app(..., log_level="info")` (main.py:62) setzt nur die uvicorn-Logger. Effektiver Level von `gameworld.worlds.service` ist WARNING (vom Auditor mit uvicorns LOGGING_CONFIG nachgemessen: `isEnabledFor(INFO) == False`); .dev/exapp.log enthält nach K4 keine einzige "Abgleich Welt"-Zeile. Damit bleiben START, ADOPT_RUNNING, MARK_OOM, MARK_DATA_MISSING, MARK_INTERRUPTED und RETRY_DELETE (löscht Container und Volume) ohne Spur. Nur RECREATE (service.py:372), Waisen (:550) und Fehler laufen als WARNING durch | open |
+| T-02-32 | Repudiation | Automatische Aktionen ohne Spur | mitigate | Aktionen geloggt mit Welt-ID, ohne Weltschlüssel (service.py:566, :608, reconciler.py:116). Im ersten Lauf OPEN (Logger effektiv WARNING, INFO verworfen); gefixt in 0caf7c6: `_setup_logging()` setzt Logger `gameworld` auf INFO mit eigenem StreamHandler, beim Import ausgeführt (src/gameworld/main.py:29-43). Auditor-Gegenprobe: nach `dictConfig(uvicorn.config.LOGGING_CONFIG)` bleibt `isEnabledFor(INFO) == True` und der Handler erhalten; Regressionstest ohne `caplog.at_level` (tests/test_logging_setup.py:16-40); Live-Beleg .dev/exapp.log: `INFO gameworld.worlds.reconciler: Boot-Abgleich der Welten abgeschlossen` | closed |
 | T-02-33 | Tampering | Abnahme berührt fremde Container | mitigate | `foreign_snapshot` (ID, Name, State, StartedAt aller Nicht-Gameworld-Container) vor/nach K4 mit Positivkontrolle (acceptance-phase2.sh:229-240,504-559); docker stop/kill nur auf per Label ermittelte Abnahme-Welten (`container_of` :179-181, :369,394,403,502,538); Aufräumen nur per gemerkter world_id (:147-157) | closed |
 | T-02-34 | Information Disclosure | Weltschlüssel in Skriptausgabe | mitigate | Skript liest Antworten nur gezielt per jq-Feld (`.id`, `.status` usw., acceptance-phase2.sh:188-191,219), kein Ausgeben ganzer Antworten (Auditor-Grep auf `cat`/`jq '.'`: nur PID-Datei und conf-Kopie); keine Screenshots im Repo (`git ls-files` ohne png/jpg) | closed |
 | T-02-35 | Denial of Service | Dev-Proxy bleibt gestoppt | mitigate | `trap cleanup EXIT` plus `trap 'exit 130' INT TERM` startet Proxy und ExApp neu (acceptance-phase2.sh:131-162); Auditor-Prüfung 19.10.: `gameworld-dev-gameworld-docker-proxy-1` Up, keine Container mit `gameworld.managed=true` | closed |
@@ -75,11 +75,9 @@ created: 2026-10-19
 *Status: open · closed*
 *Disposition: mitigate (Implementierung erforderlich) · accept (dokumentiertes Risiko) · transfer (Dritte/Betreiber)*
 
-### Offene Threats und Fix-Empfehlung
+### Offene Threats
 
-| Threat ID | Problem | Fix-Empfehlung |
-|-----------|---------|----------------|
-| T-02-32 | Reconciler-Aktionen werden auf INFO geloggt, Gameworld-Logger stehen effektiv auf WARNING; automatische Mutationen (auch RETRY_DELETE mit Volume-Löschung) hinterlassen keine Spur | Entweder die Aktionszeile `service.py:566` (und :608) auf `LOG.warning` heben oder in `main.py` den Logger `gameworld` auf INFO mit Handler konfigurieren (z. B. `logging.getLogger("gameworld").setLevel(logging.INFO)` plus StreamHandler, Weltschlüssel bleibt draußen). Regressionstest, der unter der echten Startkonfiguration (nicht nur `caplog.at_level`) prüft, dass eine Boot-Aktion im Log landet. Danach `/gsd:secure-phase 2` erneut |
+Keine. T-02-32 war im ersten Auditlauf offen und ist mit 0caf7c6 geschlossen (siehe Register und Audit Trail).
 
 ### Prüfung der Review-Fixes gegen das Register
 
@@ -91,6 +89,7 @@ created: 2026-10-19
 | WR-03 Timeouts nicht wiederholen | 6f5c0a0 | T-02-21 | Stärkt T-02-21 (client.py:235) |
 | WR-04 Tar-Fehler der Status-Datei | 36c7a34 | T-02-18 | Schließt die Lücke "Fehler pro Welt isoliert" für untrusted Tar-Inhalt (client.py:424-430) |
 | WR-05 Unterbrochen erzeugte Welten nur löschbar | e5772a6 | T-02-31, T-02-16 | Kein Rückschritt: `RECONCILE_INTERRUPTED` in `DELETE_ONLY_ERRORS` (service.py:87), halb befüllter Container wird nie gestartet |
+| T-02-32 Logging-Einrichtung | 0caf7c6 | T-02-32, T-01-07 | Schließt T-02-32; Format ohne Weltschlüssel, kein LOG-Aufruf referenziert `world_key` (Grep), kein Rückschritt bei T-01-07 |
 
 ### Informative Hinweise (keine offenen Threats)
 
@@ -125,6 +124,7 @@ Keine. Die Summaries 02-03 bis 02-06 melden unter `## Threat Flags` keine neue A
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-10-19 | 37 | 36 | 1 (T-02-32) | gsd-security-auditor (nach Review-Fixes 611744e..e5772a6) |
+| 2026-10-19 | 37 | 37 | 0 | gsd-security-auditor (Nachprüfung nach 0caf7c6) |
 
 ---
 
@@ -132,7 +132,7 @@ Keine. Die Summaries 02-03 bis 02-06 melden unter `## Threat Flags` keine neue A
 
 - [x] All threats have a disposition (mitigate / accept / transfer)
 - [x] Accepted risks documented in Accepted Risks Log
-- [ ] `threats_open: 0` confirmed
-- [ ] `status: verified` set in frontmatter
+- [x] `threats_open: 0` confirmed
+- [x] `status: verified` set in frontmatter
 
-**Approval:** offen, T-02-32 blockiert
+**Approval:** verified 2026-10-19
