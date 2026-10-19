@@ -44,7 +44,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md , Walking Skeleton B: ExApp im Top-Menü, Welt per Klick erstellen (info.xml, Lifecycle, Vue-Hülle, smoke.sh)
+- [x] 01-02-PLAN.md , Walking Skeleton B: ExApp im Top-Menü, Welt per Klick erstellen (info.xml, Lifecycle, Vue-Hülle, smoke.sh)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -147,7 +147,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fundament | 1/5 | In Progress|  |
+| 1. Fundament | 2/5 | In Progress|  |
 | 2. One-Click-Welten | 0/TBD | Not started | - |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |

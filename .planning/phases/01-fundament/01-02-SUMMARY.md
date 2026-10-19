@@ -170,3 +170,8 @@ Keine. Die UI ist bewusst eine schlichte Hülle (Dashboard-Design in Phase 2), a
 ## Threat Flags
 
 Keine neue Angriffsfläche außerhalb des Threat Models. T-01-10 ist strenger erfüllt als geplant (Variante A, Seite ebenfalls 404). T-01-11: Secret pro Lauf, kein festes Secret. T-01-12: Aufrufe über @nextcloud/axios mit requesttoken. T-01-14: test_frontend_privacy und grep auf info.xml. T-01-SC: exakte Versionen, package-lock.json committed, Installation mit `--ignore-scripts`.
+
+## Self-Check: PASSED
+
+- Dateien vorhanden: alle 16 aus files_modified (frontend/package-lock.json generiert)
+- Commits vorhanden: 8a154b9, e891889, 627860b, dfb72b2, 8b1e4c4
