@@ -59,9 +59,9 @@ def _handler(proxy: FakeProxy) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
-        do_GET = _answer  # noqa: N815
-        do_POST = _answer  # noqa: N815
-        do_DELETE = _answer  # noqa: N815
+        do_GET = _answer
+        do_POST = _answer
+        do_DELETE = _answer
 
         def log_message(self, format: str, *args: object) -> None:  # noqa: A002
             del format, args

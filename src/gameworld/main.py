@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
-from gameworld.api import worlds
+from gameworld.api import setup_check, worlds
 from gameworld.lifecycle import enabled_handler
 
 # nc_py_api tippt den Handler als Union aus Sync- und Async-Client. Eine
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 APP = FastAPI(lifespan=lifespan)
 APP.add_middleware(AppAPIAuthMiddleware)
 APP.include_router(worlds.router)
+APP.include_router(setup_check.router)
 
 
 if __name__ == "__main__":
