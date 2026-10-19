@@ -20,6 +20,7 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 - [ ] Spieler einladen über Nextcloud-Konten/-Gruppen, keine fremden Spieler
 - [ ] Weltsicherung (Backup/Restore) in Nextcloud Files
 - [ ] Elternkontrolle: Kinder spielen, verwalten aber nicht (keine Admin-Zugänge für Kinder)
+- [ ] Spielzeitlimits/Spielzeitfenster pro Kind, serverseitig durchgesetzt
 - [ ] Ressourcenlimits pro Welt (RAM/CPU), damit der Heimserver stabil bleibt
 - [ ] Installation als ExApp über den Nextcloud App Store (AppAPI, Docker-Deploy)
 
@@ -54,11 +55,12 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Luanti-first, Minecraft als MVP 2 | Kein EULA-Risiko, freies Ökosystem, gleiche Produktmechanik | , Pending |
-| Scope: Familien zuerst, Vereine später | Differenzierung "privat, Daten zuhause"; einfacheres Rollenmodell im MVP (Owner 19.10.2026) | , Pending |
-| Container-Provisionierung: Entscheid nach Research | AppAPI-Docker-Socket vs. Host-Daemon vs. Engine-Panel-API wird in der Projekt-Research konkret geprüft, Empfehlung geht an Owner (Owner 19.10.2026) | , Pending |
-| ExApp in Python (AppAPI) | Vorhandenes Skillset aus Findling/Connector, Store-Prozess bekannt | , Pending |
-| Vertical-MVP-Slices statt Schichten | Jede Phase liefert eine nutzbare Fähigkeit, frühes Testen mit echter Welt | , Pending |
+| Luanti-first, Minecraft als MVP 2 | Kein EULA-Risiko, freies Ökosystem, gleiche Produktmechanik | Pending |
+| Scope: Familien zuerst, Vereine später | Differenzierung "privat, Daten zuhause"; einfacheres Rollenmodell im MVP (Owner 19.10.2026) | Pending |
+| Container-Provisionierung: Entscheid nach Research | AppAPI-Docker-Socket vs. Host-Daemon vs. Engine-Panel-API wird in der Projekt-Research konkret geprüft, Empfehlung geht an Owner (Owner 19.10.2026) | Pending |
+| ExApp in Python (AppAPI) | Vorhandenes Skillset aus Findling/Connector, Store-Prozess bekannt | Pending |
+| Vertical-MVP-Slices statt Schichten | Jede Phase liefert eine nutzbare Fähigkeit, frühes Testen mit echter Welt | Pending |
+| Spielzeitlimits in v1 statt v1.x | Owner-Entscheid 19.10.2026: größte Elternsorge laut Research, gehört ins Kernversprechen | Pending |
 
 ## Evolution
 
