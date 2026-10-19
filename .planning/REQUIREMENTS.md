@@ -7,9 +7,9 @@
 
 ### Welt-Lebenszyklus
 
-- [ ] **WELT-01**: Elternteil kann eine Luanti-Welt per One-Click mit kindgerechtem Preset erstellen (Minetest Game kreativ, VoxeLibre überleben-sanft), ohne Konfigfragen
-- [ ] **WELT-02**: Elternteil kann eine Welt starten, stoppen und neu starten und sieht den Status (läuft / gestoppt / startet / Fehler) verständlich im UI
-- [ ] **WELT-03**: Elternteil sieht pro Welt, welche Spieler gerade online sind und den RAM-Verbrauch
+- [x] **WELT-01**: Elternteil kann eine Luanti-Welt per One-Click mit kindgerechtem Preset erstellen (Minetest Game kreativ, VoxeLibre überleben-sanft), ohne Konfigfragen
+- [x] **WELT-02**: Elternteil kann eine Welt starten, stoppen und neu starten und sieht den Status (läuft / gestoppt / startet / Fehler) verständlich im UI
+- [x] **WELT-03**: Elternteil sieht pro Welt, welche Spieler gerade online sind und den RAM-Verbrauch
 - [x] **WELT-04**: Mehrere Welten können parallel laufen (ein Container pro Welt)
 - [x] **WELT-05**: Jede Welt läuft mit konservativen Ressourcenlimits (RAM/CPU), ohne dass Eltern etwas einstellen müssen
 
@@ -38,7 +38,7 @@
 ### Plattform
 
 - [ ] **PLATT-01**: Gameworld ist als ExApp über den Nextcloud App Store installierbar (AppAPI/HaRP, Ziel NC 32+)
-- [ ] **PLATT-02**: Laufende Welten überleben ExApp-Updates und Host-Reboots: Zustand liegt in persistentem Storage, Container werden per Label-Reconciliation re-adoptiert
+- [x] **PLATT-02**: Laufende Welten überleben ExApp-Updates und Host-Reboots: Zustand liegt in persistentem Storage, Container werden per Label-Reconciliation re-adoptiert
 
 ## v2 Requirements (deferred)
 
@@ -69,9 +69,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WELT-01 | Phase 2 | Pending |
-| WELT-02 | Phase 2 | Pending |
-| WELT-03 | Phase 2 | Pending |
+| WELT-01 | Phase 2 | Complete |
+| WELT-02 | Phase 2 | Complete |
+| WELT-03 | Phase 2 | Complete |
 | WELT-04 | Phase 1 | Complete |
 | WELT-05 | Phase 1 | Complete |
 | ZUGANG-01 | Phase 1 | Complete |
@@ -85,7 +85,7 @@
 | BACKUP-01 | Phase 5 | Pending |
 | BACKUP-02 | Phase 5 | Pending |
 | PLATT-01 | Phase 6 | Pending |
-| PLATT-02 | Phase 2 | Pending |
+| PLATT-02 | Phase 2 | Complete |
 
 **Coverage:** 17/17 v1-Requirements gemappt (2026-10-19)
 

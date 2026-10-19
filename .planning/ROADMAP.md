@@ -102,7 +102,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 02-07-PLAN.md , Phasenabnahme: acceptance-phase2.sh K1 bis K4 plus gemeinsame Playwright-Abnahme mit Luanti-Client
+- [x] 02-07-PLAN.md , Phasenabnahme: acceptance-phase2.sh K1 bis K4 plus gemeinsame Playwright-Abnahme mit Luanti-Client
 
 **UI hint**: yes
 
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
-| 2. One-Click-Welten | 6/7 | In Progress|  |
+| 2. One-Click-Welten | 7/7 | In Progress|  |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
