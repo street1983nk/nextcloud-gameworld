@@ -67,7 +67,27 @@
 
 ## Traceability
 
-(Filled by roadmap , maps REQ-IDs to phases)
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| WELT-01 | Phase 2 | Pending |
+| WELT-02 | Phase 2 | Pending |
+| WELT-03 | Phase 2 | Pending |
+| WELT-04 | Phase 1 | Pending |
+| WELT-05 | Phase 1 | Pending |
+| ZUGANG-01 | Phase 1 | Pending |
+| ZUGANG-02 | Phase 3 | Pending |
+| ZUGANG-03 | Phase 3 | Pending |
+| ZUGANG-04 | Phase 3 | Pending |
+| ROLLE-01 | Phase 3 | Pending |
+| ROLLE-02 | Phase 3 | Pending |
+| ZEIT-01 | Phase 4 | Pending |
+| ZEIT-02 | Phase 4 | Pending |
+| BACKUP-01 | Phase 5 | Pending |
+| BACKUP-02 | Phase 5 | Pending |
+| PLATT-01 | Phase 6 | Pending |
+| PLATT-02 | Phase 2 | Pending |
+
+**Coverage:** 17/17 v1-Requirements gemappt (2026-10-19)
 
 ---
 *Requirements for: Gameworld v1 (MVP 1, Luanti, Familien)*
