@@ -11,8 +11,10 @@ from __future__ import annotations
 import contextlib
 import logging
 import secrets
+import tarfile
 import threading
 import uuid
+import zipfile
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
@@ -54,6 +56,13 @@ MAX_START_ATTEMPTS = 3
 LIST_CACHE_SECONDS = 2.0
 PORTS_EXHAUSTED = "Kein freier UDP-Port gefunden. Bitte den Portbereich GAMEWORLD_PORT_RANGE prüfen."
 NOT_FOUND = "Diese Welt gibt es nicht (mehr)."
+# Payload-Bau scheiterte am Dateisystem (VoxeLibre spoolt rund 110 MB nach /tmp) oder am Spiel-Zip (WR-01).
+PAYLOAD_FAILED = (
+    "Die Weltdaten konnten nicht vorbereitet werden. Bitte freien Speicherplatz auf dem Server prüfen "
+    "und es erneut versuchen."
+)
+# Unerwarteter Fehler beim Erzeugen; Details stehen nur im Log (WR-01).
+CREATE_FAILED = "Die Welt konnte nicht erstellt werden. Bitte es später erneut versuchen."
 # Meldungen des Abgleichs (worlds/reconciler.py) an der Welt.
 RECONCILE_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
 RECONCILE_DATA_MISSING = "Die Weltdaten fehlen. Die Welt kann nur gelöscht werden."
@@ -141,11 +150,17 @@ def _payload(row: WorldRow) -> Iterator[WorldPayload]:
     """Inhalt aus dem Preset der DB-Zeile, auch bei Neuerzeugung (Pitfall 2).
 
     Schließt das Tar (temporäre Datei) nach dem Einspielen, auch im Fehlerfall.
+    Dateisystem- und Archivfehler (voller Datenträger, kaputtes Zip) kommen als
+    ProvisionerError an, damit jeder Aufrufer seinen Aufräumpfad nimmt (WR-01).
     """
     preset = get_preset(row.preset)
-    payload = build_world_payload(
-        preset, render_minetest_conf(row.name, row.world_key, preset), render_world_mt(preset)
-    )
+    try:
+        payload = build_world_payload(
+            preset, render_minetest_conf(row.name, row.world_key, preset), render_world_mt(preset)
+        )
+    except (OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
+        LOG.warning("Weltdaten für Welt %s nicht vorbereitet: %r", row.id, exc)
+        raise ProvisionerError(PAYLOAD_FAILED) from exc
     try:
         yield payload
     finally:
@@ -423,6 +438,13 @@ class WorldService:
             except ProvisionerError as exc:
                 self._discard_failed_create(world_id, exc, touched_docker=touched_docker)
                 raise
+            except Exception as exc:
+                # Jeder andere Fehler nimmt denselben Aufräumpfad: Sonst bliebe die
+                # Zeile bis zum Prozessneustart auf creating und belegte ihren Port (WR-01).
+                LOG.exception("Erzeugen von Welt %s scheiterte unerwartet", world_id)
+                failure = ProvisionerError(CREATE_FAILED)
+                self._discard_failed_create(world_id, failure, touched_docker=touched_docker)
+                raise failure from exc
 
             self._store.update_world(world_id, op_state="ready")
             return CreatedWorld(**asdict(self._current(world_id)), world_key=secret)

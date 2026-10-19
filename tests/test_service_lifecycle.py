@@ -26,7 +26,9 @@ from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
 from gameworld.provisioner.spec import WorldPayload
 from gameworld.worlds import service as service_module
 from gameworld.worlds.service import (
+    CREATE_FAILED,
     LIST_CACHE_SECONDS,
+    PAYLOAD_FAILED,
     RECONCILE_DATA_MISSING,
     RECONCILE_INTERRUPTED,
     DeleteOnlyError,
@@ -977,3 +979,85 @@ async def test_api_interrupted_world_answers_409(
     world = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
     assert world["delete_only"] is True
     assert world["last_error"] == RECONCILE_INTERRUPTED
+
+
+# WR-01 (Phase-2-Review): Auch Fehler außerhalb von ProvisionerError räumen das Erzeugen auf.
+
+
+def _no_space(*args: object) -> WorldPayload:
+    del args
+    raise OSError(28, "No space left on device")
+
+
+async def test_payload_os_error_on_create_leaves_no_creating_row(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ENOSPC beim Spoolen des Spiels: keine Zeile auf creating, Port frei, deutsche Meldung."""
+    monkeypatch.setattr(service_module, "build_world_payload", _no_space)
+
+    with pytest.raises(ProvisionerError) as raised:
+        await service.create_world("Welt")
+
+    assert str(raised.value) == PAYLOAD_FAILED
+    assert isinstance(raised.value.__cause__, OSError)
+    assert store.list_worlds() == []
+    assert store.used_ports() == set()
+    # touched_docker war schon wahr: Aufräumen samt Volume lief.
+    assert [keep for _, keep in fake.removed] == [False]
+
+
+async def test_unexpected_error_on_create_is_cleaned_up(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    fake.create_errors = [RuntimeError("unerwartet")]  # pyright: ignore[reportAttributeAccessIssue]
+
+    with pytest.raises(ProvisionerError, match=CREATE_FAILED):
+        await service.create_world("Welt")
+
+    assert store.list_worlds() == []
+    assert len(fake.removed) == 1
+
+
+async def test_unexpected_error_with_failed_cleanup_marks_failed_not_creating(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    fake.create_errors = [RuntimeError("unerwartet")]  # pyright: ignore[reportAttributeAccessIssue]
+    fake.remove_error = ProvisionerError("Aufräumen kaputt")
+
+    with pytest.raises(ProvisionerError, match=CREATE_FAILED):
+        await service.create_world("Welt")
+
+    rows = store.list_worlds()
+    assert [(row.op_state, row.last_error) for row in rows] == [("failed", CREATE_FAILED)]
+
+
+async def test_payload_os_error_on_start_saga_marks_failed(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Auch die Neuerzeugung beim Start bekommt einen ProvisionerError statt eines rohen OSError."""
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+    fake.start_errors = [PortInUseError(30015)]
+    monkeypatch.setattr(service_module, "build_world_payload", _no_space)
+
+    with pytest.raises(ProvisionerError, match="Speicherplatz"):
+        await service.start_world(created.id)
+
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.op_state, row.last_error) == ("failed", PAYLOAD_FAILED)
+    # Nach dem Freiräumen bleibt die Welt startbar (Volume ist erhalten).
+    assert (await _view_of(service, created.id)).delete_only is False
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_create_with_payload_error_answers_german_500(
+    client: httpx.AsyncClient, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(service_module, "build_world_payload", _no_space)
+
+    response = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": PAYLOAD_FAILED}
+    assert store.list_worlds() == []
