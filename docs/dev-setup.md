@@ -37,6 +37,16 @@ Lokale Umgebung für Gameworld: eine eigene Nextcloud 34 im Compose-Projekt `gam
    sh scripts/dev/smoke.sh
    ```
 
+## Phasenabnahme
+
+Belegt die fünf Erfolgskriterien von Phase 1 gegen den laufenden Stack, unabhängig von den Python-Testhelfern (docker-CLI, curl, tar, grep, jq):
+
+```sh
+sh scripts/dev/acceptance-phase1.sh
+```
+
+Das Skript legt bei Bedarf den Nicht-Admin `gw-kind` / `gw-kind-dev-pass-1` an (nur Dev) und lässt ihn für die Browser-Abnahme stehen. Für K5 stoppt es kurz den Dienst `gameworld-docker-proxy` und startet ihn in jedem Fall wieder. Die Abnahme-Welten entfernt es am Ende. Exit 0 nur, wenn alle Prüfungen bestanden sind; die letzte Zeile nennt "N von N Prüfungen bestanden". Voraussetzung ist `jq` im Pfad.
+
 ## Abbauen
 
 ```sh
