@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import cast
 
 import anyio.to_thread
 from fastapi import FastAPI
@@ -11,17 +12,19 @@ from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
 from gameworld.api import worlds
+from gameworld.lifecycle import enabled_handler
 
-
-async def enabled_handler(enabled: bool, nc: AsyncNextcloudApp | NextcloudApp) -> str:
-    """Leerer String heißt Erfolg. Das Top-Menü registriert erst Plan 01-02."""
-    del enabled, nc
-    return ""
+# nc_py_api tippt den Handler als Union aus Sync- und Async-Client. Eine
+# Coroutine-Funktion bekommt aber immer AsyncNextcloudApp (integration_fastapi.py),
+# darum der enge Typ in lifecycle.py und hier die Anpassung an die Signatur.
+_EnabledHandler = Callable[[bool, AsyncNextcloudApp | NextcloudApp], Awaitable[str]]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    set_handlers(app, enabled_handler)
+    # map_app_static=True (Default) mountet js/ und img/ relativ zum Arbeitsverzeichnis,
+    # deshalb startet der Prozess mit cwd = Repo-Root (scripts/dev/register-exapp.sh).
+    set_handlers(app, cast(_EnabledHandler, enabled_handler))
     # Baut den Dienst und migriert dabei das SQLite-Schema.
     await anyio.to_thread.run_sync(worlds.get_service)
     yield

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-import xml.etree.ElementTree as ET  # noqa: S405 - eigene, versionierte Datei
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,14 +34,16 @@ def test_every_route_is_admin() -> None:
     for route in routes:
         assert _text(route, "access_level") == "ADMIN"
         by_url[_text(route, "url")] = _text(route, "verb")
-    assert by_url["js\\/.*"] == "GET"
-    assert by_url["img\\/.*"] == "GET"
-    assert set(by_url["api\\/.*"].split(",")) == {"GET", "POST", "DELETE"}
+    # Kanonische Form mit führendem Schrägstrich, wie AppAPI 34 und HaRP sie prüfen.
+    assert by_url["^/js/.*"] == "GET"
+    assert by_url["^/img/.*"] == "GET"
+    assert set(by_url["^/api/.*"].split(",")) == {"GET", "POST", "DELETE"}
 
 
 def test_environment_defaults() -> None:
     variables = {
-        _text(var, "name"): _text(var, "default") for var in _root().findall("./external-app/environment-variables/variable")
+        _text(var, "name"): _text(var, "default")
+        for var in _root().findall("./external-app/environment-variables/variable")
     }
     assert variables["GAMEWORLD_DOCKER_URL"] == "tcp://gameworld-docker-proxy:2375"
     assert variables["GAMEWORLD_PORT_RANGE"] == "30000-30019"
