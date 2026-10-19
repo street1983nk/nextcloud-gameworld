@@ -1,4 +1,4 @@
-"""Welt-API: Auflisten, Erzeugen, Starten, Stoppen und Löschen.
+"""Welt-API: Auflisten, Erzeugen, Starten, Stoppen, Neustarten und Löschen.
 
 Es gibt bewusst kein Feld für Sichtbarkeit (ZUGANG-01): unbekannte Felder wie
 ``public`` oder ``server_announce`` werden mit 422 abgelehnt.
@@ -79,6 +79,9 @@ class WorldOut(BaseModel):
     created_at: str
     preset: str
     preset_title: str
+    # Status aus Docker (running, starting, stopped, error, unknown) und Elterntext.
+    status: str
+    status_text: str
 
 
 class CreatedWorldOut(WorldOut):
@@ -163,6 +166,14 @@ async def start_world(world_id: WorldId, service: ServiceDep) -> WorldOut:
 async def stop_world(world_id: WorldId, service: ServiceDep) -> WorldOut:
     try:
         return _out(await service.stop_world(world_id))
+    except ProvisionerError as exc:
+        raise _http_error(exc) from None
+
+
+@router.post("/worlds/{world_id}/restart")
+async def restart_world(world_id: WorldId, service: ServiceDep) -> WorldOut:
+    try:
+        return _out(await service.restart_world(world_id))
     except ProvisionerError as exc:
         raise _http_error(exc) from None
 

@@ -43,10 +43,8 @@ async def _world(client: httpx.AsyncClient, world_id: str) -> dict[str, object]:
     return worlds[world_id]
 
 
-async def _wait_status(
-    client: httpx.AsyncClient, world_id: str, expected: str, timeout: float = READY_TIMEOUT
-) -> dict[str, object]:
-    deadline = time.monotonic() + timeout
+async def _wait_status(client: httpx.AsyncClient, world_id: str, expected: str) -> dict[str, object]:
+    deadline = time.monotonic() + READY_TIMEOUT
     seen: list[str] = []
     while time.monotonic() < deadline:
         world = await _world(client, world_id)
@@ -56,7 +54,7 @@ async def _wait_status(
         if status == expected:
             return world
         await asyncio.sleep(0.5)
-    pytest.fail(f"Welt {world_id} ist nach {timeout} s nicht {expected}, gesehen: {seen}")
+    pytest.fail(f"Welt {world_id} ist nach {READY_TIMEOUT} s nicht {expected}, gesehen: {seen}")
 
 
 def _desired_state(storage: Path, world_id: str) -> str:

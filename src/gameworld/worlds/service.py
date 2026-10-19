@@ -21,11 +21,18 @@ import anyio.to_thread
 
 from gameworld.config import Settings
 from gameworld.provisioner.archive import build_world_payload
-from gameworld.provisioner.client import DockerProvisioner, PortInUseError, ProvisionerError, WorldNotFoundError
+from gameworld.provisioner.client import (
+    ContainerInfo,
+    DockerProvisioner,
+    PortInUseError,
+    ProvisionerError,
+    WorldNotFoundError,
+)
 from gameworld.provisioner.luanti_conf import normalize_world_name, render_minetest_conf, render_world_mt
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_name
 from gameworld.worlds.ports import NoFreePortError, allocate_port
+from gameworld.worlds.status import STATUS_MOD_SCHEMA, WorldStatus, derive_status, schema_version
 from gameworld.worlds.store import WorldRow, WorldStore
 
 LOG = logging.getLogger(__name__)
@@ -54,6 +61,9 @@ class WorldView:
     created_at: str
     preset: str
     preset_title: str
+    # Aus Docker abgeleitet (worlds/status.py); docker_status bleibt für Phase-1-Skripte.
+    status: str
+    status_text: str
 
 
 @dataclass
@@ -61,7 +71,7 @@ class CreatedWorld(WorldView):
     world_key: str
 
 
-def _view(row: WorldRow, docker_status: str) -> WorldView:
+def _view(row: WorldRow, docker_status: str, status: WorldStatus) -> WorldView:
     return WorldView(
         id=row.id,
         name=row.name,
@@ -73,6 +83,8 @@ def _view(row: WorldRow, docker_status: str) -> WorldView:
         created_at=row.created_at,
         preset=row.preset,
         preset_title=get_preset(row.preset).title,
+        status=status.code,
+        status_text=status.text,
     )
 
 
@@ -113,6 +125,9 @@ class WorldService:
     async def stop_world(self, world_id: str) -> WorldView:
         return await anyio.to_thread.run_sync(self._stop_world_sync, world_id)
 
+    async def restart_world(self, world_id: str) -> WorldView:
+        return await anyio.to_thread.run_sync(self._restart_world_sync, world_id)
+
     async def delete_world(self, world_id: str) -> None:
         await anyio.to_thread.run_sync(self._delete_world_sync, world_id)
 
@@ -135,13 +150,60 @@ class WorldService:
             LOG.warning("Gebundene Host-Ports nicht abrufbar, nur Datenbank-Ports: %s", exc)
         return used
 
-    def _status(self, world_id: str) -> str:
+    def _views(self, rows: list[WorldRow]) -> list[WorldView]:
+        """Ansichten mit Status aus Docker: einmal list_managed, Status-Datei nur wo nötig.
+
+        Einziger Codepfad für Liste und Einzelansicht. Die Datenbank liefert nur
+        creating/failed und den Elternwunsch, alles andere kommt aus Docker.
+        """
         try:
             managed = self._provisioner.list_managed()
         except ProvisionerError as exc:
             LOG.warning("Docker-Status nicht abrufbar, zeige unknown: %s", exc)
-            return UNKNOWN
-        return managed[world_id].status if world_id in managed else MISSING
+            return [
+                _view(
+                    row,
+                    UNKNOWN,
+                    derive_status(
+                        op_state=row.op_state,
+                        desired_state=row.desired_state,
+                        last_error=row.last_error,
+                        container=None,
+                        reachable=False,
+                        status_mtime=None,
+                    ),
+                )
+                for row in rows
+            ]
+        return [self._view_from_docker(row, managed.get(row.id)) for row in rows]
+
+    def _status_mtime(self, row: WorldRow, container: ContainerInfo | None) -> str | None:
+        """mtime der Status-Datei, nur für laufende Welten mit Status-Mod (Schema 2)."""
+        if (
+            container is None
+            or container.status != "running"
+            or row.op_state in {"creating", "failed"}
+            or schema_version(container.schema) < STATUS_MOD_SCHEMA
+        ):
+            return None
+        try:
+            status_file = self._provisioner.read_status_file(row.id)
+        except ProvisionerError as exc:
+            # Pro Welt isoliert: Die Welt zeigt dann "Startet gerade", die Liste bleibt.
+            LOG.warning("Status-Datei von Welt %s nicht lesbar: %s", row.id, exc)
+            return None
+        return None if status_file is None else status_file.mtime
+
+    def _view_from_docker(self, row: WorldRow, container: ContainerInfo | None) -> WorldView:
+        status = derive_status(
+            op_state=row.op_state,
+            desired_state=row.desired_state,
+            last_error=row.last_error,
+            container=container,
+            reachable=True,
+            status_mtime=self._status_mtime(row, container),
+        )
+        return _view(row, MISSING if container is None else container.status, status)
 
     def _launch(self, row: WorldRow) -> None:
         """Startet den Container; bei belegtem Port Neuerzeugung mit dem nächsten freien Port.
@@ -212,7 +274,7 @@ class WorldService:
         self._store.delete_world(world_id)
 
     def _current(self, world_id: str) -> WorldView:
-        return _view(self._row(world_id), self._status(world_id))
+        return self._views([self._row(world_id)])[0]
 
     # Abläufe
 
@@ -252,17 +314,11 @@ class WorldService:
                 raise
 
             self._store.update_world(world_id, op_state="ready")
-            row.op_state = "ready"
-            return CreatedWorld(**asdict(_view(row, "running")), world_key=secret)
+            return CreatedWorld(**asdict(self._current(world_id)), world_key=secret)
 
     def _list_worlds_sync(self) -> list[WorldView]:
-        rows = self._store.list_worlds()
-        try:
-            managed = self._provisioner.list_managed()
-        except ProvisionerError as exc:
-            LOG.warning("Docker-Status nicht abrufbar, zeige unknown: %s", exc)
-            return [_view(row, UNKNOWN) for row in rows]
-        return [_view(row, managed[row.id].status if row.id in managed else MISSING) for row in rows]
+        # Ohne Lock (Pitfall 6): Statuslesen darf nie hinter einem Erzeugen warten.
+        return self._views(self._store.list_worlds())
 
     def _start_world_sync(self, world_id: str) -> WorldView:
         with _LOCK:
@@ -286,6 +342,26 @@ class WorldService:
                 # Die DB-Zeile existiert (oben geprüft): Ein fehlender Container
                 # ist bereits gestoppt, Stoppen ist dann ein No-op.
                 LOG.info("Welt %s: Container fehlt, Stoppen ist ein No-op", world_id)
+            except ProvisionerError as exc:
+                self._fail(world_id, exc)
+                raise
+            self._store.update_world(world_id, op_state="ready", last_error=None)
+            return self._current(world_id)
+
+    def _restart_world_sync(self, world_id: str) -> WorldView:
+        """Neustart als Stop plus _launch, nie container.restart (RESEARCH Pattern 3).
+
+        So greifen Port-Saga und Neuerzeugung aus dem Volume wie beim Start.
+        """
+        with _LOCK:
+            row = self._row(world_id)
+            self._store.update_world(world_id, desired_state="running")
+            try:
+                try:
+                    self._provisioner.stop(world_id)
+                except WorldNotFoundError:
+                    LOG.info("Welt %s: Container fehlt, Neustart erzeugt ihn neu", world_id)
+                self._launch(row)
             except ProvisionerError as exc:
                 self._fail(world_id, exc)
                 raise

@@ -10,8 +10,10 @@ später wegbricht. Aufrufer sehen nie rohe requests- oder urllib3-Ausnahmen.
 from __future__ import annotations
 
 import contextlib
+import io
 import logging
-from collections.abc import Iterator
+import tarfile
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -22,6 +24,7 @@ import urllib3.exceptions
 from docker.models.containers import Container
 
 from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, WorldPayload, resource_name, world_spec
+from gameworld.provisioner.status_mod import PLAYERS_FILE
 
 LOG = logging.getLogger(__name__)
 
@@ -29,6 +32,14 @@ PORT_CONFLICT_MARKERS = ("port is already allocated", "Bind for", "address alrea
 CLIENT_TIMEOUT = 60
 STOP_TIMEOUT = 30
 NOT_FOUND_MESSAGE = "Diese Welt gibt es nicht (mehr)."
+# Höchstens so viele Bytes Inhalt aus der Status-Datei (T-02-18); der Welt-Mod
+# schreibt nur Spielernamen, fremder Lua-Code könnte aber beliebig viel schreiben.
+STATUS_FILE_MAX = 4096
+# Höchstens so viele Bytes Tar-Strom (Kopfblöcke, auch PAX, plus gekappter Inhalt).
+STATUS_ARCHIVE_MAX = 64 * 1024
+# Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
+# Leseversuch heilt (Pitfall 4); Timeouts werden nicht wiederholt.
+RETRYABLE_ERRORS = (requests.exceptions.ConnectionError, urllib3.exceptions.ProtocolError)
 
 
 class ProvisionerError(Exception):
@@ -58,6 +69,50 @@ class ContainerInfo:
     world_id: str
     status: str
     port: int
+    # Aus docker inspect (State) und dem Label gameworld.schema; die Defaults
+    # halten positionale Konstruktionen (Fakes, ältere Aufrufer) gültig.
+    exit_code: int = 0
+    oom_killed: bool = False
+    started_at: str = ""
+    schema: str = "1"
+
+
+@dataclass(frozen=True)
+class StatusFile:
+    """Status-Datei des Welt-Mods: mtime aus dem Archiv-Stat, Inhalt gekappt."""
+
+    mtime: str
+    content: bytes
+
+
+def _read_capped(stream: Iterator[bytes]) -> bytes:
+    """Liest höchstens STATUS_ARCHIVE_MAX Bytes und gibt den Rest des Stroms auf."""
+    raw = bytearray()
+    try:
+        for chunk in stream:
+            raw += chunk
+            if len(raw) >= STATUS_ARCHIVE_MAX:
+                break
+    finally:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            close()
+    return bytes(raw[:STATUS_ARCHIVE_MAX])
+
+
+def _first_member_content(raw: bytes) -> bytes:
+    """Inhalt des ersten Tar-Eintrags, höchstens STATUS_FILE_MAX Bytes.
+
+    Strom-Modus ("r|"), damit ein gekapptes Archiv beim Öffnen nicht scheitert.
+    """
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r|") as tar:
+        member = tar.next()
+        if member is None or not member.isfile():
+            return b""
+        extracted = tar.extractfile(member)
+        if extracted is None:
+            return b""
+        return extracted.read(STATUS_FILE_MAX)
 
 
 def _explanation(exc: docker.errors.APIError) -> str:
@@ -123,6 +178,25 @@ class DockerProvisioner:
                 f"Gameworld erreicht den Docker-Proxy unter {self._docker_url} nicht. "
                 "Bitte prüfen, ob der Dienst gameworld-docker-proxy läuft."
             ) from exc
+
+    def _read[T](self, operation: Callable[[], T]) -> T:
+        """Lesender Aufruf mit genau einem zweiten Versuch nach einem Verbindungsabbruch.
+
+        Der HAProxy im tecnativa-Proxy schließt Keep-Alive-Verbindungen nach
+        ``timeout http-keep-alive 10s``; trifft ein Request genau diese Lücke,
+        endet er mit "Remote end closed connection" (Pitfall 4). _guarded hat den
+        Client dann schon verworfen, der zweite Versuch läuft mit frischer
+        Verbindung. Nur für lesende Aufrufe: Mutationen werden nie wiederholt.
+        """
+        try:
+            with self._guarded():
+                return operation()
+        except DockerUnavailableError as exc:
+            if not isinstance(exc.__cause__, RETRYABLE_ERRORS):
+                raise
+            LOG.info("Verbindung zum Docker-Proxy abgebrochen, zweiter Leseversuch")
+        with self._guarded():
+            return operation()
 
     def _is_owned(self, container: Container, world_id: str) -> bool:
         """Zweite Prüfung am Ergebnis, falls ein Filter des Proxys ignoriert würde."""
@@ -236,32 +310,65 @@ class DockerProvisioner:
 
     def used_host_ports(self, lo: int, hi: int) -> set[int]:
         """Host-Ports im Bereich, die irgendein Container des Hosts bindet (auch fremde)."""
-        with self._guarded():
-            used: set[int] = set()
-            for container in self._docker().containers.list(all=True, ignore_removed=True):
-                bindings = (container.attrs.get("HostConfig") or {}).get("PortBindings") or {}
-                for entries in bindings.values():
-                    for entry in entries or []:
-                        used.update(_host_ports(str(entry.get("HostPort") or ""), lo, hi))
-            return used
+        return self._read(lambda: self._used_host_ports(lo, hi))
+
+    def _used_host_ports(self, lo: int, hi: int) -> set[int]:
+        used: set[int] = set()
+        for container in self._docker().containers.list(all=True, ignore_removed=True):
+            bindings = (container.attrs.get("HostConfig") or {}).get("PortBindings") or {}
+            for entries in bindings.values():
+                for entry in entries or []:
+                    used.update(_host_ports(str(entry.get("HostPort") or ""), lo, hi))
+        return used
 
     def list_managed(self) -> dict[str, ContainerInfo]:
-        with self._guarded():
-            containers = self._docker().containers.list(
-                all=True,
-                filters={"label": ["gameworld.managed=true", f"gameworld.instance={self._instance_id}"]},
+        """Eigene Welt-Container mit Zustand aus docker inspect.
+
+        docker-py liefert bei ``containers.list`` (nicht sparse) volle
+        Inspect-Daten in ``container.attrs``; daraus kommen ExitCode, OOMKilled
+        und StartedAt für das Statusmodell.
+        """
+        return self._read(self._list_managed)
+
+    def _list_managed(self) -> dict[str, ContainerInfo]:
+        containers = self._docker().containers.list(
+            all=True,
+            filters={"label": ["gameworld.managed=true", f"gameworld.instance={self._instance_id}"]},
+        )
+        result: dict[str, ContainerInfo] = {}
+        for container in containers:
+            labels = container.labels or {}
+            world_id = labels.get("gameworld.world_id")
+            if not world_id:
+                continue
+            state = (container.attrs or {}).get("State") or {}
+            result[world_id] = ContainerInfo(
+                container_id=str(container.id),
+                name=str(container.name),
+                world_id=world_id,
+                status=str(container.status),
+                port=_label_port(labels),
+                exit_code=int(state.get("ExitCode") or 0),
+                oom_killed=bool(state.get("OOMKilled")),
+                started_at=str(state.get("StartedAt") or ""),
+                schema=str(labels.get("gameworld.schema", "1")),
             )
-            result: dict[str, ContainerInfo] = {}
-            for container in containers:
-                labels = container.labels or {}
-                world_id = labels.get("gameworld.world_id")
-                if not world_id:
-                    continue
-                result[world_id] = ContainerInfo(
-                    container_id=str(container.id),
-                    name=str(container.name),
-                    world_id=world_id,
-                    status=str(container.status),
-                    port=_label_port(labels),
-                )
-            return result
+        return result
+
+    def read_status_file(self, world_id: str) -> StatusFile | None:
+        """Status-Datei des Welt-Mods (mtime und gekappter Inhalt) oder None.
+
+        None heißt: Docker kennt die Datei nicht, der Server hat sie in diesem
+        Volume noch nie geschrieben. Den Container löst _owned auf, fremde
+        Container sind ausgeschlossen. Kein Follow-Stream (Pitfall 8).
+        """
+        return self._read(lambda: self._read_status_file(world_id))
+
+    def _read_status_file(self, world_id: str) -> StatusFile | None:
+        container = self._owned(world_id)
+        try:
+            stream, stat = container.get_archive(PLAYERS_FILE)
+        except docker.errors.NotFound:
+            return None
+        content = _first_member_content(_read_capped(stream))
+        return StatusFile(mtime=str((stat or {}).get("mtime") or ""), content=content)
