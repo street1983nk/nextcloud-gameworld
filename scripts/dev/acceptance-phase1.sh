@@ -327,7 +327,14 @@ check "K4 Positivkontrolle: minetest.conf per docker cp gelesen (nicht leer)" te
 check "K4 server_announce = false" grep -qx 'server_announce = false' "${CONF}"
 check "K4 disallow_empty_password = true" grep -qx 'disallow_empty_password = true' "${CONF}"
 check "K4 default_password mit nicht leerem Wert" grep -Eq '^default_password = [^ ]+' "${CONF}"
-check "K4 default_privs = interact, shout" grep -qx 'default_privs = interact, shout' "${CONF}"
+# Seit 02-01 Kreativ-Preset mit fly, fast: genau eine default_privs-Zeile, sie beginnt
+# mit interact, shout und enthält keine Admin-Rechte.
+PRIVS_LINES=$(grep -c '^default_privs[[:space:]]*=' "${CONF}" 2>/dev/null || true)
+check "K4 genau eine default_privs-Zeile (ist ${PRIVS_LINES})" eq "${PRIVS_LINES}" 1
+check "K4 default_privs beginnt mit interact, shout und ohne Admin-Rechte" \
+	sh -c 'line=$(grep "^default_privs[[:space:]]*=" "$1") || exit 1
+		case "$line" in "default_privs = interact, shout"*) ;; *) exit 1 ;; esac
+		! printf "%s\n" "${line#*=}" | grep -Eqw "server|privs|ban|kick|give|password|protection_bypass"' _ "${CONF}"
 check "K4 keine Zeile name =" sh -c '! grep -Eq "^name[[:space:]]*=" "$1"' _ "${CONF}"
 TAR_LIST=$(tar -tvf "${WORK_DIR}/conf.tar" 2>/dev/null || true)
 printf 'tar -tv: %s\n' "$(printf '%s' "${TAR_LIST}" | awk '{print $1, $2}')"

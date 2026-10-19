@@ -21,7 +21,7 @@ from gameworld.config import Settings
 from gameworld.provisioner.archive import build_world_payload
 from gameworld.provisioner.client import DockerProvisioner, PortInUseError, ProvisionerError, WorldNotFoundError
 from gameworld.provisioner.luanti_conf import normalize_world_name, render_minetest_conf, render_world_mt
-from gameworld.provisioner.presets import get_preset
+from gameworld.provisioner.presets import DEFAULT_PRESET_ID, get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, resource_name
 from gameworld.worlds.ports import NoFreePortError, allocate_port
 from gameworld.worlds.store import WorldRow, WorldStore
@@ -50,6 +50,8 @@ class WorldView:
     desired_state: str
     last_error: str | None
     created_at: str
+    preset: str
+    preset_title: str
 
 
 @dataclass
@@ -67,6 +69,8 @@ def _view(row: WorldRow, docker_status: str) -> WorldView:
         desired_state=row.desired_state,
         last_error=row.last_error,
         created_at=row.created_at,
+        preset=row.preset,
+        preset_title=get_preset(row.preset).title,
     )
 
 
@@ -82,9 +86,11 @@ class WorldService:
         self._provisioner = provisioner
         self._settings = settings
 
-    async def create_world(self, name: str) -> CreatedWorld:
+    async def create_world(self, name: str, preset_id: str = DEFAULT_PRESET_ID) -> CreatedWorld:
         clean = normalize_world_name(name)
-        return await anyio.to_thread.run_sync(self._create_world_sync, clean)
+        # Unbekannte Presets scheitern vor Lock, Port-Vergabe und Datenbank.
+        get_preset(preset_id)
+        return await anyio.to_thread.run_sync(self._create_world_sync, clean, preset_id)
 
     async def list_worlds(self) -> list[WorldView]:
         return await anyio.to_thread.run_sync(self._list_worlds_sync)
@@ -173,12 +179,30 @@ class WorldService:
     def _fail(self, world_id: str, exc: ProvisionerError) -> None:
         self._store.update_world(world_id, op_state="failed", last_error=str(exc))
 
+    def _discard_failed_create(self, world_id: str, exc: ProvisionerError, *, touched_docker: bool) -> None:
+        """Räumt nach gescheitertem Erzeugen auf, damit keine failed-Zeile einen UDP-Port belegt.
+
+        Ist nachweislich nichts in Docker entstanden (Fehler schon bei
+        ensure_image), wird die Zeile ohne Docker-Aufruf gelöscht. Sonst wird
+        aufgeräumt; gelingt das, verschwindet die Zeile ebenfalls. Nur wenn das
+        Aufräumen scheitert, bleibt die Zeile als failed mit der ursprünglichen
+        Meldung stehen, damit Löschen später Container und Volume entfernt.
+        """
+        if touched_docker:
+            try:
+                self._provisioner.remove_world(world_id, keep_volume=False)
+            except ProvisionerError as cleanup:
+                LOG.warning("Aufräumen nach fehlgeschlagenem Erzeugen von Welt %s scheiterte: %s", world_id, cleanup)
+                self._fail(world_id, exc)
+                return
+        self._store.delete_world(world_id)
+
     def _current(self, world_id: str) -> WorldView:
         return _view(self._row(world_id), self._status(world_id))
 
     # Abläufe
 
-    def _create_world_sync(self, name: str) -> CreatedWorld:
+    def _create_world_sync(self, name: str, preset_id: str) -> CreatedWorld:
         with _LOCK:
             instance = self._store.instance_id()
             world_id = uuid.uuid4().hex[:12]
@@ -197,24 +221,19 @@ class WorldService:
                 op_state="creating",
                 last_error=None,
                 created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                preset=preset_id,
             )
             self._store.insert_world(row)
 
-            created = False
+            # Ab create_world_container kann ein Volume oder Container entstanden sein.
+            touched_docker = False
             try:
                 self._provisioner.ensure_image()
+                touched_docker = True
                 self._provisioner.create_world_container(world_id, port, _payload(row))
-                created = True
                 self._launch(row)
             except ProvisionerError as exc:
-                if created:
-                    try:
-                        self._provisioner.remove_world(world_id, keep_volume=False)
-                    except ProvisionerError as cleanup:
-                        LOG.warning(
-                            "Aufräumen nach fehlgeschlagenem Erzeugen von Welt %s scheiterte: %s", world_id, cleanup
-                        )
-                self._fail(world_id, exc)
+                self._discard_failed_create(world_id, exc, touched_docker=touched_docker)
                 raise
 
             self._store.update_world(world_id, op_state="ready")

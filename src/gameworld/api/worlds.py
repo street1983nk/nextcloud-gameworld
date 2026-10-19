@@ -21,6 +21,7 @@ from gameworld.provisioner.client import (
     WorldNotFoundError,
 )
 from gameworld.provisioner.luanti_conf import normalize_world_name
+from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, validate_preset_id
 from gameworld.worlds.ports import NoFreePortError
 from gameworld.worlds.service import NOT_FOUND, WorldService, WorldView
 from gameworld.worlds.store import WorldStore
@@ -60,6 +61,11 @@ class CreateWorldRequest(BaseModel):
 
     # Rohwert begrenzt, danach dieselbe Prüfung wie im Dienst (Key-Injection, Länge).
     name: Annotated[str, Field(max_length=200), AfterValidator(normalize_world_name)]
+    # Nur IDs aus der Registry; conf-Zeilen kommen ausschließlich aus fest kodierten
+    # Presets. Vorgabe = sicherstes Preset: hält den Phase-1-Vertrag ({"name"} allein)
+    # für Skripte und UI kompatibel, das Dashboard wählt ab 02-04 sichtbar vor
+    # (bewusste Abweichung von der RESEARCH-Empfehlung "Pflichtfeld").
+    preset: Annotated[str, Field(max_length=64), AfterValidator(validate_preset_id)] = DEFAULT_PRESET_ID
 
 
 class WorldOut(BaseModel):
@@ -71,6 +77,8 @@ class WorldOut(BaseModel):
     desired_state: str
     last_error: str | None
     created_at: str
+    preset: str
+    preset_title: str
 
 
 class CreatedWorldOut(WorldOut):
@@ -79,6 +87,27 @@ class CreatedWorldOut(WorldOut):
 
 class WorldListOut(BaseModel):
     worlds: list[WorldOut]
+
+
+class PresetOut(BaseModel):
+    """Nur Elterntexte; Hashes, Limits und conf-Zeilen bleiben intern."""
+
+    id: str
+    title: str
+    description: str
+
+
+class PresetListOut(BaseModel):
+    presets: list[PresetOut]
+
+
+@router.get("/presets")
+async def list_presets() -> PresetListOut:
+    return PresetListOut(
+        presets=[
+            PresetOut(id=preset.id, title=preset.title, description=preset.description) for preset in PRESETS.values()
+        ]
+    )
 
 
 @router.get("/worlds")
@@ -93,7 +122,7 @@ async def create_world(body: CreateWorldRequest, service: ServiceDep) -> Created
     # normalize_world_name, 422 mit Detail-Liste); der Dienst sieht nur noch
     # normalisierte Namen, ein eigener ValueError-Zweig wäre toter Code.
     try:
-        created = await service.create_world(body.name)
+        created = await service.create_world(body.name, body.preset)
     except DockerUnavailableError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
     except NoFreePortError as exc:
