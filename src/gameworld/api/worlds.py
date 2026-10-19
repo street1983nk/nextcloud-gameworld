@@ -32,11 +32,19 @@ _service_lock = threading.Lock()
 
 
 def get_service() -> WorldService:
-    """Modulweites Singleton, beim ersten Aufruf aus der Umgebung gebaut."""
+    """Modulweites Singleton, beim ersten Aufruf aus der Umgebung gebaut.
+
+    Eine ungültige Umgebung (ValueError aus load_settings) wird zu 503 mit der
+    deutschen Meldung: Die Welt-Routen bleiben erreichbar und /api/setup-check
+    meldet denselben Befund als Item "config" (WR-01).
+    """
     global _service
     with _service_lock:
         if _service is None:
-            settings = load_settings()
+            try:
+                settings = load_settings()
+            except ValueError as exc:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
             store = WorldStore(settings.storage_dir / "gameworld.sqlite3")
             store.migrate()
             provisioner = DockerProvisioner(settings.docker_url, store.instance_id())

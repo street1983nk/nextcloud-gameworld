@@ -38,8 +38,18 @@ def parse_port_range(raw: str) -> tuple[int, int]:
 
 
 def load_settings() -> Settings:
+    """Einstellungen aus der Umgebung; jede ungültige Umgebung wird zu ValueError.
+
+    Aufrufer (Setup-Check, API) verlassen sich darauf, dass Konfigurationsfehler
+    immer als ValueError mit deutscher Meldung ankommen, nie als roher OSError.
+    """
     storage = pathlib.Path(os.environ.get("APP_PERSISTENT_STORAGE") or DEV_STORAGE)
-    storage.mkdir(parents=True, exist_ok=True)
+    try:
+        storage.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ValueError(
+            f"APP_PERSISTENT_STORAGE ist nicht nutzbar: '{storage}' lässt sich nicht als Verzeichnis anlegen ({exc})."
+        ) from exc
     return Settings(
         docker_url=os.environ.get("GAMEWORLD_DOCKER_URL") or DEFAULT_DOCKER_URL,
         port_range=parse_port_range(os.environ.get("GAMEWORLD_PORT_RANGE") or DEFAULT_PORT_RANGE),
