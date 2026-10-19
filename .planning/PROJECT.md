@@ -12,7 +12,8 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 
 ### Validated
 
-(None yet , ship to validate)
+- Gehärtete private Luanti-Welten als Sibling-Container über gescopten Docker-Proxy, mehrere parallel mit eigenen UDP-Ports und festen Ressourcenlimits (Phase 1, Owner-Abnahme 19.10.2026)
+- Privat per Default: kein server_announce, Zufalls-Weltschlüssel, keine Option "öffentlich machen"; Nicht-Admins ohne Zugriff (Phase 1)
 
 ### Active
 
@@ -80,4 +81,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-19 after initialization*
+*Last updated: 2026-10-19 after Phase 1 (Fundament) completion*
