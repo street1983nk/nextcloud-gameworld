@@ -106,7 +106,7 @@ def test_protocol_error_on_create(prov: DockerProvisioner, fake: FakeClient) -> 
 
 def test_missing_volume_on_discard_is_ignored(prov: DockerProvisioner, fake: FakeClient) -> None:
     container = FakeContainer()
-    fake.containers.get = lambda cid: container
+    fake.containers.get = lambda *_: container
     fake.volumes.get = _raise(docker.errors.NotFound("kein Volume"))
     prov.discard("cid", keep_volume=False)
     assert container.removed
@@ -115,7 +115,7 @@ def test_missing_volume_on_discard_is_ignored(prov: DockerProvisioner, fake: Fak
 def test_port_conflict_on_start(prov: DockerProvisioner, fake: FakeClient) -> None:
     error = _api_error("Bind for 0.0.0.0:30015 failed: port is already allocated")
     container = FakeContainer(start_error=error)
-    fake.containers.get = lambda cid: container
+    fake.containers.get = lambda *_: container
     with pytest.raises(PortInUseError) as info:
         prov.start("cid")
     assert info.value.port == 30015
@@ -125,7 +125,7 @@ def test_port_conflict_on_start(prov: DockerProvisioner, fake: FakeClient) -> No
 
 def test_other_api_error_on_start(prov: DockerProvisioner, fake: FakeClient) -> None:
     container = FakeContainer(start_error=_api_error("boom"))
-    fake.containers.get = lambda cid: container
+    fake.containers.get = lambda *_: container
     with pytest.raises(ProvisionerError, match="Docker hat den Start der Welt abgelehnt") as info:
         prov.start("cid")
     assert not isinstance(info.value, DockerUnavailableError)
@@ -134,7 +134,7 @@ def test_other_api_error_on_start(prov: DockerProvisioner, fake: FakeClient) -> 
 def test_foreign_container_is_not_started(prov: DockerProvisioner, fake: FakeClient) -> None:
     container = FakeContainer()
     container.labels["gameworld.instance"] = "fremd000"
-    fake.containers.get = lambda cid: container
+    fake.containers.get = lambda *_: container
     with pytest.raises(ProvisionerError, match="Instanz"):
         prov.start("cid")
 

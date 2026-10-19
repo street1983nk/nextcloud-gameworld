@@ -124,7 +124,8 @@ def docker_cleanup(app_env: Path) -> Iterator[None]:
         for container in api.containers.list(all=True, filters={"label": [f"gameworld.instance={instance}"]}):
             name = container.name
             container.remove(force=True, v=True)
-            with contextlib.suppress(docker.errors.NotFound):
-                api.volumes.get(name).remove(force=True)
+            if name:
+                with contextlib.suppress(docker.errors.NotFound):
+                    api.volumes.get(name).remove(force=True)
     finally:
         api.close()
