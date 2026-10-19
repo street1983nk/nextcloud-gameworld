@@ -14,10 +14,12 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 
 - Gehärtete private Luanti-Welten als Sibling-Container über gescopten Docker-Proxy, mehrere parallel mit eigenen UDP-Ports und festen Ressourcenlimits (Phase 1, Owner-Abnahme 19.10.2026)
 - Privat per Default: kein server_announce, Zufalls-Weltschlüssel, keine Option "öffentlich machen"; Nicht-Admins ohne Zugriff (Phase 1)
+- One-Click-Welten mit kindgerechten Presets (Bauen kreativ, Abenteuer sanft via VoxeLibre), Start/Stopp/Neustart im Dashboard mit Live-Status aus Docker (Phase 2, Owner-Abnahme 19.10.2026)
+- Sichtbarkeit pro Welt: Online-Spieler und RAM-Verbrauch im Dashboard (Phase 2)
+- Welten überleben ExApp-Updates und Host-Reboots per Label-Reconciliation und persistenten Volumes (Phase 2)
 
 ### Active
 
-- [ ] Luanti-Welt per One-Click erstellen, starten, stoppen
 - [ ] Spieler einladen über Nextcloud-Konten/-Gruppen, keine fremden Spieler
 - [ ] Weltsicherung (Backup/Restore) in Nextcloud Files
 - [ ] Elternkontrolle: Kinder spielen, verwalten aber nicht (keine Admin-Zugänge für Kinder)
@@ -81,4 +83,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-19 after Phase 1 (Fundament) completion*
+*Last updated: 2026-10-19 after Phase 2 (One-Click-Welten) completion*

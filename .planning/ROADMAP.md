@@ -14,7 +14,7 @@ Gameworld wird in sechs vertikalen MVP-Slices gebaut. Zuerst das riskanteste St�
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Fundament** - ExApp-Gerüst plus Provisioner-Kern: gehärtete private Luanti-Container über gescopten Socket-Proxy (completed 2026-10-19)
-- [ ] **Phase 2: One-Click-Welten** - Welt-Verwaltung im UI mit Presets, Status, Reconciler und Update-/Reboot-Überlebensfähigkeit
+- [x] **Phase 2: One-Click-Welten** - Welt-Verwaltung im UI mit Presets, Status, Reconciler und Update-/Reboot-Überlebensfähigkeit (completed 2026-10-19)
 - [ ] **Phase 3: Zugang und Rollen** - Einladungen über Nextcloud-Konten, serverseitige Whitelist, Eltern verwalten, Kinder spielen
 - [ ] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt
 - [ ] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
-| 2. One-Click-Welten | 7/7 | In Progress|  |
+| 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
