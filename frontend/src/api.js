@@ -27,6 +27,12 @@ function readConfig() {
 
 export const apiBase = readConfig().apiBase ?? fallback.apiBase
 
+// Für alle angemeldeten Konten: Nutzer, Anzeigename und Rolle (verwalter oder spieler).
+export async function getMe() {
+	const response = await axios.get(`${apiBase}/api/me`)
+	return response.data
+}
+
 export async function getSetupCheck() {
 	const response = await axios.get(`${apiBase}/api/setup-check`)
 	return response.data
