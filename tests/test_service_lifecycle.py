@@ -21,6 +21,7 @@ from gameworld.provisioner.client import (
     WorldNotFoundError,
 )
 from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
+from gameworld.provisioner.spec import WorldPayload
 from gameworld.worlds import service as service_module
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldStore
@@ -111,7 +112,7 @@ def payload_args(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
     calls: list[tuple[object, ...]] = []
     real = service_module.build_world_payload
 
-    def wrapper(*args: object) -> bytes:
+    def wrapper(*args: object) -> WorldPayload:
         calls.append(args)
         return real(*args)  # pyright: ignore[reportArgumentType]
 

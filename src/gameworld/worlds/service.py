@@ -8,10 +8,12 @@ Weltschlüssel wird nie protokolliert.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import secrets
 import threading
 import uuid
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
@@ -22,7 +24,7 @@ from gameworld.provisioner.archive import build_world_payload
 from gameworld.provisioner.client import DockerProvisioner, PortInUseError, ProvisionerError, WorldNotFoundError
 from gameworld.provisioner.luanti_conf import normalize_world_name, render_minetest_conf, render_world_mt
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, get_preset
-from gameworld.provisioner.spec import LUANTI_VERSION, resource_name
+from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_name
 from gameworld.worlds.ports import NoFreePortError, allocate_port
 from gameworld.worlds.store import WorldRow, WorldStore
 
@@ -74,10 +76,20 @@ def _view(row: WorldRow, docker_status: str) -> WorldView:
     )
 
 
-def _payload(row: WorldRow) -> bytes:
-    """Inhalt aus dem Preset der DB-Zeile, auch bei Neuerzeugung (Pitfall 2)."""
+@contextlib.contextmanager
+def _payload(row: WorldRow) -> Iterator[WorldPayload]:
+    """Inhalt aus dem Preset der DB-Zeile, auch bei Neuerzeugung (Pitfall 2).
+
+    Schließt das Tar (temporäre Datei) nach dem Einspielen, auch im Fehlerfall.
+    """
     preset = get_preset(row.preset)
-    return build_world_payload(render_minetest_conf(row.name, row.world_key, preset), render_world_mt(preset))
+    payload = build_world_payload(
+        preset, render_minetest_conf(row.name, row.world_key, preset), render_world_mt(preset)
+    )
+    try:
+        yield payload
+    finally:
+        payload.archive.close()
 
 
 class WorldService:
@@ -157,7 +169,8 @@ class WorldService:
                 recreated = True
                 LOG.warning("Welt %s: Container fehlt, erzeuge ihn aus dem Volume neu", row.id)
                 self._provisioner.ensure_image()
-                self._provisioner.create_world_container(row.id, row.port, _payload(row), reuse_volume=True)
+                with _payload(row) as payload:
+                    self._provisioner.create_world_container(row.id, row.port, payload, reuse_volume=True)
                 continue
             except PortInUseError as exc:
                 attempt += 1
@@ -171,7 +184,8 @@ class WorldService:
                 break
             tried.add(port)
             self._provisioner.ensure_image()
-            self._provisioner.create_world_container(row.id, port, _payload(row), reuse_volume=True)
+            with _payload(row) as payload:
+                self._provisioner.create_world_container(row.id, port, payload, reuse_volume=True)
             self._store.update_world(row.id, port=port)
             row.port = port
         raise NoFreePortError(PORTS_EXHAUSTED)
@@ -230,7 +244,8 @@ class WorldService:
             try:
                 self._provisioner.ensure_image()
                 touched_docker = True
-                self._provisioner.create_world_container(world_id, port, _payload(row))
+                with _payload(row) as payload:
+                    self._provisioner.create_world_container(world_id, port, payload)
                 self._launch(row)
             except ProvisionerError as exc:
                 self._discard_failed_create(world_id, exc, touched_docker=touched_docker)

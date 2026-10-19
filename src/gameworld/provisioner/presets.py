@@ -44,8 +44,35 @@ MTG_KREATIV = Preset(
     ),
 )
 
+# Schalter aus der settingtypes.txt von VoxeLibre 0.92.4. Speicher: Der
+# RESEARCH-Spike maß beim Generieren der Karte bis 501 MiB, deshalb 1 GiB ohne
+# Swap (512 MiB wie beim Kreativ-Preset würden beim Erkunden zum OOM führen).
+# Hunger bleibt an, dafür steht bewusst keine Zeile hier.
+VOXELIBRE_SANFT = Preset(
+    id="voxelibre_sanft",
+    title="Abenteuer (sanft)",
+    description="VoxeLibre: Überleben mit friedlichen Tieren, Inventar bleibt beim Tod.",
+    game_zip="mineclone2-39534.zip",
+    game_sha256="6215d4da27900874959ff586fb266091be3d4161b9d4f5d27ce0d0cdc49f1af2",
+    game_dir="mineclone2",
+    gameid="mineclone2",
+    mem_limit="1g",
+    default_privs="interact, shout",
+    conf_lines=(
+        "creative_mode = false",
+        "enable_damage = true",
+        "enable_pvp = false",
+        "only_peaceful_mobs = true",
+        "mobs_griefing = false",
+        "mcl_explosions_griefing = false",
+        "enable_fire = false",
+        "mcl_keepInventory = true",
+        "mcl_enable_commandblocks = false",
+    ),
+)
+
 # Reihenfolge = Anzeigereihenfolge im Dashboard.
-PRESETS: dict[str, Preset] = {preset.id: preset for preset in (MTG_KREATIV,)}
+PRESETS: dict[str, Preset] = {preset.id: preset for preset in (MTG_KREATIV, VOXELIBRE_SANFT)}
 DEFAULT_PRESET_ID = MTG_KREATIV.id
 
 

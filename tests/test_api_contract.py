@@ -44,7 +44,9 @@ async def test_presets_lists_registry_without_internals(client: httpx.AsyncClien
     response = await client.get("/api/presets", headers=appapi_headers())
     assert response.status_code == 200
     presets = response.json()["presets"]
-    assert [preset["id"] for preset in presets] == ["mtg_kreativ"]
+    assert [preset["id"] for preset in presets] == ["mtg_kreativ", "voxelibre_sanft"]
     assert presets[0]["title"] == "Bauen (kreativ)"
-    assert presets[0]["description"]
-    assert set(presets[0]) == {"id", "title", "description"}
+    assert presets[1]["title"] == "Abenteuer (sanft)"
+    for preset in presets:
+        assert preset["description"]
+        assert set(preset) == {"id", "title", "description"}

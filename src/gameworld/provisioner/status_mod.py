@@ -1,0 +1,44 @@
+"""Der Welt-Mod gameworld_status, als Konstanten im Code.
+
+Jede neue Welt bekommt ihn im Payload unter ``worldmods``. Er schreibt beim
+Laden der Mods und bei jedem Betreten oder Verlassen die sortierten Namen der
+verbundenen Spieler in ``gameworld_players.txt`` im Weltordner. Er schreibt
+ausschließlich Spielernamen, keine IP-Adressen. Er braucht weder
+``secure.trusted_mods`` noch ``secure.http_mods``: Atomares Schreiben in den
+eigenen Weltordner ist auch mit ``secure.enable_security = true`` erlaubt.
+"""
+
+from __future__ import annotations
+
+from gameworld.provisioner.spec import DATA_DIR
+
+MOD_NAME = "gameworld_status"
+MOD_DIR = f".minetest/worlds/world/worldmods/{MOD_NAME}"
+
+MOD_INIT_LUA = """\
+-- gameworld_status: meldet die verbundenen Spieler an das Gameworld-Dashboard.
+-- Schreibt nur Spielernamen, keine IP-Adressen.
+local path = core.get_worldpath() .. "/gameworld_players.txt"
+
+local function write()
+  local names = {}
+  for _, player in ipairs(core.get_connected_players()) do
+    names[#names + 1] = player:get_player_name()
+  end
+  table.sort(names)
+  core.safe_file_write(path, table.concat(names, "\\n"))
+end
+
+-- after(0): Im Leave-Callback ist der gehende Spieler noch in der Liste.
+core.register_on_joinplayer(function() core.after(0, write) end)
+core.register_on_leaveplayer(function() core.after(0, write) end)
+core.register_on_mods_loaded(function() core.after(0, write) end)
+"""
+
+MOD_CONF = f"""\
+name = {MOD_NAME}
+description = Meldet verbundene Spieler an das Gameworld-Dashboard
+"""
+
+# Pfad im Container; die ExApp liest ihn per get_archive (02-04, 02-05).
+PLAYERS_FILE = f"{DATA_DIR}/.minetest/worlds/world/gameworld_players.txt"

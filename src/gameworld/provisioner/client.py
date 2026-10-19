@@ -21,7 +21,7 @@ import requests.exceptions
 import urllib3.exceptions
 from docker.models.containers import Container
 
-from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, resource_name, world_spec
+from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, WorldPayload, resource_name, world_spec
 
 LOG = logging.getLogger(__name__)
 
@@ -166,9 +166,13 @@ class DockerProvisioner:
                 images.pull(LUANTI_IMAGE)
 
     def create_world_container(
-        self, world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False
+        self, world_id: str, host_port: int, payload: WorldPayload, *, reuse_volume: bool = False
     ) -> str:
         """Erzeugt den Container der Welt und spielt die Weltdateien ein.
+
+        Spec (Speicherlimit, Labels) und Inhalt kommen beide aus ``payload``,
+        damit eine Neuerzeugung nie ein anderes Spiel oder Limit bekommt. Das
+        Tar geht als Datei-Objekt an ``put_archive``; schließen muss es der Aufrufer.
 
         ``reuse_volume`` steht für eine Neuerzeugung mit vorhandenem Volume (etwa
         nach einer Port-Kollision): Scheitert dann das Einspielen, bleibt das
@@ -176,10 +180,10 @@ class DockerProvisioner:
         """
         with self._guarded():
             api = self._docker()
-            spec = cast(dict[str, Any], world_spec(self._instance_id, world_id, host_port))
+            spec = cast(dict[str, Any], world_spec(self._instance_id, world_id, host_port, payload.preset))
             container = api.containers.create(**spec)
             try:
-                if not container.put_archive(DATA_DIR, payload):
+                if not container.put_archive(DATA_DIR, payload.archive):
                     raise ProvisionerError("Docker hat die Weltdaten nicht angenommen.")
             except Exception:
                 # Halb erzeugte Welt nicht liegen lassen; der Aufrufer kennt die ID noch nicht.

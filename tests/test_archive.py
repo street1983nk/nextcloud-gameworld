@@ -1,7 +1,6 @@
 """Das Tar für das Welt-Volume: Eigentümer, Modi, Spiel pro Preset, Status-Mod, Hash-Prüfung."""
 
 import hashlib
-import io
 import pathlib
 import tarfile
 import zipfile
@@ -127,7 +126,7 @@ def test_tampered_zip_is_rejected(tmp_path: pathlib.Path, monkeypatch: pytest.Mo
 
 def test_missing_zip_is_rejected(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     preset = replace(_test_game(tmp_path, monkeypatch), game_zip="fehlt-1.zip")
-    with pytest.raises(ProvisionerError, match="Die mitgelieferte Spieldatei fehlt: fehlt-1.zip"):
+    with pytest.raises(ProvisionerError, match=r"Die mitgelieferte Spieldatei fehlt: fehlt-1\.zip"):
         archive.build_world_payload(preset, "x", "y")
 
 
