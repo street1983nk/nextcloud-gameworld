@@ -407,3 +407,38 @@ def test_read_status_file_is_retried(prov: DockerProvisioner, fake: FakeClient) 
     assert status is not None
     assert status.content == b""
     assert listing.calls == 2
+
+
+def _truncated_tar() -> bytes:
+    """Kopf verspricht 2000 Bytes, der Strom bricht nach 700 ab."""
+    return _tar(b"x" * 2000)[:700]
+
+
+def _oversized_pax_head() -> bytes:
+    """Riesiger PAX-Kopf: Nach dem Kappen auf 64 KiB fehlt der eigentliche Eintrag."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        member = tarfile.TarInfo("gameworld_players.txt")
+        member.pax_headers = {"comment": "x" * 100_000}
+        member.size = 3
+        tar.addfile(member, io.BytesIO(b"Leo"))
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "archive",
+    [
+        pytest.param(b"kein tar" * 200, id="garbage"),
+        pytest.param(b"", id="empty"),
+        pytest.param(_truncated_tar(), id="truncated"),
+        pytest.param(_oversized_pax_head(), id="pax-capped"),
+    ],
+)
+def test_broken_status_archive_is_provisioner_error(prov: DockerProvisioner, fake: FakeClient, archive: bytes) -> None:
+    """WR-04: Tar-Fehler kommen als ProvisionerError an (pro Welt isoliert), nie roh und nie wiederholt."""
+    container = ArchiveContainer(archive)
+    fake.containers.list = _listing(container)
+    with pytest.raises(ProvisionerError, match="Status-Datei") as info:
+        prov.read_status_file(WORLD)
+    assert not isinstance(info.value, DockerUnavailableError)
+    assert container.paths == [PLAYERS_FILE]

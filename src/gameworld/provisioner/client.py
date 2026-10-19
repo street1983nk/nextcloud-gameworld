@@ -421,7 +421,13 @@ class DockerProvisioner:
             stream, stat = container.get_archive(PLAYERS_FILE)
         except docker.errors.NotFound:
             return None
-        content = _first_member_content(_read_capped(stream))
+        try:
+            content = _first_member_content(_read_capped(stream))
+        except (tarfile.TarError, EOFError) as exc:
+            # Gekappter oder abgebrochener Strom, Datei mitten im Umbenennen: Der
+            # Inhalt stammt aus von Lua beschreibbarer Datei. Als ProvisionerError
+            # bleibt der Fehler an dieser einen Welt (WR-04), ohne zweiten Versuch.
+            raise ProvisionerError("Die Status-Datei der Welt ist nicht lesbar.") from exc
         return StatusFile(mtime=str((stat or {}).get("mtime") or ""), content=content)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:
