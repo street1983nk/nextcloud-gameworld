@@ -28,6 +28,7 @@ from gameworld.worlds import service as service_module
 from gameworld.worlds.service import (
     LIST_CACHE_SECONDS,
     RECONCILE_DATA_MISSING,
+    RECONCILE_INTERRUPTED,
     DeleteOnlyError,
     WorldService,
     WorldView,
@@ -955,3 +956,24 @@ async def test_api_delete_only_world_answers_409_and_allows_delete(
     deleted = await client.delete(f"/api/worlds/{world_id}", headers=appapi_headers())
     assert deleted.status_code == 204
     assert store.get_world(world_id) is None
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_interrupted_world_answers_409(
+    client: httpx.AsyncClient, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """WR-05: Container existiert, Erstellen brach ab; Start und Neustart lassen ihn unberührt."""
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    world_id = created.json()["id"]
+    store.update_world(world_id, op_state="failed", last_error=RECONCILE_INTERRUPTED)
+    fake.calls.clear()
+
+    for suffix in ("/start", "/restart"):
+        response = await client.post(f"/api/worlds/{world_id}{suffix}", headers=appapi_headers())
+        assert response.status_code == 409
+        assert response.json() == {"detail": RECONCILE_INTERRUPTED}
+
+    assert fake.calls == []
+    world = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
+    assert world["delete_only"] is True
+    assert world["last_error"] == RECONCILE_INTERRUPTED

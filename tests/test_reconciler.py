@@ -28,6 +28,7 @@ from gameworld.worlds.service import (
     RECONCILE_DATA_MISSING,
     RECONCILE_INTERRUPTED,
     RECONCILE_OOM,
+    DeleteOnlyError,
     WorldService,
 )
 from gameworld.worlds.store import WorldRow, WorldStore
@@ -382,6 +383,30 @@ async def test_boot_recreate_stops_when_volume_vanishes(
     assert fake.created == []
     row = _get(store, "a")
     assert (row.op_state, row.last_error) == ("failed", RECONCILE_DATA_MISSING)
+
+
+@pytest.mark.parametrize("operation", ["start_world", "restart_world"])
+async def test_interrupted_world_can_only_be_deleted(
+    service: WorldService, fake: ReconcileFake, store: WorldStore, operation: str
+) -> None:
+    """Unterbrochenes Erzeugen: Der halb befüllte Container wird nie gestartet (WR-05)."""
+    _insert(store, "a", op_state="creating", port=30015)
+    fake.containers = {"a": (30015, "created")}
+    assert await service.boot_reconcile() is True
+
+    with pytest.raises(DeleteOnlyError, match="unterbrochen"):
+        await getattr(service, operation)("a")
+
+    assert fake.started == []
+    assert fake.stopped == []
+    row = _get(store, "a")
+    assert (row.op_state, row.last_error) == ("failed", RECONCILE_INTERRUPTED)
+    view = (await service.list_worlds())[0]
+    assert (view.status, view.status_text, view.delete_only) == ("error", RECONCILE_INTERRUPTED, True)
+
+    await service.delete_world("a")
+    assert store.get_world("a") is None
+    assert fake.removed == [("a", False)]
 
 
 # Schleife

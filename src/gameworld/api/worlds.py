@@ -86,7 +86,7 @@ class WorldOut(BaseModel):
     players: list[str]
     memory_used_bytes: int | None
     memory_limit_bytes: int | None
-    # Weltdaten fehlen: nur Löschen ist möglich, Starten und Neustarten geben 409.
+    # Weltdaten fehlen oder Erstellen brach ab: nur Löschen, Starten und Neustarten geben 409.
     delete_only: bool
 
 

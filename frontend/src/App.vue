@@ -97,7 +97,7 @@
 							</td>
 							<td class="gameworld__actions">
 								<NcLoadingIcon v-if="busy[world.id]" :size="20" />
-								<!-- Weltdaten fehlen: Starten würde eine leere Welt erzeugen, nur Löschen bleibt. -->
+								<!-- Weltdaten fehlen oder Erstellen brach ab: Starten würde eine leere oder halbe Welt starten, nur Löschen bleibt. -->
 								<template v-if="!world.delete_only">
 									<template v-if="isActive(world)">
 										<NcButton

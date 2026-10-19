@@ -58,9 +58,10 @@ NOT_FOUND = "Diese Welt gibt es nicht (mehr)."
 RECONCILE_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
 RECONCILE_DATA_MISSING = "Die Weltdaten fehlen. Die Welt kann nur gelöscht werden."
 RECONCILE_INTERRUPTED = "Das Erstellen wurde unterbrochen. Bitte die Welt löschen und neu erstellen."
-# In diesen Zuständen würde Starten eine leere Welt unter altem Namen
-# erzeugen; es bleibt nur Löschen (CR-01).
-DELETE_ONLY_ERRORS = frozenset({RECONCILE_DATA_MISSING})
+# In diesen Zuständen würde Starten eine leere Welt unter altem Namen erzeugen
+# (CR-01) oder ein nur teilweise eingespieltes Spiel starten und die
+# Abbruchmeldung löschen (WR-05); es bleibt nur Löschen.
+DELETE_ONLY_ERRORS = frozenset({RECONCILE_DATA_MISSING, RECONCILE_INTERRUPTED})
 
 UNKNOWN = "unknown"
 MISSING = "missing"
@@ -94,7 +95,7 @@ class WorldView:
     players: list[str]
     memory_used_bytes: int | None
     memory_limit_bytes: int | None
-    # Weltdaten fehlen: Die Oberfläche bietet nur Löschen an, Starten gibt 409.
+    # Weltdaten fehlen oder Erstellen brach ab: Die Oberfläche bietet nur Löschen an, Starten gibt 409.
     delete_only: bool
 
 
