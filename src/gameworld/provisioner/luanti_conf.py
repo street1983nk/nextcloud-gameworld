@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from gameworld.provisioner.presets import Preset
+
 MAX_NAME_LENGTH = 40
 NAME_ERROR = (
     "Der Weltname darf 1 bis 40 Zeichen lang sein und nur Buchstaben, Ziffern, "
@@ -29,10 +31,12 @@ def normalize_world_name(raw: str) -> str:
     return name
 
 
-def render_minetest_conf(world_name: str, world_key: str) -> str:
+def render_minetest_conf(world_name: str, world_key: str, preset: Preset) -> str:
     """Gehärtete Server-Konfiguration; Keys gegen Luanti 5.17.0 geprüft.
 
     Bewusst ohne ``name``: sonst bekäme ein Spieler automatisch alle Rechte.
+    Das Preset liefert genau eine default_privs-Zeile und hängt seine
+    fest kodierten Schalter ans Ende an; Basis-Keys setzt es nie.
     """
     lines = [
         f"server_name = {world_name}",
@@ -41,7 +45,7 @@ def render_minetest_conf(world_name: str, world_key: str) -> str:
         "serverlist_url =",
         "disallow_empty_password = true",
         f"default_password = {world_key}",
-        "default_privs = interact, shout",
+        f"default_privs = {preset.default_privs}",
         "basic_privs = interact, shout",
         "max_users = 8",
         "enable_rollback_recording = false",
@@ -51,14 +55,15 @@ def render_minetest_conf(world_name: str, world_key: str) -> str:
         "enable_client_modding = false",
         "update_information_url =",
         "port = 30000",
+        *preset.conf_lines,
     ]
     return "\n".join(lines) + "\n"
 
 
-def render_world_mt() -> str:
-    """Welt-Metadaten mit SQLite für alle Backends."""
+def render_world_mt(preset: Preset) -> str:
+    """Welt-Metadaten mit dem Spiel des Presets und SQLite für alle Backends."""
     lines = [
-        "gameid = minetest",
+        f"gameid = {preset.gameid}",
         "backend = sqlite3",
         "player_backend = sqlite3",
         "auth_backend = sqlite3",

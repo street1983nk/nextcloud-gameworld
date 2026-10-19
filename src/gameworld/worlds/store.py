@@ -14,7 +14,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import astuple, dataclass, fields
 
-SCHEMA_VERSION = "1"
+from gameworld.provisioner.presets import DEFAULT_PRESET_ID
+
+SCHEMA_VERSION = "2"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -29,9 +31,13 @@ CREATE TABLE IF NOT EXISTS worlds (
   desired_state TEXT NOT NULL,
   op_state TEXT NOT NULL,
   last_error TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  preset TEXT NOT NULL DEFAULT 'mtg_kreativ'
 );
 """
+
+# Schema 1 auf 2: Phase-1-Welten spielen Minetest Game, also das Kreativ-Preset.
+ADD_PRESET = "ALTER TABLE worlds ADD COLUMN preset TEXT NOT NULL DEFAULT 'mtg_kreativ'"
 
 
 @dataclass
@@ -47,6 +53,7 @@ class WorldRow:
     op_state: str
     last_error: str | None
     created_at: str
+    preset: str = DEFAULT_PRESET_ID
 
 
 COLUMNS = tuple(field.name for field in fields(WorldRow))
@@ -67,10 +74,18 @@ class WorldStore:
             connection.close()
 
     def migrate(self) -> None:
-        """Legt das Schema an; mehrfach aufrufbar."""
+        """Legt das Schema an und hebt ältere Dateien an; mehrfach aufrufbar.
+
+        Die Migration richtet sich nach der tatsächlichen Spaltenliste, nicht
+        nach der Versionsnummer: so ist sie idempotent und übersteht auch eine
+        abgebrochene frühere Migration. Kein Drop, kein Neuanlegen der Tabelle.
+        """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(SCHEMA)
+            columns = {str(info[1]) for info in connection.execute("PRAGMA table_info(worlds)").fetchall()}
+            if "preset" not in columns:
+                connection.execute(ADD_PRESET)
             connection.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

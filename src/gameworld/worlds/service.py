@@ -21,6 +21,7 @@ from gameworld.config import Settings
 from gameworld.provisioner.archive import build_world_payload
 from gameworld.provisioner.client import DockerProvisioner, PortInUseError, ProvisionerError, WorldNotFoundError
 from gameworld.provisioner.luanti_conf import normalize_world_name, render_minetest_conf, render_world_mt
+from gameworld.provisioner.presets import get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, resource_name
 from gameworld.worlds.ports import NoFreePortError, allocate_port
 from gameworld.worlds.store import WorldRow, WorldStore
@@ -70,7 +71,9 @@ def _view(row: WorldRow, docker_status: str) -> WorldView:
 
 
 def _payload(row: WorldRow) -> bytes:
-    return build_world_payload(render_minetest_conf(row.name, row.world_key), render_world_mt())
+    """Inhalt aus dem Preset der DB-Zeile, auch bei Neuerzeugung (Pitfall 2)."""
+    preset = get_preset(row.preset)
+    return build_world_payload(render_minetest_conf(row.name, row.world_key, preset), render_world_mt(preset))
 
 
 class WorldService:
