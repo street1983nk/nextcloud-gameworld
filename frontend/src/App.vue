@@ -150,6 +150,12 @@ function errorText(err) {
 	if (typeof detail === 'string' && detail !== '') {
 		return detail
 	}
+	// FastAPI-Validierungsfehler (422) liefern detail als Liste von Objekten;
+	// so erreicht die deutsche Meldung zu ungültigen Weltnamen die Eltern.
+	const msg = Array.isArray(detail) ? detail[0]?.msg : undefined
+	if (typeof msg === 'string' && msg !== '') {
+		return msg.replace(/^Value error, /, '')
+	}
 	return 'Die Anfrage an Gameworld ist fehlgeschlagen.'
 }
 

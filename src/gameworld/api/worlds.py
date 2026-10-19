@@ -89,10 +89,11 @@ async def list_worlds(service: ServiceDep) -> WorldListOut:
 
 @router.post("/worlds", status_code=status.HTTP_201_CREATED)
 async def create_world(body: CreateWorldRequest, service: ServiceDep) -> CreatedWorldOut:
+    # Ungültige Namen weist schon das Pydantic-Modell ab (AfterValidator mit
+    # normalize_world_name, 422 mit Detail-Liste); der Dienst sieht nur noch
+    # normalisierte Namen, ein eigener ValueError-Zweig wäre toter Code.
     try:
         created = await service.create_world(body.name)
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
     except DockerUnavailableError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
     except NoFreePortError as exc:
