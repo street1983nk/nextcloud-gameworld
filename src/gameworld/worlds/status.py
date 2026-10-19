@@ -25,7 +25,9 @@ UNKNOWN = "unknown"
 TEXT_UNREACHABLE = "Docker nicht erreichbar"
 TEXT_CREATING = "Wird erstellt"
 TEXT_UNKNOWN_ERROR = "Unbekannter Fehler"
-TEXT_MISSING = "Weltdaten vorhanden, Server fehlt. Starten stellt ihn wieder her."
+# Neutral: Ob das Volume noch da ist, prüft erst der Start (CR-01); fehlt es,
+# wird die Welt zu "Weltdaten fehlen, nur Löschen".
+TEXT_MISSING = "Der Server der Welt fehlt. Starten stellt ihn wieder her, falls die Weltdaten noch da sind."
 TEXT_RESTARTING = "Startet immer wieder neu"
 TEXT_RUNNING = "Läuft"
 TEXT_STARTING = "Startet gerade"

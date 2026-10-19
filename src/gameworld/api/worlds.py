@@ -23,7 +23,7 @@ from gameworld.provisioner.client import (
 from gameworld.provisioner.luanti_conf import normalize_world_name
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, validate_preset_id
 from gameworld.worlds.ports import NoFreePortError
-from gameworld.worlds.service import NOT_FOUND, WorldService, WorldView
+from gameworld.worlds.service import NOT_FOUND, DeleteOnlyError, WorldService, WorldView
 from gameworld.worlds.store import WorldStore
 
 router = APIRouter(prefix="/api")
@@ -86,6 +86,8 @@ class WorldOut(BaseModel):
     players: list[str]
     memory_used_bytes: int | None
     memory_limit_bytes: int | None
+    # Weltdaten fehlen: nur Löschen ist möglich, Starten und Neustarten geben 409.
+    delete_only: bool
 
 
 class CreatedWorldOut(WorldOut):
@@ -149,7 +151,7 @@ def _http_error(exc: ProvisionerError) -> HTTPException:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     if isinstance(exc, DockerUnavailableError):
         return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
-    if isinstance(exc, NoFreePortError):
+    if isinstance(exc, (NoFreePortError, DeleteOnlyError)):
         return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 

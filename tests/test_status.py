@@ -83,7 +83,12 @@ def test_failed_without_message_has_fallback() -> None:
 
 
 def test_missing_container_is_error() -> None:
-    assert _derive(None) == WorldStatus(ERROR, "Weltdaten vorhanden, Server fehlt. Starten stellt ihn wieder her.")
+    """Ohne Volume-Prüfung nie "Weltdaten vorhanden" behaupten (CR-01)."""
+    status = _derive(None)
+    assert status == WorldStatus(
+        ERROR, "Der Server der Welt fehlt. Starten stellt ihn wieder her, falls die Weltdaten noch da sind."
+    )
+    assert "vorhanden" not in status.text
 
 
 def test_restarting_is_error() -> None:

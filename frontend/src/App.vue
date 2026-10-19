@@ -97,24 +97,27 @@
 							</td>
 							<td class="gameworld__actions">
 								<NcLoadingIcon v-if="busy[world.id]" :size="20" />
-								<template v-if="isActive(world)">
+								<!-- Weltdaten fehlen: Starten würde eine leere Welt erzeugen, nur Löschen bleibt. -->
+								<template v-if="!world.delete_only">
+									<template v-if="isActive(world)">
+										<NcButton
+											:disabled="actionsLocked(world)"
+											@click="run(world, stopWorld)">
+											Stoppen
+										</NcButton>
+										<NcButton
+											:disabled="actionsLocked(world)"
+											@click="run(world, restartWorld)">
+											Neustarten
+										</NcButton>
+									</template>
 									<NcButton
+										v-else
 										:disabled="actionsLocked(world)"
-										@click="run(world, stopWorld)">
-										Stoppen
-									</NcButton>
-									<NcButton
-										:disabled="actionsLocked(world)"
-										@click="run(world, restartWorld)">
-										Neustarten
+										@click="run(world, startWorld)">
+										Starten
 									</NcButton>
 								</template>
-								<NcButton
-									v-else
-									:disabled="actionsLocked(world)"
-									@click="run(world, startWorld)">
-									Starten
-								</NcButton>
 								<NcButton
 									variant="error"
 									:disabled="Boolean(busy[world.id])"

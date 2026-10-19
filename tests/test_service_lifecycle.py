@@ -25,7 +25,13 @@ from gameworld.provisioner.client import (
 from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
 from gameworld.provisioner.spec import WorldPayload
 from gameworld.worlds import service as service_module
-from gameworld.worlds.service import LIST_CACHE_SECONDS, WorldService, WorldView
+from gameworld.worlds.service import (
+    LIST_CACHE_SECONDS,
+    RECONCILE_DATA_MISSING,
+    DeleteOnlyError,
+    WorldService,
+    WorldView,
+)
 from gameworld.worlds.store import WorldStore
 from tests.conftest import appapi_headers
 
@@ -55,6 +61,8 @@ class FakeProvisioner:
     memory_reads: list[str] = field(default_factory=list)
     list_error: ProvisionerError | None = None
     list_calls: int = 0
+    # Welten, deren Volume (Weltdaten) fehlt, etwa nach docker volume prune.
+    missing_volumes: set[str] = field(default_factory=set)
 
     def ensure_image(self) -> None:
         return None
@@ -93,6 +101,9 @@ class FakeProvisioner:
         if self.remove_error is not None:
             raise self.remove_error
         self.containers.pop(world_id, None)
+
+    def volume_exists(self, world_id: str) -> bool:
+        return world_id not in self.missing_volumes
 
     def used_host_ports(self, lo: int, hi: int) -> set[int]:
         ports = self.host_ports | {port for port, _ in self.containers.values()}
@@ -537,8 +548,9 @@ async def test_missing_container_shows_recoverable_error(service: WorldService, 
     fake.containers.pop(created.id)
     assert await _status_of(service, created.id) == (
         "error",
-        "Weltdaten vorhanden, Server fehlt. Starten stellt ihn wieder her.",
+        "Der Server der Welt fehlt. Starten stellt ihn wieder her, falls die Weltdaten noch da sind.",
     )
+    assert (await _view_of(service, created.id)).delete_only is False
 
 
 async def test_restart_stops_then_launches(service: WorldService, fake: FakeProvisioner, store: WorldStore) -> None:
@@ -856,3 +868,90 @@ async def test_world_without_container_is_recoverable_via_api(
 
     assert response.status_code == 200
     assert response.json()["docker_status"] == expected_status
+
+
+# CR-01 (Phase-2-Review): Fehlen die Weltdaten, entsteht nie eine leere Welt unter altem Namen.
+
+
+@pytest.mark.parametrize("operation", ["start_world", "restart_world"])
+@pytest.mark.parametrize("stopped_first", [False, True])
+async def test_missing_volume_never_recreates_empty_world(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, operation: str, stopped_first: bool
+) -> None:
+    """Container und Volume weg (prune): kein create, die Welt wird "nur löschen"."""
+    created = await service.create_world("Welt")
+    if stopped_first:
+        await service.stop_world(created.id)
+    fake.containers.pop(created.id)
+    fake.missing_volumes.add(created.id)
+    fake.created.clear()
+
+    with pytest.raises(DeleteOnlyError, match="Weltdaten fehlen"):
+        await getattr(service, operation)(created.id)
+
+    assert fake.created == []
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.op_state, row.last_error) == ("failed", RECONCILE_DATA_MISSING)
+    view = await _view_of(service, created.id)
+    assert (view.status, view.status_text, view.delete_only) == ("error", RECONCILE_DATA_MISSING, True)
+
+
+@pytest.mark.parametrize("operation", ["start_world", "restart_world"])
+async def test_delete_only_world_refuses_start_without_touching_docker(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, operation: str
+) -> None:
+    """Auch wenn das Volume wieder auftaucht: Start ändert weder Docker noch die Zeile."""
+    created = await service.create_world("Welt")
+    store.update_world(created.id, op_state="failed", last_error=RECONCILE_DATA_MISSING, desired_state="stopped")
+    fake.calls.clear()
+    fake.created.clear()
+
+    with pytest.raises(DeleteOnlyError):
+        await getattr(service, operation)(created.id)
+
+    assert fake.calls == []
+    assert fake.created == []
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.desired_state, row.op_state, row.last_error) == ("stopped", "failed", RECONCILE_DATA_MISSING)
+
+    await service.delete_world(created.id)
+    assert store.get_world(created.id) is None
+
+
+async def test_other_failed_world_stays_startable(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Gegenprobe: Ein gewöhnlicher Fehler sperrt Starten nicht."""
+    created = await service.create_world("Welt")
+    store.update_world(created.id, op_state="failed", last_error="Proxy weg")
+    assert (await _view_of(service, created.id)).delete_only is False
+
+    view = await service.start_world(created.id)
+
+    assert view.status == "running"
+    assert view.delete_only is False
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_delete_only_world_answers_409_and_allows_delete(
+    client: httpx.AsyncClient, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    world_id = created.json()["id"]
+    assert created.json()["delete_only"] is False
+    fake.containers.pop(world_id)
+    fake.missing_volumes.add(world_id)
+
+    for suffix in ("/start", "/restart"):
+        response = await client.post(f"/api/worlds/{world_id}{suffix}", headers=appapi_headers())
+        assert response.status_code == 409
+        assert response.json() == {"detail": RECONCILE_DATA_MISSING}
+
+    world = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
+    assert (world["status"], world["status_text"], world["delete_only"]) == ("error", RECONCILE_DATA_MISSING, True)
+
+    deleted = await client.delete(f"/api/worlds/{world_id}", headers=appapi_headers())
+    assert deleted.status_code == 204
+    assert store.get_world(world_id) is None

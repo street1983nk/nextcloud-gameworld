@@ -190,7 +190,8 @@ async def test_boot_recreates_missing_container_from_volume(
 
     assert await service.boot_reconcile() is True
 
-    assert fake.volume_checks == ["a"]
+    # Zweite Prüfung direkt vor der Neuerzeugung in _launch (CR-01 Phase 2).
+    assert fake.volume_checks == ["a", "a"]
     assert fake.created == [("a", 30015, True)]
     assert fake.containers["a"] == (30015, "running")
 
@@ -366,6 +367,21 @@ async def test_recreate_without_container_raises_not_found_in_fake(fake: Reconci
     """Gegenprobe zum Fake: Ohne Container kennt start_world die Welt nicht."""
     with pytest.raises(WorldNotFoundError):
         fake.start_world("a")
+
+
+async def test_boot_recreate_stops_when_volume_vanishes(
+    service: WorldService, fake: ReconcileFake, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verschwindet das Volume zwischen Abgleich und Neuerzeugung, entsteht keine leere Welt (CR-01)."""
+    _insert(store, "a", port=30015)
+    answers = iter([True, False])
+    monkeypatch.setattr(fake, "volume_exists", lambda world_id: next(answers))
+
+    assert await service.boot_reconcile() is True
+
+    assert fake.created == []
+    row = _get(store, "a")
+    assert (row.op_state, row.last_error) == ("failed", RECONCILE_DATA_MISSING)
 
 
 # Schleife

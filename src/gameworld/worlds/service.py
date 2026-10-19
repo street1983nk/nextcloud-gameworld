@@ -58,9 +58,21 @@ NOT_FOUND = "Diese Welt gibt es nicht (mehr)."
 RECONCILE_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
 RECONCILE_DATA_MISSING = "Die Weltdaten fehlen. Die Welt kann nur gelöscht werden."
 RECONCILE_INTERRUPTED = "Das Erstellen wurde unterbrochen. Bitte die Welt löschen und neu erstellen."
+# In diesen Zuständen würde Starten eine leere Welt unter altem Namen
+# erzeugen; es bleibt nur Löschen (CR-01).
+DELETE_ONLY_ERRORS = frozenset({RECONCILE_DATA_MISSING})
 
 UNKNOWN = "unknown"
 MISSING = "missing"
+
+
+class DeleteOnlyError(ProvisionerError):
+    """Die Welt lässt sich nicht mehr starten, nur noch löschen (HTTP 409)."""
+
+
+def delete_only(row: WorldRow) -> bool:
+    """Darf diese Welt nur noch gelöscht werden? Steht fest an der Zeile, nicht im Text der Oberfläche."""
+    return row.op_state == "failed" and row.last_error in DELETE_ONLY_ERRORS
 
 
 @dataclass
@@ -82,6 +94,8 @@ class WorldView:
     players: list[str]
     memory_used_bytes: int | None
     memory_limit_bytes: int | None
+    # Weltdaten fehlen: Die Oberfläche bietet nur Löschen an, Starten gibt 409.
+    delete_only: bool
 
 
 @dataclass
@@ -112,6 +126,7 @@ def _view(
         players=players or [],
         memory_used_bytes=None if memory is None else memory.used,
         memory_limit_bytes=None if memory is None else memory.limit,
+        delete_only=delete_only(row),
     )
 
 
@@ -296,8 +311,9 @@ class WorldService:
         world.mt und das Spiel werden neu eingespielt (deterministischer Inhalt).
         Fehlt der Container ganz (Fehlerpfad der Port-Saga oder docker rm von
         außen), wird er aus dem vorhandenen Volume neu erzeugt statt die Welt
-        als verschwunden zu melden. Höchstens MAX_START_ATTEMPTS Startversuche
-        bei belegtem Port, danach NoFreePortError.
+        als verschwunden zu melden. Fehlt auch das Volume, endet der Start mit
+        DeleteOnlyError statt einer leeren Welt. Höchstens MAX_START_ATTEMPTS
+        Startversuche bei belegtem Port, danach NoFreePortError.
         """
         tried = {row.port}
         recreated = False
@@ -312,6 +328,10 @@ class WorldService:
                 # nächsten Schleifendurchlauf weiter die Port-Saga.
                 if recreated:
                     raise
+                if not self._provisioner.volume_exists(row.id):
+                    # Nie eine leere Welt unter altem Namen anlegen: Docker
+                    # legte ein fehlendes Volume beim Mount still leer an (CR-01).
+                    raise DeleteOnlyError(RECONCILE_DATA_MISSING) from None
                 recreated = True
                 LOG.warning("Welt %s: Container fehlt, erzeuge ihn aus dem Volume neu", row.id)
                 self._provisioner.ensure_image()
@@ -359,6 +379,12 @@ class WorldService:
 
     def _current(self, world_id: str) -> WorldView:
         return self._views([self._row(world_id)])[0]
+
+    @staticmethod
+    def _refuse_delete_only(row: WorldRow) -> None:
+        """Start und Neustart einer Welt, die nur noch gelöscht werden kann, ändern nichts."""
+        if delete_only(row):
+            raise DeleteOnlyError(row.last_error or RECONCILE_DATA_MISSING)
 
     # Abläufe
 
@@ -419,6 +445,7 @@ class WorldService:
     def _start_world_sync(self, world_id: str) -> WorldView:
         with self._mutating():
             row = self._row(world_id)
+            self._refuse_delete_only(row)
             self._store.update_world(world_id, desired_state="running")
             try:
                 self._launch(row)
@@ -451,6 +478,7 @@ class WorldService:
         """
         with self._mutating():
             row = self._row(world_id)
+            self._refuse_delete_only(row)
             self._store.update_world(world_id, desired_state="running")
             try:
                 try:
