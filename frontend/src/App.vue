@@ -7,23 +7,40 @@
 					Jede Welt ist privat: Nur wer den Weltschlüssel kennt, kann beitreten. Gameworld kündigt keine Welt im Internet an.
 				</p>
 
-				<SetupCheck @update:ok="setupOk = $event" />
+				<SetupCheck @update:ok="onSetupOk" />
+
+				<NcNoteCard v-if="presetsError" type="error">
+					{{ presetsError }}
+				</NcNoteCard>
 
 				<form class="gameworld__form" @submit.prevent="submit">
-					<NcTextField
-						v-model="name"
-						label="Weltname"
-						:maxlength="40"
-						:disabled="creating" />
-					<NcButton
-						type="submit"
-						variant="primary"
-						:disabled="!setupOk || creating || name.trim() === ''">
-						<template v-if="creating" #icon>
-							<NcLoadingIcon :size="20" />
-						</template>
-						Welt erstellen
-					</NcButton>
+					<NcRadioGroup v-if="presets.length > 0" v-model="selectedPreset" label="Spielart">
+						<NcRadioGroupButton
+							v-for="preset in presets"
+							:key="preset.id"
+							:value="preset.id"
+							:label="preset.title"
+							:disabled="creating" />
+					</NcRadioGroup>
+					<p v-if="selectedDescription" class="gameworld__preset-hint">
+						{{ selectedDescription }}
+					</p>
+					<div class="gameworld__create">
+						<NcTextField
+							v-model="name"
+							label="Weltname"
+							:maxlength="40"
+							:disabled="creating" />
+						<NcButton
+							type="submit"
+							variant="primary"
+							:disabled="!canCreate">
+							<template v-if="creating" #icon>
+								<NcLoadingIcon :size="20" />
+							</template>
+							Welt erstellen
+						</NcButton>
+					</div>
 				</form>
 
 				<NcNoteCard v-if="createdKey" type="success">
@@ -32,38 +49,55 @@
 				<NcNoteCard v-if="error" type="error">
 					{{ error }}
 				</NcNoteCard>
+				<NcNoteCard v-if="listError" type="warning">
+					{{ listError }}
+				</NcNoteCard>
 
 				<NcLoadingIcon v-if="loading" :size="32" />
 				<p v-else-if="worlds.length === 0" class="gameworld__empty">
-					Noch keine Welt. Erstelle die erste Welt mit einem Namen.
+					Noch keine Welt. Wähle eine Spielart, gib einen Namen ein und klicke auf Welt erstellen.
 				</p>
 				<table v-else class="gameworld__list">
 					<thead>
 						<tr>
 							<th>Name</th>
+							<th>Spielart</th>
 							<th>UDP-Port</th>
 							<th>Status</th>
 							<th>Aktionen</th>
 						</tr>
 					</thead>
 					<tbody>
-						<tr v-for="world in worlds" :key="world.id">
+						<tr v-for="world in worlds" :key="world.id" :data-world-id="world.id">
 							<td>{{ world.name }}</td>
+							<td>{{ world.preset_title }}</td>
 							<td>{{ world.port }}</td>
-							<td>{{ statusText(world) }}</td>
+							<td>
+								<NcChip
+									class="gameworld__status"
+									:text="world.status_text"
+									:variant="chipVariant(world.status)"
+									no-close />
+							</td>
 							<td class="gameworld__actions">
 								<NcLoadingIcon v-if="busy[world.id]" :size="20" />
-								<NcButton
-									v-if="world.docker_status !== 'running'"
-									:disabled="Boolean(busy[world.id])"
-									@click="run(world, startWorld)">
-									Starten
-								</NcButton>
+								<template v-if="isActive(world)">
+									<NcButton
+										:disabled="actionsLocked(world)"
+										@click="run(world, stopWorld)">
+										Stoppen
+									</NcButton>
+									<NcButton
+										:disabled="actionsLocked(world)"
+										@click="run(world, restartWorld)">
+										Neustarten
+									</NcButton>
+								</template>
 								<NcButton
 									v-else
-									:disabled="Boolean(busy[world.id])"
-									@click="run(world, stopWorld)">
-									Stoppen
+									:disabled="actionsLocked(world)"
+									@click="run(world, startWorld)">
+									Starten
 								</NcButton>
 								<NcButton
 									variant="error"
@@ -89,36 +123,62 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import NcAppContent from '@nextcloud/vue/components/NcAppContent'
 import NcButton from '@nextcloud/vue/components/NcButton'
+import NcChip from '@nextcloud/vue/components/NcChip'
 import NcContent from '@nextcloud/vue/components/NcContent'
 import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
+import NcRadioGroup from '@nextcloud/vue/components/NcRadioGroup'
+import NcRadioGroupButton from '@nextcloud/vue/components/NcRadioGroupButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import SetupCheck from './components/SetupCheck.vue'
-import { createWorld, deleteWorld, listWorlds, startWorld, stopWorld } from './api.js'
+import {
+	createWorld,
+	deleteWorld,
+	listPresets,
+	listWorlds,
+	restartWorld,
+	startWorld,
+	stopWorld,
+} from './api.js'
 
-const STATUS_TEXT = {
-	running: 'läuft',
-	exited: 'gestoppt',
-	created: 'gestoppt',
-	missing: 'Container fehlt',
-	unknown: 'Docker nicht erreichbar',
+// Statuscodes kommen aus der API (worlds/status.py), die Texte ebenfalls.
+const CHIP_VARIANT = {
+	running: 'success',
+	starting: 'warning',
+	stopped: 'tertiary',
+	error: 'error',
+	unknown: 'warning',
 }
+const POLL_MS = 5000
 
 const worlds = ref([])
 const loading = ref(true)
 const creating = ref(false)
 // Bis der Setup-Check bestanden ist, bleibt "Welt erstellen" gesperrt.
 const setupOk = ref(false)
+const presets = ref([])
+const presetsError = ref('')
+const selectedPreset = ref('')
 const name = ref('')
 const createdKey = ref('')
+// Fehler einer Aktion: bleibt stehen, bis die nächste Aktion startet.
 const error = ref('')
+// Fehler beim Abfragen der Liste: verschwindet beim nächsten erfolgreichen Abruf.
+const listError = ref('')
 // Welt-ID -> true, solange für diese Welt eine Aktion läuft.
 const busy = reactive({})
 const pendingDelete = ref(null)
+
+const selectedDescription = computed(() => presets.value.find((preset) => preset.id === selectedPreset.value)?.description ?? '')
+
+const canCreate = computed(() => setupOk.value
+	&& !creating.value
+	&& selectedPreset.value !== ''
+	&& name.value.trim() !== '')
 
 const deleteMessage = computed(() => pendingDelete.value
 	? `Welt »${pendingDelete.value.name}« endgültig löschen? Die Spielwelt und alle gebauten Dinge werden entfernt.`
@@ -159,21 +219,67 @@ function errorText(err) {
 	return 'Die Anfrage an Gameworld ist fehlgeschlagen.'
 }
 
-function statusText(world) {
-	if (world.op_state === 'failed') {
-		return `Fehler: ${world.last_error ?? 'unbekannt'}`
-	}
-	return STATUS_TEXT[world.docker_status] ?? world.docker_status
+function chipVariant(status) {
+	return CHIP_VARIANT[status] ?? 'warning'
+}
+
+function isActive(world) {
+	return world.status === 'running' || world.status === 'starting'
+}
+
+// Ohne Docker lässt sich nichts starten oder stoppen; Löschen bleibt (eigener Dialog).
+function actionsLocked(world) {
+	return Boolean(busy[world.id]) || world.status === 'unknown'
 }
 
 async function refresh() {
 	try {
 		worlds.value = await listWorlds()
+		listError.value = ''
 	} catch (err) {
-		error.value = errorText(err)
+		listError.value = errorText(err)
 	} finally {
 		loading.value = false
 	}
+}
+
+// Alle 5 s, nur bei sichtbarem Tab; nach jeder Aktion sofort (run, submit).
+let timer = null
+// Nach dem Abbau darf ein noch laufender Abruf keinen neuen Timer setzen.
+let unmounted = false
+
+function schedule() {
+	clearTimeout(timer)
+	timer = null
+	if (!unmounted && document.visibilityState === 'visible') {
+		timer = setTimeout(async () => {
+			await refresh()
+			schedule()
+		}, POLL_MS)
+	}
+}
+
+function onTabChange() {
+	if (document.visibilityState === 'visible') {
+		refresh()
+	}
+	schedule()
+}
+
+async function loadPresets() {
+	try {
+		presets.value = await listPresets()
+		selectedPreset.value = presets.value[0]?.id ?? ''
+		presetsError.value = ''
+	} catch (err) {
+		presetsError.value = `Die Spielarten konnten nicht geladen werden: ${errorText(err)}`
+	}
+}
+
+function onSetupOk(ok) {
+	setupOk.value = ok
+	// Nach "Erneut prüfen" auch die Statusspalte sofort aktualisieren.
+	refresh()
 }
 
 // Führt eine Aktion für eine Welt aus und lädt danach die Liste neu, weil
@@ -195,31 +301,42 @@ async function run(world, action) {
 }
 
 async function submit() {
-	if (!setupOk.value || creating.value || name.value.trim() === '') {
+	if (!canCreate.value) {
 		return
 	}
 	creating.value = true
 	error.value = ''
 	createdKey.value = ''
 	try {
-		const world = await createWorld(name.value.trim())
+		const world = await createWorld(name.value.trim(), selectedPreset.value)
 		// Nur diese eine Antwort enthält den Schlüssel; die Liste zeigt ihn nie.
 		createdKey.value = world.world_key
 		name.value = ''
-		await refresh()
 	} catch (err) {
 		error.value = errorText(err)
 	} finally {
+		await refresh()
 		creating.value = false
 	}
 }
 
-onMounted(refresh)
+onMounted(async () => {
+	document.addEventListener('visibilitychange', onTabChange)
+	await Promise.all([loadPresets(), refresh()])
+	schedule()
+})
+
+onUnmounted(() => {
+	unmounted = true
+	clearTimeout(timer)
+	timer = null
+	document.removeEventListener('visibilitychange', onTabChange)
+})
 </script>
 
 <style scoped>
 .gameworld {
-	max-width: 720px;
+	max-width: 820px;
 	padding: 24px;
 }
 
@@ -230,12 +347,23 @@ onMounted(refresh)
 
 .gameworld__form {
 	display: flex;
+	flex-direction: column;
 	gap: 12px;
-	align-items: flex-end;
 	margin-bottom: 16px;
 }
 
-.gameworld__form button {
+.gameworld__preset-hint {
+	margin: 0;
+	color: var(--color-text-maxcontrast);
+}
+
+.gameworld__create {
+	display: flex;
+	gap: 12px;
+	align-items: flex-end;
+}
+
+.gameworld__create button {
 	flex-shrink: 0;
 }
 
@@ -251,6 +379,7 @@ onMounted(refresh)
 
 .gameworld__actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 8px;
 	align-items: center;
 }

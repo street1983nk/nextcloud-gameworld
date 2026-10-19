@@ -32,13 +32,18 @@ export async function getSetupCheck() {
 	return response.data
 }
 
+export async function listPresets() {
+	const response = await axios.get(`${apiBase}/api/presets`)
+	return response.data.presets
+}
+
 export async function listWorlds() {
 	const response = await axios.get(`${apiBase}/api/worlds`)
 	return response.data.worlds
 }
 
-export async function createWorld(name) {
-	const response = await axios.post(`${apiBase}/api/worlds`, { name })
+export async function createWorld(name, preset) {
+	const response = await axios.post(`${apiBase}/api/worlds`, { name, preset })
 	return response.data
 }
 
@@ -49,6 +54,12 @@ export async function startWorld(id) {
 
 export async function stopWorld(id) {
 	const response = await axios.post(`${apiBase}/api/worlds/${id}/stop`)
+	return response.data
+}
+
+// Neustart läuft im Backend als Stoppen plus Starten (gleiche Port-Saga wie Start).
+export async function restartWorld(id) {
+	const response = await axios.post(`${apiBase}/api/worlds/${id}/restart`)
 	return response.data
 }
 
