@@ -476,18 +476,18 @@ Registrierung (Findling-Muster, `register-exapp.sh` adaptiert): `occ app_api:dae
 | A5 | API-Basis-URL des Frontends: unter manual-install `/apps/app_api/proxy/gameworld`, unter HaRP `/exapps/gameworld`; per Initial State vom Backend übergeben | Pattern 1 | Frontend-Calls 404 nach Phase-6-Umstieg; Initial-State-Lösung kapselt es |
 | A6 | Docker Desktop leitet publizierte UDP-Ports an das LAN weiter, sofern die Windows-Firewall es zulässt | Environment | LAN-Join-Test auf der Dev-Maschine scheitert; Join auf 127.0.0.1 testen |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Proxy-Netz unter HaRP (Phase 6, aber Snippet-Platzhalter jetzt)**
+1. **Proxy-Netz unter HaRP (Phase 6, aber Snippet-Platzhalter jetzt)** (RESOLVED für Phase 1: Snippet mit Daemon-Netz-Platzhalter und Restrisiko-Hinweis in docs/install.md, Plan 01-04; Alternativen wie eine Quell-Allowlist sind in die Phase-6-Research verschoben)
    - What we know: ExApp-Container landen im Daemon-Netz; tecnativa hat weder Auth noch Quell-IP-Filter.
    - What's unclear: ob ein Admin-freundlicher Weg existiert, den Proxy nur für `nc_app_gameworld` erreichbar zu machen.
    - Recommendation: Phase 1 dokumentiert das Snippet mit Daemon-Netz und Restrisiko-Hinweis; Phase-6-Research prüft Alternativen (z. B. Proxy mit Quell-Allowlist) gegen die Roadmap-Vorgabe tecnativa.
-2. **Spiele-Ablage ab VoxeLibre (84 MB)**
+2. **Spiele-Ablage ab VoxeLibre (84 MB)** (RESOLVED für Phase 1: minetest_game wird pro Welt ins Volume kopiert, Plan 01-01 archive.py; Entscheid Kopie vs. geteiltes read-only-Volume in Phase 2 verschoben)
    - Recommendation: Phase 1 kopiert minetest_game (3 MB) pro Welt; Phase 2 entscheidet zwischen Kopie und geteiltem read-only `gameworld-games`-Volume.
-3. **Spielerliste (Phase 2)**
+3. **Spielerliste (Phase 2)** (RESOLVED: nicht Phase-1-Umfang, in Phase 2 verschoben; Empfehlung unten bleibt Ausgangspunkt)
    - What we know: Log-Zeilen "joins game. List of players:" / "leaves game." / "times out." [VERIFIED: server.cpp Z. 1311, 3178]; Prometheus-Gauge `minetest_core_player_number` existiert, lauscht aber nur auf `127.0.0.1:30000/tcp` im Container.
    - Recommendation: Log-Parsing der letzten "List of players"-Zeile seit Containerstart; falls zu fragil, kleiner Lua-Mod, der `players.json` ins Welt-Dir schreibt (lesbar per `get_archive`, ohne EXEC).
-4. **Restart-Policy nach Host-Reboot (Phase 2)**: Empfehlung `no` plus Reconciler-Start beim ExApp-Start; bestätigen, dass AppAPI den ExApp-Container selbst nach Reboot hochfährt.
+4. **Restart-Policy nach Host-Reboot (Phase 2)** (RESOLVED für Phase 1: restart_policy `no` in world_spec, Plan 01-01; Reconciler und AppAPI-Reboot-Bestätigung in Phase 2 verschoben): Empfehlung `no` plus Reconciler-Start beim ExApp-Start; bestätigen, dass AppAPI den ExApp-Container selbst nach Reboot hochfährt.
 
 ## Environment Availability
 
