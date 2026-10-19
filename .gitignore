@@ -5,3 +5,5 @@ node_modules/
 js/
 *.pyc
 .claude-active
+vendor/games/mineclone2-*.zip
+vendor/games/*.part
