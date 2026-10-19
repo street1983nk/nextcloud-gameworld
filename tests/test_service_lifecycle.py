@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import tarfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -12,6 +14,7 @@ import pytest
 
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
+from gameworld.provisioner.access_mod import ACCESS_FILE_NAME, render_access_file
 from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
@@ -66,6 +69,8 @@ class FakeProvisioner:
     list_calls: int = 0
     # Welten, deren Volume (Weltdaten) fehlt, etwa nach docker volume prune.
     missing_volumes: set[str] = field(default_factory=set)
+    # Per write_world_files geschriebene Tars (Welt, Archiv), in Reihenfolge.
+    written: list[tuple[str, bytes]] = field(default_factory=list)
 
     def ensure_image(self) -> None:
         return None
@@ -84,6 +89,12 @@ class FakeProvisioner:
         if world_id not in self.containers:
             raise WorldNotFoundError("Diese Welt gibt es nicht (mehr).")
         return self.containers[world_id]
+
+    def write_world_files(self, world_id: str, archive: bytes) -> None:
+        self._known(world_id)
+        assert archive
+        self.written.append((world_id, archive))
+        self.calls.append(f"files:{world_id}")
 
     def start_world(self, world_id: str) -> None:
         port, _ = self._known(world_id)
@@ -562,7 +573,7 @@ async def test_restart_stops_then_launches(service: WorldService, fake: FakeProv
 
     view = await service.restart_world(created.id)
 
-    assert fake.calls == [f"stop:{created.id}", f"start:{created.id}"]
+    assert fake.calls == [f"stop:{created.id}", f"files:{created.id}", f"start:{created.id}"]
     assert view.status == "running"
     row = store.get_world(created.id)
     assert row is not None
@@ -1077,3 +1088,57 @@ async def test_api_list_survives_unknown_preset(client: httpx.AsyncClient, store
     assert worlds[first["id"]]["status"] == "error"
     assert worlds[first["id"]]["preset_title"] == "Unbekannte Spielart"
     assert worlds[second["id"]]["status"] == "running"
+
+
+# 03-01: Mods und Zugangsdatei vor jedem Start (Nachrüsten älterer Welten).
+
+EMPTY_ACCESS = render_access_file(0, {})
+
+
+def _access_of(archive_bytes: bytes) -> bytes:
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as tar:
+        names = tar.getnames()
+        assert "worldmods/gameworld_access/init.lua" in names
+        assert "worldmods/gameworld_status/init.lua" in names
+        handle = tar.extractfile(ACCESS_FILE_NAME)
+        assert handle is not None
+        return handle.read()
+
+
+async def test_create_writes_files_before_start(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    assert fake.calls == [f"files:{created.id}", f"start:{created.id}"]
+    assert _access_of(fake.written[0][1]) == EMPTY_ACCESS
+
+
+async def test_start_writes_files_before_start(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+    fake.calls.clear()
+
+    await service.start_world(created.id)
+
+    assert fake.calls == [f"files:{created.id}", f"start:{created.id}"]
+
+
+async def test_missing_container_on_write_recreates_then_writes_and_starts(
+    service: WorldService, fake: FakeProvisioner
+) -> None:
+    """WorldNotFoundError schon beim Schreiben nimmt den Neuerzeugungspfad, danach Schreiben und Start."""
+    created = await service.create_world("Welt")
+    fake.containers.pop(created.id)
+    fake.calls.clear()
+    fake.created.clear()
+    fake.written.clear()
+
+    view = await service.start_world(created.id)
+
+    assert fake.created == [(created.id, created.port, True)]
+    assert fake.calls == [f"files:{created.id}", f"start:{created.id}"]
+    assert [world for world, _ in fake.written] == [created.id]
+    assert view.status == "running"
+
+
+async def test_payload_carries_empty_access_file(service: WorldService, payload_args: list[tuple[object, ...]]) -> None:
+    await service.create_world("Welt")
+    assert payload_args[0][3] == EMPTY_ACCESS

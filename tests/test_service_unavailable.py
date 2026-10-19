@@ -11,7 +11,7 @@ import pytest
 
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
-from gameworld.provisioner.client import ContainerInfo, DockerProvisioner, DockerUnavailableError
+from gameworld.provisioner.client import ContainerInfo, DockerProvisioner, DockerUnavailableError, WorldNotFoundError
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldRow, WorldStore
 from tests.conftest import appapi_headers
@@ -42,6 +42,11 @@ class FakeProvisioner:
         del host_port, payload, reuse_volume
         self.created.append(world_id)
         return f"cid-{world_id}"
+
+    def write_world_files(self, world_id: str, archive: bytes) -> None:
+        del archive
+        if world_id not in self.created:
+            raise WorldNotFoundError("Diese Welt gibt es nicht (mehr).")
 
     def start_world(self, world_id: str) -> None:
         del world_id
