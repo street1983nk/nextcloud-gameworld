@@ -10,6 +10,8 @@ eigenen Weltordner ist auch mit ``secure.enable_security = true`` erlaubt.
 
 from __future__ import annotations
 
+import re
+
 from gameworld.provisioner.spec import DATA_DIR
 
 MOD_NAME = "gameworld_status"
@@ -42,3 +44,23 @@ description = Meldet verbundene Spieler an das Gameworld-Dashboard
 
 # Pfad im Container; die ExApp liest ihn per get_archive (02-04, 02-05).
 PLAYERS_FILE = f"{DATA_DIR}/.minetest/worlds/world/gameworld_players.txt"
+
+# Gültige Luanti-Spielernamen (T-02-23): Alles andere, auch IP-artige Zeilen,
+# Leerzeichen, Umlaute oder Markup, erreicht das Dashboard nie.
+PLAYER_NAME = re.compile(r"[A-Za-z0-9_-]{1,20}")
+MAX_PLAYERS = 64
+
+
+def parse_players(content: bytes) -> list[str]:
+    """Spielernamen aus der Status-Datei in Dateireihenfolge, ohne Duplikate.
+
+    Ungültiges UTF-8 bricht nicht ab (Ersatzzeichen fallen durch den Filter).
+    Höchstens MAX_PLAYERS Namen; den Inhalt hat der Provisioner schon gekappt.
+    """
+    names: list[str] = []
+    for line in content.decode("utf-8", "replace").splitlines():
+        if PLAYER_NAME.fullmatch(line) and line not in names:
+            names.append(line)
+            if len(names) == MAX_PLAYERS:
+                break
+    return names

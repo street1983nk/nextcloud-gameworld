@@ -642,6 +642,7 @@ async def test_status_file_older_than_start_shows_no_players(service: WorldServi
 
 async def test_stopped_world_has_no_players_and_no_memory(service: WorldService, fake: FakeProvisioner) -> None:
     world_id = await _running_world(service, fake, "Welt")
+    fake.memory_reads.clear()
     view = await service.stop_world(world_id)
     assert view.status == "stopped"
     assert view.players == []

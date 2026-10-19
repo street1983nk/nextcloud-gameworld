@@ -85,6 +85,43 @@ class StatusFile:
     content: bytes
 
 
+@dataclass(frozen=True)
+class MemoryUsage:
+    """Arbeitsspeicher einer laufenden Welt in Bytes, wie docker stats ihn zeigt."""
+
+    used: int
+    limit: int
+
+
+def _int_field(source: dict[str, Any], key: str) -> int | None:
+    value = source.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def memory_from_stats(stats: dict[str, Any]) -> tuple[int, int] | None:
+    """(belegt, Limit) aus ``container.stats``; fehlende Felder ergeben None.
+
+    Formel wie die docker CLI: usage minus inactive_file (cgroup v2), Fallback
+    total_inactive_file (cgroup v1). Nie negativ.
+    """
+    memory = stats.get("memory_stats")
+    if not isinstance(memory, dict):
+        return None
+    memory = cast(dict[str, Any], memory)
+    usage = _int_field(memory, "usage")
+    limit = _int_field(memory, "limit")
+    if usage is None or limit is None or limit <= 0:
+        return None
+    raw = memory.get("stats")
+    details = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+    inactive = _int_field(details, "inactive_file")
+    if inactive is None:
+        inactive = _int_field(details, "total_inactive_file") or 0
+    return max(usage - inactive, 0), limit
+
+
 def _read_capped(stream: Iterator[bytes]) -> bytes:
     """Liest höchstens STATUS_ARCHIVE_MAX Bytes und gibt den Rest des Stroms auf."""
     raw = bytearray()
@@ -372,3 +409,20 @@ class DockerProvisioner:
             return None
         content = _first_member_content(_read_capped(stream))
         return StatusFile(mtime=str((stat or {}).get("mtime") or ""), content=content)
+
+    def memory_bytes(self, world_id: str) -> MemoryUsage | None:
+        """RAM der Welt oder None, wenn der Container nicht läuft.
+
+        ``one_shot`` liefert die Werte ohne die Sekunde Wartezeit für die
+        CPU-Vorwerte (7 bis 13 ms laut Spike). Den Container löst _owned auf,
+        fremde Container sind ausgeschlossen (T-02-26).
+        """
+        return self._read(lambda: self._memory_bytes(world_id))
+
+    def _memory_bytes(self, world_id: str) -> MemoryUsage | None:
+        container = self._owned(world_id)
+        if container.status != "running":
+            return None
+        stats = cast(dict[str, Any], container.stats(stream=False, one_shot=True))
+        values = memory_from_stats(stats)
+        return None if values is None else MemoryUsage(used=values[0], limit=values[1])

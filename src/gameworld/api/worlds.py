@@ -82,6 +82,10 @@ class WorldOut(BaseModel):
     # Status aus Docker (running, starting, stopped, error, unknown) und Elterntext.
     status: str
     status_text: str
+    # WELT-03: Online-Spieler (nur bei status running) und RAM (nur bei laufendem Container).
+    players: list[str]
+    memory_used_bytes: int | None
+    memory_limit_bytes: int | None
 
 
 class CreatedWorldOut(WorldOut):

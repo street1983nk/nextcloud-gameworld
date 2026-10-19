@@ -14,8 +14,9 @@ import secrets
 import threading
 import uuid
 from collections.abc import Iterator
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
+from time import monotonic
 
 import anyio.to_thread
 
@@ -24,15 +25,18 @@ from gameworld.provisioner.archive import build_world_payload
 from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
+    MemoryUsage,
     PortInUseError,
     ProvisionerError,
+    StatusFile,
     WorldNotFoundError,
 )
 from gameworld.provisioner.luanti_conf import normalize_world_name, render_minetest_conf, render_world_mt
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_name
+from gameworld.provisioner.status_mod import parse_players
 from gameworld.worlds.ports import NoFreePortError, allocate_port
-from gameworld.worlds.status import STATUS_MOD_SCHEMA, WorldStatus, derive_status, schema_version
+from gameworld.worlds.status import RUNNING, STATUS_MOD_SCHEMA, WorldStatus, derive_status, schema_version
 from gameworld.worlds.store import WorldRow, WorldStore
 
 LOG = logging.getLogger(__name__)
@@ -42,6 +46,10 @@ _LOCK = threading.Lock()
 
 # Höchstens so viele Startversuche bei belegtem Host-Port (T-01-20).
 MAX_START_ATTEMPTS = 3
+# So lange gilt die Weltenliste als frisch: Mehrere offene Tabs (je ein Poll alle
+# 5 s) vervielfachen so die Docker-Abfragen nicht (T-02-25). Jede Mutation
+# verwirft den Cache, Änderungen von außen erscheinen höchstens 2 s später.
+LIST_CACHE_SECONDS = 2.0
 PORTS_EXHAUSTED = "Kein freier UDP-Port gefunden. Bitte den Portbereich GAMEWORLD_PORT_RANGE prüfen."
 NOT_FOUND = "Diese Welt gibt es nicht (mehr)."
 
@@ -64,6 +72,10 @@ class WorldView:
     # Aus Docker abgeleitet (worlds/status.py); docker_status bleibt für Phase-1-Skripte.
     status: str
     status_text: str
+    # WELT-03: Spieler nur bei status running, RAM nur bei laufendem Container.
+    players: list[str]
+    memory_used_bytes: int | None
+    memory_limit_bytes: int | None
 
 
 @dataclass
@@ -71,7 +83,13 @@ class CreatedWorld(WorldView):
     world_key: str
 
 
-def _view(row: WorldRow, docker_status: str, status: WorldStatus) -> WorldView:
+def _view(
+    row: WorldRow,
+    docker_status: str,
+    status: WorldStatus,
+    players: list[str] | None = None,
+    memory: MemoryUsage | None = None,
+) -> WorldView:
     return WorldView(
         id=row.id,
         name=row.name,
@@ -85,7 +103,15 @@ def _view(row: WorldRow, docker_status: str, status: WorldStatus) -> WorldView:
         preset_title=get_preset(row.preset).title,
         status=status.code,
         status_text=status.text,
+        players=players or [],
+        memory_used_bytes=None if memory is None else memory.used,
+        memory_limit_bytes=None if memory is None else memory.limit,
     )
+
+
+def _copy(view: WorldView) -> WorldView:
+    """Unabhängige Kopie, damit Aufrufer den Cache nie verändern."""
+    return replace(view, players=list(view.players))
 
 
 @contextlib.contextmanager
@@ -109,6 +135,12 @@ class WorldService:
         self._store = store
         self._provisioner = provisioner
         self._settings = settings
+        # Cache der Weltenliste: (Zeitpunkt aus monotonic, Ansichten). Die
+        # Generation verhindert, dass eine vor einer Mutation begonnene Liste
+        # danach noch im Cache landet.
+        self._cache_lock = threading.Lock()
+        self._list_cache: tuple[float, list[WorldView]] | None = None
+        self._cache_generation = 0
 
     async def create_world(self, name: str, preset_id: str = DEFAULT_PRESET_ID) -> CreatedWorld:
         clean = normalize_world_name(name)
@@ -150,17 +182,36 @@ class WorldService:
             LOG.warning("Gebundene Host-Ports nicht abrufbar, nur Datenbank-Ports: %s", exc)
         return used
 
+    def _invalidate_cache(self) -> None:
+        with self._cache_lock:
+            self._list_cache = None
+            self._cache_generation += 1
+
+    @contextlib.contextmanager
+    def _mutating(self) -> Iterator[None]:
+        """Mutation unter _LOCK; der Listen-Cache wird davor und danach verworfen, auch bei Fehlern."""
+        self._invalidate_cache()
+        try:
+            with _LOCK:
+                yield
+        finally:
+            self._invalidate_cache()
+
     def _views(self, rows: list[WorldRow]) -> list[WorldView]:
+        return self._collect(rows)[0]
+
+    def _collect(self, rows: list[WorldRow]) -> tuple[list[WorldView], bool]:
         """Ansichten mit Status aus Docker: einmal list_managed, Status-Datei nur wo nötig.
 
         Einziger Codepfad für Liste und Einzelansicht. Die Datenbank liefert nur
         creating/failed und den Elternwunsch, alles andere kommt aus Docker.
+        Der zweite Wert sagt, ob Docker erreichbar war (nur dann wird gecacht).
         """
         try:
             managed = self._provisioner.list_managed()
         except ProvisionerError as exc:
             LOG.warning("Docker-Status nicht abrufbar, zeige unknown: %s", exc)
-            return [
+            unknown = [
                 _view(
                     row,
                     UNKNOWN,
@@ -175,10 +226,11 @@ class WorldService:
                 )
                 for row in rows
             ]
-        return [self._view_from_docker(row, managed.get(row.id)) for row in rows]
+            return unknown, False
+        return [self._view_from_docker(row, managed.get(row.id)) for row in rows], True
 
-    def _status_mtime(self, row: WorldRow, container: ContainerInfo | None) -> str | None:
-        """mtime der Status-Datei, nur für laufende Welten mit Status-Mod (Schema 2)."""
+    def _status_file(self, row: WorldRow, container: ContainerInfo | None) -> StatusFile | None:
+        """Status-Datei (mtime und Inhalt), nur für laufende Welten mit Status-Mod (Schema 2)."""
         if (
             container is None
             or container.status != "running"
@@ -192,18 +244,32 @@ class WorldService:
             # Pro Welt isoliert: Die Welt zeigt dann "Startet gerade", die Liste bleibt.
             LOG.warning("Status-Datei von Welt %s nicht lesbar: %s", row.id, exc)
             return None
-        return None if status_file is None else status_file.mtime
+        return status_file
+
+    def _memory(self, row: WorldRow, container: ContainerInfo | None) -> MemoryUsage | None:
+        """RAM nur für laufende Container; ein Fehler betrifft nur diese Welt."""
+        if container is None or container.status != "running":
+            return None
+        try:
+            return self._provisioner.memory_bytes(row.id)
+        except ProvisionerError as exc:
+            LOG.warning("Arbeitsspeicher von Welt %s nicht abrufbar: %s", row.id, exc)
+            return None
 
     def _view_from_docker(self, row: WorldRow, container: ContainerInfo | None) -> WorldView:
+        status_file = self._status_file(row, container)
         status = derive_status(
             op_state=row.op_state,
             desired_state=row.desired_state,
             last_error=row.last_error,
             container=container,
             reachable=True,
-            status_mtime=self._status_mtime(row, container),
+            status_mtime=None if status_file is None else status_file.mtime,
         )
-        return _view(row, MISSING if container is None else container.status, status)
+        # Spieler nur aus einer Datei dieses Laufs: running setzt mtime >= StartedAt voraus (Pitfall 3).
+        players = parse_players(status_file.content) if status.code == RUNNING and status_file is not None else []
+        docker_status = MISSING if container is None else container.status
+        return _view(row, docker_status, status, players, self._memory(row, container))
 
     def _launch(self, row: WorldRow) -> None:
         """Startet den Container; bei belegtem Port Neuerzeugung mit dem nächsten freien Port.
@@ -279,7 +345,7 @@ class WorldService:
     # Abläufe
 
     def _create_world_sync(self, name: str, preset_id: str) -> CreatedWorld:
-        with _LOCK:
+        with self._mutating():
             instance = self._store.instance_id()
             world_id = uuid.uuid4().hex[:12]
             secret = secrets.token_urlsafe(9)
@@ -317,11 +383,23 @@ class WorldService:
             return CreatedWorld(**asdict(self._current(world_id)), world_key=secret)
 
     def _list_worlds_sync(self) -> list[WorldView]:
-        # Ohne Lock (Pitfall 6): Statuslesen darf nie hinter einem Erzeugen warten.
-        return self._views(self._store.list_worlds())
+        # Ohne _LOCK (Pitfall 6): Statuslesen darf nie hinter einem Erzeugen warten.
+        with self._cache_lock:
+            cached = self._list_cache
+            generation = self._cache_generation
+        if cached is not None and monotonic() - cached[0] < LIST_CACHE_SECONDS:
+            return [_copy(view) for view in cached[1]]
+        taken = monotonic()
+        views, reachable = self._collect(self._store.list_worlds())
+        # "Docker nicht erreichbar" wird nie gecacht: Die nächste Abfrage prüft neu.
+        if reachable:
+            with self._cache_lock:
+                if self._cache_generation == generation:
+                    self._list_cache = (taken, [_copy(view) for view in views])
+        return views
 
     def _start_world_sync(self, world_id: str) -> WorldView:
-        with _LOCK:
+        with self._mutating():
             row = self._row(world_id)
             self._store.update_world(world_id, desired_state="running")
             try:
@@ -333,7 +411,7 @@ class WorldService:
             return self._current(world_id)
 
     def _stop_world_sync(self, world_id: str) -> WorldView:
-        with _LOCK:
+        with self._mutating():
             self._row(world_id)
             self._store.update_world(world_id, desired_state="stopped")
             try:
@@ -353,7 +431,7 @@ class WorldService:
 
         So greifen Port-Saga und Neuerzeugung aus dem Volume wie beim Start.
         """
-        with _LOCK:
+        with self._mutating():
             row = self._row(world_id)
             self._store.update_world(world_id, desired_state="running")
             try:
@@ -369,7 +447,7 @@ class WorldService:
             return self._current(world_id)
 
     def _delete_world_sync(self, world_id: str) -> None:
-        with _LOCK:
+        with self._mutating():
             self._row(world_id)
             self._store.update_world(world_id, desired_state="deleted")
             try:
