@@ -272,12 +272,27 @@ def test_read_fails_after_second_drop(prov: DockerProvisioner, fake: FakeClient)
     assert listing.calls == 2
 
 
-def test_timeout_on_read_is_not_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
-    listing = Flaky([requests.exceptions.ReadTimeout("langsam")], [])
+@pytest.mark.parametrize(
+    "error",
+    [
+        requests.exceptions.ReadTimeout("langsam"),
+        # MRO-Falle (WR-03): ConnectTimeout ist auch ein ConnectionError.
+        requests.exceptions.ConnectTimeout("schwarzes Loch"),
+        requests.exceptions.Timeout("allgemein"),
+    ],
+)
+def test_timeout_on_read_is_not_retried(prov: DockerProvisioner, fake: FakeClient, error: BaseException) -> None:
+    listing = Flaky([error], [])
     fake.containers.list = listing
     with pytest.raises(DockerUnavailableError):
         prov.list_managed()
     assert listing.calls == 1
+
+
+def test_connect_timeout_is_a_connection_error() -> None:
+    """Gegenprobe zur MRO-Falle: Ohne die Timeout-Prüfung wäre ConnectTimeout wiederholbar."""
+    assert issubclass(requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError)
+    assert issubclass(requests.exceptions.ConnectTimeout, requests.exceptions.Timeout)
 
 
 def test_used_host_ports_is_retried(prov: DockerProvisioner, fake: FakeClient) -> None:

@@ -38,7 +38,9 @@ STATUS_FILE_MAX = 4096
 # Höchstens so viele Bytes Tar-Strom (Kopfblöcke, auch PAX, plus gekappter Inhalt).
 STATUS_ARCHIVE_MAX = 64 * 1024
 # Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
-# Leseversuch heilt (Pitfall 4); Timeouts werden nicht wiederholt.
+# Leseversuch heilt (Pitfall 4). Timeouts werden nie wiederholt; Achtung:
+# ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
+# Timeout zusätzlich (WR-03), sonst verdoppelte ein schwarzes Loch die Wartezeit.
 RETRYABLE_ERRORS = (requests.exceptions.ConnectionError, urllib3.exceptions.ProtocolError)
 
 
@@ -229,7 +231,8 @@ class DockerProvisioner:
             with self._guarded():
                 return operation()
         except DockerUnavailableError as exc:
-            if not isinstance(exc.__cause__, RETRYABLE_ERRORS):
+            cause = exc.__cause__
+            if not isinstance(cause, RETRYABLE_ERRORS) or isinstance(cause, requests.exceptions.Timeout):
                 raise
             LOG.info("Verbindung zum Docker-Proxy abgebrochen, zweiter Leseversuch")
         with self._guarded():
