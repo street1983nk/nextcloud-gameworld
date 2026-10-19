@@ -32,7 +32,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Jede Welt startet mit konservativen RAM/CPU-Limits (mem_limit = memswap_limit, pids-Limit, cap_drop ALL), ohne dass jemand etwas einstellen muss
   4. Jede neue Welt ist privat per Default: server_announce aus, keine leeren Passwörter, minimale Privilegien; eine Option "öffentlich machen" existiert nirgends
   5. Docker-Zugriff läuft ausschließlich über den eng gescopten tecnativa/docker-socket-proxy (dokumentiertes Compose-Snippet); ein fehlender Proxy wird per Setup-Check verständlich gemeldet
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+- [ ] 01-01-PLAN.md , Walking Skeleton A: gehärtete private Welt per API erzeugen (Provisioner, SQLite, Dev-Proxy)
+- [ ] 01-02-PLAN.md , Walking Skeleton B: ExApp im Top-Menü, Welt per Klick erstellen (info.xml, Lifecycle, Vue-Hülle, smoke.sh)
+- [ ] 01-03-PLAN.md , Lebenszyklus: parallele Welten starten, stoppen, löschen, Port-Kollision, Instanz-Schutz
+- [ ] 01-04-PLAN.md , Setup-Check für den Docker-Proxy plus docs/install.md mit gescoptem Snippet und Restrisiko
+- [ ] 01-05-PLAN.md , Phasenabnahme: Abnahmeskript K1 bis K5 plus gemeinsame Playwright-Abnahme
 **UI hint**: yes
 **Research flag**: yes (Welt-Daten-Ablage: Named Volume vs. Container-FS plus Archive-API; Image-Wahl ghcr.io/luanti-org vs. linuxserver; Headless-Administration)
 
@@ -107,7 +113,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fundament | 0/TBD | Not started | - |
+| 1. Fundament | 0/5 | Planned | - |
 | 2. One-Click-Welten | 0/TBD | Not started | - |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
