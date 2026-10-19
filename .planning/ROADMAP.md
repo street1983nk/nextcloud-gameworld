@@ -94,7 +94,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02-05-PLAN.md , Online-Spieler und RAM pro Welt, 2-s-Cache, Liste nach "Erneut prüfen" aktualisieren
+- [x] 02-05-PLAN.md , Online-Spieler und RAM pro Welt, 2-s-Cache, Liste nach "Erneut prüfen" aktualisieren
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
-| 2. One-Click-Welten | 4/7 | In Progress|  |
+| 2. One-Click-Welten | 5/7 | In Progress|  |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |

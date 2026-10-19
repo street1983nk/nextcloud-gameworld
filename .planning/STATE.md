@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-10-19T19:30:32.325Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-10-19T19:45:51.967Z"
 last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 9
+  completed_plans: 10
   percent: 17
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 2
-Plan: 02-04 complete (4 von 7 Plänen der Phase 2), nächster Plan 02-05 (Welle 5)
+Plan: 02-05 complete (5 von 7 Plänen der Phase 2), nächster Plan 02-06 (Welle 6)
 Status: Executing
 Last activity: 2026-10-19
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [████████░░] 75%
 | Phase 02 P01 | 25 min | 2 tasks | 11 files |
 | Phase 02 P03 | 10 min | 2 tasks | 14 files |
 | Phase 02 P04 | 14 min | 2 tasks | 12 files |
+| Phase 02 P05 | 15 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,9 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-04: Status nur aus Docker (derive_status in worlds/status.py), DB nur für creating/failed; Neustart = stop plus _launch, nie container.restart
 - [Phase 02]: 02-04: Lese-Retry genau einmal nur bei ConnectionError/ProtocolError (Keep-Alive), Timeouts und Mutationen nie wiederholt
 - [Phase 02]: 02-04: Status-Datei gekappt (64 KiB Tar-Strom, 4096 Bytes Inhalt); Privacy-Grep nimmt nur die DOM-Page-Visibility-API aus
+- [Phase 02]: 02-05: Listen-Cache 2 s mit Generationszähler, Mutationen verwerfen ihn davor und danach (auch bei Fehlern); unknown wird nie gecacht
+- [Phase 02]: 02-05: Spieler nur bei abgeleitetem Status running (Datei dieses Laufs), RAM bei jedem laufenden eigenen Container über stats one_shot
+- [Phase 02]: 02-05: Dashboard wendet nur die Antwort des zuletzt gestarteten Listenabrufs an (überholende Abrufe bei totem Proxy)
 
 ### Pending Todos
 
@@ -118,6 +122,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-19T19:31:00.000Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-10-19T19:46:00.000Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None
