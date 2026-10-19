@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -14,6 +16,7 @@ from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
 from gameworld.api import setup_check, worlds
 from gameworld.lifecycle import enabled_handler
+from gameworld.worlds.reconciler import reconcile_forever
 
 # nc_py_api tippt den Handler als Union aus Sync- und Async-Client. Eine
 # Coroutine-Funktion bekommt aber immer AsyncNextcloudApp (integration_fastapi.py),
@@ -31,11 +34,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Baut den Dienst und migriert dabei das SQLite-Schema. Eine ungültige
     # Umgebung darf den Start nicht verhindern: Nur ein laufender Prozess kann
     # den Befund "config" über /api/setup-check melden (WR-01).
+    task: asyncio.Task[None] | None = None
     try:
-        await anyio.to_thread.run_sync(worlds.get_service)
+        service = await anyio.to_thread.run_sync(worlds.get_service)
     except HTTPException:
         LOG.exception("Ungültige Konfiguration; /api/setup-check zeigt den Befund")
-    yield
+    else:
+        # Als Task, nie synchron: AppAPI wartet auf /heartbeat, und der
+        # Docker-Proxy ist nach einem Reboot evtl. noch nicht oben (PLATT-02).
+        task = asyncio.create_task(reconcile_forever(service))
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 APP = FastAPI(lifespan=lifespan)

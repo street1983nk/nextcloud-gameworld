@@ -345,6 +345,17 @@ class DockerProvisioner:
                 with contextlib.suppress(docker.errors.NotFound):
                     api.volumes.get(resource_name(self._instance_id, world_id)).remove()
 
+    def volume_exists(self, world_id: str) -> bool:
+        """Gibt es das Volume der Welt (Weltdaten) noch? Name immer mit eigenem Instanz-Präfix."""
+        return self._read(lambda: self._volume_exists(world_id))
+
+    def _volume_exists(self, world_id: str) -> bool:
+        try:
+            self._docker().volumes.get(resource_name(self._instance_id, world_id))
+        except docker.errors.NotFound:
+            return False
+        return True
+
     def used_host_ports(self, lo: int, hi: int) -> set[int]:
         """Host-Ports im Bereich, die irgendein Container des Hosts bindet (auch fremde)."""
         return self._read(lambda: self._used_host_ports(lo, hi))

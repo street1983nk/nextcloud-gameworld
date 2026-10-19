@@ -25,6 +25,7 @@ from gameworld.provisioner.archive import build_world_payload
 from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
+    DockerUnavailableError,
     MemoryUsage,
     PortInUseError,
     ProvisionerError,
@@ -36,6 +37,7 @@ from gameworld.provisioner.presets import DEFAULT_PRESET_ID, get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_name
 from gameworld.provisioner.status_mod import parse_players
 from gameworld.worlds.ports import NoFreePortError, allocate_port
+from gameworld.worlds.reconciler import ReconcileAction, decide_boot, decide_periodic, needs_volume_check
 from gameworld.worlds.status import RUNNING, STATUS_MOD_SCHEMA, WorldStatus, derive_status, schema_version
 from gameworld.worlds.store import WorldRow, WorldStore
 
@@ -52,6 +54,10 @@ MAX_START_ATTEMPTS = 3
 LIST_CACHE_SECONDS = 2.0
 PORTS_EXHAUSTED = "Kein freier UDP-Port gefunden. Bitte den Portbereich GAMEWORLD_PORT_RANGE prüfen."
 NOT_FOUND = "Diese Welt gibt es nicht (mehr)."
+# Meldungen des Abgleichs (worlds/reconciler.py) an der Welt.
+RECONCILE_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
+RECONCILE_DATA_MISSING = "Die Weltdaten fehlen. Die Welt kann nur gelöscht werden."
+RECONCILE_INTERRUPTED = "Das Erstellen wurde unterbrochen. Bitte die Welt löschen und neu erstellen."
 
 UNKNOWN = "unknown"
 MISSING = "missing"
@@ -162,6 +168,18 @@ class WorldService:
 
     async def delete_world(self, world_id: str) -> None:
         await anyio.to_thread.run_sync(self._delete_world_sync, world_id)
+
+    # Abgleich (worlds/reconciler.py). abandon_on_cancel: Beim Herunterfahren
+    # wartet der Lifespan nicht auf einen hängenden Docker-Aufruf (bis 60 s);
+    # der Thread gibt _LOCK im finally trotzdem frei.
+
+    async def boot_reconcile(self) -> bool:
+        """Abgleich beim Prozessstart; False, wenn gerade eine Elternaktion läuft."""
+        return await anyio.to_thread.run_sync(self._boot_reconcile_sync, abandon_on_cancel=True)
+
+    async def periodic_reconcile(self) -> None:
+        """Zustandspflege ohne Start oder Neuerzeugung; übersprungen, wenn _LOCK belegt ist."""
+        await anyio.to_thread.run_sync(self._periodic_reconcile_sync, abandon_on_cancel=True)
 
     # Hilfen
 
@@ -445,6 +463,79 @@ class WorldService:
                 raise
             self._store.update_world(world_id, op_state="ready", last_error=None)
             return self._current(world_id)
+
+    def _boot_reconcile_sync(self) -> bool:
+        # Nicht blockierend (Pitfall 6): Läuft eine Elternaktion, kommt der Abgleich später wieder.
+        if not _LOCK.acquire(blocking=False):
+            LOG.info("Boot-Abgleich verschoben: Eine Elternaktion läuft")
+            return False
+        try:
+            managed = self._provisioner.list_managed()
+            rows = self._store.list_worlds()
+            known = {row.id for row in rows}
+            orphans = [world_id for world_id in managed if world_id not in known]
+            if orphans:
+                # Nie anfassen: Ohne Zeile fehlen Weltschlüssel und Elternwunsch.
+                LOG.warning("verwaiste Welt-Container: %d (%s)", len(orphans), ", ".join(sorted(orphans)))
+            for row in rows:
+                self._reconcile_row(row, managed.get(row.id))
+            return True
+        finally:
+            _LOCK.release()
+            self._invalidate_cache()
+
+    def _reconcile_row(self, row: WorldRow, container: ContainerInfo | None) -> None:
+        """Eine Welt abgleichen; Fehler bleiben an dieser Welt, außer Docker ist ganz weg."""
+        action = ReconcileAction.NONE
+        try:
+            volume = needs_volume_check(row, container) and self._provisioner.volume_exists(row.id)
+            action = decide_boot(row, container, volume)
+            if action is ReconcileAction.NONE:
+                return
+            LOG.info("Abgleich Welt %s: %s", row.id, action.value)
+            self._apply(row, action)
+        except DockerUnavailableError:
+            # Proxy weg: keine Welt als kaputt markieren, der ganze Abgleich wiederholt sich.
+            raise
+        except ProvisionerError as exc:
+            LOG.warning("Abgleich Welt %s (%s) gescheitert: %s", row.id, action.value, exc)
+            self._fail(row.id, exc)
+
+    def _apply(self, row: WorldRow, action: ReconcileAction) -> None:
+        match action:
+            case ReconcileAction.START | ReconcileAction.RECREATE:
+                # RECREATE läuft über den Neuerzeugungspfad in _launch (Volume, row.preset).
+                self._launch(row)
+                self._store.update_world(row.id, op_state="ready", last_error=None)
+            case ReconcileAction.MARK_OOM:
+                self._store.update_world(row.id, last_error=RECONCILE_OOM)
+            case ReconcileAction.MARK_DATA_MISSING:
+                self._store.update_world(row.id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
+            case ReconcileAction.MARK_INTERRUPTED:
+                self._store.update_world(row.id, op_state="failed", last_error=RECONCILE_INTERRUPTED)
+            case ReconcileAction.RETRY_DELETE:
+                self._provisioner.remove_world(row.id, keep_volume=False)
+                self._store.delete_world(row.id)
+            case ReconcileAction.ADOPT_RUNNING:
+                self._store.update_world(row.id, desired_state="running")
+            case ReconcileAction.NONE:
+                pass
+
+    def _periodic_reconcile_sync(self) -> None:
+        if not _LOCK.acquire(blocking=False):
+            return
+        changed = False
+        try:
+            managed = self._provisioner.list_managed()
+            for row in self._store.list_worlds():
+                if decide_periodic(row, managed.get(row.id)) is ReconcileAction.ADOPT_RUNNING:
+                    LOG.info("Abgleich Welt %s: von Hand gestartet, Soll-Zustand jetzt running", row.id)
+                    self._store.update_world(row.id, desired_state="running")
+                    changed = True
+        finally:
+            _LOCK.release()
+        if changed:
+            self._invalidate_cache()
 
     def _delete_world_sync(self, world_id: str) -> None:
         with self._mutating():
