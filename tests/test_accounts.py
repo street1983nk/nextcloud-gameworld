@@ -1,0 +1,212 @@
+"""Abgeleitete Spielpasswörter, Spielernamen und das Geheimnis in Nextcloud (A2, A3)."""
+
+from __future__ import annotations
+
+import asyncio
+import re
+from dataclasses import dataclass, field
+
+import pytest
+from nc_py_api import NextcloudException
+
+from gameworld.access.accounts import (
+    PASSWORD_ALPHABET,
+    PLAYER_NAME_MAX,
+    derive_password,
+    suggest_player_name,
+)
+from gameworld.access.secret import SECRET_KEY, PlayerSecret, SecretUnavailableError
+
+SECRET = bytes(range(32))
+PASSWORD_RE = re.compile(r"^[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}$")
+# Unabhängig per python -c (hmac, divmod über das Alphabet, erste Stelle = erster Rest) berechnet.
+VECTOR_GW_KIND_0 = "nyd5-hh9q-u45t"
+VECTOR_GW_KIND_1 = "updy-6kpg-2f23"
+
+
+# Passwörter
+
+
+def test_alphabet_has_no_confusable_characters() -> None:
+    assert len(PASSWORD_ALPHABET) == 31
+    assert not set("ilo01") & set(PASSWORD_ALPHABET)
+
+
+def test_derive_password_matches_fixed_vector() -> None:
+    assert derive_password(SECRET, "gw-kind", 0) == VECTOR_GW_KIND_0
+    assert derive_password(SECRET, "gw-kind", 1) == VECTOR_GW_KIND_1
+
+
+def test_derive_password_is_deterministic_and_well_formed() -> None:
+    first = derive_password(SECRET, "gw-kind", 0)
+    assert first == derive_password(SECRET, "gw-kind", 0)
+    assert PASSWORD_RE.fullmatch(first)
+
+
+def test_derive_password_changes_with_rotation_account_and_secret() -> None:
+    base = derive_password(SECRET, "gw-kind", 0)
+    assert derive_password(SECRET, "gw-kind", 1) != base
+    assert derive_password(SECRET, "gw-anders", 0) != base
+    assert derive_password(bytes(32), "gw-kind", 0) != base
+
+
+# Spielernamen
+
+
+def test_first_word_of_display_name() -> None:
+    assert suggest_player_name("Mia Müller", "mia.m", set()) == "Mia"
+
+
+@pytest.mark.parametrize(
+    ("display", "expected"),
+    [("Jörg", "Joerg"), ("Ölaf", "Oelaf"), ("Straße", "Strasse"), ("Ümit", "Uemit"), ("Renée", "Renee")],
+)
+def test_transliteration(display: str, expected: str) -> None:
+    assert suggest_player_name(display, "x", set()) == expected
+
+
+@pytest.mark.parametrize("display", ["", "   ", "!!!", "@@ ##"])
+def test_fallback_name(display: str) -> None:
+    assert suggest_player_name(display, "", set()) == "Spieler"
+
+
+def test_uid_only_when_display_name_empty_and_only_before_separators() -> None:
+    assert suggest_player_name("", "mia.mueller@example.org", set()) == "mia"
+    assert suggest_player_name("", "leo@example.org", set()) == "leo"
+    name = suggest_player_name("Kind (Dev)", "gw-kind", set())
+    assert name == "Kind"
+
+
+def test_collision_is_case_insensitive() -> None:
+    assert suggest_player_name("Mia", "a", {"mia"}) == "Mia2"
+    assert suggest_player_name("Mia", "a", {"mia", "mia2"}) == "Mia3"
+
+
+def test_length_is_capped() -> None:
+    name = suggest_player_name("Maximilianalexanderkonstantin", "x", set())
+    assert len(name) <= PLAYER_NAME_MAX
+    taken = {name.lower()} | {f"{name.lower()}{n}" for n in range(2, 12)}
+    longer = suggest_player_name("Maximilianalexanderkonstantin", "x", taken)
+    assert len(longer) <= PLAYER_NAME_MAX
+    assert longer.lower() not in taken
+
+
+@pytest.mark.parametrize("display", ["singleplayer", "SinglePlayer", "SINGLEPLAYER"])
+def test_singleplayer_is_never_suggested(display: str) -> None:
+    assert suggest_player_name(display, "x", set()).lower() != "singleplayer"
+
+
+def test_names_are_always_valid_luanti_names() -> None:
+    for display in ["Mia Müller", "李", "a.b@c", "-_-", "Ünal-Can", "x" * 40]:
+        name = suggest_player_name(display, "konto.id@host", set())
+        assert re.fullmatch(r"[A-Za-z0-9_-]{1,20}", name), display
+        assert "." not in name
+        assert "@" not in name
+
+
+# Geheimnis
+
+
+@dataclass
+class FakeAppConfig:
+    values: dict[str, str] = field(default_factory=dict)
+    set_calls: list[tuple[str, bool | None]] = field(default_factory=list)
+    get_error: Exception | None = None
+    set_error: Exception | None = None
+    # Was beim Rücklesen nach set_value herauskommt (None = wie gesetzt).
+    read_back: str | None = None
+
+    async def get_value(self, key: str, default: str | None = None) -> str | None:
+        if self.get_error is not None:
+            raise self.get_error
+        return self.values.get(key, default)
+
+    async def set_value(self, key: str, value: str, sensitive: bool | None = None) -> None:
+        if self.set_error is not None:
+            raise self.set_error
+        self.set_calls.append((key, sensitive))
+        self.values[key] = value if self.read_back is None else self.read_back
+
+
+@dataclass
+class FakeNc:
+    appconfig_ex: FakeAppConfig
+
+
+def _secret(config: FakeAppConfig) -> tuple[PlayerSecret, list[int]]:
+    built: list[int] = []
+
+    def factory() -> FakeNc:
+        built.append(1)
+        return FakeNc(config)
+
+    return PlayerSecret(factory), built  # pyright: ignore[reportArgumentType]
+
+
+async def test_existing_secret_is_loaded_and_cached() -> None:
+    config = FakeAppConfig({SECRET_KEY: SECRET.hex()})
+    secret, built = _secret(config)
+    assert await secret.get() == SECRET
+    assert await secret.get() == SECRET
+    assert config.set_calls == []
+    assert len(built) == 1
+
+
+async def test_missing_secret_is_created_sensitive_and_read_back() -> None:
+    config = FakeAppConfig()
+    secret, _ = _secret(config)
+    value = await secret.get()
+    assert len(value) == 32
+    assert config.set_calls == [(SECRET_KEY, True)]
+    assert config.values[SECRET_KEY] == value.hex()
+
+
+async def test_read_back_value_wins() -> None:
+    # Ein paralleler Prozess hat zuerst geschrieben: Der zurückgelesene Wert gilt.
+    config = FakeAppConfig(read_back=SECRET.hex())
+    secret, _ = _secret(config)
+    assert await secret.get() == SECRET
+
+
+async def test_concurrent_first_use_creates_once() -> None:
+    config = FakeAppConfig()
+    secret, _ = _secret(config)
+    values = await asyncio.gather(*(secret.get() for _ in range(5)))
+    assert len(set(values)) == 1
+    assert len(config.set_calls) == 1
+
+
+@pytest.mark.parametrize("stored", ["zz", "abcd", SECRET.hex()[:-2], " " + SECRET.hex()])
+async def test_unreadable_secret_is_never_overwritten(stored: str) -> None:
+    config = FakeAppConfig({SECRET_KEY: stored})
+    secret, _ = _secret(config)
+    with pytest.raises(SecretUnavailableError):
+        await secret.get()
+    assert config.set_calls == []
+    assert config.values[SECRET_KEY] == stored
+
+
+async def test_nextcloud_error_on_read() -> None:
+    config = FakeAppConfig(get_error=NextcloudException(500, "kaputt"))
+    secret, _ = _secret(config)
+    with pytest.raises(SecretUnavailableError):
+        await secret.get()
+    assert config.set_calls == []
+
+
+async def test_nextcloud_error_on_write_is_not_cached() -> None:
+    config = FakeAppConfig(set_error=NextcloudException(500, "kaputt"))
+    secret, _ = _secret(config)
+    with pytest.raises(SecretUnavailableError):
+        await secret.get()
+    config.set_error = None
+    assert len(await secret.get()) == 32
+
+
+async def test_error_message_never_contains_the_secret() -> None:
+    stored = SECRET.hex()[:-2]
+    config = FakeAppConfig({SECRET_KEY: stored})
+    secret, _ = _secret(config)
+    with pytest.raises(SecretUnavailableError) as info:
+        await secret.get()
+    assert stored not in str(info.value)
