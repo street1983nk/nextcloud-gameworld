@@ -7,7 +7,10 @@ services:
   app:
     image: nextcloud:34.0.3-apache
     ports:
-      - "${GAMEWORLD_NC_PORT:-8091}:80"
+      # Loopback-Bindung auch hier: Die Dev-Nextcloud hat ein festes
+      # Admin-Passwort aus dem Repository; im LAN erreichbar wäre sie ein
+      # signierender Zugang zur ExApp und damit zur Container-Provisionierung.
+      - "127.0.0.1:${GAMEWORLD_NC_PORT:-8091}:80"
     environment:
       SQLITE_DATABASE: nextcloud
       NEXTCLOUD_ADMIN_USER: admin
