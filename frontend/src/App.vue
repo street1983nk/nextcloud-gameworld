@@ -7,7 +7,7 @@
 					Jede Welt ist privat: Nur wer den Weltschlüssel kennt, kann beitreten. Gameworld kündigt keine Welt im Internet an.
 				</p>
 
-				<SetupCheck @update:ok="onSetupOk" />
+				<SetupCheck @update:ok="onSetupOk" @checked="refresh" />
 
 				<NcNoteCard v-if="presetsError" type="error">
 					{{ presetsError }}
@@ -64,12 +64,18 @@
 							<th>Spielart</th>
 							<th>UDP-Port</th>
 							<th>Status</th>
+							<th>Arbeitsspeicher</th>
 							<th>Aktionen</th>
 						</tr>
 					</thead>
 					<tbody>
 						<tr v-for="world in worlds" :key="world.id" :data-world-id="world.id">
-							<td>{{ world.name }}</td>
+							<td>
+								{{ world.name }}
+								<div v-if="world.status === 'running'" class="gameworld__players">
+									{{ playersText(world) }}
+								</div>
+							</td>
 							<td>{{ world.preset_title }}</td>
 							<td>{{ world.port }}</td>
 							<td>
@@ -78,6 +84,16 @@
 									:text="world.status_text"
 									:variant="chipVariant(world.status)"
 									no-close />
+							</td>
+							<td class="gameworld__memory">
+								<template v-if="world.memory_used_bytes !== null && world.memory_limit_bytes">
+									<NcProgressBar
+										:value="memoryPercent(world)"
+										:error="memoryPercent(world) >= MEMORY_WARN_PERCENT"
+										:aria-label="memoryText(world)" />
+									<span class="gameworld__memory-text">{{ memoryText(world) }}</span>
+								</template>
+								<span v-else class="gameworld__memory-text">nicht aktiv</span>
 							</td>
 							<td class="gameworld__actions">
 								<NcLoadingIcon v-if="busy[world.id]" :size="20" />
@@ -131,6 +147,7 @@ import NcContent from '@nextcloud/vue/components/NcContent'
 import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
+import NcProgressBar from '@nextcloud/vue/components/NcProgressBar'
 import NcRadioGroup from '@nextcloud/vue/components/NcRadioGroup'
 import NcRadioGroupButton from '@nextcloud/vue/components/NcRadioGroupButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
@@ -154,6 +171,10 @@ const CHIP_VARIANT = {
 	unknown: 'warning',
 }
 const POLL_MS = 5000
+// Ab diesem Anteil am Limit wird der RAM-Balken als Fehler markiert.
+const MEMORY_WARN_PERCENT = 90
+const MIB = 1048576
+const GIB = 1073741824
 
 const worlds = ref([])
 const loading = ref(true)
@@ -223,6 +244,33 @@ function chipVariant(status) {
 	return CHIP_VARIANT[status] ?? 'warning'
 }
 
+// Namen kommen gefiltert aus der API ([A-Za-z0-9_-]) und werden nur per Textinterpolation ausgegeben.
+function playersText(world) {
+	const players = world.players ?? []
+	if (players.length === 0) {
+		return 'Niemand online'
+	}
+	return `Gerade online: ${players.join(', ')}`
+}
+
+// Unter 1 GiB ganze MB, ab 1 GiB GB mit höchstens einer Nachkommastelle ("1 GB", "1,5 GB").
+function formatBytes(bytes) {
+	if (bytes < GIB) {
+		return `${Math.round(bytes / MIB)} MB`
+	}
+	const gb = (Math.round((bytes / GIB) * 10) / 10).toString().replace('.', ',')
+	return `${gb} GB`
+}
+
+function memoryPercent(world) {
+	const percent = Math.round((world.memory_used_bytes / world.memory_limit_bytes) * 100)
+	return Math.min(100, Math.max(0, percent))
+}
+
+function memoryText(world) {
+	return `Arbeitsspeicher: ${formatBytes(world.memory_used_bytes)} von ${formatBytes(world.memory_limit_bytes)}`
+}
+
 function isActive(world) {
 	return world.status === 'running' || world.status === 'starting'
 }
@@ -232,12 +280,22 @@ function actionsLocked(world) {
 	return Boolean(busy[world.id]) || world.status === 'unknown'
 }
 
+// Abrufe können sich überholen (Polling, Aktion, Setup-Check); nur die Antwort
+// des zuletzt gestarteten Abrufs darf die Liste setzen.
+let refreshSeq = 0
+
 async function refresh() {
+	const seq = ++refreshSeq
 	try {
-		worlds.value = await listWorlds()
-		listError.value = ''
+		const result = await listWorlds()
+		if (seq === refreshSeq) {
+			worlds.value = result
+			listError.value = ''
+		}
 	} catch (err) {
-		listError.value = errorText(err)
+		if (seq === refreshSeq) {
+			listError.value = errorText(err)
+		}
 	} finally {
 		loading.value = false
 	}
@@ -276,10 +334,9 @@ async function loadPresets() {
 	}
 }
 
+// Die Weltenliste aktualisiert das Ereignis checked nach jedem Prüflauf (auch "Erneut prüfen").
 function onSetupOk(ok) {
 	setupOk.value = ok
-	// Nach "Erneut prüfen" auch die Statusspalte sofort aktualisieren.
-	refresh()
 }
 
 // Führt eine Aktion für eine Welt aus und lädt danach die Liste neu, weil
@@ -375,6 +432,16 @@ onUnmounted(() => {
 	width: 100%;
 	margin-top: 16px;
 	border-collapse: collapse;
+}
+
+.gameworld__players,
+.gameworld__memory-text {
+	font-size: 0.9em;
+	color: var(--color-text-maxcontrast);
+}
+
+.gameworld__memory {
+	min-width: 160px;
 }
 
 .gameworld__actions {

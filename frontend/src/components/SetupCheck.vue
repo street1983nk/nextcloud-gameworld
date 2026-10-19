@@ -38,7 +38,8 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { getSetupCheck } from '../api.js'
 
-const emit = defineEmits(['update:ok'])
+// checked: nach jedem Prüflauf (Erfolg wie Fehler), damit die Weltenliste mitzieht.
+const emit = defineEmits(['update:ok', 'checked'])
 
 const result = ref(null)
 const checking = ref(false)
@@ -63,6 +64,7 @@ async function check() {
 		emit('update:ok', false)
 	} finally {
 		checking.value = false
+		emit('checked')
 	}
 }
 
