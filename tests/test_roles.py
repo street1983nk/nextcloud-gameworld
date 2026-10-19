@@ -59,7 +59,7 @@ async def test_admin_routes_forbidden_for_players(
 
 async def test_admin_lists_worlds(client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     class EmptyService:
-        def list_worlds(self) -> list[object]:
+        async def list_worlds(self) -> list[object]:
             return []
 
     from gameworld.main import APP

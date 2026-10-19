@@ -9,13 +9,15 @@ from dataclasses import asdict
 from typing import Literal
 
 import anyio.to_thread
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from gameworld.access.roles import require_verwalter
 from gameworld.config import load_settings
 from gameworld.provisioner.setup_check import run_setup_check
 
-router = APIRouter(prefix="/api")
+# Jede Route dieses Routers ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 
 class CheckItemOut(BaseModel):

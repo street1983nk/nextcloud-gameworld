@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
+from gameworld.access.roles import require_verwalter
 from gameworld.config import load_settings
 from gameworld.provisioner.client import (
     DockerProvisioner,
@@ -26,7 +27,8 @@ from gameworld.worlds.ports import NoFreePortError
 from gameworld.worlds.service import NOT_FOUND, DeleteOnlyError, WorldService, WorldView
 from gameworld.worlds.store import WorldStore
 
-router = APIRouter(prefix="/api")
+# Jede Route dieses Routers ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 _service: WorldService | None = None
 _service_lock = threading.Lock()
