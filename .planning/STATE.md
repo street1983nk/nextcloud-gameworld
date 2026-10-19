@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-10-20T08:00:00.000Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-10-19T23:42:51.000Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 14
+  completed_plans: 15
   percent: 33
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 2 von 7 Plänen)
+**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 3 von 7 Plänen)
 
 ## Current Position
 
 Phase: 3 (Zugang und Rollen), In Progress
-Plan: 03-02 complete, nächster 03-03
+Plan: 03-03 complete, nächster 03-04
 Status: Executing Phase 3
 Last activity: 2026-10-20
 
@@ -66,6 +66,7 @@ Progress: [███░░░░░░░] 33% (2 von 6 Phasen)
 | Phase 02 P07 | 60 min | 2 tasks | 4 files |
 | Phase 03 P01 | 30 min | 3 tasks | 13 files |
 | Phase 03 P02 | 25 min | 3 tasks | 16 files |
+| Phase 03 P03 | 17 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,10 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-02: Rolle allein aus NC-Gruppe admin per Selbstauskunft (/cloud/user), Cache 30 s nur für Erfolge; Störung -> 503, nie Verwalter
 - [Phase 03]: 03-02: require_verwalter routerweit (dependencies=[...]) auf worlds und setup_check; jede künftige Verwaltungsroute dort erbt die Sperre, neue Spielerrouten gehören in einen eigenen Router unter /api/my/
 - [Phase 03]: 03-02: info.xml USER ^/js, ^/img, ^/api/me$, ^/api/my/.* vor ADMIN ^/api/.*; Top-Menü admin_required=False; AppAPI liefert Kindern an ADMIN-Routen 404 (nicht 403)
+- [Phase 03]: 03-03: Passwort = 12 Zeichen aus HMAC-SHA256(Geheimnis, nc_user:rotation) per divmod über 31 Zeichen; Vektor gw-kind/0 = nyd5-hh9q-u45t; players ohne Passwortfeld
+- [Phase 03]: 03-03: PlayerSecret im App-Kontext ohne set_user, live belegt (appconfig_ex sensitive=1, verschlüsselt, übersteht ExApp-Neustart); kein uid-Fallback nötig
+- [Phase 03]: 03-03: applied = Zugangsdatei entspricht der DB (ohne Soll-Änderung true; ohne Container oder bei Docker-Störung false, Start schreibt nach)
+- [Phase 03]: 03-03: Zugangsänderung prüft Welt, Konten (als Verwalter) und Geheimnis vor der Sperre, schreibt dann unter WorldService.mutation(); Verifier nur für neue Einträge
 
 ### Pending Todos
 
@@ -138,6 +143,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T08:00:00.000Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-10-19T23:42:51.000Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None

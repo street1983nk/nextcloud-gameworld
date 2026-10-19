@@ -132,7 +132,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-03-PLAN.md , Nutzer einladen Ende zu Ende: Schema 3 ohne Passwortfeld, HMAC-abgeleitete Spielpasswörter (Geheimnis in appconfig_ex), AccessService, Invites-API, Positiv-Join
+- [x] 03-03-PLAN.md , Nutzer einladen Ende zu Ende: Schema 3 ohne Passwortfeld, HMAC-abgeleitete Spielpasswörter (Geheimnis in appconfig_ex), AccessService, Invites-API, Positiv-Join
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
-| 3. Zugang und Rollen | 2/7 | In Progress | - |
+| 3. Zugang und Rollen | 3/7 | In Progress | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |
