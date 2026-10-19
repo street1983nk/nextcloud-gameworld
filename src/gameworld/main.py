@@ -26,6 +26,24 @@ _EnabledHandler = Callable[[bool, AsyncNextcloudApp | NextcloudApp], Awaitable[s
 LOG = logging.getLogger(__name__)
 
 
+def _setup_logging() -> None:
+    """Hebt den gameworld-Logger auf INFO und haengt einen Handler an.
+
+    uvicorns log_level betrifft nur die uvicorn-Logger. Ohne eigenen Handler
+    kaemen Reconciler-Aktionen (T-02-32) nie im Log an, weil der effektive
+    Level auf WARNING steht.
+    """
+    logger = logging.getLogger("gameworld")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        logger.addHandler(handler)
+
+
+_setup_logging()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # map_app_static=True (Default) mountet js/ und img/ relativ zum Arbeitsverzeichnis,
