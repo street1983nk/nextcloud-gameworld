@@ -23,6 +23,9 @@ services:
 
   gameworld-docker-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    # Wie in docs/install.md: Nach einem Docker-Neustart ist der Proxy wieder
+    # da, egal ob vor oder nach der ExApp; der Reconciler wartet ohnehin.
+    restart: unless-stopped
     environment:
       # Nur was der Provisioner braucht. Alle übrigen Bereiche stehen explizit
       # auf 0, damit ein geänderter Image-Default nichts unbemerkt öffnet.
