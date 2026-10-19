@@ -78,7 +78,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-02-PLAN.md , VoxeLibre 0.92.4 hash-geprüft bereitstellen (Fetch-Skript, SHA256SUMS, Lizenzdoku, Dev-Setup)
+- [x] 02-02-PLAN.md , VoxeLibre 0.92.4 hash-geprüft bereitstellen (Fetch-Skript, SHA256SUMS, Lizenzdoku, Dev-Setup)
 
 **Wave 2** *(blocked on Wave 1 completion; seriell wegen gemeinsamem Live-Dev-Stack)*
 
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
-| 2. One-Click-Welten | 0/7 | Planned | - |
+| 2. One-Click-Welten | 1/7 | In Progress|  |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |

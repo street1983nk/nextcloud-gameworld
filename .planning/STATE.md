@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 01 complete (5/5) — ready to discuss Phase 2
-last_updated: 2026-10-19T14:48:28.179Z
+status: executing
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-10-19T18:54:56.585Z"
 last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 12
+  completed_plans: 6
   percent: 17
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 2
-Plan: Not started
-Status: Ready to plan
+Plan: 02-02 complete (1 von 7 Plänen der Phase 2), nächster Plan 02-01 (Welle 2)
+Status: Executing
 Last activity: 2026-10-19
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██████████] 100%
 | Phase 01-fundament P03 | 9 min | 3 tasks | 11 files |
 | Phase 01 P04 | 12 min | 2 tasks | 9 files |
 | Phase 01 P05 | 45 min | 2 tasks | 2 files |
+| Phase 02 P02 | 10 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-05: Phase 1 vom Owner am 19.10.2026 per gemeinsamer Playwright-Abnahme freigegeben, Abnahmeskript 81/81
 - [Phase 01]: 01-05: Offene Produktfrage fürs Phasen-Audit: failed-Zeile nach gescheiterter Anlage belegt einen UDP-Port bis zum Löschen
 - [Phase 01]: 01-05: 'Erneut prüfen' aktualisiert Statusspalte nicht, Kandidat für Phase 2 (Status-UI)
+- [Phase 02]: 02-02: VoxeLibre-Zip (84 MB) nicht im Git, Abruf per scripts/fetch-games.sh gegen SHA256SUMS; register-exapp.sh ruft es vor Frontend-Build und Backend-Start
+- [Phase 02]: 02-02: Offline-Variante über GAMEWORLD_GAME_SOURCE_DIR, Prüfsumme wird auch dann geprüft
 
 ### Pending Todos
 
@@ -103,6 +106,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-19T14:23:43.362Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-10-19T18:54:56.563Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
