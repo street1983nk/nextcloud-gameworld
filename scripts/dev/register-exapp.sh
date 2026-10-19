@@ -209,6 +209,14 @@ EOF
 printf 'registriere Version %s mit %s Routen aus appinfo/info.xml\n' "${BACKEND_VERSION}" "${ROUTES_PARSED}"
 
 mkdir -p "${RUN_DIR}"
+
+# Spieldateien hash-geprüft bereitstellen, bevor irgendetwas startet. Ein
+# Backend mit fehlenden oder beschädigten Spielen startet nie.
+if ! sh "${REPO_ROOT}/scripts/fetch-games.sh"; then
+	printf 'Spieldateien fehlen oder sind beschädigt, siehe scripts/fetch-games.sh\n' >&2
+	exit 1
+fi
+
 build_frontend
 
 printf 'warte auf %s\n' "${NEXTCLOUD_URL}"

@@ -37,6 +37,16 @@ Lokale Umgebung für Gameworld: eine eigene Nextcloud 34 im Compose-Projekt `gam
    sh scripts/dev/smoke.sh
    ```
 
+## Spieldateien
+
+`minetest_game` liegt im Git, VoxeLibre (`vendor/games/mineclone2-39534.zip`, rund 84 MB) nicht. `register-exapp.sh` holt es bei jedem Lauf hash-geprüft über `scripts/fetch-games.sh`; ist die Datei schon da und stimmt die Prüfsumme, passiert nichts. Manuell:
+
+```sh
+sh scripts/fetch-games.sh
+```
+
+Ohne Netz: `GAMEWORLD_GAME_SOURCE_DIR` auf ein Verzeichnis mit einer gleichnamigen Kopie zeigen lassen, die Prüfsumme aus `vendor/games/SHA256SUMS` wird auch dann geprüft. Gameworld selbst lädt zur Laufzeit nie etwas nach.
+
 ## Phasenabnahme
 
 Belegt die fünf Erfolgskriterien von Phase 1 gegen den laufenden Stack, unabhängig von den Python-Testhelfern (docker-CLI, curl, tar, grep, jq):
