@@ -42,6 +42,21 @@ _TRANSLITERATION = str.maketrans(
 _UID_SEPARATORS = re.compile(r"[.@ ]")
 
 
+_VALID_NAME = re.compile(rf"[A-Za-z0-9_-]{{1,{PLAYER_NAME_MAX}}}")
+MSG_INVALID_NAME = "Der Spielername darf 1 bis 20 Zeichen haben: Buchstaben ohne Umlaute, Ziffern, _ und -."
+
+
+def validate_player_name(raw: str) -> str:
+    """Spielername, den ein Verwalter vergibt; ValueError mit deutscher Meldung.
+
+    Dieselbe Regel wie Luanti (1 bis 20 Zeichen aus [A-Za-z0-9_-]), dazu nie
+    ``singleplayer`` (T-03-28). Keine stille Korrektur: Der Name erscheint so im Spiel.
+    """
+    if not _VALID_NAME.fullmatch(raw) or raw.lower() == _FORBIDDEN_NAME:
+        raise ValueError(MSG_INVALID_NAME)
+    return raw
+
+
 def derive_password(secret: bytes, nc_user: str, rotation: int) -> str:
     """Spielpasswort eines Kontos, etwa ``k7mp-q3xa-9tre``.
 

@@ -84,9 +84,12 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("GAMEWORLD_PORT_RANGE", "30015-30019")
 
     from gameworld.access import directory, roles, secret
+    from gameworld.access import service as access_service
     from gameworld.api import worlds
 
     monkeypatch.setattr(worlds, "_service", None)
+    # Drossel des Abgleichs beim Verwalter-Besuch beginnt je Test frisch.
+    monkeypatch.setattr(access_service, "SYNC_STATE", access_service.SyncState())
     monkeypatch.setattr(roles, "_role_service", roles.RoleService(fake_lookup))
     monkeypatch.setattr(directory, "_directory", FakeDirectory())
     monkeypatch.setattr(secret, "_player_secret", StaticSecret())
@@ -98,14 +101,19 @@ TEST_SECRET = bytes(range(32))
 
 
 class FakeDirectory:
-    """Nextcloud-Konten ohne Nextcloud: gw-kind aktiv, gw-aus deaktiviert, alles andere fehlt."""
+    """Nextcloud-Konten ohne Nextcloud: gw-kind aktiv, gw-aus deaktiviert, alles andere fehlt.
+
+    Gruppe familie: gw-kind und gw-aus; im Test änderbar (groups).
+    """
 
     def __init__(self) -> None:
         self.users: dict[str, tuple[str, bool]] = {
             "gw-kind": ("Kind (Dev)", True),
             "gw-aus": ("Aus (Dev)", False),
         }
+        self.groups: dict[str, list[str]] = {"familie": ["gw-kind", "gw-aus"]}
         self.calls: list[tuple[str, str]] = []
+        self.group_calls: list[tuple[str, str]] = []
         self.error: Exception | None = None
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
@@ -114,6 +122,16 @@ class FakeDirectory:
             raise self.error
         entry = self.users.get(uid)
         return None if entry is None else DirectoryUser(uid=uid, display_name=entry[0], enabled=entry[1])
+
+    async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
+        self.group_calls.append((acting_uid, gid))
+        if self.error is not None:
+            raise self.error
+        members = self.groups.get(gid)
+        return None if members is None else list(members)
+
+    async def group_exists(self, acting_uid: str, gid: str) -> bool:
+        return await self.group_members(acting_uid, gid) is not None
 
 
 class StaticSecret(PlayerSecret):

@@ -235,6 +235,23 @@ class WorldService:
         """
         return self._mutating()
 
+    @contextlib.contextmanager
+    def try_mutation(self) -> Iterator[bool]:
+        """Wie mutation(), aber ohne Warten: liefert False, wenn gerade eine Aktion läuft.
+
+        Für Abgleiche beim Auflisten: Statuslesen darf nie hinter einem Erzeugen
+        warten (Pitfall 6 aus Phase 2). Nur aus einem Worker-Thread betreten.
+        """
+        if not _LOCK.acquire(blocking=False):
+            yield False
+            return
+        self._invalidate_cache()
+        try:
+            yield True
+        finally:
+            _LOCK.release()
+            self._invalidate_cache()
+
     def push_access(self, world_id: str) -> bool:
         """Schreibt die aktuelle Zugangsdatei in die laufende oder gestoppte Welt.
 

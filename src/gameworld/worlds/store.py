@@ -276,6 +276,54 @@ class WorldStore:
             ).fetchall()
         return {str(row[0]): str(row[1]) for row in rows}
 
+    def get_meta(self, key: str) -> str | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return None if row is None else str(row[0])
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
+    def player_name_owner(self, player_name: str) -> str | None:
+        """Konto, dem der Spielername ohne Rücksicht auf Groß-/Kleinschreibung gehört."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT nc_user FROM players WHERE player_name = ? COLLATE NOCASE", (player_name,)
+            ).fetchone()
+        return None if row is None else str(row[0])
+
+    def player_worlds(self, nc_user: str) -> list[str]:
+        """Welten, in denen das Konto gerade Zugang hat."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT world_id FROM world_access WHERE nc_user = ? ORDER BY world_id", (nc_user,)
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def update_player_access(self, player: PlayerRow, verifiers: dict[str, str]) -> None:
+        """Name oder Rotation eines Spielers und seine Verifier je Welt, in einer Transaktion.
+
+        ``verifiers`` bildet Welt-ID auf den neuen Verifier ab; jede dieser
+        Welten bekommt eine neue Generation.
+        """
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE players SET player_name = ?, rotation = ? WHERE nc_user = ?",
+                (player.player_name, player.rotation, player.nc_user),
+            )
+            for world_id, verifier in sorted(verifiers.items()):
+                connection.execute(
+                    "UPDATE world_access SET verifier = ? WHERE world_id = ? AND nc_user = ?",
+                    (verifier, world_id, player.nc_user),
+                )
+                connection.execute(
+                    "UPDATE worlds SET access_generation = access_generation + 1 WHERE id = ?", (world_id,)
+                )
+
     def delete_access_data(self, world_id: str) -> None:
         """Einladungen und Zugang einer gelöschten Welt; Spieler bleiben (gelten für alle Welten)."""
         with self._connect() as connection:

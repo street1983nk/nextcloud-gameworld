@@ -37,9 +37,23 @@ class Directory(Protocol):
         """Konto, wie Nextcloud es dem Verwalter zeigt; None, wenn es nicht existiert."""
         ...
 
+    async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
+        """Konto-IDs der Gruppe, als Verwalter gelesen; None, wenn es die Gruppe nicht gibt."""
+        ...
+
+    async def group_exists(self, acting_uid: str, gid: str) -> bool:
+        """Gibt es die Gruppe? Gleiche Prüfung wie group_members."""
+        ...
+
 
 class NcDirectory:
-    """Kontoprüfung per OCS als handelnder Verwalter (``users.get_user(uid)``)."""
+    """Kontoprüfung per OCS als handelnder Verwalter (``users.get_user(uid)``).
+
+    Gruppen löst nur ein Admin auf: ``users_groups.get_members`` antwortet
+    Nicht-Admins mit 403 (Pitfall 6). Darum laufen Gruppenabfragen nur im
+    Verwalter-Kontext; ein 403 gilt als Störung (503), nie als leere Gruppe,
+    damit kein Abgleich Zugänge wegen fehlender Rechte entfernt.
+    """
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
         try:
@@ -57,6 +71,26 @@ class NcDirectory:
             raise DirectoryUnavailableError(MSG_UNAVAILABLE) from None
         canonical = info.user_id or uid
         return DirectoryUser(uid=canonical, display_name=info.display_name or canonical, enabled=bool(info.enabled))
+
+    async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
+        try:
+            nc = AsyncNextcloudApp()
+            await nc.set_user(acting_uid)
+            # Auch die Gruppen-ID setzt nc_py_api roh in den Pfad.
+            members = await nc.users_groups.get_members(quote(gid, safe=""))
+        except NextcloudException as exc:
+            if exc.status_code in _NOT_FOUND_CODES:
+                return None
+            LOG.warning("Gruppenabfrage bei Nextcloud gescheitert: Status %s", exc.status_code)
+            raise DirectoryUnavailableError(MSG_UNAVAILABLE) from None
+        except Exception as exc:
+            LOG.warning("Gruppenabfrage bei Nextcloud gescheitert: %s", type(exc).__name__)
+            raise DirectoryUnavailableError(MSG_UNAVAILABLE) from None
+        # Leere Gruppe: nc_py_api liefert dann {} statt [].
+        return [str(member) for member in members or []]
+
+    async def group_exists(self, acting_uid: str, gid: str) -> bool:
+        return await self.group_members(acting_uid, gid) is not None
 
 
 _directory: Directory | None = None

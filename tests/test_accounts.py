@@ -14,8 +14,9 @@ from gameworld.access.accounts import (
     PLAYER_NAME_MAX,
     derive_password,
     suggest_player_name,
+    validate_player_name,
 )
-from gameworld.access.secret import SECRET_KEY, PlayerSecret, SecretUnavailableError
+from gameworld.access.secret import SECRET_KEY, PlayerSecret, SecretUnavailableError, fingerprint
 
 SECRET = bytes(range(32))
 PASSWORD_RE = re.compile(r"^[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}$")
@@ -210,3 +211,31 @@ async def test_error_message_never_contains_the_secret() -> None:
     with pytest.raises(SecretUnavailableError) as info:
         await secret.get()
     assert stored not in str(info.value)
+
+
+# Spielernamen von Hand (03-04) und Fingerabdruck des Geheimnisses
+
+# Unabhängig per python -c (hmac.new(..., b"gameworld:fingerprint", sha256).hexdigest()[:16]) berechnet.
+FINGERPRINT_VECTOR = "f9ddab6ceada0345"
+
+
+@pytest.mark.parametrize("name", ["Mia_2", "a", "x" * 20, "Kind-Neu", "SinglePlayer2"])
+def test_valid_player_names(name: str) -> None:
+    assert validate_player_name(name) == name
+
+
+@pytest.mark.parametrize(
+    "name", ["", "singleplayer", "SinglePlayer", "x" * 21, "Müller", "Mia Neu", "Mia\n", "Mia.2", "Mia;x"]
+)
+def test_invalid_player_names(name: str) -> None:
+    with pytest.raises(ValueError, match="1 bis 20 Zeichen"):
+        validate_player_name(name)
+
+
+def test_fingerprint_vector_and_independence_from_passwords() -> None:
+    assert fingerprint(SECRET) == FINGERPRINT_VECTOR
+    assert fingerprint(bytes(32)) != FINGERPRINT_VECTOR
+    assert re.fullmatch("[0-9a-f]{16}", fingerprint(bytes(32)))
+    # Der Fingerabdruck verrät weder Geheimnis noch ein Passwort.
+    assert SECRET.hex()[:16] != FINGERPRINT_VECTOR
+    assert FINGERPRINT_VECTOR not in VECTOR_GW_KIND_0.replace("-", "")

@@ -12,6 +12,8 @@ Spielpasswörter einmalig, und 03-04 provisioniert die Welten automatisch neu.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import re
 import secrets
 from collections.abc import Callable
@@ -40,6 +42,20 @@ class _AppConfig(Protocol):
 class _Nextcloud(Protocol):
     @property
     def appconfig_ex(self) -> _AppConfig: ...
+
+
+FINGERPRINT_MESSAGE = b"gameworld:fingerprint"
+FINGERPRINT_LENGTH = 16
+
+
+def fingerprint(secret: bytes) -> str:
+    """Kennung des Geheimnisses, um einen Wechsel (Neuinstallation) zu erkennen.
+
+    HMAC mit fester Nachricht, auf 64 Bit gekürzt: nicht umkehrbar (T-03-31).
+    Kollidiert nie mit einer Passwort-Nachricht, weil dort nach dem
+    Doppelpunkt stets eine Zahl steht.
+    """
+    return hmac.new(secret, FINGERPRINT_MESSAGE, hashlib.sha256).hexdigest()[:FINGERPRINT_LENGTH]
 
 
 def _parse(value: str) -> bytes:

@@ -1,4 +1,5 @@
-"""AccessService ohne Docker: Einladen, Entfernen, Abgleich und Schreiben der Zugangsdatei."""
+"""AccessService ohne Docker: Einladen (Konten und Gruppen), Entfernen, Abgleich, Passwort neu,
+Umbenennen, Fingerabdruck des Geheimnisses und Schreiben der Zugangsdatei."""
 
 from __future__ import annotations
 
@@ -9,16 +10,24 @@ import tarfile
 from pathlib import Path
 from typing import cast
 
+import anyio
 import pytest
 
 from gameworld.access.accounts import derive_password
 from gameworld.access.directory import DirectoryUnavailableError
-from gameworld.access.secret import SecretUnavailableError
-from gameworld.access.service import AccessService, InviteTargetError
+from gameworld.access.secret import SecretUnavailableError, fingerprint
+from gameworld.access.service import (
+    AccessResult,
+    AccessService,
+    InviteTargetError,
+    PlayerNameTakenError,
+    PlayerNotFoundError,
+)
 from gameworld.config import load_settings
 from gameworld.provisioner.access_mod import ACCESS_FILE_NAME
 from gameworld.provisioner.client import DockerProvisioner, DockerUnavailableError, WorldNotFoundError
 from gameworld.provisioner.luanti_auth import make_verifier
+from gameworld.worlds import service as world_service
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldRow, WorldStore
 from tests.conftest import TEST_SECRET, FakeDirectory, StaticSecret
@@ -269,3 +278,282 @@ async def test_disabled_later_is_dropped_on_next_change(
     await access.invite_user(W1, "admin", "gw-mia")
     assert set(store.world_access(W1)) == {"gw-mia"}
     assert store.access_entries(W1).keys() == {"Mia"}
+
+
+# 03-04: Gruppen, Abgleich, Passwort neu, Umbenennen, Fingerabdruck
+
+
+def _verifier_ok(verifier: str, name: str, password: str) -> bool:
+    return verifier == make_verifier(name, password, _salt(verifier))
+
+
+async def test_invite_group_only_active_members(
+    access: AccessService, store: WorldStore, fake: FakeProvisioner, fake_directory: FakeDirectory
+) -> None:
+    result = await access.invite_group(W1, "admin", "familie")
+    assert result.applied is True
+    assert ("admin", "familie") in fake_directory.group_calls
+    assert set(store.world_access(W1)) == {"gw-kind"}
+    assert [(i.kind, i.target) for i in store.list_invites(W1)] == [("group", "familie")]
+    [player] = await access.list_players(W1, "admin")
+    assert (player.nc_user, player.via) == ("gw-kind", "group:familie")
+    assert _generation(store, W1) == 1
+    assert len(fake.written) == 1
+
+
+async def test_unknown_group_is_refused(access: AccessService, store: WorldStore, fake: FakeProvisioner) -> None:
+    with pytest.raises(InviteTargetError, match="Gruppe"):
+        await access.invite_group(W1, "admin", "fremde-gruppe")
+    assert store.list_invites(W1) == []
+    assert fake.written == []
+
+
+async def test_direct_and_group_invite_give_one_entry(access: AccessService, store: WorldStore) -> None:
+    await access.invite_user(W1, "admin", "gw-kind")
+    await access.invite_group(W1, "admin", "familie")
+    assert list(store.world_access(W1)) == ["gw-kind"]
+    assert _generation(store, W1) == 1
+    [player] = await access.list_players(W1, "admin")
+    assert player.via == "user"
+    await access.revoke(W1, "admin", "group", "familie")
+    assert list(store.world_access(W1)) == ["gw-kind"]
+    await access.revoke(W1, "admin", "user", "gw-kind")
+    assert store.world_access(W1) == {}
+
+
+async def test_sync_world_follows_group_membership(
+    access: AccessService, store: WorldStore, fake: FakeProvisioner, fake_directory: FakeDirectory
+) -> None:
+    await access.invite_group(W1, "admin", "familie")
+    pushes = len(fake.written)
+
+    # Ohne Änderung: kein Push, keine neue Generation.
+    await access.sync_world(W1, "admin")
+    assert len(fake.written) == pushes
+    assert _generation(store, W1) == 1
+
+    # Neues Mitglied kommt dazu.
+    fake_directory.users["gw-mia"] = ("Mia Müller", True)
+    fake_directory.groups["familie"].append("gw-mia")
+    await access.sync_world(W1, "admin")
+    assert set(store.world_access(W1)) == {"gw-kind", "gw-mia"}
+    assert _generation(store, W1) == 2
+
+    # gw-kind tritt aus: Zugang weg, Generation +1, Push.
+    fake_directory.groups["familie"].remove("gw-kind")
+    result = await access.sync_world(W1, "admin")
+    assert result.applied is True
+    assert set(store.world_access(W1)) == {"gw-mia"}
+    assert _generation(store, W1) == 3
+    assert len(fake.written) == pushes + 2
+
+    # Ein deaktiviertes Konto verliert den Zugang ebenso.
+    fake_directory.users["gw-mia"] = ("Mia Müller", False)
+    await access.sync_world(W1, "admin")
+    assert store.world_access(W1) == {}
+
+
+async def test_sync_all_is_throttled_and_isolates_failures(
+    access: AccessService,
+    store: WorldStore,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from gameworld.access import service as access_service
+
+    await access.invite_group(W1, "admin", "familie")
+    await access.invite_group(W2, "admin", "familie")
+    clock = [1000.0]
+    monkeypatch.setattr(access_service, "monotonic", lambda: clock[0])
+
+    fake_directory.groups["familie"].remove("gw-kind")
+    assert await access.sync_all("admin") is True
+    assert store.world_access(W1) == {}
+    assert store.world_access(W2) == {}
+
+    # Innerhalb von 60 s passiert nichts.
+    fake_directory.groups["familie"].append("gw-kind")
+    clock[0] += access_service.SYNC_INTERVAL_SECONDS - 1
+    assert await access.sync_all("admin") is False
+    assert store.world_access(W1) == {}
+
+    # Danach wieder; eine kaputte Welt hält die andere nicht auf.
+    clock[0] += 2
+    original = access._sync  # pyright: ignore[reportPrivateUsage]
+
+    async def flaky(world_id: str, acting_uid: str, secret: bytes, *, blocking: bool) -> AccessResult | None:
+        if world_id == W1:
+            raise RuntimeError("kaputt")
+        return await original(world_id, acting_uid, secret, blocking=blocking)
+
+    monkeypatch.setattr(access, "_sync", flaky)
+    assert await access.sync_all("admin") is True
+    assert store.world_access(W1) == {}
+    assert set(store.world_access(W2)) == {"gw-kind"}
+
+
+async def test_sync_all_skips_busy_lock_and_retries(
+    access: AccessService, store: WorldStore, fake_directory: FakeDirectory
+) -> None:
+    from gameworld.access import service as access_service
+
+    await access.invite_group(W1, "admin", "familie")
+    fake_directory.groups["familie"].remove("gw-kind")
+    lock = world_service._LOCK  # pyright: ignore[reportPrivateUsage]
+    assert lock.acquire(blocking=False)
+    try:
+        with anyio.fail_after(5):
+            assert await access.sync_all("admin") is True
+    finally:
+        lock.release()
+    # Nichts geändert, Drossel nicht verbraucht: Der nächste Besuch gleicht ab.
+    assert set(store.world_access(W1)) == {"gw-kind"}
+    assert access_service.SYNC_STATE.last is None
+    assert await access.sync_all("admin") is True
+    assert store.world_access(W1) == {}
+
+
+async def test_rotate_password(access: AccessService, store: WorldStore, fake: FakeProvisioner) -> None:
+    await access.invite_user(W1, "admin", "gw-kind")
+    await access.invite_user(W2, "admin", "gw-kind")
+    before = {world_id: store.world_access(world_id)["gw-kind"] for world_id in (W1, W2)}
+    pushes = len(fake.written)
+
+    change = await access.rotate_password("admin", "gw-kind")
+    new_password = derive_password(TEST_SECRET, "gw-kind", 1)
+    assert change.password == new_password
+    assert new_password != PASSWORD
+    assert (change.player_name, change.applied) == ("Kind", True)
+    player = store.get_player("gw-kind")
+    assert player is not None
+    assert player.rotation == 1
+    for world_id in (W1, W2):
+        verifier = store.world_access(world_id)["gw-kind"]
+        assert verifier != before[world_id]
+        assert _verifier_ok(verifier, "Kind", new_password)
+        assert not _verifier_ok(verifier, "Kind", PASSWORD)
+        assert _generation(store, world_id) == 2
+    assert len(fake.written) == pushes + 2
+    [listed] = await access.list_players(W1, "admin")
+    assert listed.password == new_password
+
+
+async def test_rotate_unknown_player(access: AccessService) -> None:
+    with pytest.raises(PlayerNotFoundError):
+        await access.rotate_password("admin", "niemand")
+
+
+async def test_rename_player(access: AccessService, store: WorldStore, fake: FakeProvisioner) -> None:
+    await access.invite_user(W1, "admin", "gw-kind")
+    await access.invite_user(W2, "admin", "gw-kind")
+    pushes = len(fake.written)
+    change = await access.rename_player("admin", "gw-kind", "Mia_2")
+    assert (change.player_name, change.password, change.applied) == ("Mia_2", PASSWORD, True)
+    for world_id in (W1, W2):
+        assert store.access_entries(world_id).keys() == {"Mia_2"}
+        assert _verifier_ok(store.world_access(world_id)["gw-kind"], "Mia_2", PASSWORD)
+        assert _generation(store, world_id) == 2
+    assert len(fake.written) == pushes + 2
+
+
+async def test_rename_collision_and_validation(
+    access: AccessService, store: WorldStore, fake_directory: FakeDirectory
+) -> None:
+    fake_directory.users["gw-mia"] = ("Mia", True)
+    await access.invite_user(W1, "admin", "gw-kind")
+    await access.invite_user(W1, "admin", "gw-mia")
+    with pytest.raises(PlayerNameTakenError):
+        await access.rename_player("admin", "gw-kind", "MIA")
+    for bad in ("singleplayer", "x" * 21, "Müller", "Mia Neu"):
+        with pytest.raises(ValueError, match="1 bis 20 Zeichen"):
+            await access.rename_player("admin", "gw-kind", bad)
+    with pytest.raises(PlayerNotFoundError):
+        await access.rename_player("admin", "niemand", "Neu")
+    # Der eigene Name in anderer Schreibweise ist erlaubt.
+    change = await access.rename_player("admin", "gw-kind", "KIND")
+    assert change.player_name == "KIND"
+    player = store.get_player("gw-kind")
+    assert player is not None
+    assert player.player_name == "KIND"
+
+
+async def test_fingerprint_stored_then_reprovision_on_new_secret(
+    access: AccessService, store: WorldStore, fake: FakeProvisioner, fake_secret: StaticSecret
+) -> None:
+    await access.invite_user(W1, "admin", "gw-kind")
+    await access.invite_user(W2, "admin", "gw-kind")
+    assert store.get_meta("secret_fingerprint") == fingerprint(TEST_SECRET)
+
+    # Gleicher Fingerabdruck: nichts.
+    pushes = len(fake.written)
+    await access.sync_world(W1, "admin")
+    assert len(fake.written) == pushes
+
+    fake_secret.value = NEW_SECRET
+    await access.sync_world(W1, "admin")
+    assert store.get_meta("secret_fingerprint") == fingerprint(NEW_SECRET)
+    new_password = derive_password(NEW_SECRET, "gw-kind", 0)
+    for world_id in (W1, W2):
+        assert _verifier_ok(store.world_access(world_id)["gw-kind"], "Kind", new_password)
+        assert _generation(store, world_id) == 2
+    assert len(fake.written) == pushes + 2
+    [listed] = await access.list_players(W1, "admin")
+    assert listed.password == new_password
+
+
+NEW_SECRET = bytes(range(2, 34))
+
+
+def _lock_free() -> bool:
+    lock = world_service._LOCK  # pyright: ignore[reportPrivateUsage]
+    if not lock.acquire(blocking=False):
+        return False
+    lock.release()
+    return True
+
+
+async def _prepare_secret_change(access: AccessService, fake_secret: StaticSecret) -> None:
+    await access.invite_user(W2, "admin", "gw-kind")
+    fake_secret.value = NEW_SECRET
+
+
+def _assert_all_verifiers_new(store: WorldStore, rotation: int) -> None:
+    password = derive_password(NEW_SECRET, "gw-kind", rotation)
+    for world_id in (W1, W2):
+        access = store.world_access(world_id)
+        if "gw-kind" in access:
+            assert _verifier_ok(access["gw-kind"], "Kind", password)
+    assert store.get_meta("secret_fingerprint") == fingerprint(NEW_SECRET)
+
+
+async def test_secret_change_during_invite_user_no_deadlock(
+    access: AccessService, store: WorldStore, fake_secret: StaticSecret
+) -> None:
+    await _prepare_secret_change(access, fake_secret)
+    with anyio.fail_after(5):
+        await access.invite_user(W1, "admin", "gw-kind")
+    assert [(i.kind, i.target) for i in store.list_invites(W1)] == [("user", "gw-kind")]
+    assert set(store.world_access(W1)) == {"gw-kind"}
+    _assert_all_verifiers_new(store, 0)
+    assert _lock_free()
+
+
+async def test_secret_change_during_rotate_password_no_deadlock(
+    access: AccessService, store: WorldStore, fake_secret: StaticSecret
+) -> None:
+    await _prepare_secret_change(access, fake_secret)
+    with anyio.fail_after(5):
+        change = await access.rotate_password("admin", "gw-kind")
+    assert change.password == derive_password(NEW_SECRET, "gw-kind", 1)
+    _assert_all_verifiers_new(store, 1)
+    assert _lock_free()
+
+
+async def test_secret_change_during_sync_all_no_deadlock(
+    access: AccessService, store: WorldStore, fake_secret: StaticSecret
+) -> None:
+    await _prepare_secret_change(access, fake_secret)
+    with anyio.fail_after(5):
+        assert await access.sync_all("admin") is True
+    _assert_all_verifiers_new(store, 0)
+    assert _lock_free()
