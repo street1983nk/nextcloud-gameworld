@@ -6,7 +6,7 @@ Lokale Umgebung für Gameworld: eine eigene Nextcloud 34 im Compose-Projekt `gam
 
 - Docker Desktop (unter Windows mit WSL2-Engine)
 - [uv](https://docs.astral.sh/uv/) für Python 3.13
-- Node 22 mit npm für das Frontend
+- Node 22 oder neuer mit npm für das Frontend (@nextcloud/files 4.1.0 verlangt laut Engine-Angabe Node 24; der Build läuft mit 22 und warnt nur)
 - Git Bash oder eine andere POSIX-Shell für die Skripte
 
 ## Starten
@@ -25,7 +25,7 @@ Lokale Umgebung für Gameworld: eine eigene Nextcloud 34 im Compose-Projekt `gam
    sh scripts/dev/register-exapp.sh
    ```
 
-   Das Skript baut bei Bedarf das Frontend nach `js/gameworld-main.js`, startet das Backend auf Port 10040 mit einem neuen Secret pro Lauf (`.dev/exapp.secret`, gitignored), registriert den Daemon `manual_install` und die ExApp und aktiviert sie. Ein Backend, das zu den Quellen passt, läuft weiter; ein veraltetes wird neu gestartet. Das Log steht in `.dev/exapp.log`.
+   Das Skript baut bei Bedarf das Frontend nach `js/gameworld-main.js`, startet das Backend auf Port 10040 mit einem neuen Secret pro Lauf (`.dev/exapp.secret`, gitignored), registriert den Daemon `manual_install` und die ExApp und aktiviert sie. Den Einrichtungsassistenten (firstrunwizard) schaltet es in der Dev-Nextcloud ab, weil er Browser-Prüfungen blockiert. Ein Backend, das zu den Quellen passt, läuft weiter; ein veraltetes wird neu gestartet. Das Log steht in `.dev/exapp.log`.
 
 3. Im Browser öffnen: <http://localhost:8091/index.php/apps/app_api/embedded/gameworld/gameworld>
 
