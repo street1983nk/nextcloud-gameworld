@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -19,6 +20,8 @@ from gameworld.provisioner.client import (
     ProvisionerError,
     WorldNotFoundError,
 )
+from gameworld.provisioner.presets import MTG_KREATIV, VOXELIBRE_SANFT
+from gameworld.provisioner.spec import WorldPayload
 
 INSTANCE = "ab12cd34"
 WORLD = "0123456789ab"
@@ -107,8 +110,33 @@ def test_docker_exception_on_ensure_image(prov: DockerProvisioner, fake: FakeCli
 def test_protocol_error_on_create(prov: DockerProvisioner, fake: FakeClient) -> None:
     fake.containers.create = _raise(urllib3.exceptions.ProtocolError("abgerissen"))
     with pytest.raises(DockerUnavailableError):
-        prov.create_world_container(WORLD, 30015, b"")
+        prov.create_world_container(WORLD, 30015, WorldPayload(MTG_KREATIV, io.BytesIO(b"")))
     assert prov._client is None
+
+
+def test_create_uses_payload_preset_and_stream(prov: DockerProvisioner, fake: FakeClient) -> None:
+    """Spec aus payload.preset, das Datei-Objekt geht unverändert an put_archive (Pitfall 2, A5)."""
+    created: dict[str, Any] = {}
+    uploads: list[tuple[str, object]] = []
+
+    class Created:
+        id = "cid"
+
+        def put_archive(self, path: str, data: object) -> bool:
+            uploads.append((path, data))
+            return True
+
+    def create(**kwargs: Any) -> Created:
+        created.update(kwargs)
+        return Created()
+
+    fake.containers.create = create
+    stream = io.BytesIO(b"tar")
+    payload = WorldPayload(VOXELIBRE_SANFT, stream)
+    assert prov.create_world_container(WORLD, 30015, payload) == "cid"
+    assert created["mem_limit"] == created["memswap_limit"] == "1g"
+    assert created["labels"]["gameworld.preset"] == "voxelibre_sanft"
+    assert uploads == [("/var/lib/minetest", stream)]
 
 
 def _listing(*containers: FakeContainer) -> Any:

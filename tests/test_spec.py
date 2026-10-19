@@ -1,5 +1,8 @@
 """Die gehärtete Container-Spec ist fest kodiert und ohne Docker prüfbar (WELT-05)."""
 
+import pytest
+
+from gameworld.provisioner.presets import MTG_KREATIV, PRESETS, VOXELIBRE_SANFT, Preset
 from gameworld.provisioner.spec import LUANTI_IMAGE, LUANTI_VERSION, resource_name, world_spec
 
 INSTANCE = "ab12cd34"
@@ -7,8 +10,11 @@ WORLD = "0123456789ab"
 NAME = "gameworld-ab12cd34-0123456789ab"
 
 
-def _spec() -> dict[str, object]:
-    return world_spec(INSTANCE, WORLD, 30015)
+ALL_PRESETS = list(PRESETS.values())
+
+
+def _spec(preset: Preset = MTG_KREATIV) -> dict[str, object]:
+    return world_spec(INSTANCE, WORLD, 30015, preset)
 
 
 def test_image_is_pinned_by_digest() -> None:
@@ -23,11 +29,23 @@ def test_name_carries_instance_and_world() -> None:
     assert _spec()["name"] == NAME
 
 
-def test_limits_and_hardening() -> None:
-    spec = _spec()
-    assert spec["user"] == "30000:30000"
+def test_kreativ_keeps_512_mib() -> None:
+    spec = _spec(MTG_KREATIV)
     assert spec["mem_limit"] == "512m"
     assert spec["memswap_limit"] == "512m"
+
+
+def test_voxelibre_gets_one_gib_without_swap() -> None:
+    spec = _spec(VOXELIBRE_SANFT)
+    assert spec["mem_limit"] == "1g"
+    assert spec["memswap_limit"] == "1g"
+
+
+@pytest.mark.parametrize("preset", ALL_PRESETS, ids=[preset.id for preset in ALL_PRESETS])
+def test_limits_and_hardening(preset: Preset) -> None:
+    spec = _spec(preset)
+    assert spec["user"] == "30000:30000"
+    assert spec["mem_limit"] == spec["memswap_limit"] == preset.mem_limit
     assert spec["pids_limit"] == 128
     assert spec["nano_cpus"] == 1_000_000_000
     assert spec["cap_drop"] == ["ALL"]
@@ -52,18 +70,21 @@ def test_ports_and_storage() -> None:
     assert "/tmp" in tmpfs  # noqa: S108
 
 
-def test_dangerous_keys_are_absent() -> None:
-    spec = _spec()
+@pytest.mark.parametrize("preset", ALL_PRESETS, ids=[preset.id for preset in ALL_PRESETS])
+def test_dangerous_keys_are_absent(preset: Preset) -> None:
+    spec = _spec(preset)
     for key in ("privileged", "volumes", "network_mode", "pid_mode", "devices", "cap_add", "environment"):
         assert key not in spec, key
 
 
-def test_labels() -> None:
-    assert _spec()["labels"] == {
+@pytest.mark.parametrize("preset", ALL_PRESETS, ids=[preset.id for preset in ALL_PRESETS])
+def test_labels(preset: Preset) -> None:
+    assert _spec(preset)["labels"] == {
         "gameworld.managed": "true",
         "gameworld.instance": INSTANCE,
         "gameworld.world_id": WORLD,
-        "gameworld.schema": "1",
+        "gameworld.schema": "2",
+        "gameworld.preset": preset.id,
         "gameworld.engine": "luanti",
         "gameworld.engine_version": "5.17.0",
         "gameworld.port": "30015",

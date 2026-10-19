@@ -82,6 +82,21 @@ def test_get_preset_kreativ() -> None:
     assert preset.mem_limit == "512m"
 
 
+def test_get_preset_voxelibre_sanft() -> None:
+    preset = get_preset("voxelibre_sanft")
+    assert preset.title == "Abenteuer (sanft)"
+    assert preset.game_zip == "mineclone2-39534.zip"
+    assert preset.game_sha256 == "6215d4da27900874959ff586fb266091be3d4161b9d4f5d27ce0d0cdc49f1af2"
+    assert preset.game_dir == "mineclone2"
+    assert preset.gameid == "mineclone2"
+    assert preset.mem_limit == "1g"
+    assert preset.default_privs == "interact, shout"
+    lines = _render(preset)
+    for expected in ("only_peaceful_mobs = true", "mcl_keepInventory = true", "creative_mode = false"):
+        assert expected in lines, expected
+    assert [line for line in lines if _key(line) == "default_privs"] == ["default_privs = interact, shout"]
+
+
 def test_get_preset_unknown_names_allowed_titles() -> None:
     with pytest.raises(ValueError, match=r"Unbekannte Spielart\. Erlaubt sind: Bauen \(kreativ\)"):
         get_preset("xyz")
