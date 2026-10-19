@@ -348,8 +348,17 @@ CODE_INJ=$(http_code POST "${API_URL}/worlds" "${ADMIN_AUTH}" "${WORK_DIR}/inj.j
 remember_world "$(jq -r '.id // empty' "${WORK_DIR}/inj.json" 2>/dev/null || true)"
 check "K4 Negativkontrolle: Weltname mit Zeilenumbruch HTTP 422 (ist ${CODE_INJ})" eq "${CODE_INJ}" 422
 
-STATIC_HITS=$(grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/frontend/src" "${REPO_ROOT}/appinfo/info.xml" || true)
+# Die Page Visibility API des Browsers (Polling seit 02-04) ist keine
+# Sichtbarkeitsoption einer Welt; nur diese beiden Namen werden ausgeblendet,
+# jedes andere Vorkommen in derselben Zeile zählt weiter.
+strip_page_visibility() {
+	sed -E 's/document\.visibilityState|visibilitychange//g' | grep -iE 'announce|serverlist|visibility' || true
+}
+STATIC_HITS=$(grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/frontend/src" "${REPO_ROOT}/appinfo/info.xml" \
+	| strip_page_visibility)
 check "K4 statisch: kein announce/serverlist/visibility in frontend/src und info.xml" empty "${STATIC_HITS}"
+check "K4 Positivkontrolle: der Filter lässt eine echte Sichtbarkeitsoption durch" \
+	nonempty "$(printf '%s\n' "if (document.visibilityState) world.visibility = 'public'" | strip_page_visibility)"
 CONTROL_HITS=$(grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/src/gameworld/provisioner/luanti_conf.py" || true)
 check "K4 Positivkontrolle: dasselbe grep findet die Keys in luanti_conf.py" nonempty "${CONTROL_HITS}"
 

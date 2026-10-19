@@ -70,7 +70,7 @@ networks:
 
 - Mit `CONTAINERS=1` und `POST=1` kann jeder, der den Proxy erreicht, beliebige Container erzeugen, auch privilegierte. Das ist root-gleich auf dem Server.
 - Deshalb: den Proxy nie auf einem Host-Port veröffentlichen, nur im Deploy-Netz betreiben.
-- Gameworld selbst erzeugt ausschließlich fest vorgegebene, gehärtete Welt-Container: Benutzer 30000 (nicht root), alle Capabilities entzogen, schreibgeschütztes Dateisystem, 512 MB RAM, 1 CPU, 128 Prozesse.
+- Gameworld selbst erzeugt ausschließlich fest vorgegebene, gehärtete Welt-Container: Benutzer 30000 (nicht root), alle Capabilities entzogen, schreibgeschütztes Dateisystem, 512 MB RAM (Abenteuer-Welt 1 GB), 1 CPU, 128 Prozesse.
 - Gameworld verändert nur Container mit dem eigenen Instanz-Label.
 - Andere ExApps im selben Deploy-Netz könnten den Proxy ebenfalls erreichen. Eine weitere Härtung ist für das Store-Release geplant.
 
@@ -93,3 +93,12 @@ Die Gameworld-Seite prüft beim Öffnen den Docker-Proxy. Die Prüfung veränder
 | Gameworld antwortet nicht | ExApp in den Nextcloud-Einstellungen (AppAPI) prüfen |
 
 Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite "Erneut prüfen" wählen.
+
+## 7. Speicherbedarf und Neustarts
+
+- Jede Welt hat ein festes Speicherlimit ohne Swap: Kreativ-Welt ("Bauen (kreativ)") 512 MB, Abenteuer-Welt ("Abenteuer (sanft)") 1 GB. Einstellen lässt sich das nicht.
+- Für den Heimserver grob rechnen: Summe der Limits aller gleichzeitig laufenden Welten plus Nextcloud muss in den Arbeitsspeicher passen.
+- Welten haben keine eigene Neustart-Policy in Docker.
+- Nach einem Server-Neustart startet Gameworld beim eigenen Start alle Welten, die vorher liefen. Gestoppte Welten bleiben gestoppt.
+- Eine Welt, die wegen Speichermangel beendet wurde, startet nicht automatisch. Das Dashboard zeigt den Grund, Starten geht per Klick.
+- Nach einem Update von Gameworld bleiben alle Welten samt Daten erhalten; Gameworld übernimmt die vorhandenen Container wieder.

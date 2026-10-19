@@ -57,6 +57,16 @@ sh scripts/dev/acceptance-phase1.sh
 
 Das Skript legt bei Bedarf den Nicht-Admin `gw-kind` / `gw-kind-dev-pass-1` an (nur Dev) und lässt ihn für die Browser-Abnahme stehen. Für K5 stoppt es kurz den Dienst `gameworld-docker-proxy` und startet ihn in jedem Fall wieder. Die Abnahme-Welten entfernt es am Ende. Exit 0 nur, wenn alle Prüfungen bestanden sind; die letzte Zeile nennt "N von N Prüfungen bestanden". Voraussetzung ist `jq` im Pfad.
 
+## Phasenabnahme Phase 2
+
+Belegt die vier Erfolgskriterien von Phase 2 (Presets, Lebenszyklus und Status aus Docker, Spieler und RAM, Update und Reboot) gegen den laufenden Stack, ebenfalls nur mit docker-CLI, curl, tar, grep und jq:
+
+```sh
+sh scripts/dev/acceptance-phase2.sh
+```
+
+Das Skript stoppt für K2 kurz den Dienst `gameworld-docker-proxy` und beendet für K4 zweimal den ExApp-Prozess (Update- und Reboot-Simulation über `register-exapp.sh`, ohne `--rm-data`); ein trap stellt beides in jedem Fall wieder her. Es fasst nur Container mit Gameworld-Labels an und vergleicht Zustand und Startzeit aller anderen Container vor und nach K4. Höchstens eine VoxeLibre-Welt existiert gleichzeitig. Am Ende ruft es `acceptance-phase1.sh` als Regression. Laufzeit etwa 4 bis 5 Minuten, Exit 0 nur bei "N von N Prüfungen bestanden".
+
 ## Abbauen
 
 ```sh
