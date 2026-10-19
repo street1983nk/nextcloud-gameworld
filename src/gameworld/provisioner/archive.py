@@ -1,8 +1,13 @@
 """Das Tar, das beim Erzeugen einer Welt in ihr Volume geschrieben wird.
 
 Inhalt: ``minetest.conf`` (root-eigen, 0444, der Server kann sie lesen, aber
-nicht umschreiben), die Welt-Metadaten, der Welt-Mod gameworld_status und das
-Spiel des Presets. Alles außer der conf gehört dem Luanti-Nutzer 30000.
+nicht umschreiben), die Welt-Metadaten, die Welt-Mods gameworld_status und
+gameworld_access, die Zugangsdatei (root-eigen, 0444) und das Spiel des
+Presets. Alles außer conf und Zugangsdatei gehört dem Luanti-Nutzer 30000.
+
+Dazu kommen zwei kleine Tars relativ zum Weltordner: ``build_world_files``
+(beide Mods und Zugangsdatei, vor jedem Start) und ``build_access_tar`` (nur
+die Zugangsdatei, bei Einladungsänderungen in die laufende Welt).
 
 Das Spiel-Zip wird vor jeder Nutzung per SHA256 gegen die Konstante im Preset
 geprüft. Die Spieldateien werden einzeln ins Tar gestreamt, das Tar liegt bis
@@ -17,14 +22,15 @@ import io
 import pathlib
 import tarfile
 import tempfile
+import time
 import zipfile
 from posixpath import normpath
 from typing import BinaryIO, cast
 
+from gameworld.provisioner import access_mod, status_mod
 from gameworld.provisioner.client import ProvisionerError
 from gameworld.provisioner.presets import Preset
 from gameworld.provisioner.spec import WorldPayload
-from gameworld.provisioner.status_mod import MOD_CONF, MOD_DIR, MOD_INIT_LUA
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 GAMES_DIR = REPO_ROOT / "vendor" / "games"
@@ -34,6 +40,12 @@ ROOT_UID = 0
 FIXED_MTIME = 0
 SPOOL_MAX_BYTES = 8 * 1024 * 1024
 WORLD_DIR = ".minetest/worlds/world"
+# Die Welt-Mods (Inhalt von init.lua und mod.conf), Verzeichnisse relativ zu /var/lib/minetest.
+WORLD_MODS = (
+    (status_mod.MOD_DIR, status_mod.MOD_INIT_LUA, status_mod.MOD_CONF),
+    (access_mod.MOD_DIR, access_mod.MOD_INIT_LUA, access_mod.MOD_CONF),
+)
+ACCESS_FILE_MODE = 0o444
 
 
 def _verified_zip(preset: Preset) -> pathlib.Path:
@@ -99,25 +111,75 @@ def _add_dir(tar: tarfile.TarFile, name: str) -> None:
     tar.addfile(info)
 
 
-def _file_info(name: str, size: int, *, uid: int, mode: int) -> tarfile.TarInfo:
+def _file_info(name: str, size: int, *, uid: int, mode: int, mtime: int = FIXED_MTIME) -> tarfile.TarInfo:
     info = tarfile.TarInfo(name)
     info.uid = info.gid = uid
     info.mode = mode
     info.size = size
-    info.mtime = FIXED_MTIME
+    info.mtime = mtime
     return info
 
 
-def _add_file(tar: tarfile.TarFile, name: str, data: bytes, *, uid: int = LUANTI_UID, mode: int = 0o644) -> None:
-    tar.addfile(_file_info(name, len(data), uid=uid, mode=mode), io.BytesIO(data))
+def _add_file(
+    tar: tarfile.TarFile,
+    name: str,
+    data: bytes,
+    *,
+    uid: int = LUANTI_UID,
+    mode: int = 0o644,
+    mtime: int = FIXED_MTIME,
+) -> None:
+    tar.addfile(_file_info(name, len(data), uid=uid, mode=mode, mtime=mtime), io.BytesIO(data))
 
 
-def build_world_payload(preset: Preset, minetest_conf: str, world_mt: str) -> WorldPayload:
+def _add_access_file(tar: tarfile.TarFile, name: str, access_file: bytes) -> None:
+    """Zugangsdatei root-eigen und nur lesbar; aktuelle mtime, damit Docker sie sicher ersetzt."""
+    _add_file(tar, name, access_file, uid=ROOT_UID, mode=ACCESS_FILE_MODE, mtime=int(time.time()))
+
+
+def _relative_to_world(path: str) -> str:
+    """Pfad unter dem Weltordner relativ zu ihm (``worldmods/...``)."""
+    prefix = f"{WORLD_DIR}/"
+    if not path.startswith(prefix):
+        raise ValueError(f"Pfad liegt nicht im Weltordner: {path}")
+    return path[len(prefix) :]
+
+
+def build_world_files(access_file: bytes) -> bytes:
+    """Unkomprimiertes Tar für ``put_archive`` in den Weltordner: beide Mods und Zugangsdatei.
+
+    Läuft vor jedem Start (``_launch``): aktualisiert den Mod-Code nach
+    App-Updates und rüstet Welten ohne Zugangs-Mod nach. Alle Namen sind relativ
+    zum Weltordner, ohne ``..`` und ohne absoluten Pfad.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        _add_dir(tar, "worldmods")
+        for mod_dir, init_lua, mod_conf in WORLD_MODS:
+            relative = _relative_to_world(mod_dir)
+            _add_dir(tar, relative)
+            _add_file(tar, f"{relative}/init.lua", init_lua.encode("utf-8"))
+            _add_file(tar, f"{relative}/mod.conf", mod_conf.encode("utf-8"))
+        _add_access_file(tar, access_mod.ACCESS_FILE_NAME, access_file)
+    return buffer.getvalue()
+
+
+def build_access_tar(access_file: bytes) -> bytes:
+    """Tar mit genau der Zugangsdatei, relativ zum Weltordner (für laufende Welten)."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        _add_access_file(tar, access_mod.ACCESS_FILE_NAME, access_file)
+    return buffer.getvalue()
+
+
+def build_world_payload(preset: Preset, minetest_conf: str, world_mt: str, access_file: bytes) -> WorldPayload:
     """Unkomprimiertes Tar für ``put_archive`` nach ``/var/lib/minetest``.
 
     Der Aufrufer schließt ``archive`` nach ``put_archive`` (gibt die temporäre
     Datei frei). Die Spielerliste des Status-Mods steht nie im Payload: Der Mod legt
-    die Datei erst beim Start an, sonst wäre die Bereitschaftsprüfung falsch.
+    die Datei erst beim Start an, sonst wäre die Bereitschaftsprüfung falsch. Das
+    gilt auch für die State-Datei des Zugangs-Mods. ``access_file`` ist die
+    Zugangsdatei (bei neuen Welten: Kopf und Schlusszeile, niemand eingeladen).
     """
     game_root = f".minetest/games/{preset.game_dir}"
     zip_path = _verified_zip(preset)
@@ -130,7 +192,7 @@ def build_world_payload(preset: Preset, minetest_conf: str, world_mt: str) -> Wo
                 ".minetest/worlds",
                 WORLD_DIR,
                 f"{WORLD_DIR}/worldmods",
-                MOD_DIR,
+                *(mod_dir for mod_dir, _, _ in WORLD_MODS),
                 ".minetest/games",
                 game_root,
             }
@@ -144,8 +206,10 @@ def build_world_payload(preset: Preset, minetest_conf: str, world_mt: str) -> Wo
                 for directory in sorted(directories, key=lambda path: (path.count("/"), path)):
                     _add_dir(tar, directory)
                 _add_file(tar, f"{WORLD_DIR}/world.mt", world_mt.encode("utf-8"))
-                _add_file(tar, f"{MOD_DIR}/init.lua", MOD_INIT_LUA.encode("utf-8"))
-                _add_file(tar, f"{MOD_DIR}/mod.conf", MOD_CONF.encode("utf-8"))
+                for mod_dir, init_lua, mod_conf in WORLD_MODS:
+                    _add_file(tar, f"{mod_dir}/init.lua", init_lua.encode("utf-8"))
+                    _add_file(tar, f"{mod_dir}/mod.conf", mod_conf.encode("utf-8"))
+                _add_access_file(tar, f"{WORLD_DIR}/{access_mod.ACCESS_FILE_NAME}", access_file)
                 for name, info in game:
                     with zipped.open(info) as source:
                         member = _file_info(f"{game_root}/{name}", info.file_size, uid=LUANTI_UID, mode=0o644)

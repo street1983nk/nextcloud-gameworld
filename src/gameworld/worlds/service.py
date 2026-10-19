@@ -23,7 +23,8 @@ from time import monotonic
 import anyio.to_thread
 
 from gameworld.config import Settings
-from gameworld.provisioner.archive import build_world_payload
+from gameworld.provisioner.access_mod import render_access_file
+from gameworld.provisioner.archive import build_world_files, build_world_payload
 from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
@@ -165,28 +166,6 @@ def _copy(view: WorldView) -> WorldView:
     return replace(view, players=list(view.players))
 
 
-@contextlib.contextmanager
-def _payload(row: WorldRow) -> Iterator[WorldPayload]:
-    """Inhalt aus dem Preset der DB-Zeile, auch bei Neuerzeugung (Pitfall 2).
-
-    Schließt das Tar (temporäre Datei) nach dem Einspielen, auch im Fehlerfall.
-    Dateisystem- und Archivfehler (voller Datenträger, kaputtes Zip) kommen als
-    ProvisionerError an, damit jeder Aufrufer seinen Aufräumpfad nimmt (WR-01).
-    """
-    preset = get_preset(row.preset)
-    try:
-        payload = build_world_payload(
-            preset, render_minetest_conf(row.name, row.world_key, preset), render_world_mt(preset)
-        )
-    except (OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
-        LOG.warning("Weltdaten für Welt %s nicht vorbereitet: %r", row.id, exc)
-        raise ProvisionerError(PAYLOAD_FAILED) from exc
-    try:
-        yield payload
-    finally:
-        payload.archive.close()
-
-
 class WorldService:
     def __init__(self, store: WorldStore, provisioner: DockerProvisioner, settings: Settings) -> None:
         self._store = store
@@ -233,6 +212,38 @@ class WorldService:
         await anyio.to_thread.run_sync(self._periodic_reconcile_sync, abandon_on_cancel=True)
 
     # Hilfen
+
+    def _access_file(self, row: WorldRow) -> bytes:
+        """Zugangsdatei der Welt. In 03-01 immer leer (niemand eingeladen, Generation 0).
+
+        03-03 liest hier Generation und Einträge aus Schema 3.
+        """
+        del row
+        return render_access_file(0, {})
+
+    @contextlib.contextmanager
+    def _payload(self, row: WorldRow) -> Iterator[WorldPayload]:
+        """Inhalt aus dem Preset der DB-Zeile, auch bei Neuerzeugung (Pitfall 2).
+
+        Schließt das Tar (temporäre Datei) nach dem Einspielen, auch im Fehlerfall.
+        Dateisystem- und Archivfehler (voller Datenträger, kaputtes Zip) kommen als
+        ProvisionerError an, damit jeder Aufrufer seinen Aufräumpfad nimmt (WR-01).
+        """
+        preset = get_preset(row.preset)
+        try:
+            payload = build_world_payload(
+                preset,
+                render_minetest_conf(row.name, row.world_key, preset),
+                render_world_mt(preset),
+                self._access_file(row),
+            )
+        except (OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
+            LOG.warning("Weltdaten für Welt %s nicht vorbereitet: %r", row.id, exc)
+            raise ProvisionerError(PAYLOAD_FAILED) from exc
+        try:
+            yield payload
+        finally:
+            payload.archive.close()
 
     def _row(self, world_id: str) -> WorldRow:
         row = self._store.get_world(world_id)
@@ -343,6 +354,9 @@ class WorldService:
     def _launch(self, row: WorldRow) -> None:
         """Startet den Container; bei belegtem Port Neuerzeugung mit dem nächsten freien Port.
 
+        Vor jedem Startversuch schreibt er beide Welt-Mods und die aktuelle
+        Zugangsdatei in den Weltordner (put_archive, kein exec): So bekommen auch
+        ältere Welten den Zugangs-Mod, und der Mod-Code folgt App-Updates.
         Das Volume mit den Weltdaten bleibt dabei erhalten; nur minetest.conf,
         world.mt und das Spiel werden neu eingespielt (deterministischer Inhalt).
         Fehlt der Container ganz (Fehlerpfad der Port-Saga oder docker rm von
@@ -356,6 +370,8 @@ class WorldService:
         attempt = 0
         while True:
             try:
+                # Im selben try: Fehlt der Container schon beim Schreiben, greift die Neuerzeugung.
+                self._provisioner.write_world_files(row.id, build_world_files(self._access_file(row)))
                 self._provisioner.start_world(row.id)
                 return
             except WorldNotFoundError:
@@ -371,7 +387,7 @@ class WorldService:
                 recreated = True
                 LOG.warning("Welt %s: Container fehlt, erzeuge ihn aus dem Volume neu", row.id)
                 self._provisioner.ensure_image()
-                with _payload(row) as payload:
+                with self._payload(row) as payload:
                     self._provisioner.create_world_container(row.id, row.port, payload, reuse_volume=True)
                 continue
             except PortInUseError as exc:
@@ -386,7 +402,7 @@ class WorldService:
                 break
             tried.add(port)
             self._provisioner.ensure_image()
-            with _payload(row) as payload:
+            with self._payload(row) as payload:
                 self._provisioner.create_world_container(row.id, port, payload, reuse_volume=True)
             self._store.update_world(row.id, port=port)
             row.port = port
@@ -452,7 +468,7 @@ class WorldService:
             try:
                 self._provisioner.ensure_image()
                 touched_docker = True
-                with _payload(row) as payload:
+                with self._payload(row) as payload:
                     self._provisioner.create_world_container(world_id, port, payload)
                 self._launch(row)
             except ProvisionerError as exc:

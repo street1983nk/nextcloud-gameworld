@@ -111,7 +111,7 @@ def test_no_path_escapes() -> None:
 
 def test_game_follows_preset(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     preset = _test_game(tmp_path, monkeypatch)
-    payload = archive.build_world_payload(preset, "x\n", "gameid = testspiel\n")
+    payload = archive.build_world_payload(preset, "x\n", "gameid = testspiel\n", ACCESS)
     members = _members(payload)
     assert ".minetest/games/testspiel/game.conf" in members
     assert ".minetest/games/testspiel/mods/a/init.lua" in members

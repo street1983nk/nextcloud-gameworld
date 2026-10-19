@@ -32,6 +32,8 @@ PORT_CONFLICT_MARKERS = ("port is already allocated", "Bind for", "address alrea
 CLIENT_TIMEOUT = 60
 STOP_TIMEOUT = 30
 NOT_FOUND_MESSAGE = "Diese Welt gibt es nicht (mehr)."
+# Weltordner im Container; Ziel für Mods und Zugangsdatei (write_world_files).
+WORLD_PATH = f"{DATA_DIR}/.minetest/worlds/world"
 # Höchstens so viele Bytes Inhalt aus der Status-Datei (T-02-18); der Welt-Mod
 # schreibt nur Spielernamen, fremder Lua-Code könnte aber beliebig viel schreiben.
 STATUS_FILE_MAX = 4096
@@ -325,6 +327,19 @@ class DockerProvisioner:
                 if exc.status_code == 500 and any(marker in explanation for marker in PORT_CONFLICT_MARKERS):
                     raise PortInUseError(_label_port(container.labels or {})) from exc
                 raise ProvisionerError(f"Docker hat den Start der Welt abgelehnt: {explanation}") from exc
+
+    def write_world_files(self, world_id: str, archive: bytes) -> None:
+        """Spielt ein Tar (Pfade relativ zum Weltordner) in die Welt ein, laufend oder gestoppt.
+
+        Für Welt-Mods und Zugangsdatei. Nur ``put_archive`` über _owned, kein
+        exec: ``PUT /containers/{id}/archive`` fällt beim tecnativa-Proxy unter
+        CONTAINERS=1 und POST=1, eine neue Freigabe braucht es nicht. Das Ziel
+        liegt im Volume, das read-only Root-Dateisystem stört deshalb nicht.
+        """
+        with self._guarded():
+            container = self._owned(world_id)
+            if not container.put_archive(WORLD_PATH, archive):
+                raise ProvisionerError("Docker hat die Zugangsliste der Welt nicht angenommen.")
 
     def stop(self, world_id: str) -> None:
         with self._guarded():
