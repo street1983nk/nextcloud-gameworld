@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
+from gameworld.access.roles import Profile
+
 APP_ID = "gameworld"
 APP_VERSION = "0.1.0"
 APP_CREDENTIAL = "test-secret-gameworld"
@@ -79,10 +81,40 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("GAMEWORLD_DOCKER_URL", docker_url())
     monkeypatch.setenv("GAMEWORLD_PORT_RANGE", "30015-30019")
 
+    from gameworld.access import roles
     from gameworld.api import worlds
 
     monkeypatch.setattr(worlds, "_service", None)
+    monkeypatch.setattr(roles, "_role_service", roles.RoleService(fake_lookup))
     return tmp_path
+
+
+FAKE_PROFILES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "admin": ("Admin", ("admin",)),
+    "gw-kind": ("Kind (Dev)", ()),
+}
+
+
+async def fake_lookup(uid: str) -> Profile:
+    """Selbstauskunft ohne Nextcloud: admin ist Verwalter, alle anderen Spieler."""
+    display_name, groups = FAKE_PROFILES.get(uid, (uid, ()))
+    return Profile(user_id=uid, display_name=display_name, groups=groups)
+
+
+@pytest.fixture
+def role_lookup_error(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Die Selbstauskunft wirft; die Liste zählt die Aufrufe."""
+    del app_env
+    from gameworld.access import roles
+
+    calls: list[str] = []
+
+    async def failing(uid: str) -> Profile:
+        calls.append(uid)
+        raise RuntimeError("Nextcloud weg")
+
+    monkeypatch.setattr(roles, "_role_service", roles.RoleService(failing))
+    return calls
 
 
 @pytest.fixture
