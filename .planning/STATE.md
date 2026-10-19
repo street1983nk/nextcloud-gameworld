@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-10-19T22:35:00.000Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-10-20T08:00:00.000Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 13
+  completed_plans: 14
   percent: 33
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 1 von 7 Plänen)
+**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 2 von 7 Plänen)
 
 ## Current Position
 
 Phase: 3 (Zugang und Rollen), In Progress
-Plan: 03-01 complete, nächster 03-02
+Plan: 03-02 complete, nächster 03-03
 Status: Executing Phase 3
 Last activity: 2026-10-20
 
@@ -65,6 +65,7 @@ Progress: [███░░░░░░░] 33% (2 von 6 Phasen)
 | Phase 02 P06 | 25 min | 2 tasks | 7 files |
 | Phase 02 P07 | 60 min | 2 tasks | 4 files |
 | Phase 03 P01 | 30 min | 3 tasks | 13 files |
+| Phase 03 P02 | 25 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-01: Lua-Quelltext reines ASCII, Kindertexte als Python-Konstanten mit Umlauten, im Mod als Lua-Dezimal-Escapes (UTF-8)
 - [Phase 03]: 03-01: _launch schreibt vor jedem start_world beide Mods und die Zugangsdatei per put_archive; WorldNotFoundError beim Schreiben nimmt den Neuerzeugungspfad
 - [Phase 03]: 03-01: Deutscher Groß-/Kleinschreibungs-Hinweis greift nur, solange das Konto in richtiger Schreibweise noch nicht existiert; danach gewinnt Luantis englischer Builtin-Text
+- [Phase 03]: 03-02: Rolle allein aus NC-Gruppe admin per Selbstauskunft (/cloud/user), Cache 30 s nur für Erfolge; Störung -> 503, nie Verwalter
+- [Phase 03]: 03-02: require_verwalter routerweit (dependencies=[...]) auf worlds und setup_check; jede künftige Verwaltungsroute dort erbt die Sperre, neue Spielerrouten gehören in einen eigenen Router unter /api/my/
+- [Phase 03]: 03-02: info.xml USER ^/js, ^/img, ^/api/me$, ^/api/my/.* vor ADMIN ^/api/.*; Top-Menü admin_required=False; AppAPI liefert Kindern an ADMIN-Routen 404 (nicht 403)
 
 ### Pending Todos
 
@@ -134,6 +138,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-19T22:35:00.000Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-10-20T08:00:00.000Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
