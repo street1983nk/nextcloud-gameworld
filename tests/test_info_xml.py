@@ -1,4 +1,4 @@
-"""ExApp-Manifest: Version im Lockstep, alle Routen ADMIN, Env-Variablen, NC-Fenster."""
+"""ExApp-Manifest: Version im Lockstep, Routen USER vor ADMIN, Env-Variablen, NC-Fenster."""
 
 from __future__ import annotations
 
@@ -27,17 +27,38 @@ def test_id_and_version_lockstep() -> None:
     assert _text(root, "version") == project["version"]
 
 
-def test_every_route_is_admin() -> None:
-    routes = _root().findall("./external-app/routes/route")
-    assert len(routes) >= 3
-    by_url: dict[str, str] = {}
-    for route in routes:
-        assert _text(route, "access_level") == "ADMIN"
-        by_url[_text(route, "url")] = _text(route, "verb")
-    # Kanonische Form mit führendem Schrägstrich, wie AppAPI 34 und HaRP sie prüfen.
-    assert by_url["^/js/.*"] == "GET"
-    assert by_url["^/img/.*"] == "GET"
-    assert set(by_url["^/api/.*"].split(",")) == {"GET", "POST", "DELETE"}
+EXPECTED_ROUTES = [
+    ("^/js/.*", "GET", "USER"),
+    ("^/img/.*", "GET", "USER"),
+    ("^/api/me$", "GET", "USER"),
+    ("^/api/my/.*", "GET", "USER"),
+    ("^/api/.*", "GET,POST,DELETE", "ADMIN"),
+]
+
+
+def _routes() -> list[tuple[str, str, str]]:
+    return [
+        (_text(route, "url"), _text(route, "verb"), _text(route, "access_level"))
+        for route in _root().findall("./external-app/routes/route")
+    ]
+
+
+def test_route_order_and_levels() -> None:
+    """Erste passende Route gewinnt: USER-Routen zuerst, Verwaltung als ADMIN dahinter."""
+    assert _routes() == EXPECTED_ROUTES
+
+
+def test_user_routes_are_anchored_or_static() -> None:
+    """AppAPI hängt keinen End-Anker an: USER-Routen unter /api/ brauchen "$" oder ^/api/my/."""
+    for url, _verb, level in _routes():
+        if level == "USER" and url.startswith("^/api/"):
+            assert url.endswith("$") or url == "^/api/my/.*", url
+
+
+def test_admin_catch_all_is_last() -> None:
+    routes = _routes()
+    assert routes[-1] == ("^/api/.*", "GET,POST,DELETE", "ADMIN")
+    assert [level for _url, _verb, level in routes].count("ADMIN") == 1
 
 
 def test_environment_defaults() -> None:

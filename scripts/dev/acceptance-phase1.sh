@@ -39,8 +39,6 @@ PROXY_CONTAINER=gameworld-dev-gameworld-docker-proxy-1
 IMAGE_DIGEST=sha256:db682caec367977ac2661c81e3cdbd1f1dbbae596f6fa7d791c0031107d59947
 NAME_A="Abnahme A"
 NAME_B="Abnahme B"
-# In 01-02-SUMMARY dokumentiert: Variante A (Nicht-Admin bekommt 404 auf die Seite).
-DOCUMENTED_VARIANT=A
 
 PASSED=0
 FAILED=0
@@ -188,7 +186,7 @@ for old_id in $(jq -r --arg a "${NAME_A}" --arg b "${NAME_B}" \
 done
 
 printf '\n== K1 Installation und Top-Menü ==\n'
-# K1 Installation und Top-Menü, Nicht-Admin bekommt nichts
+# K1 Installation und Top-Menü; Nicht-Admin sieht Seite und Bundle, aber keine Verwaltung
 check "K1 occ app_api:app:list zeigt gameworld als enabled" \
 	sh -c 'printf "%s\n" "$1" | grep "^gameworld " | grep -q "\[enabled\]"' _ "${APP_LIST}"
 
@@ -215,29 +213,25 @@ check "K1 ${KID_USER} ist nicht in der Gruppe admin" eq "${KID_ADMIN}" nein
 KID_LOGIN=$(http_code GET "${NEXTCLOUD_URL}/ocs/v2.php/cloud/user?format=json" "${KID_AUTH}" "${WORK_DIR}/kid-user.json")
 check "K1 Positivkontrolle: ${KID_USER} meldet sich an, OCS cloud/user 200 (ist ${KID_LOGIN})" eq "${KID_LOGIN}" 200
 
+# seit 03-02: Kinder sehen Seite und Bundle, Verwaltung bleibt gesperrt
+# (AppAPI-Route ADMIN plus require_verwalter in Python).
+KID_PAGE=$(http_code GET "${PAGE_URL}" "${KID_AUTH}" "${WORK_DIR}/page-kid.html")
+check "K1 Seite für ${KID_USER} HTTP 200 (ist ${KID_PAGE})" eq "${KID_PAGE}" 200
+KID_BUNDLE=$(http_code GET "${BUNDLE_URL}" "${KID_AUTH}" /dev/null)
+check "K1 Bundle für ${KID_USER} HTTP 200 (ist ${KID_BUNDLE})" eq "${KID_BUNDLE}" 200
+
 KID_API=$(http_code GET "${API_URL}/worlds" "${KID_AUTH}" /dev/null)
 check "K1 Negativkontrolle: Welt-API für ${KID_USER} kein 200 (ist ${KID_API})" ne "${KID_API}" 200
-KID_BUNDLE=$(http_code GET "${BUNDLE_URL}" "${KID_AUTH}" /dev/null)
-check "K1 Negativkontrolle: Bundle für ${KID_USER} kein 200 (ist ${KID_BUNDLE})" ne "${KID_BUNDLE}" 200
 
-KID_PAGE=$(http_code GET "${PAGE_URL}" "${KID_AUTH}" "${WORK_DIR}/page-kid.html")
-if [ "${KID_PAGE}" != "200" ]; then
-	OBSERVED_VARIANT=A
-	pass "K1 Negativkontrolle: Seite für ${KID_USER} kein 200 (ist ${KID_PAGE}), Variante A"
-else
-	OBSERVED_VARIANT=B
-	if grep -q 'id="content"' "${WORK_DIR}/page-kid.html" \
-		&& ! grep -q -e "${NAME_A}" -e "${NAME_B}" "${WORK_DIR}/page-kid.html" \
-		&& [ "${KID_API}" != "200" ] && [ "${KID_BUNDLE}" != "200" ]; then
-		pass "K1 Seite für ${KID_USER} 200, aber leere Hülle ohne Bundle und API, Variante B"
-	else
-		fail "K1 Seite für ${KID_USER} 200 und nicht nur die leere Hülle"
-	fi
-fi
-printf 'beobachtet: Variante %s\n' "${OBSERVED_VARIANT}"
-if [ "${OBSERVED_VARIANT}" != "${DOCUMENTED_VARIANT}" ]; then
-	hint "beobachtete Variante ${OBSERVED_VARIANT} weicht von der in 01-02-SUMMARY dokumentierten Variante ${DOCUMENTED_VARIANT} ab"
-fi
+KID_ME=$(http_code GET "${API_URL}/me" "${KID_AUTH}" "${WORK_DIR}/me-kid.json")
+check "K1 /api/me für ${KID_USER} HTTP 200 (ist ${KID_ME})" eq "${KID_ME}" 200
+KID_ROLE=$(jq -r '.role // empty' "${WORK_DIR}/me-kid.json" 2>/dev/null || true)
+check "K1 /api/me für ${KID_USER} meldet Rolle spieler (ist ${KID_ROLE})" eq "${KID_ROLE}" spieler
+
+ADMIN_ME=$(http_code GET "${API_URL}/me" "${ADMIN_AUTH}" "${WORK_DIR}/me-admin.json")
+ADMIN_ROLE=$(jq -r '.role // empty' "${WORK_DIR}/me-admin.json" 2>/dev/null || true)
+check "K1 Positivkontrolle: /api/me als admin HTTP 200 und Rolle verwalter (ist ${ADMIN_ME}, ${ADMIN_ROLE})" \
+	eq "${ADMIN_ME}/${ADMIN_ROLE}" 200/verwalter
 
 printf '\n== K2 Lebenszyklus und Parallelität ==\n'
 # K2 Lebenszyklus und Parallelität

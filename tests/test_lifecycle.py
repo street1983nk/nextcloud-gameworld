@@ -33,7 +33,7 @@ async def test_enable_registers_admin_top_menu(monkeypatch: pytest.MonkeyPatch) 
         "top_menu", "gameworld", "gameworld_config", {"apiBase": api_base()}
     )
     nc.ui.resources.set_script.assert_awaited_once_with("top_menu", "gameworld", "js/gameworld-main")
-    nc.ui.top_menu.register.assert_awaited_once_with("gameworld", "Gameworld", "img/app.svg", admin_required=True)
+    nc.ui.top_menu.register.assert_awaited_once_with("gameworld", "Gameworld", "img/app.svg", admin_required=False)
     nc.ui.top_menu.unregister.assert_not_awaited()
 
 

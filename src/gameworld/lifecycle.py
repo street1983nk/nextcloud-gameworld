@@ -36,7 +36,9 @@ async def enabled_handler(enabled: bool, nc: AsyncNextcloudApp) -> str:
         if enabled:
             await nc.ui.resources.set_initial_state("top_menu", MENU_NAME, CONFIG_KEY, {"apiBase": api_base()})
             await nc.ui.resources.set_script("top_menu", MENU_NAME, SCRIPT_PATH)
-            await nc.ui.top_menu.register(MENU_NAME, "Gameworld", "img/app.svg", admin_required=True)
+            # Kinder brauchen die Seite (sonst 404 aus TopMenuController). Die
+            # Verwaltung bleibt durch die ADMIN-Routen und require_verwalter gesperrt.
+            await nc.ui.top_menu.register(MENU_NAME, "Gameworld", "img/app.svg", admin_required=False)
         else:
             await nc.ui.top_menu.unregister(MENU_NAME)
             await nc.ui.resources.delete_script("top_menu", MENU_NAME, SCRIPT_PATH)
