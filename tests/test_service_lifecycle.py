@@ -16,6 +16,7 @@ from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
     DockerUnavailableError,
+    MemoryUsage,
     PortInUseError,
     ProvisionerError,
     StatusFile,
@@ -24,7 +25,7 @@ from gameworld.provisioner.client import (
 from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
 from gameworld.provisioner.spec import WorldPayload
 from gameworld.worlds import service as service_module
-from gameworld.worlds.service import WorldService
+from gameworld.worlds.service import LIST_CACHE_SECONDS, WorldService, WorldView
 from gameworld.worlds.store import WorldStore
 from tests.conftest import appapi_headers
 
@@ -49,6 +50,11 @@ class FakeProvisioner:
     status_files: dict[str, StatusFile] = field(default_factory=dict)
     status_error: ProvisionerError | None = None
     status_reads: list[str] = field(default_factory=list)
+    memory: dict[str, MemoryUsage] = field(default_factory=dict)
+    memory_errors: dict[str, ProvisionerError] = field(default_factory=dict)
+    memory_reads: list[str] = field(default_factory=list)
+    list_error: ProvisionerError | None = None
+    list_calls: int = 0
 
     def ensure_image(self) -> None:
         return None
@@ -93,6 +99,9 @@ class FakeProvisioner:
         return {port for port in ports if lo <= port <= hi}
 
     def list_managed(self) -> dict[str, ContainerInfo]:
+        self.list_calls += 1
+        if self.list_error is not None:
+            raise self.list_error
         return {
             world_id: ContainerInfo(
                 f"cid-{world_id}",
@@ -111,6 +120,35 @@ class FakeProvisioner:
         if self.status_error is not None:
             raise self.status_error
         return self.status_files.get(world_id)
+
+    def memory_bytes(self, world_id: str) -> MemoryUsage | None:
+        _, status = self._known(world_id)
+        self.memory_reads.append(world_id)
+        if world_id in self.memory_errors:
+            raise self.memory_errors[world_id]
+        if status != "running":
+            return None
+        return self.memory.get(world_id)
+
+
+class Clock:
+    """Steuert time.monotonic im Dienst (Cache der Weltenliste)."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
+    fake_clock = Clock()
+    monkeypatch.setattr(service_module, "monotonic", fake_clock)
+    return fake_clock
 
 
 @pytest.fixture
@@ -452,7 +490,9 @@ async def test_oom_shows_error(service: WorldService, fake: FakeProvisioner) -> 
     )
 
 
-async def test_stale_status_file_is_starting_fresh_is_running(service: WorldService, fake: FakeProvisioner) -> None:
+async def test_stale_status_file_is_starting_fresh_is_running(
+    service: WorldService, fake: FakeProvisioner, clock: Clock
+) -> None:
     """Pitfall 3: Eine Status-Datei aus dem letzten Lauf zählt nicht als bereit."""
     created = await service.create_world("Welt")
     fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
@@ -461,6 +501,7 @@ async def test_stale_status_file_is_starting_fresh_is_running(service: WorldServ
     assert await _status_of(service, created.id) == ("starting", "Startet gerade")
 
     fake.status_files[created.id] = StatusFile("2026-10-19T18:19:48.5Z", b"")
+    clock.advance(LIST_CACHE_SECONDS)
     assert await _status_of(service, created.id) == ("running", "Läuft")
 
 
@@ -562,6 +603,171 @@ async def test_failed_restart_marks_world_failed(
     assert row.op_state == "failed"
     assert row.last_error == "Proxy weg"
     assert await _status_of(service, created.id) == ("error", "Proxy weg")
+
+
+FRESH = "2026-10-19T18:19:48.5Z"
+STALE = "2026-10-19T18:00:00Z"
+MEM = MemoryUsage(used=19200000, limit=536870912)
+
+
+async def _view_of(service: WorldService, world_id: str) -> WorldView:
+    return {view.id: view for view in await service.list_worlds()}[world_id]
+
+
+async def _running_world(service: WorldService, fake: FakeProvisioner, name: str, mtime: str = FRESH) -> str:
+    created = await service.create_world(name)
+    fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
+    fake.status_files[created.id] = StatusFile(mtime, b"Mia\nLeo\n<script>\n192.168.0.5\n")
+    fake.memory[created.id] = MEM
+    return created.id
+
+
+async def test_running_world_shows_players_and_memory(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    view = await _view_of(service, world_id)
+    assert view.status == "running"
+    assert view.players == ["Mia", "Leo"]
+    assert (view.memory_used_bytes, view.memory_limit_bytes) == (MEM.used, MEM.limit)
+
+
+async def test_status_file_older_than_start_shows_no_players(service: WorldService, fake: FakeProvisioner) -> None:
+    """Namen aus einem früheren Lauf (Datei älter als StartedAt) erscheinen nie."""
+    world_id = await _running_world(service, fake, "Welt", mtime=STALE)
+    view = await _view_of(service, world_id)
+    assert view.status == "starting"
+    assert view.players == []
+    # Der Container läuft, der RAM ist trotzdem sichtbar.
+    assert view.memory_used_bytes == MEM.used
+
+
+async def test_stopped_world_has_no_players_and_no_memory(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    view = await service.stop_world(world_id)
+    assert view.status == "stopped"
+    assert view.players == []
+    assert view.memory_used_bytes is None
+    assert view.memory_limit_bytes is None
+    assert world_id not in fake.memory_reads
+
+
+async def test_error_world_has_no_players(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.containers[world_id] = (fake.containers[world_id][0], "exited")
+    fake.extra[world_id]["exit_code"] = 137
+    view = await _view_of(service, world_id)
+    assert view.status == "error"
+    assert view.players == []
+    assert view.memory_used_bytes is None
+
+
+async def test_old_schema_world_has_memory_but_no_players(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Alt")
+    fake.memory[created.id] = MEM
+    view = await _view_of(service, created.id)
+    assert view.status == "running"
+    assert view.players == []
+    assert view.memory_used_bytes == MEM.used
+
+
+async def test_memory_error_is_isolated_per_world(service: WorldService, fake: FakeProvisioner) -> None:
+    broken = await _running_world(service, fake, "Kaputt")
+    healthy = await _running_world(service, fake, "Heil")
+    fake.memory_errors[broken] = DockerUnavailableError("Proxy weg")
+    views = {view.id: view for view in await service.list_worlds()}
+    assert views[broken].memory_used_bytes is None
+    assert views[broken].memory_limit_bytes is None
+    assert views[broken].players == ["Mia", "Leo"]
+    assert views[healthy].memory_used_bytes == MEM.used
+    assert views[healthy].players == ["Mia", "Leo"]
+
+
+async def test_status_file_error_gives_no_players(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.status_error = DockerUnavailableError("Proxy weg")
+    view = await _view_of(service, world_id)
+    assert view.players == []
+    assert view.memory_used_bytes == MEM.used
+
+
+async def test_list_is_cached_for_two_seconds(service: WorldService, fake: FakeProvisioner, clock: Clock) -> None:
+    await service.create_world("Welt")
+    await service.list_worlds()
+    calls = fake.list_calls
+    await service.list_worlds()
+    clock.advance(LIST_CACHE_SECONDS - 0.1)
+    await service.list_worlds()
+    assert fake.list_calls == calls
+    clock.advance(0.1)
+    await service.list_worlds()
+    assert fake.list_calls == calls + 1
+
+
+@pytest.mark.usefixtures("clock")
+@pytest.mark.parametrize("operation", ["start_world", "stop_world", "restart_world", "delete_world"])
+async def test_mutation_invalidates_cache(service: WorldService, fake: FakeProvisioner, operation: str) -> None:
+    created = await service.create_world("Welt")
+    await service.list_worlds()
+    await getattr(service, operation)(created.id)
+    calls = fake.list_calls
+    await service.list_worlds()
+    assert fake.list_calls == calls + 1
+
+
+@pytest.mark.usefixtures("clock")
+async def test_create_invalidates_cache(service: WorldService) -> None:
+    await service.create_world("Erste")
+    assert len(await service.list_worlds()) == 1
+    await service.create_world("Zweite")
+    assert len(await service.list_worlds()) == 2
+
+
+@pytest.mark.usefixtures("clock")
+async def test_failed_mutation_invalidates_cache(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    await service.list_worlds()
+    fake.start_errors = [DockerUnavailableError("Proxy weg")]
+    with pytest.raises(DockerUnavailableError):
+        await service.restart_world(created.id)
+    assert await _status_of(service, created.id) == ("error", "Proxy weg")
+
+
+@pytest.mark.usefixtures("clock")
+async def test_unknown_status_is_not_cached(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.list_error = DockerUnavailableError("Proxy weg")
+    assert (await _status_of(service, created.id))[0] == "unknown"
+    fake.list_error = None
+    assert await _status_of(service, created.id) == ("running", "Läuft")
+
+
+@pytest.mark.usefixtures("clock")
+async def test_cache_returns_copies(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    first = await _view_of(service, world_id)
+    first.players.append("Eindringling")
+    first.status = "kaputt"
+    second = await _view_of(service, world_id)
+    assert second.players == ["Mia", "Leo"]
+    assert second.status == "running"
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_lists_players_and_memory(client: httpx.AsyncClient, fake: FakeProvisioner) -> None:
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    world_id = created.json()["id"]
+    fake.extra[world_id] = {"schema": "2", "started_at": STARTED_AT}
+    fake.status_files[world_id] = StatusFile(FRESH, b"Leo\n")
+    fake.memory[world_id] = MEM
+    stopped = await client.post(f"/api/worlds/{world_id}/stop", headers=appapi_headers())
+    assert stopped.json()["players"] == []
+    assert stopped.json()["memory_used_bytes"] is None
+    assert stopped.json()["memory_limit_bytes"] is None
+    await client.post(f"/api/worlds/{world_id}/start", headers=appapi_headers())
+    listing = await client.get("/api/worlds", headers=appapi_headers())
+    world = listing.json()["worlds"][0]
+    assert world["players"] == ["Leo"]
+    assert world["memory_used_bytes"] == MEM.used
+    assert world["memory_limit_bytes"] == MEM.limit
 
 
 @pytest.mark.parametrize("operation", ["start_world", "stop_world", "delete_world", "restart_world"])

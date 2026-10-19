@@ -19,6 +19,7 @@ from tests.conftest import appapi_headers, docker_url
 pytestmark = [pytest.mark.docker, pytest.mark.usefixtures("docker_cleanup")]
 
 READY_TIMEOUT = 30.0
+MTG_LIMIT = 536870912
 
 
 @pytest.fixture
@@ -43,8 +44,20 @@ async def _world(client: httpx.AsyncClient, world_id: str) -> dict[str, object]:
     return worlds[world_id]
 
 
-async def _wait_status(client: httpx.AsyncClient, world_id: str, expected: str) -> dict[str, object]:
-    deadline = time.monotonic() + READY_TIMEOUT
+# Testhelfer: Die Frist ist bewusst Teil der Schnittstelle (Plan 02-05), daher ASYNC109 aus.
+async def wait_for_status(
+    client: httpx.AsyncClient,
+    world_id: str,
+    expected: str,
+    timeout: float = 10.0,  # noqa: ASYNC109
+) -> dict[str, object]:
+    """Fragt GET /api/worlds alle 0,5 s, bis der Status erscheint.
+
+    Die Weltenliste wird 2 s zwischengespeichert; Änderungen von außen
+    (container.stop, container.kill) erscheinen deshalb erst verzögert.
+    Änderungen über die API verwerfen den Cache selbst.
+    """
+    deadline = time.monotonic() + timeout
     seen: list[str] = []
     while time.monotonic() < deadline:
         world = await _world(client, world_id)
@@ -54,7 +67,7 @@ async def _wait_status(client: httpx.AsyncClient, world_id: str, expected: str) 
         if status == expected:
             return world
         await asyncio.sleep(0.5)
-    pytest.fail(f"Welt {world_id} ist nach {READY_TIMEOUT} s nicht {expected}, gesehen: {seen}")
+    pytest.fail(f"Welt {world_id} ist nach {timeout} s nicht {expected}, gesehen: {seen}")
 
 
 def _desired_state(storage: Path, world_id: str) -> str:
@@ -78,23 +91,32 @@ async def test_status_comes_from_docker_and_restart_works(
     world_id = str(created.json()["id"])
     assert created.json()["status"] in {"starting", "running"}
 
-    ready = await _wait_status(client, world_id, "running")
+    ready = await wait_for_status(client, world_id, "running", READY_TIMEOUT)
     assert ready["status_text"] == "Läuft"
+    # WELT-03: RAM aus docker stats (Kreativ-Preset 512 MiB), noch niemand online.
+    used = ready["memory_used_bytes"]
+    assert isinstance(used, int)
+    assert 0 < used <= MTG_LIMIT
+    assert ready["memory_limit_bytes"] == MTG_LIMIT
+    assert ready["players"] == []
     container = _container(api, world_id)
 
     # Stop von außen: Das Dashboard zeigt "Gestoppt", die Datenbank bleibt unverändert.
     container.stop(timeout=30)
-    stopped = await _world(client, world_id)
+    stopped = await wait_for_status(client, world_id, "stopped")
     assert (stopped["status"], stopped["status_text"]) == ("stopped", "Gestoppt")
+    assert stopped["memory_used_bytes"] is None
+    assert stopped["memory_limit_bytes"] is None
+    assert stopped["players"] == []
     assert _desired_state(app_env, world_id) == "running"
 
     started = await client.post(f"/api/worlds/{world_id}/start", headers=appapi_headers())
     assert started.status_code == 200, started.text
-    await _wait_status(client, world_id, "running")
+    await wait_for_status(client, world_id, "running", READY_TIMEOUT)
 
     # SIGKILL von außen: Fehler mit Klartext und Exit-Code.
     container.kill()
-    killed = await _world(client, world_id)
+    killed = await wait_for_status(client, world_id, "error")
     assert killed["status"] == "error"
     assert "unerwartet beendet" in str(killed["status_text"])
     assert "137" in str(killed["status_text"])
@@ -104,7 +126,7 @@ async def test_status_comes_from_docker_and_restart_works(
     assert before is not None
     restarted = await client.post(f"/api/worlds/{world_id}/restart", headers=appapi_headers())
     assert restarted.status_code == 200, restarted.text
-    await _wait_status(client, world_id, "running")
+    await wait_for_status(client, world_id, "running", READY_TIMEOUT)
     after = parse_docker_time(_started_at(_container(api, world_id)))
     assert after is not None
     assert after > before
@@ -116,7 +138,7 @@ async def test_restart_of_running_world_gets_new_start_time(
     created = await client.post("/api/worlds", json={"name": "Neustartwelt"}, headers=appapi_headers())
     assert created.status_code == 201, created.text
     world_id = str(created.json()["id"])
-    await _wait_status(client, world_id, "running")
+    await wait_for_status(client, world_id, "running", READY_TIMEOUT)
     before = parse_docker_time(_started_at(_container(api, world_id)))
     assert before is not None
 
@@ -124,7 +146,7 @@ async def test_restart_of_running_world_gets_new_start_time(
     assert restarted.status_code == 200, restarted.text
     # Direkt nach dem Neustart ist die Status-Datei älter als StartedAt, also höchstens "starting".
     assert restarted.json()["status"] in {"starting", "running"}
-    await _wait_status(client, world_id, "running")
+    await wait_for_status(client, world_id, "running", READY_TIMEOUT)
     after = parse_docker_time(_started_at(_container(api, world_id)))
     assert after is not None
     assert after > before
