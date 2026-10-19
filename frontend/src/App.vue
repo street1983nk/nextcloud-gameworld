@@ -41,6 +41,7 @@
 							<th>Name</th>
 							<th>UDP-Port</th>
 							<th>Status</th>
+							<th>Aktionen</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -48,23 +49,53 @@
 							<td>{{ world.name }}</td>
 							<td>{{ world.port }}</td>
 							<td>{{ statusText(world) }}</td>
+							<td class="gameworld__actions">
+								<NcLoadingIcon v-if="busy[world.id]" :size="20" />
+								<NcButton
+									v-if="world.docker_status !== 'running'"
+									:disabled="Boolean(busy[world.id])"
+									@click="run(world, startWorld)">
+									Starten
+								</NcButton>
+								<NcButton
+									v-else
+									:disabled="Boolean(busy[world.id])"
+									@click="run(world, stopWorld)">
+									Stoppen
+								</NcButton>
+								<NcButton
+									variant="error"
+									:disabled="Boolean(busy[world.id])"
+									@click="pendingDelete = world">
+									Löschen
+								</NcButton>
+							</td>
 						</tr>
 					</tbody>
 				</table>
+
+				<NcDialog
+					v-if="pendingDelete"
+					:open="true"
+					name="Welt löschen"
+					:message="deleteMessage"
+					:buttons="deleteButtons"
+					@update:open="onDialogOpen" />
 			</div>
 		</NcAppContent>
 	</NcContent>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import NcAppContent from '@nextcloud/vue/components/NcAppContent'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcContent from '@nextcloud/vue/components/NcContent'
+import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
-import { createWorld, listWorlds } from './api.js'
+import { createWorld, deleteWorld, listWorlds, startWorld, stopWorld } from './api.js'
 
 const STATUS_TEXT = {
 	running: 'läuft',
@@ -80,6 +111,34 @@ const creating = ref(false)
 const name = ref('')
 const createdKey = ref('')
 const error = ref('')
+// Welt-ID -> true, solange für diese Welt eine Aktion läuft.
+const busy = reactive({})
+const pendingDelete = ref(null)
+
+const deleteMessage = computed(() => pendingDelete.value
+	? `Welt »${pendingDelete.value.name}« endgültig löschen? Die Spielwelt und alle gebauten Dinge werden entfernt.`
+	: '')
+
+const deleteButtons = [
+	{ label: 'Abbrechen', variant: 'tertiary' },
+	{
+		label: 'Endgültig löschen',
+		variant: 'error',
+		callback: () => {
+			const world = pendingDelete.value
+			pendingDelete.value = null
+			if (world) {
+				run(world, deleteWorld)
+			}
+		},
+	},
+]
+
+function onDialogOpen(open) {
+	if (!open) {
+		pendingDelete.value = null
+	}
+}
 
 function errorText(err) {
 	const detail = err?.response?.data?.detail
@@ -103,6 +162,24 @@ async function refresh() {
 		error.value = errorText(err)
 	} finally {
 		loading.value = false
+	}
+}
+
+// Führt eine Aktion für eine Welt aus und lädt danach die Liste neu, weil
+// der Status immer aus Docker kommt.
+async function run(world, action) {
+	if (busy[world.id]) {
+		return
+	}
+	busy[world.id] = true
+	error.value = ''
+	try {
+		await action(world.id)
+	} catch (err) {
+		error.value = errorText(err)
+	} finally {
+		await refresh()
+		delete busy[world.id]
 	}
 }
 
@@ -159,6 +236,12 @@ onMounted(refresh)
 	width: 100%;
 	margin-top: 16px;
 	border-collapse: collapse;
+}
+
+.gameworld__actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
 }
 
 .gameworld__list th,

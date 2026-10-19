@@ -36,3 +36,17 @@ export async function createWorld(name) {
 	const response = await axios.post(`${apiBase}/api/worlds`, { name })
 	return response.data
 }
+
+export async function startWorld(id) {
+	const response = await axios.post(`${apiBase}/api/worlds/${id}/start`)
+	return response.data
+}
+
+export async function stopWorld(id) {
+	const response = await axios.post(`${apiBase}/api/worlds/${id}/stop`)
+	return response.data
+}
+
+export async function deleteWorld(id) {
+	await axios.delete(`${apiBase}/api/worlds/${id}`)
+}
