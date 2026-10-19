@@ -120,7 +120,36 @@ Plans:
   4. Die Kind-Ansicht zeigt nur eigene Welten und Verbindungsinfo; Verwaltungsfunktionen sind serverseitig für Kinder gesperrt, nicht nur ausgeblendet
   5. Rollen werden aus Nextcloud-Gruppen abgeleitet; Gameworld hat keine eigene Benutzerverwaltung
 
-**Plans**: TBD
+**Plans**: 7 plans
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md , Durchsetzung im Spielserver: Welt-Mod gameworld_access, SRP-Verifier, Zugangsdatei per put_archive, Negativ-Join per UDP-Prober (MTG und VoxeLibre)
+
+**Wave 2** *(blocked on Wave 1 completion; seriell wegen gemeinsamem Live-Dev-Stack)*
+
+- [ ] 03-02-PLAN.md , Rollen aus Nextcloud-Gruppen: require_verwalter, Routen USER/ADMIN, /api/me, Rollenweiche im Frontend, Phase-1-Abnahme angepasst
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-03-PLAN.md , Nutzer einladen Ende zu Ende: Schema 3 ohne Passwortfeld, HMAC-abgeleitete Spielpasswörter (Geheimnis in appconfig_ex), AccessService, Invites-API, Positiv-Join
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-04-PLAN.md , Gruppen-Einladungen mit dynamischem Abgleich, Passwort neu per Rotation, Umbenennen, Neuprovisionierung nach Geheimniswechsel
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03-05-PLAN.md , Eltern-UI: Einladen-Dialog (Benutzer und Gruppen), Spielerverwaltung, Weltschlüssel-Anzeige entfällt, Hinweis "Neustart nötig"
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03-06-PLAN.md , Kind-Ansicht: /api/my/worlds, Verbindungsinfo mit Anleitung, Spieler-Adresse als Einstellung, lazy Gruppen-Provisionierung
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 03-07-PLAN.md , Phasenabnahme: acceptance-phase3.sh K1 bis K5 plus gemeinsame Playwright-Abnahme, Doku, ct_whitelist-Korrektur
+
 **UI hint**: yes
 **Research flag**: yes (Whitelist-Mod-Wahl: Whiter List vs. ct_whitelist vs. AntumDeluge gegen Luanti 5.17 testen; Zusammenspiel Whitelist-Mod und Auth-Provisionierung)
 
@@ -178,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
-| 3. Zugang und Rollen | 0/TBD | Not started | - |
+| 3. Zugang und Rollen | 0/7 | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |
