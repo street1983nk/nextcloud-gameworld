@@ -74,7 +74,33 @@ Plans:
   3. Elternteil sieht pro Welt, welche Spieler gerade online sind und wie viel RAM die Welt verbraucht
   4. Nach einem ExApp-Update und nach einem Host-Reboot sind alle Welten wieder korrekt im Dashboard (Label-Reconciliation re-adoptiert Container, Zustand liegt auf persistentem Volume)
 
-**Plans**: TBD
+**Plans**: 7 plans
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md , Kreativ-Preset Ende zu Ende: Preset-Registry, Schema 2 mit Migration, preset in API, keine failed-Zeile ohne Docker-Reste
+- [ ] 02-02-PLAN.md , VoxeLibre 0.92.4 hash-geprüft bereitstellen (Fetch-Skript, SHA256SUMS, Lizenzdoku, Dev-Setup)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-03-PLAN.md , Abenteuer (sanft) mit VoxeLibre und 1 GiB, Welt-Mod gameworld_status, gestreamter Payload, Live-Nachweis
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-04-PLAN.md , Status aus Docker (läuft/startet/gestoppt/Fehler), Neustart, Dashboard mit Preset-Auswahl und Polling
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02-05-PLAN.md , Online-Spieler und RAM pro Welt, 2-s-Cache, Liste nach "Erneut prüfen" aktualisieren
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02-06-PLAN.md , Reconciler im Lifespan: Reboot- und Update-Überleben per Label-Reconciliation
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 02-07-PLAN.md , Phasenabnahme: acceptance-phase2.sh K1 bis K4 plus gemeinsame Playwright-Abnahme mit Luanti-Client
+
 **UI hint**: yes
 
 ### Phase 3: Zugang und Rollen
@@ -148,7 +174,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
-| 2. One-Click-Welten | 0/TBD | Not started | - |
+| 2. One-Click-Welten | 0/7 | Planned | - |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
