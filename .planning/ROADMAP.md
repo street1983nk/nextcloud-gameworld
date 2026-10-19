@@ -52,7 +52,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-04-PLAN.md , Setup-Check für den Docker-Proxy plus docs/install.md mit gescoptem Snippet und Restrisiko
+- [x] 01-04-PLAN.md , Setup-Check für den Docker-Proxy plus docs/install.md mit gescoptem Snippet und Restrisiko
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -147,7 +147,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fundament | 3/5 | In Progress|  |
+| 1. Fundament | 4/5 | In Progress|  |
 | 2. One-Click-Welten | 0/TBD | Not started | - |
 | 3. Zugang und Rollen | 0/TBD | Not started | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |

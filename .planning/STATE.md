@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-10-19T10:40:30.973Z"
+last_updated: "2026-10-19T10:47:58.951Z"
 last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 01 (Fundament) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-10-19
 
-Progress: [██████░░░░] 60%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [██████░░░░] 60%
 | Phase 01 P01 | 11 min | 3 tasks | 34 files |
 | Phase 01 P02 | 32 min | 2 tasks | 16 files |
 | Phase 01-fundament P03 | 9 min | 3 tasks | 11 files |
+| Phase 01 P04 | 12 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-03: Alle Container-Mutationen nur über world_id und _owned() (Label-Filter plus Nachprüfung), start/discard per container_id entfallen
 - [Phase 01]: 01-03: Port-Saga erzeugt bei belegtem Port neu mit nächstem freien Port, Volume bleibt (reuse_volume), max. 3 Startversuche, danach 409
 - [Phase 01]: 01-03: remove_world toleriert fehlenden Container und entfernt trotzdem das Volume mit eigenem Instanz-Präfix
+- [Phase 01]: 01-04: Setup-Check unterdrückt Folgefehler: fehlt POST, werden DELETE-Volumes- und Exec-Probe nicht gesendet, nur Warnung 'Nicht geprüft'
+- [Phase 01]: 01-04: 'Welt erstellen' bleibt gesperrt, bis der Setup-Check ok meldet; /api/setup-check antwortet immer 200
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-19T10:40:24.244Z
+Last session: 2026-10-19T10:47:52.350Z
 Stopped at: Completed 01-01-PLAN.md
 Resume file: None
