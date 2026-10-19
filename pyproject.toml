@@ -1,0 +1,67 @@
+[project]
+name = "gameworld"
+version = "0.1.0"
+description = "Gameworld ExApp: private, hardened Luanti worlds for families on Nextcloud"
+requires-python = ">=3.13,<3.14"
+license = "AGPL-3.0-or-later"
+authors = [{ name = "street1983nk" }]
+dependencies = [
+    "nc-py-api[app]==0.30.3",
+    "fastapi==0.143.2",
+    "uvicorn[standard]==0.54.0",
+    "docker==7.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.17.1",
+    "pyright==1.1.414",
+    "vulture==2.16",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "httpx==0.28.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "gameworld"
+module-root = "src"
+
+# starlette ist nicht direkt gepinnt, weil nc-py-api die Abhängigkeit besitzt.
+# Der Boden bleibt über CVE-2026-48710 (BadHost).
+[tool.uv]
+constraint-dependencies = ["starlette>=1.0.1"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["src", "tests"]
+# Planungsdokumente sind Prosa; ruff format würde sonst die Codeblöcke darin umschreiben.
+extend-exclude = [".planning"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "SIM", "C4", "RUF", "PT", "RET", "A", "ISC"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["gameworld", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.13"
+include = ["src", "tests"]
+
+[tool.vulture]
+min_confidence = 80
+paths = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["docker: braucht den Dev-Docker-Proxy"]

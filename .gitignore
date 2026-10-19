@@ -1,0 +1,7 @@
+.dev/
+.venv/
+__pycache__/
+node_modules/
+js/
+*.pyc
+.claude-active
