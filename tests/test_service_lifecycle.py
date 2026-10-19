@@ -18,6 +18,7 @@ from gameworld.provisioner.client import (
     DockerUnavailableError,
     PortInUseError,
     ProvisionerError,
+    StatusFile,
     WorldNotFoundError,
 )
 from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
@@ -41,6 +42,13 @@ class FakeProvisioner:
     started: list[str] = field(default_factory=list)
     stopped: list[str] = field(default_factory=list)
     removed: list[tuple[str, bool]] = field(default_factory=list)
+    # Reihenfolge der Mutationen ("stop:<id>", "start:<id>") für den Neustart.
+    calls: list[str] = field(default_factory=list)
+    # Zusätzliche Inspect-Felder pro Welt (exit_code, oom_killed, started_at, schema).
+    extra: dict[str, dict[str, object]] = field(default_factory=dict)
+    status_files: dict[str, StatusFile] = field(default_factory=dict)
+    status_error: ProvisionerError | None = None
+    status_reads: list[str] = field(default_factory=list)
 
     def ensure_image(self) -> None:
         return None
@@ -63,6 +71,7 @@ class FakeProvisioner:
     def start_world(self, world_id: str) -> None:
         port, _ = self._known(world_id)
         self.started.append(world_id)
+        self.calls.append(f"start:{world_id}")
         if self.start_errors:
             raise self.start_errors.pop(0)
         self.containers[world_id] = (port, "running")
@@ -70,6 +79,7 @@ class FakeProvisioner:
     def stop(self, world_id: str) -> None:
         port, _ = self._known(world_id)
         self.stopped.append(world_id)
+        self.calls.append(f"stop:{world_id}")
         self.containers[world_id] = (port, "exited")
 
     def remove_world(self, world_id: str, *, keep_volume: bool) -> None:
@@ -84,9 +94,23 @@ class FakeProvisioner:
 
     def list_managed(self) -> dict[str, ContainerInfo]:
         return {
-            world_id: ContainerInfo(f"cid-{world_id}", f"gameworld-x-{world_id}", world_id, status, port)
+            world_id: ContainerInfo(
+                f"cid-{world_id}",
+                f"gameworld-x-{world_id}",
+                world_id,
+                status,
+                port,
+                **self.extra.get(world_id, {}),  # pyright: ignore[reportArgumentType]
+            )
             for world_id, (port, status) in self.containers.items()
         }
+
+    def read_status_file(self, world_id: str) -> StatusFile | None:
+        self._known(world_id)
+        self.status_reads.append(world_id)
+        if self.status_error is not None:
+            raise self.status_error
+        return self.status_files.get(world_id)
 
 
 @pytest.fixture
@@ -387,7 +411,160 @@ async def test_failed_delete_keeps_row(service: WorldService, fake: FakeProvisio
     assert row.last_error == "Docker hat die Anfrage abgelehnt: kaputt"
 
 
-@pytest.mark.parametrize("operation", ["start_world", "stop_world", "delete_world"])
+STARTED_AT = "2026-10-19T18:19:46.947430723Z"
+
+
+async def _status_of(service: WorldService, world_id: str) -> tuple[str, str]:
+    views = {view.id: view for view in await service.list_worlds()}
+    return views[world_id].status, views[world_id].status_text
+
+
+async def test_external_clean_stop_shows_stopped_without_db_change(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Status kommt aus Docker: Stop von außen, desired_state bleibt running."""
+    created = await service.create_world("Welt")
+    fake.containers[created.id] = (created.port, "exited")
+    fake.extra[created.id] = {"exit_code": 0}
+
+    assert await _status_of(service, created.id) == ("stopped", "Gestoppt")
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.desired_state == "running"
+
+
+async def test_external_kill_shows_error_with_code(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.containers[created.id] = (created.port, "exited")
+    fake.extra[created.id] = {"exit_code": 137}
+
+    assert await _status_of(service, created.id) == ("error", "Die Welt wurde unerwartet beendet (Code 137).")
+
+
+async def test_oom_shows_error(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.containers[created.id] = (created.port, "exited")
+    fake.extra[created.id] = {"exit_code": 137, "oom_killed": True}
+
+    assert await _status_of(service, created.id) == (
+        "error",
+        "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet.",
+    )
+
+
+async def test_stale_status_file_is_starting_fresh_is_running(service: WorldService, fake: FakeProvisioner) -> None:
+    """Pitfall 3: Eine Status-Datei aus dem letzten Lauf zählt nicht als bereit."""
+    created = await service.create_world("Welt")
+    fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
+
+    fake.status_files[created.id] = StatusFile("2026-10-19T18:00:00.123456789Z", b"")
+    assert await _status_of(service, created.id) == ("starting", "Startet gerade")
+
+    fake.status_files[created.id] = StatusFile("2026-10-19T18:19:48.5Z", b"")
+    assert await _status_of(service, created.id) == ("running", "Läuft")
+
+
+async def test_missing_status_file_is_starting(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
+    assert await _status_of(service, created.id) == ("starting", "Startet gerade")
+
+
+async def test_status_file_error_is_isolated(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
+    fake.status_error = DockerUnavailableError("Proxy weg")
+    assert await _status_of(service, created.id) == ("starting", "Startet gerade")
+
+
+async def test_status_file_only_read_for_running_schema_two(service: WorldService, fake: FakeProvisioner) -> None:
+    old = await service.create_world("Alt")
+    new = await service.create_world("Neu")
+    fake.extra[new.id] = {"schema": "2", "started_at": STARTED_AT}
+    await service.list_worlds()
+    assert fake.status_reads == [new.id]
+
+    fake.status_reads.clear()
+    await service.stop_world(new.id)
+    await service.list_worlds()
+    assert old.id not in fake.status_reads
+    assert new.id not in fake.status_reads
+
+
+async def test_missing_container_shows_recoverable_error(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.containers.pop(created.id)
+    assert await _status_of(service, created.id) == (
+        "error",
+        "Weltdaten vorhanden, Server fehlt. Starten stellt ihn wieder her.",
+    )
+
+
+async def test_restart_stops_then_launches(service: WorldService, fake: FakeProvisioner, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    fake.calls.clear()
+
+    view = await service.restart_world(created.id)
+
+    assert fake.calls == [f"stop:{created.id}", f"start:{created.id}"]
+    assert view.status == "running"
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.desired_state == "running"
+    assert row.op_state == "ready"
+
+
+async def test_restart_of_stopped_world_starts_it(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+
+    view = await service.restart_world(created.id)
+
+    assert view.status == "running"
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.desired_state == "running"
+
+
+async def test_restart_with_missing_container_recreates(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.containers.pop(created.id)
+    fake.created.clear()
+
+    view = await service.restart_world(created.id)
+
+    assert fake.created == [(created.id, created.port, True)]
+    assert view.status == "running"
+
+
+async def test_restart_runs_port_saga(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.start_errors = [PortInUseError(30015)]
+
+    view = await service.restart_world(created.id)
+
+    assert view.port == 30016
+
+
+async def test_failed_restart_marks_world_failed(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    fake.start_errors = [DockerUnavailableError("Proxy weg")]
+
+    with pytest.raises(DockerUnavailableError):
+        await service.restart_world(created.id)
+
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "failed"
+    assert row.last_error == "Proxy weg"
+    assert await _status_of(service, created.id) == ("error", "Proxy weg")
+
+
+@pytest.mark.parametrize("operation", ["start_world", "stop_world", "delete_world", "restart_world"])
 async def test_unknown_world_raises_not_found(service: WorldService, operation: str) -> None:
     with pytest.raises(WorldNotFoundError):
         await getattr(service, operation)("0123456789ab")
@@ -404,7 +581,9 @@ def _override(service: WorldService) -> Iterator[None]:
 
 @pytest.mark.usefixtures("_override")
 @pytest.mark.parametrize("world_id", ["xyz", "..etc", "0123456789AB", "0123456789abc"])
-@pytest.mark.parametrize(("method", "suffix"), [("POST", "/start"), ("POST", "/stop"), ("DELETE", "")])
+@pytest.mark.parametrize(
+    ("method", "suffix"), [("POST", "/start"), ("POST", "/stop"), ("POST", "/restart"), ("DELETE", "")]
+)
 async def test_invalid_world_id_returns_422(client: httpx.AsyncClient, world_id: str, method: str, suffix: str) -> None:
     response = await client.request(method, f"/api/worlds/{world_id}{suffix}", headers=appapi_headers())
     assert response.status_code == 422
@@ -417,7 +596,9 @@ async def test_path_traversal_never_reaches_a_route(client: httpx.AsyncClient) -
 
 
 @pytest.mark.usefixtures("_override")
-@pytest.mark.parametrize(("method", "suffix"), [("POST", "/start"), ("POST", "/stop"), ("DELETE", "")])
+@pytest.mark.parametrize(
+    ("method", "suffix"), [("POST", "/start"), ("POST", "/stop"), ("POST", "/restart"), ("DELETE", "")]
+)
 async def test_unknown_world_returns_404(client: httpx.AsyncClient, method: str, suffix: str) -> None:
     response = await client.request(method, f"/api/worlds/0123456789ab{suffix}", headers=appapi_headers())
     assert response.status_code == 404
@@ -435,11 +616,18 @@ async def test_api_lifecycle_round_trip(client: httpx.AsyncClient) -> None:
     stopped = await client.post(f"/api/worlds/{world_id}/stop", headers=appapi_headers())
     assert stopped.status_code == 200
     assert stopped.json()["docker_status"] == "exited"
+    assert (stopped.json()["status"], stopped.json()["status_text"]) == ("stopped", "Gestoppt")
     assert "world_key" not in stopped.json()
 
     started = await client.post(f"/api/worlds/{world_id}/start", headers=appapi_headers())
     assert started.status_code == 200
     assert started.json()["docker_status"] == "running"
+    assert (started.json()["status"], started.json()["status_text"]) == ("running", "Läuft")
+
+    restarted = await client.post(f"/api/worlds/{world_id}/restart", headers=appapi_headers())
+    assert restarted.status_code == 200
+    assert restarted.json()["status"] == "running"
+    assert "world_key" not in restarted.json()
 
     deleted = await client.delete(f"/api/worlds/{world_id}", headers=appapi_headers())
     assert deleted.status_code == 204

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import tarfile
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -14,14 +16,17 @@ import requests.exceptions
 import urllib3.exceptions
 
 from gameworld.provisioner.client import (
+    ContainerInfo,
     DockerProvisioner,
     DockerUnavailableError,
     PortInUseError,
     ProvisionerError,
+    StatusFile,
     WorldNotFoundError,
 )
 from gameworld.provisioner.presets import MTG_KREATIV, VOXELIBRE_SANFT
 from gameworld.provisioner.spec import WorldPayload
+from gameworld.provisioner.status_mod import PLAYERS_FILE
 
 INSTANCE = "ab12cd34"
 WORLD = "0123456789ab"
@@ -53,6 +58,7 @@ class FakeContainer:
         self.name = f"gameworld-{INSTANCE}-{WORLD}"
         self.labels = dict(LABELS)
         self.status = "created"
+        self.attrs: dict[str, Any] = {}
         self._start_error = start_error
         self.removed = False
 
@@ -80,9 +86,11 @@ def fake() -> FakeClient:
 
 
 @pytest.fixture
-def prov(fake: FakeClient) -> DockerProvisioner:
+def prov(fake: FakeClient, monkeypatch: pytest.MonkeyPatch) -> DockerProvisioner:
     provisioner = DockerProvisioner("tcp://127.0.0.1:23750", INSTANCE)
     provisioner._client = cast("docker.DockerClient", fake)  # schon "gecachter" Client
+    # Auch ein "frischer" Client nach einem Transportfehler ist der Fake, nie der echte Proxy.
+    monkeypatch.setattr(provisioner, "_docker", lambda: fake)
     return provisioner
 
 
@@ -224,3 +232,163 @@ def test_unreachable_server_without_cached_client() -> None:
         provisioner.list_managed()
     assert "tcp://127.0.0.1:1" in str(info.value)
     assert "gameworld-docker-proxy" in str(info.value)
+
+
+class Flaky:
+    """Liefert erst die Fehler aus ``errors``, danach ``result``; zählt jeden Aufruf."""
+
+    def __init__(self, errors: list[BaseException], result: object) -> None:
+        self.errors = errors
+        self.result = result
+        self.calls = 0
+
+    def __call__(self, *args: object, **kwargs: object) -> Any:
+        del args, kwargs
+        self.calls += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return self.result
+
+
+@pytest.mark.parametrize(
+    "error",
+    [requests.exceptions.ConnectionError("Remote end closed connection"), urllib3.exceptions.ProtocolError("weg")],
+)
+def test_read_is_retried_once_after_keep_alive_drop(
+    prov: DockerProvisioner, fake: FakeClient, error: BaseException
+) -> None:
+    """HAProxy schließt Keep-Alive nach 10 s (Pitfall 4): ein zweiter Versuch, dann Erfolg."""
+    listing = Flaky([error], [FakeContainer()])
+    fake.containers.list = listing
+    assert set(prov.list_managed()) == {WORLD}
+    assert listing.calls == 2
+
+
+def test_read_fails_after_second_drop(prov: DockerProvisioner, fake: FakeClient) -> None:
+    listing = Flaky([requests.exceptions.ConnectionError("eins"), requests.exceptions.ConnectionError("zwei")], [])
+    fake.containers.list = listing
+    with pytest.raises(DockerUnavailableError):
+        prov.list_managed()
+    assert listing.calls == 2
+
+
+def test_timeout_on_read_is_not_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
+    listing = Flaky([requests.exceptions.ReadTimeout("langsam")], [])
+    fake.containers.list = listing
+    with pytest.raises(DockerUnavailableError):
+        prov.list_managed()
+    assert listing.calls == 1
+
+
+def test_used_host_ports_is_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
+    listing = Flaky([requests.exceptions.ConnectionError("weg")], [])
+    fake.containers.list = listing
+    assert prov.used_host_ports(30015, 30019) == set()
+    assert listing.calls == 2
+
+
+def test_start_is_never_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
+    """Schreibende Aufrufe werden nie wiederholt (T-02-21)."""
+    listing = Flaky([requests.exceptions.ConnectionError("weg")], [FakeContainer()])
+    fake.containers.list = listing
+    with pytest.raises(DockerUnavailableError):
+        prov.start_world(WORLD)
+    assert listing.calls == 1
+
+
+def test_stop_is_never_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
+    listing = Flaky([requests.exceptions.ConnectionError("weg")], [FakeContainer()])
+    fake.containers.list = listing
+    with pytest.raises(DockerUnavailableError):
+        prov.stop(WORLD)
+    assert listing.calls == 1
+
+
+def test_list_managed_reads_state_fields(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = FakeContainer()
+    container.status = "exited"
+    container.labels["gameworld.schema"] = "2"
+    container.attrs = {"State": {"ExitCode": 137, "OOMKilled": True, "StartedAt": "2026-10-19T18:19:46.947430723Z"}}
+    fake.containers.list = _listing(container)
+    info = prov.list_managed()[WORLD]
+    assert info == ContainerInfo(
+        "cid",
+        f"gameworld-{INSTANCE}-{WORLD}",
+        WORLD,
+        "exited",
+        30015,
+        exit_code=137,
+        oom_killed=True,
+        started_at="2026-10-19T18:19:46.947430723Z",
+        schema="2",
+    )
+
+
+def test_list_managed_defaults_for_old_containers(prov: DockerProvisioner, fake: FakeClient) -> None:
+    fake.containers.list = _listing(FakeContainer())
+    info = prov.list_managed()[WORLD]
+    assert (info.exit_code, info.oom_killed, info.started_at, info.schema) == (0, False, "", "1")
+
+
+def _tar(content: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        member = tarfile.TarInfo("gameworld_players.txt")
+        member.size = len(content)
+        tar.addfile(member, io.BytesIO(content))
+    return buffer.getvalue()
+
+
+class ArchiveContainer(FakeContainer):
+    def __init__(self, archive: bytes | None, mtime: str = "2026-10-19T18:19:47.1Z") -> None:
+        super().__init__()
+        self.archive = archive
+        self.mtime = mtime
+        self.paths: list[str] = []
+
+    def get_archive(self, path: str, **kwargs: object) -> tuple[Iterator[bytes], dict[str, object]]:
+        del kwargs
+        self.paths.append(path)
+        if self.archive is None:
+            raise docker.errors.NotFound("Could not find the file")
+        data = self.archive
+        chunks = iter([data[index : index + 1000] for index in range(0, len(data), 1000)])
+        return chunks, {"name": "gameworld_players.txt", "size": len(data), "mtime": self.mtime}
+
+
+def test_read_status_file(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = ArchiveContainer(_tar(b"Leo\nMia"))
+    fake.containers.list = _listing(container)
+    assert prov.read_status_file(WORLD) == StatusFile("2026-10-19T18:19:47.1Z", b"Leo\nMia")
+    assert container.paths == [PLAYERS_FILE]
+
+
+def test_read_status_file_missing_is_none(prov: DockerProvisioner, fake: FakeClient) -> None:
+    fake.containers.list = _listing(ArchiveContainer(None))
+    assert prov.read_status_file(WORLD) is None
+
+
+def test_read_status_file_is_capped(prov: DockerProvisioner, fake: FakeClient) -> None:
+    """Ein fremder Mod könnte eine riesige Datei schreiben: höchstens 4096 Bytes (T-02-18)."""
+    fake.containers.list = _listing(ArchiveContainer(_tar(b"x" * 10_240)))
+    status = prov.read_status_file(WORLD)
+    assert status is not None
+    assert status.content == b"x" * 4096
+
+
+def test_read_status_file_of_foreign_container_is_not_found(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = ArchiveContainer(_tar(b"Leo"))
+    container.labels["gameworld.instance"] = "fremd000"
+    fake.containers.list = _listing(container)
+    with pytest.raises(WorldNotFoundError):
+        prov.read_status_file(WORLD)
+    assert container.paths == []
+
+
+def test_read_status_file_is_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
+    listing = Flaky([requests.exceptions.ConnectionError("weg")], [ArchiveContainer(_tar(b""))])
+    fake.containers.list = listing
+    status = prov.read_status_file(WORLD)
+    assert status is not None
+    assert status.content == b""
+    assert listing.calls == 2

@@ -117,6 +117,8 @@ async def test_list_shows_unknown_when_proxy_is_down(
     worlds = response.json()["worlds"]
     assert len(worlds) == 1
     assert worlds[0]["docker_status"] == "unknown"
+    assert worlds[0]["status"] == "unknown"
+    assert worlds[0]["status_text"] == "Docker nicht erreichbar"
     assert worlds[0]["preset"] == "mtg_kreativ"
     assert worlds[0]["preset_title"] == "Bauen (kreativ)"
     assert "world_key" not in worlds[0]
