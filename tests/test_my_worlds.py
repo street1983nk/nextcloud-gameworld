@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import tarfile
+from datetime import datetime
 from pathlib import Path
 from typing import cast
+from zoneinfo import ZoneInfo
 
 import anyio
 import httpx
@@ -18,6 +21,7 @@ from gameworld.access.roles import Profile
 from gameworld.access.secret import SecretUnavailableError
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
+from gameworld.playtime.engine import TimeEngine
 from gameworld.provisioner.access_mod import ACCESS_FILE_NAME
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds import service as world_service
@@ -134,6 +138,8 @@ async def test_child_sees_only_own_world(client: httpx.AsyncClient, service: Wor
                 "port": 30015,
                 "player_name": "Kind",
                 "password": PASSWORD,
+                "window_open": None,
+                "window_next": None,
             }
         ]
     }
@@ -160,7 +166,18 @@ async def test_answer_has_no_foreign_data(
     for foreign in (FRIEND, "Freundin", str(friend["player_name"]), FRIEND_PASSWORD):
         assert foreign not in text
     [world] = response.json()["worlds"]
-    assert set(world) == {"id", "name", "status", "status_text", "host", "port", "player_name", "password"}
+    assert set(world) == {
+        "id",
+        "name",
+        "status",
+        "status_text",
+        "host",
+        "port",
+        "player_name",
+        "password",
+        "window_open",
+        "window_next",
+    }
     for field in ("players", "memory_used_bytes", "memory_limit_bytes", "docker_status", "container", "world_key"):
         assert field not in text
 
@@ -269,6 +286,70 @@ async def test_failed_world_shows_fixed_text_to_child(
     admin = await client.get("/api/worlds", headers=appapi_headers())
     assert admin.status_code == 200
     assert last_error in admin.text
+
+
+def _fixed_clock(service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mittwoch, 21.10.2026, 15:00 Uhr in Berlin."""
+    now = datetime(2026, 10, 21, 15, 0, tzinfo=ZoneInfo("Europe/Berlin")).timestamp()
+    monkeypatch.setattr(service, "_time", TimeEngine(store, clock=lambda: now))
+
+
+async def test_world_window_open_now(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fixed_clock(service, store, monkeypatch)
+    await _invite(client, W1, "user", "gw-kind")
+    await _invite(client, W2, "user", "gw-kind")
+    store.replace_world_window(W1, {3: (900, 1020), 5: (600, 720)})
+    worlds = {w["id"]: w for w in (await _mine(client)).json()["worlds"]}
+    assert worlds[W1]["window_open"] is True
+    assert worlds[W1]["window_next"] == {"weekday": 3, "start": 900, "end": 1020}
+    # Welt ohne Fenster: immer offen, kein Hinweis.
+    assert worlds[W2]["window_open"] is None
+    assert worlds[W2]["window_next"] is None
+
+
+async def test_world_window_closed_shows_next(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fixed_clock(service, store, monkeypatch)
+    await _invite(client, W1, "user", "gw-kind")
+    store.replace_world_window(W1, {3: (600, 720), 6: (600, 720)})
+    response = await _mine(client)
+    [world] = response.json()["worlds"]
+    assert world["window_open"] is False
+    assert world["window_next"] == {"weekday": 6, "start": 600, "end": 720}
+    # Kein vollständiger Wochenplan in der Antwort (nur das nächste Fenster).
+    assert "time_window" not in response.text
+    assert '"weekday": 3' not in json.dumps(response.json())
+
+
+async def test_world_window_later_today(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fixed_clock(service, store, monkeypatch)
+    await _invite(client, W1, "user", "gw-kind")
+    store.replace_world_window(W1, {3: (1020, 1140)})
+    [world] = (await _mine(client)).json()["worlds"]
+    assert world["window_open"] is False
+    assert world["window_next"] == {"weekday": 3, "start": 1020, "end": 1140}
+
+
+async def test_world_window_read_error_is_503(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del service, store
+    await _invite(client, W1, "user", "gw-kind")
+    from gameworld.playtime import service as playtime_service
+
+    def broken(*args: object) -> object:
+        raise sqlite3.OperationalError(f"kaputt {len(args)}")
+
+    # Nur die Auswertung der Kind-Ansicht bricht; die Weltenliste selbst bleibt heil.
+    monkeypatch.setattr(playtime_service, "evaluate_world", broken)
+    response = await _mine(client)
+    assert response.status_code == 503
+    assert "kaputt" not in response.text
 
 
 async def test_role_failure_is_503(
