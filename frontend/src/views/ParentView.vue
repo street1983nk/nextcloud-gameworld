@@ -167,6 +167,14 @@
 			@changed="refresh"
 			@invite="switchToInvite"
 			@close="playersWorld = null" />
+
+		<!-- Hat sich ein Elternteil selbst eingeladen, steht hier die eigene Verbindungsinfo. -->
+		<section v-if="myWorlds.length > 0" class="gameworld__mine">
+			<h3>Meine Verbindungsinfo</h3>
+			<ConnectionCard v-for="world in myWorlds" :key="world.id" :world="world" />
+		</section>
+
+		<JoinHostSettings />
 	</div>
 </template>
 
@@ -181,13 +189,16 @@ import NcProgressBar from '@nextcloud/vue/components/NcProgressBar'
 import NcRadioGroup from '@nextcloud/vue/components/NcRadioGroup'
 import NcRadioGroupButton from '@nextcloud/vue/components/NcRadioGroupButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
+import ConnectionCard from '../components/ConnectionCard.vue'
 import InviteDialog from '../components/InviteDialog.vue'
+import JoinHostSettings from '../components/JoinHostSettings.vue'
 import PlayerManager from '../components/PlayerManager.vue'
 import SetupCheck from '../components/SetupCheck.vue'
 import {
 	createWorld,
 	deleteWorld,
 	errorText,
+	listMyWorlds,
 	listPresets,
 	listWorlds,
 	restartWorld,
@@ -230,6 +241,8 @@ const listError = ref('')
 // Welt-ID -> true, solange für diese Welt eine Aktion läuft.
 const busy = reactive({})
 const pendingDelete = ref(null)
+// Eigene Welten, falls der Verwalter sich selbst eingeladen hat (gleiche Daten wie in der Spieleransicht).
+const myWorlds = ref([])
 
 const selectedDescription = computed(() => presets.value.find((preset) => preset.id === selectedPreset.value)?.description ?? '')
 
@@ -335,9 +348,14 @@ async function refresh() {
 	const seq = ++refreshSeq
 	try {
 		const result = await listWorlds()
+		// Nach der Verwalterliste (deren Abgleich zuerst): eigene Welten, Fehler hier nur still.
+		const mine = await listMyWorlds().catch(() => null)
 		if (seq === refreshSeq) {
 			worlds.value = result
 			listError.value = ''
+			if (mine !== null) {
+				myWorlds.value = mine
+			}
 		}
 	} catch (err) {
 		if (seq === refreshSeq) {
@@ -489,6 +507,10 @@ onUnmounted(() => {
 
 .gameworld__memory {
 	min-width: 160px;
+}
+
+.gameworld__mine {
+	margin-top: 32px;
 }
 
 .gameworld__restart {

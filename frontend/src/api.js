@@ -47,6 +47,23 @@ export async function getMe() {
 	return response.data
 }
 
+// Eigene Welten mit Verbindungsdaten (für jedes Konto, nur eigene Daten).
+export async function listMyWorlds() {
+	const response = await axios.get(`${apiBase}/api/my/worlds`)
+	return response.data.worlds
+}
+
+// Spieler-Adresse (nur Verwalter); leer heißt: Hostname des Browsers.
+export async function getSettings() {
+	const response = await axios.get(`${apiBase}/api/settings`)
+	return response.data
+}
+
+export async function saveSettings(joinHost) {
+	const response = await axios.post(`${apiBase}/api/settings`, { join_host: joinHost })
+	return response.data
+}
+
 export async function getSetupCheck() {
 	const response = await axios.get(`${apiBase}/api/setup-check`)
 	return response.data
