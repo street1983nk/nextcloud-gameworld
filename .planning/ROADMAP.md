@@ -168,7 +168,40 @@ Plans:
   5. Bei Erreichen des Limits oder außerhalb erlaubter Zeiten wird das Kind serverseitig getrennt und am Wieder-Join gehindert, nicht nur per Anzeige informiert
   6. Das Limit hält auch nach Welt-Neustart und Rejoin-Versuch (bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist bewertet und abgefangen oder dokumentiert)
 
-**Plans**: TBD
+**Plans**: 8 plans
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md , Durchsetzung im Spielserver: 2-s-Wiederbeitritts-Sperre in gameworld_access (Live-Nachweis per Session-Prober, MTG und VoxeLibre), Welt-Mod gameworld_time mit Prejoin-Sperre, Vorwarnung 10/5/1 min, Trennen und neustartfestem Zählbuch
+
+**Wave 2** *(blocked on Wave 1 completion; seriell wegen gemeinsamem Live-Dev-Stack)*
+
+- [ ] 04-02-PLAN.md , Zeitrechnung und Gedächtnis: tzdata, reine Plan-Auswertung mit Golden Vectors (Sommerzeit, Ferienwechsel, Tagesende), Zählbuch-Verbuchung, Schema 4
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-03-PLAN.md , Tageslimit und Zeitfenster pro Kind Ende zu Ende: TimeEngine, Verwalter-API, 15-s-Zeittakt im Lifespan, ein Kontingent über alle Welten, Neustart-Hinweis, Prober-Beweis
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04-04-PLAN.md , Wochenplan, Ferien und Zeitzone: Ferienplan je Kind, Haushalts-Ferienliste, automatische Umschaltung am Datum, Zeitzonen-Einstellung, Live-Nachweis
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04-05-PLAN.md , Zeitfenster pro Welt (ZEIT-05): Join-Sperre und Trennen, Welt läuft weiter, Verwalter freigestellt, Live-Nachweis
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 04-06-PLAN.md , Eltern-UI: Spielzeit-Dialog mit Voreinstellungen und Tages-Kacheln, Ferien, Welt-Zeitfenster, Zeitzone, Hinweis "Neustart nötig"
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 04-07-PLAN.md , Kind-Ansicht: eigene Restzeit und Öffnungszeiten der Welten, nur eigene Werte
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 04-08-PLAN.md , Phasenabnahme: acceptance-phase4.sh K1 bis K6 mit Regression Phase 1 bis 3 plus gemeinsame Playwright-Abnahme, Doku Spielzeit
+
 **UI hint**: yes
 **Research flag**: yes (Implementierungspfad Mod vs. Scheduler-Stopp; Umgehungs-Caveat des Playtime-Limit-Mods bewerten)
 
