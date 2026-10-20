@@ -80,6 +80,8 @@ class MyWorldsOut(BaseModel):
 class NextTimeOut(BaseModel):
     weekday: int = Field(ge=1, le=7)
     minute: int = Field(ge=0, le=1439)
+    # 0 = heute, 7 = gleicher Wochentag in einer Woche (für "heute" in der Anzeige).
+    days_ahead: int = Field(ge=0, le=7)
 
 
 class MyPlaytimeOut(BaseModel):
@@ -101,7 +103,9 @@ def _playtime_out(result: MyPlaytime) -> MyPlaytimeOut:
         state=result.state,
         remaining_minutes=result.remaining_minutes,
         until_minute=result.until_minute,
-        next=None if upcoming is None else NextTimeOut(weekday=upcoming.weekday, minute=upcoming.minute),
+        next=None
+        if upcoming is None
+        else NextTimeOut(weekday=upcoming.weekday, minute=upcoming.minute, days_ahead=upcoming.days_ahead),
     )
 
 

@@ -122,7 +122,7 @@ async def test_rest_below_one_minute_counts_as_used_up(
     assert data["remaining_minutes"] == 0
     assert data["until_minute"] is None
     # Heute hat das Fenster schon begonnen: nächste Spielzeit Donnerstag 9 Uhr.
-    assert data["next"] == {"weekday": 4, "minute": 540}
+    assert data["next"] == {"weekday": 4, "minute": 540, "days_ahead": 1}
 
 
 async def test_limit_used_up(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
@@ -130,7 +130,7 @@ async def test_limit_used_up(client: httpx.AsyncClient, service: WorldService, s
     _rules(store, "gw-kind", _daily(60), used_s=60 * 60)
     data = (await _mine(client)).json()
     assert data["state"] == "aufgebraucht"
-    assert data["next"] == {"weekday": 4, "minute": 0}
+    assert data["next"] == {"weekday": 4, "minute": 0, "days_ahead": 1}
 
 
 async def test_day_not_allowed(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
@@ -142,7 +142,7 @@ async def test_day_not_allowed(client: httpx.AsyncClient, service: WorldService,
         "state": "tag",
         "remaining_minutes": 0,
         "until_minute": None,
-        "next": {"weekday": 6, "minute": 600},
+        "next": {"weekday": 6, "minute": 600, "days_ahead": 3},
     }
 
 
@@ -151,7 +151,7 @@ async def test_before_window_today(client: httpx.AsyncClient, service: WorldServ
     _rules(store, "gw-kind", _daily(60, 960, 1140))
     data = (await _mine(client)).json()
     assert data["state"] == "fenster"
-    assert data["next"] == {"weekday": 3, "minute": 960}
+    assert data["next"] == {"weekday": 3, "minute": 960, "days_ahead": 0}
 
 
 async def test_window_ends_within_a_minute(
@@ -163,7 +163,7 @@ async def test_window_ends_within_a_minute(
     data = (await _mine(client)).json()
     assert data["state"] == "fenster"
     assert data["remaining_minutes"] == 0
-    assert data["next"] == {"weekday": 4, "minute": 540}
+    assert data["next"] == {"weekday": 4, "minute": 540, "days_ahead": 1}
 
 
 async def test_remaining_never_exceeds_window_end(
@@ -256,3 +256,15 @@ async def test_role_failure_is_503(
     response = await _mine(client)
     assert response.status_code == 503
     assert role_lookup_error == ["gw-kind"]
+
+
+async def test_same_weekday_next_week_is_not_today(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    """Nur mittwochs erlaubt und heute aufgebraucht: nächste Spielzeit in 7 Tagen, nicht "heute"."""
+    del service
+    days = {weekday: DayRule(weekday == 3, 60 if weekday == 3 else None, None, None) for weekday in range(1, 8)}
+    _rules(store, "gw-kind", WeekPlan(days), used_s=60 * 60)
+    data = (await _mine(client)).json()
+    assert data["state"] == "aufgebraucht"
+    assert data["next"] == {"weekday": 3, "minute": 0, "days_ahead": 7}

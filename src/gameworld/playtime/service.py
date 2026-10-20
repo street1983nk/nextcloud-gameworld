@@ -150,10 +150,15 @@ class WorldWindowResult:
 
 @dataclass(frozen=True)
 class NextTime:
-    """Nächste Spielzeit für die Kind-Ansicht: ISO-Wochentag 1..7 und lokale Minute 0..1439."""
+    """Nächste Spielzeit für die Kind-Ansicht: ISO-Wochentag 1..7, lokale Minute 0..1439, Tage ab heute.
+
+    ``days_ahead`` 0 heißt heute, 7 heißt derselbe Wochentag in einer Woche: Nur so
+    kann die Anzeige "heute" sagen, ohne die Zeitzone des Haushalts zu kennen.
+    """
 
     weekday: int
     minute: int
+    days_ahead: int
 
 
 @dataclass(frozen=True)
@@ -199,13 +204,20 @@ class PlaytimeUnavailableError(RuntimeError):
     """Die Zeitregeln ließen sich nicht lesen (503, nie Daten anderer)."""
 
 
-def parse_hint(token: str) -> NextTime | None:
-    """Token wie ``Sa-10:00`` (plan.next_hint) in Wochentag und Minute; ``-`` oder Unsinn ergibt None."""
+def parse_hint(token: str, now: int, tz: ZoneInfo) -> NextTime | None:
+    """Token wie ``Sa-10:00`` (plan.next_hint) in Wochentag, Minute und Tage ab heute; ``-`` ergibt None."""
     day, _, clock = token.partition("-")
     hours, _, minutes = clock.partition(":")
     if day not in WEEKDAY_TOKENS or not hours.isdigit() or not minutes.isdigit():
         return None
-    return NextTime(weekday=WEEKDAY_TOKENS.index(day) + 1, minute=int(hours) * 60 + int(minutes))
+    weekday = WEEKDAY_TOKENS.index(day) + 1
+    minute = int(hours) * 60 + int(minutes)
+    local = datetime.fromtimestamp(now, tz)
+    days_ahead = (weekday - local.isoweekday()) % 7
+    # Der Hinweis zeigt immer in die Zukunft: gleicher Wochentag, schon vorbei = in einer Woche.
+    if days_ahead == 0 and minute <= local.hour * 60 + local.minute:
+        days_ahead = 7
+    return NextTime(weekday=weekday, minute=minute, days_ahead=days_ahead)
 
 
 def _until_minute(until: int, day: date, tz: ZoneInfo) -> int | None:
@@ -223,15 +235,18 @@ def kid_playtime(state: ChildState, now: int, tz: ZoneInfo) -> MyPlaytime:
     als zu (Pitfall 8, dieselbe Schwelle wie MIN_LEFT im Welt-Mod). Die Minuten
     reichen nie über das Fensterende hinaus.
     """
-    next_time = parse_hint(state.next_hint)
     if state.reason == "tag":
-        return MyPlaytime(limited=True, state="tag", remaining_minutes=0, until_minute=None, next=next_time)
-    blocked = "aufgebraucht" if state.reason == "limit" else None
-    if state.reason == "fenster" or (blocked is None and state.until - now < MIN_LEFT_SECONDS):
-        blocked = "fenster"
-    elif blocked is None and state.rest_s is not None and state.rest_s < MIN_LEFT_SECONDS:
+        blocked: str | None = "tag"
+    elif state.reason == "limit":
         blocked = "aufgebraucht"
+    elif state.reason == "fenster" or state.until - now < MIN_LEFT_SECONDS:
+        blocked = "fenster"
+    elif state.rest_s is not None and state.rest_s < MIN_LEFT_SECONDS:
+        blocked = "aufgebraucht"
+    else:
+        blocked = None
     if blocked is not None:
+        next_time = parse_hint(state.next_hint, now, tz)
         return MyPlaytime(limited=True, state=blocked, remaining_minutes=0, until_minute=None, next=next_time)
     remaining = None if state.rest_s is None else min(state.rest_s, state.until - now) // 60
     return MyPlaytime(
@@ -252,7 +267,7 @@ def world_window_status(now: int, tz: ZoneInfo, windows: dict[int, tuple[int, in
         today = local_day(now, tz).isoweekday()
         start, end = windows[today]
         return MyWorldWindow(open=True, next=WindowSlot(weekday=today, start=start, end=end))
-    upcoming = parse_hint(state.next_hint)
+    upcoming = parse_hint(state.next_hint, now, tz)
     slot = None if upcoming is None else windows.get(upcoming.weekday)
     if upcoming is None or slot is None:
         return MyWorldWindow(open=False, next=None)
