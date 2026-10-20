@@ -79,6 +79,18 @@ Werkzeuge: docker-CLI, curl, jq, tar, grep, sha256sum und `uv`. Einziges Python-
 
 Das Skript legt kurzzeitig die Gruppe `gw-familie` und das Wegwerfkonto `gw-abnahme2` an, nimmt `gw-kind` für K5 kurz in die Gruppe `admin` auf (zweimal 35 s Wartezeit für den Rollen-Cache), setzt die Spieler-Adresse auf `192.168.178.20` und startet die ExApp einmal neu. Ein trap räumt alles in jedem Fall auf: Welt, Gruppe, Konto, Spieler-Adresse leer, `gw-kind` nicht in `admin`. Spielpasswörter erscheinen nie in der Ausgabe. Am Ende ruft es `acceptance-phase1.sh` und `acceptance-phase2.sh` als Regression. Laufzeit etwa 10 Minuten, Exit 0 nur bei "N von N Prüfungen bestanden". Mit `GAMEWORLD_SKIP_REGRESSION=1` entfällt die Regression für schnelle Iterationen; der Lauf endet dann bewusst mit Exit 1.
 
+## Phasenabnahme Phase 4
+
+Belegt die sechs Erfolgskriterien von Phase 4 (Limit und Fenster pro Kind, Wochenplan, Ferien, Welt-Zeitfenster, Trennen mit Vorwarnung und Join-Sperre, Neustart- und Rejoin-Festigkeit) gegen den laufenden Stack mit echter Nextcloud und laufender ExApp (echter 15-s-Zeittakt):
+
+```sh
+sh scripts/dev/acceptance-phase4.sh
+```
+
+Werkzeuge wie in Phase 3: docker-CLI, curl, jq, tar, grep und `uv`. Einziges Python-Werkzeug des Projekts ist der Session-Prober `tests/e2e/luanti_probe.py` über seine CLI (`... NAME PASSWORT --hold SEKUNDEN` hält eine Sitzung und schneidet Chat und Trennen mit). Die Zeit-Eingaben (Wochentag, Minute, Datum in `Europe/Berlin`) rechnet ein kleiner Helfer per `zoneinfo`; `TZ=Europe/Berlin date` funktioniert in Git Bash nicht (keine Zeitzonendaten, falsche Stunde ohne Fehlermeldung). Tabellen liest das Skript mit `sqlite3`, falls installiert, sonst lesend über die Python-Standardbibliothek. Kurz vor Mitternacht (ab 23:50) wartet das Skript bis 00:01.
+
+Das Skript legt die Welt "Abnahme Spielzeit" und das Wegwerfkonto `gw-abnahme4` an, setzt und löscht Regeln für `gw-kind`, legt einen Ferientag an, startet die Welt einmal und die ExApp einmal neu und hält in K5 zwei Sitzungen bis zu 170 s. Ein trap räumt alles in jedem Fall auf: Welt, Regeln von `gw-kind`, Ferien, Zeitzone zurück auf `Europe/Berlin`, Konto `gw-abnahme4`, `gw-kind` nicht in `admin`. Spielpasswörter erscheinen nie in der Ausgabe. Am Ende ruft es `acceptance-phase3.sh` als Regression, das wiederum Phase 1 und 2 ruft. Laufzeit etwa 20 Minuten (davon etwa 8 für Phase 4), Exit 0 nur bei "N von N Prüfungen bestanden". Mit `GAMEWORLD_SKIP_REGRESSION=1` entfällt die Regression; der Lauf endet dann bewusst mit Exit 1.
+
 ## Abbauen
 
 ```sh

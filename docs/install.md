@@ -133,3 +133,52 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 - Bleibt das Feld leer, zeigt Gameworld den Rechnernamen aus der Adresszeile des Browsers. Das passt nicht, wenn Nextcloud über `localhost` oder über eine Internetadresse aufgerufen wird; dann die Heimnetz-Adresse eintragen.
 - Der Port jeder Welt ist ein UDP-Port aus dem Bereich in Abschnitt 4. Er muss im Heimnetz erreichbar sein.
 - Kein Zugang aus dem Internet ohne VPN: keine Portfreigabe im Router, siehe Abschnitt 4.
+
+## 9. Spielzeit
+
+### Grundregeln
+
+- Spielzeit ist Opt-in: Ohne Regel gibt es keine Begrenzung. Jedes Kind startet mit "Keine Begrenzung".
+- Ein Kind hat ein einziges Tageskontingent über alle Welten. Wer eine Stunde am Tag darf, kann sie auf mehrere Welten verteilen, aber nicht in jeder Welt eine Stunde spielen. Gameworld gleicht den Verbrauch alle 15 Sekunden zwischen den Welten ab.
+- Eingestellt wird im Abschnitt "Spielzeit" unter der Weltenliste, mit "Bearbeiten" je Kind. Vier Voreinstellungen helfen beim Start: "Keine Begrenzung", "Nur am Wochenende" (Sa und So je 2 Stunden, 9 bis 19 Uhr), "Jeden Tag 1 Stunde" (bis 19 Uhr) und "Schultage kurz, Wochenende länger" (Mo bis Fr 1 Stunde, 15 bis 19 Uhr; Sa und So 2 Stunden, 9 bis 19 Uhr). Danach lässt sich jeder Tag in seiner Kachel ändern: Spielen erlaubt oder nicht, Tageslimit, Uhrzeit von und bis oder ganzer Tag.
+- Der Verbrauch zählt online verbrachte Zeit. Auch wer nur verbunden ist und nichts tut (AFK), verbraucht Spielzeit.
+- Verwalter (Gruppe `admin`) haben nie Zeitregeln und kommen immer hinein. Wird jemand aus `admin` entfernt, bleibt er im Spiel frei, bis ein Verwalter das Dashboard öffnet; danach gelten seine Regeln nach höchstens etwa 60 Sekunden.
+
+### Ferien
+
+- Der Abschnitt "Ferien" ist eine Liste von Zeiträumen für den ganzen Haushalt (von, bis, Bezeichnung optional). Ein laufender Zeitraum ist mit "läuft gerade" markiert.
+- Im Spielzeit-Dialog hat jedes Kind einen eigenen Block "In den Ferien" (Vorschlag: jeden Tag 2 Stunden, 9 bis 20 Uhr). Ohne eigenen Ferienplan gilt in den Ferien die normale Woche.
+
+### Zeitzone
+
+- Alle Uhrzeiten gelten in der Zeitzone des Haushalts, Vorgabe `Europe/Berlin`. Sie steht in den Einstellungen unter der Adresse für Spieler; der Knopf "Zeitzone dieses Browsers übernehmen" setzt die Zone des Browsers. Sommer- und Winterzeit rechnet Gameworld selbst.
+
+### Zeitfenster pro Welt
+
+- Mit "Zeitfenster" in der Welt-Zeile ist eine Welt nur zu bestimmten Zeiten offen, etwa für eine Schul- oder Vereinswelt ("Offen Mi 10 bis 12 Uhr").
+- Die Welt läuft außerhalb des Fensters weiter. Kinder kommen nicht hinein und werden am Fensterende getrennt; Verwalter kommen immer hinein.
+
+### Im Spiel
+
+- Kinder sehen auf ihrer Gameworld-Seite den Block "Deine Spielzeit heute" mit der Restzeit oder der nächsten Spielzeit.
+- Im Spiel warnt der Chat bei 10, 5 und 1 Minute Rest. Am Ende trennt die Welt das Kind mit einem Text wie "Deine Spielzeit für heute ist aufgebraucht. Nächste Spielzeit: Sa 09:00". Ein Beitritt außerhalb der erlaubten Zeit wird mit einem passenden Text abgelehnt.
+- Wer die Welt verlässt, muss etwa 2 Sekunden warten, bevor er wieder beitreten kann ("Bitte einen Moment warten und dann nochmal beitreten."). Das schützt die Welt vor einem Absturz von Luanti 5.17.0 bei sofortigem Wiederbeitritt.
+- Welten, die vor diesem Update schon liefen, setzen Spielzeiten erst nach dem nächsten Neustart der Welt durch. Das Dashboard zeigt dann "Neustart nötig, damit Spielzeiten gelten."
+
+### Bekanntes Verhalten
+
+- Tagesgrenze um 00:00: Ein Kind mit Regeln wird um 00:00 getrennt, auch wenn sein Plan den ganzen Tag erlaubt (fail closed an der Tagesgrenze). Nach dem nächsten Zeittakt, höchstens etwa 15 Sekunden später, kann es wieder beitreten.
+- Betritt ein Kind eine Welt zum allerersten Mal, bleiben die Sekunden bis zum ersten Zeittakt (höchstens etwa 20) ungezählt. Das passiert einmal je Kind und Welt und schützt vor doppelter Zählung.
+
+### Ausfallverhalten
+
+- Welt-Neustart: ändert nichts. Die Welt führt ihr eigenes Zählbuch im Welt-Volume; nach einem Neustart, einem Absturz oder einem Server-Neustart gelten Verbrauch und Regeln weiter.
+- ExApp-Neustart oder Update: Die Welten setzen den zuletzt geschriebenen Stand weiter durch und zählen weiter. Nach dem Start verbucht Gameworld den Verbrauch nach.
+- ExApp länger aus, am selben Tag: Das Limit gilt in jeder Welt weiter, aber der Abgleich zwischen den Welten ruht. Wer in zwei Welten gleichzeitig spielt, kann bis zur Rückkehr der ExApp doppelt so lange spielen.
+- ExApp aus über Mitternacht: Kinder mit Regeln kommen nach Tagesende nicht mehr hinein, bis die ExApp wieder läuft (fail closed). Kinder ohne Regeln sind nicht betroffen.
+
+### Datensparsamkeit
+
+- Gameworld speichert nur Tagessummen in Sekunden und nur für Kinder mit Regeln. Kinder ohne Regeln werden nicht gezählt.
+- Tagessummen werden nach 7 Tagen gelöscht.
+- Keine Uhrzeiten einzelner Sitzungen, keine IP-Adressen. Das Zählbuch in der Welt enthält nur Spielernamen und Sekunden.
