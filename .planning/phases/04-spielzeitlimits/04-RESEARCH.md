@@ -547,20 +547,25 @@ Vollständige Fassung: `.planning/phases/04-spielzeitlimits/spike/session_probe.
 | A11 | Standard für neue Kinder: keine Begrenzung (Opt-in) | Pattern 8 | Alternative "Voreinstellung Wochenende" wäre restriktiver; Owner entscheidet |
 | A12 | Downloadzahl von `tzdata` sehr hoch | Package Audit | rein informativ |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Kontingent über Welten: Summe oder Uhrzeit-Überlappung?**
    - What we know: Summe ist einfach und strenger; Überlappung bräuchte Zeitstempel je Sitzung.
    - Recommendation: Summe (A1), Owner bestätigt im discuss/plan-Schritt.
+   - RESOLVED: Summe über alle Welten (Owner-Entscheid O-03 vom 20.10.2026, A1 bestätigt durch O-11); umgesetzt in 04-02/04-03.
 2. **Wiederbeitritts-Sperre in `gameworld_access` oder `gameworld_time`?**
    - What we know: Absturz betrifft alle Welten unabhängig von Zeitregeln; Sperre live wirksam.
    - Recommendation: in `gameworld_access` (Phase 4, weil hier gefunden und Mods ohnehin neu ausgerollt werden); Owner entscheidet über eine Upstream-Meldung bei luanti-org.
+   - RESOLVED: in `gameworld_access`, Welle 1 mit Live-Nachweis (Owner-Entscheid O-12); umgesetzt in 04-01 Task 1. Upstream-Meldung läuft separat, nicht Planbestandteil.
 3. **"Bonuszeit heute" (Eltern geben spontan 30 min dazu)?**
    - What we know: marktüblich (Family Link, Microsoft Family), nicht in den Requirements.
    - Recommendation: nicht in Phase 4; mit dem Datenmodell leicht nachrüstbar (Tageszuschlag je Kind). Owner fragen.
+   - DEFERRED: Bonuszeit ist nicht Teil von Phase 4; Owner-Frage im Checkpoint 04-08 Task 2 Schritt 8.
 4. **Freistellung der Verwalter, wenn die Gruppenauflösung ausfällt?**
    - Recommendation: fail closed (Verwalter vorübergehend wie Kinder), Hinweis im Dashboard.
+   - RESOLVED: fail closed in 04-05 (Schnappschuss meta time_admins, letzter Stand bleibt, ohne Stand keine Freistellung).
 5. **Echter Client:** Darstellung der Umlaute in Kick-/Chattexten (A9 aus Phase 3) und Verhalten des Clients nach `disconnect_player` (Reconnect-Knopf) bleiben Owner-Abnahme mit echtem Luanti-Client.
+   - DEFERRED: Owner-offen, in 04-08 Task 2 Schritt 9 und im 04-08-SUMMARY ausdrücklich als offen fürs Phasen-Audit geführt.
 
 ## Environment Availability
 
