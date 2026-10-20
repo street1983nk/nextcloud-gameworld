@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-04-PLAN.md (Ferien, Ferienplan, Zeitzone); nächste Welle 04-05
-last_updated: "2026-10-20T17:06:07.635Z"
+stopped_at: Completed 04-05-PLAN.md (Zeitfenster pro Welt, Verwalter frei); nächste Welle 04-06
+last_updated: "2026-10-20T17:43:33.651Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 27
-  completed_plans: 23
+  completed_plans: 24
   percent: 50
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 04 — spielzeitlimits
+**Current focus:** Phase 04 , spielzeitlimits
 
 ## Current Position
 
-Phase: 04 (spielzeitlimits) — EXECUTING
-Plan: 5 of 8
-Status: Ready to execute (04-04 fertig, nächste Welle 5 = 04-05)
+Phase: 04 (spielzeitlimits) , EXECUTING
+Plan: 6 of 8
+Status: Ready to execute (04-05 fertig, nächste Welle 6 = 04-06)
 Last activity: 2026-10-20
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [█████████░] 85%
 | Phase 04 P02 | 30 min | 2 tasks | 9 files |
 | Phase 04 P03 | 95 min | 3 tasks | 17 files |
 | Phase 04 P04 | 60 min | 2 tasks | 6 files |
+| Phase 04 P05 | 75 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,8 @@ Recent decisions affecting current work:
 - [Roadmap 20.10.]: Owner-Entscheid Schulen: ROLLE-03 einstellbare Verwalter-Gruppen in Phase 6; Klassen-Preset, Handout-/QR-Ansicht und Mandantenmodell als v2-Kandidaten
 - [Phase 04]: 04-04: Zeitzone über eigene Route /api/playtime/time-zone (nur available_timezones), /api/settings unverändert; holiday null = Normalplan in den Ferien
 - [Phase 04]: 04-04: Ferien- und Zeitzonen-Änderung schreibt die Regeldatei aller Welten unter mutation(); höchstens 50 Zeiträume, je höchstens 366 Tage
+- [Phase 04]: 04-05: Welt-Zeitfenster per POST/DELETE /api/playtime/worlds/{id}/window; alle Tage geschlossen = 422, immer offen = DELETE; die Welt läuft weiter (O-05), Reconciler unverändert
+- [Phase 04]: 04-05: Verwalter-Schnappschuss meta time_admins aus Gruppe admin (Abfrage vor der Sperre, Drossel 60 s, Änderungen mit force, Dashboard nur try_mutation); frei-Zeile für eingeladene Verwalter, ohne Stand keine Freistellung
 
 ### Pending Todos
 
@@ -168,6 +171,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T17:05:49.298Z
-Stopped at: Completed 04-04-PLAN.md (Ferien, Ferienplan, Zeitzone); nächste Welle 04-05
+Last session: 2026-10-20T17:43:28.301Z
+Stopped at: Completed 04-05-PLAN.md (Zeitfenster pro Welt, Verwalter frei); nächste Welle 04-06
 Resume file: None
