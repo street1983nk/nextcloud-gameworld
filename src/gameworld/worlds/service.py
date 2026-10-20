@@ -233,6 +233,11 @@ class WorldService:
         """Gemeinsame Ablage für den Zugangsdienst (access/service.py)."""
         return self._store
 
+    @property
+    def time(self) -> TimeEngine:
+        """Spielzeit-Rechnung für den Spielzeit-Dienst (playtime/service.py): nur lesend genutzt."""
+        return self._time
+
     def _access_file(self, row: WorldRow) -> bytes:
         """Zugangsdatei der Welt, frisch aus Schema 3 (Generation und Verifier je Spielername).
 

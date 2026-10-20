@@ -14,8 +14,9 @@ from fastapi import FastAPI, HTTPException
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
-from gameworld.api import invites, me, setup_check, worlds
+from gameworld.api import invites, me, playtime, setup_check, worlds
 from gameworld.lifecycle import enabled_handler
+from gameworld.playtime.ticker import time_forever
 from gameworld.worlds.reconciler import reconcile_forever
 
 # nc_py_api tippt den Handler als Union aus Sync- und Async-Client. Eine
@@ -52,20 +53,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Baut den Dienst und migriert dabei das SQLite-Schema. Eine ungültige
     # Umgebung darf den Start nicht verhindern: Nur ein laufender Prozess kann
     # den Befund "config" über /api/setup-check melden (WR-01).
-    task: asyncio.Task[None] | None = None
+    tasks: list[asyncio.Task[None]] = []
     try:
         service = await anyio.to_thread.run_sync(worlds.get_service)
     except HTTPException:
         LOG.exception("Ungültige Konfiguration; /api/setup-check zeigt den Befund")
     else:
-        # Als Task, nie synchron: AppAPI wartet auf /heartbeat, und der
+        # Als Tasks, nie synchron: AppAPI wartet auf /heartbeat, und der
         # Docker-Proxy ist nach einem Reboot evtl. noch nicht oben (PLATT-02).
-        task = asyncio.create_task(reconcile_forever(service))
+        # Zweiter Task: der 15-s-Zeittakt hält die Regeldateien aktuell (O-03).
+        tasks.append(asyncio.create_task(reconcile_forever(service)))
+        tasks.append(asyncio.create_task(time_forever(service)))
     try:
         yield
     finally:
-        if task is not None:
+        for task in tasks:
             task.cancel()
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
@@ -76,6 +80,7 @@ APP.include_router(me.router)
 APP.include_router(worlds.router)
 APP.include_router(setup_check.router)
 APP.include_router(invites.router)
+APP.include_router(playtime.router)
 
 
 if __name__ == "__main__":

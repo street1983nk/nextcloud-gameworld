@@ -271,6 +271,14 @@ class WorldStore:
                 (row.nc_user, row.player_name, row.rotation),
             )
 
+    def list_players(self) -> list[PlayerRow]:
+        """Alle Spieler je Nextcloud-Konto, sortiert nach Spielername (Verwalteransicht Spielzeit)."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT nc_user, player_name, rotation FROM players ORDER BY player_name"
+            ).fetchall()
+        return [PlayerRow(str(row[0]), str(row[1]), int(row[2])) for row in rows]
+
     def add_invite(self, world_id: str, kind: str, target: str, invited_by: str, created_at: str) -> None:
         """Einladung anlegen; eine vorhandene bleibt unverändert (erster Einladender, erster Zeitpunkt)."""
         with self._connect() as connection:
