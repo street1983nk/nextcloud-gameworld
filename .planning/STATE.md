@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-10-20T00:20:00.000Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-10-20T01:00:00.000Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 33
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 5 von 7 Plänen)
+**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 6 von 7 Plänen)
 
 ## Current Position
 
 Phase: 3 (Zugang und Rollen), In Progress
-Plan: 03-05 complete, nächster 03-06
+Plan: 03-06 complete, nächster 03-07
 Status: Executing Phase 3
 Last activity: 2026-10-20
 
@@ -69,6 +69,7 @@ Progress: [███░░░░░░░] 33% (2 von 6 Phasen)
 | Phase 03 P03 | 17 min | 3 tasks | 16 files |
 | Phase 03 P04 | 20 min | 2 tasks | 13 files |
 | Phase 03 P05 | 35 min | 2 tasks | 11 files |
+| Phase 03 P06 | 40 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-05: Weltschlüssel verlässt die API nicht mehr (CreatedWorldOut entfällt), bleibt in DB und conf; WorldOut trägt invited_players und access_restart_needed
 - [Phase 03]: 03-05: access_restart_needed nur bei status running, State-Datei fehlt oder mtime < StartedAt; Lesefehler pro Welt isoliert (False plus Warnung)
 - [Phase 03]: 03-05: Passwort im Dialog verdeckt bis Anzeigen; NcFormBoxCopyButton rendert den Wert immer sichtbar und kommt fürs Passwort erst nach Anzeigen
+- [Phase 03]: 03-06: /api/my/worlds nimmt die Welt-Sperre nie blockierend (Fingerabdruck blocking=False, Provisionierung try_mutation); bei belegter Sperre folgt die Ergänzung beim nächsten 5-s-Abruf
+- [Phase 03]: 03-06: Lazy Provisionierung nur für Gruppen-Einladungen mit gid aus der signierten Selbstauskunft, nur Hinzufügen; Entfernen bleibt beim Verwalter-Abgleich
+- [Phase 03]: 03-06: join_host in meta, leer = host null, Frontend nimmt window.location.hostname; Validator Hostname-Labels oder IP-Literal, max. 253, ohne Schema/Pfad/Port
 
 ### Pending Todos
 
@@ -152,6 +156,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T00:20:00.000Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-10-20T01:00:00.000Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None
