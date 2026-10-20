@@ -95,7 +95,7 @@ function daysLabel(weekdays) {
 }
 
 // "9 bis 19 Uhr", "bis 19 Uhr", "ab 9 Uhr", "ganztags"; null ohne Fenster.
-function windowText(start, end) {
+function rangeText(start, end) {
 	if (start === null || end === null) {
 		return null
 	}
@@ -137,7 +137,7 @@ export function summarize(days) {
 		const { first, weekdays } = groups[0]
 		const label = daysLabel(weekdays)
 		const limit = first.limit_minutes === null ? null : formatMinutes(first.limit_minutes)
-		const window = windowText(first.window_start, first.window_end)
+		const window = rangeText(first.window_start, first.window_end)
 		let head = label
 		const parts = []
 		if (label === 'Jeden Tag') {
@@ -161,7 +161,7 @@ export function summarize(days) {
 			.map(({ first, weekdays }) => {
 				const rule = first.limit_minutes !== null
 					? formatMinutes(first.limit_minutes)
-					: (windowText(first.window_start, first.window_end) ?? 'ohne Limit')
+					: (rangeText(first.window_start, first.window_end) ?? 'ohne Limit')
 				return `${daysLabel(weekdays)} ${rule}`
 			})
 			.join(', ')
@@ -184,7 +184,7 @@ export function windowSummary(days) {
 		return `Offen ${label}, je nach Tag`
 	}
 	const { first } = groups[0]
-	return `Offen ${label} ${windowText(first.window_start, first.window_end) ?? 'ganztags'}`
+	return `Offen ${label} ${rangeText(first.window_start, first.window_end) ?? 'ganztags'}`
 }
 
 // Kachel-Modell: { weekday, allowed, limit, fullDay, start, end } (Minuten).
@@ -312,4 +312,66 @@ export function weekdayIn(timeZone, now = new Date()) {
 export function todayRule(child, holidayActive, weekday) {
 	const plan = holidayActive && child.holiday ? child.holiday : child.normal
 	return plan?.find((entry) => entry.weekday === weekday) ?? null
+}
+
+function longName(weekday) {
+	return WEEKDAYS[weekday - 1]?.long ?? ''
+}
+
+// "heute 15 Uhr", "Samstag 10 Uhr", "nächsten Mittwoch 9 Uhr" (gleicher Wochentag in einer Woche)
+function nextText(next) {
+	const clock = formatClock(next.minute)
+	if (next.days_ahead === 0) {
+		return `heute ${clock}`
+	}
+	if (next.days_ahead === 7) {
+		return `nächsten ${longName(next.weekday)} ${clock}`
+	}
+	return `${longName(next.weekday)} ${clock}`
+}
+
+const KID_BLOCKED = Object.freeze({
+	aufgebraucht: 'Heute ist keine Spielzeit mehr.',
+	fenster: 'Gerade ist keine Spielzeit.',
+	tag: 'Heute ist kein Spieltag.',
+})
+
+// Kindertext aus /api/my/playtime; null heißt: kein Block (keine Regeln oder heute nichts zu sagen).
+export function kidPlaytimeText(playtime) {
+	if (!playtime?.limited) {
+		return null
+	}
+	const blocked = KID_BLOCKED[playtime.state]
+	if (blocked) {
+		return playtime.next ? `${blocked} Nächste Spielzeit: ${nextText(playtime.next)}` : blocked
+	}
+	const until = playtime.until_minute === null || playtime.until_minute === undefined
+		? null
+		: formatClock(playtime.until_minute)
+	const remaining = playtime.remaining_minutes
+	if (remaining === null || remaining === undefined) {
+		return until ? `Spielen bis ${until}` : null
+	}
+	const minutes = remaining === 1 ? 'Noch 1 Minute' : `Noch ${remaining} Minuten`
+	return until ? `${minutes}, bis ${until}` : minutes
+}
+
+// Hinweis "aufgebraucht", "fenster", "tag" als Warnung, sonst Info.
+export function kidPlaytimeBlocked(playtime) {
+	return Boolean(KID_BLOCKED[playtime?.state])
+}
+
+// Chip einer Welt in der Kind-Ansicht: "Offen Mittwoch 10 bis 12 Uhr" bzw.
+// "Gerade geschlossen. Offen ..."; null ohne Zeitfenster.
+export function windowText(world) {
+	if (world?.window_open === null || world?.window_open === undefined) {
+		return null
+	}
+	const slot = world.window_next
+	const prefix = world.window_open ? '' : 'Gerade geschlossen'
+	if (!slot) {
+		return world.window_open ? 'Offen' : prefix
+	}
+	const open = `Offen ${longName(slot.weekday)} ${rangeText(slot.start, slot.end)}`
+	return world.window_open ? open : `${prefix}. ${open}`
 }

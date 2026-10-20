@@ -1,4 +1,4 @@
-<!-- Spieleransicht: nur eigene Daten (/api/me, /api/my/worlds), nie die Verwaltungs-API. -->
+<!-- Spieleransicht: nur eigene Daten (/api/me, /api/my/worlds, /api/my/playtime), nie die Verwaltungs-API. -->
 <template>
 	<div class="gameworld-player">
 		<h2>Meine Welten</h2>
@@ -9,6 +9,8 @@
 		<NcNoteCard v-if="error" type="error">
 			{{ error }}
 		</NcNoteCard>
+
+		<PlaytimeCard :playtime="playtime" />
 
 		<NcLoadingIcon v-if="loading" :size="32" />
 		<NcEmptyContent
@@ -27,7 +29,8 @@ import NcEmptyContent from '@nextcloud/vue/components/NcEmptyContent'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import ConnectionCard from '../components/ConnectionCard.vue'
-import { errorText, listMyWorlds } from '../api.js'
+import PlaytimeCard from '../components/PlaytimeCard.vue'
+import { errorText, getMyPlaytime, listMyWorlds } from '../api.js'
 
 // Antwort von /api/me: Anrede mit dem Anzeigenamen.
 defineProps({
@@ -40,6 +43,8 @@ defineProps({
 const POLL_MS = 5000
 
 const worlds = ref([])
+// Eigene Restzeit (/api/my/playtime); null, bis der erste Abruf da ist.
+const playtime = ref(null)
 const loading = ref(true)
 // Verschwindet beim nächsten erfolgreichen Abruf.
 const error = ref('')
@@ -50,15 +55,19 @@ let refreshSeq = 0
 async function refresh() {
 	const seq = ++refreshSeq
 	try {
-		const result = await listMyWorlds()
-		if (seq === refreshSeq) {
-			worlds.value = result
-			error.value = ''
+		// Welten und Restzeit im selben Takt; eine Störung der einen verdeckt die andere nicht.
+		const [mine, own] = await Promise.allSettled([listMyWorlds(), getMyPlaytime()])
+		if (seq !== refreshSeq) {
+			return
 		}
-	} catch (err) {
-		if (seq === refreshSeq) {
-			error.value = errorText(err)
+		if (mine.status === 'fulfilled') {
+			worlds.value = mine.value
 		}
+		if (own.status === 'fulfilled') {
+			playtime.value = own.value
+		}
+		const failed = [mine, own].find((result) => result.status === 'rejected')
+		error.value = failed ? errorText(failed.reason) : ''
 	} finally {
 		loading.value = false
 	}

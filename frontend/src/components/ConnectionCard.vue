@@ -7,6 +7,12 @@
 				:text="world.status_text"
 				:variant="chipVariant(world.status)"
 				no-close />
+			<NcChip
+				v-if="windowHint"
+				class="connection-card__window"
+				:text="windowHint"
+				:variant="world.window_open ? 'tertiary' : 'warning'"
+				no-close />
 		</header>
 
 		<NcFormBox>
@@ -44,9 +50,11 @@ import NcFormBox from '@nextcloud/vue/components/NcFormBox'
 import NcFormBoxCopyButton from '@nextcloud/vue/components/NcFormBoxCopyButton'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import JoinGuide from './JoinGuide.vue'
+import { windowText } from '../playtime.js'
 
 const props = defineProps({
-	// Eintrag aus /api/my/worlds: id, name, status, status_text, host, port, player_name, password.
+	// Eintrag aus /api/my/worlds: id, name, status, status_text, host, port, player_name, password,
+	// window_open und window_next (Zeitfenster der Welt, null ohne Fenster).
 	world: {
 		type: Object,
 		required: true,
@@ -71,6 +79,8 @@ const copied = ref(false)
 const copyError = ref('')
 
 const host = computed(() => props.world.host || props.fallbackHost)
+// "Offen Mittwoch 10 bis 12 Uhr" bzw. "Gerade geschlossen. ..."; null ohne Zeitfenster.
+const windowHint = computed(() => windowText(props.world))
 
 function chipVariant(status) {
 	return CHIP_VARIANT[status] ?? 'warning'
@@ -100,6 +110,7 @@ async function copyPassword() {
 
 .connection-card__head {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 12px;
 	align-items: center;
 	margin-bottom: 12px;

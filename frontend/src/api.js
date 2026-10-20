@@ -53,6 +53,12 @@ export async function listMyWorlds() {
 	return response.data.worlds
 }
 
+// Eigene Restzeit heute (nur eigene Werte; die UID kommt aus der AppAPI-Anfrage).
+export async function getMyPlaytime() {
+	const response = await axios.get(`${apiBase}/api/my/playtime`)
+	return response.data
+}
+
 // Spieler-Adresse (nur Verwalter); leer heißt: Hostname des Browsers.
 export async function getSettings() {
 	const response = await axios.get(`${apiBase}/api/settings`)
