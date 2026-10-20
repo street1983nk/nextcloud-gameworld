@@ -99,6 +99,16 @@ def _written_access_file(archive: bytes) -> str:
         return member.read().decode("ascii")
 
 
+def _access_writes(fake: FakeProvisioner) -> list[bytes]:
+    """Nur die Zugangsdatei-Tars; push_access schreibt seit 04-03 zusätzlich die Regeldatei (push_time)."""
+    result: list[bytes] = []
+    for _world_id, archive in fake.written:
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+            if ACCESS_FILE_NAME in tar.getnames():
+                result.append(archive)
+    return result
+
+
 def _salt(verifier: str) -> bytes:
     return base64.b64decode(verifier.split("#")[2])
 
@@ -115,8 +125,8 @@ async def test_invite_provisions_name_password_and_pushes(
     verifier = store.world_access(W1)["gw-kind"]
     assert verifier == make_verifier("Kind", PASSWORD, _salt(verifier))
     assert _generation(store, W1) == 1
-    assert len(fake.written) == 1
-    content = _written_access_file(fake.written[0][1])
+    assert len(_access_writes(fake)) == 1
+    content = _written_access_file(_access_writes(fake)[0])
     assert content == f"gameworld-access 1 1\nKind {verifier}\nend\n"
 
 
@@ -137,7 +147,7 @@ async def test_reinvite_changes_nothing(access: AccessService, store: WorldStore
     assert result.applied is True
     assert store.world_access(W1) == before
     assert _generation(store, W1) == 1
-    assert len(fake.written) == 1
+    assert len(_access_writes(fake)) == 1
 
 
 async def test_rebuild_without_change_keeps_file(
@@ -151,7 +161,7 @@ async def test_rebuild_without_change_keeps_file(
     await access.revoke(W1, "admin", "user", "niemand")
     assert worlds._access_file(row) == first  # pyright: ignore[reportPrivateUsage]
     assert _generation(store, W1) == 1
-    assert len(fake.written) == 1
+    assert len(_access_writes(fake)) == 1
 
 
 async def test_revoke_removes_access_but_keeps_player(
@@ -163,8 +173,8 @@ async def test_revoke_removes_access_but_keeps_player(
     assert store.list_invites(W1) == []
     assert store.world_access(W1) == {}
     assert _generation(store, W1) == 2
-    assert len(fake.written) == 2
-    assert _written_access_file(fake.written[1][1]) == "gameworld-access 1 2\nend\n"
+    assert len(_access_writes(fake)) == 2
+    assert _written_access_file(_access_writes(fake)[1]) == "gameworld-access 1 2\nend\n"
     player = store.get_player("gw-kind")
     assert player is not None
     assert (player.player_name, player.rotation) == ("Kind", 0)
@@ -301,7 +311,7 @@ async def test_invite_group_only_active_members(
     [player] = await access.list_players(W1, "admin")
     assert (player.nc_user, player.via) == ("gw-kind", "group:familie")
     assert _generation(store, W1) == 1
-    assert len(fake.written) == 1
+    assert len(_access_writes(fake)) == 1
 
 
 async def test_unknown_group_is_refused(access: AccessService, store: WorldStore, fake: FakeProvisioner) -> None:
@@ -328,11 +338,11 @@ async def test_sync_world_follows_group_membership(
     access: AccessService, store: WorldStore, fake: FakeProvisioner, fake_directory: FakeDirectory
 ) -> None:
     await access.invite_group(W1, "admin", "familie")
-    pushes = len(fake.written)
+    pushes = len(_access_writes(fake))
 
     # Ohne Änderung: kein Push, keine neue Generation.
     await access.sync_world(W1, "admin")
-    assert len(fake.written) == pushes
+    assert len(_access_writes(fake)) == pushes
     assert _generation(store, W1) == 1
 
     # Neues Mitglied kommt dazu.
@@ -348,7 +358,7 @@ async def test_sync_world_follows_group_membership(
     assert result.applied is True
     assert set(store.world_access(W1)) == {"gw-mia"}
     assert _generation(store, W1) == 3
-    assert len(fake.written) == pushes + 2
+    assert len(_access_writes(fake)) == pushes + 2
 
     # Ein deaktiviertes Konto verliert den Zugang ebenso.
     fake_directory.users["gw-mia"] = ("Mia Müller", False)
@@ -420,7 +430,7 @@ async def test_rotate_password(access: AccessService, store: WorldStore, fake: F
     await access.invite_user(W1, "admin", "gw-kind")
     await access.invite_user(W2, "admin", "gw-kind")
     before = {world_id: store.world_access(world_id)["gw-kind"] for world_id in (W1, W2)}
-    pushes = len(fake.written)
+    pushes = len(_access_writes(fake))
 
     change = await access.rotate_password("admin", "gw-kind")
     new_password = derive_password(TEST_SECRET, "gw-kind", 1)
@@ -436,7 +446,7 @@ async def test_rotate_password(access: AccessService, store: WorldStore, fake: F
         assert _verifier_ok(verifier, "Kind", new_password)
         assert not _verifier_ok(verifier, "Kind", PASSWORD)
         assert _generation(store, world_id) == 2
-    assert len(fake.written) == pushes + 2
+    assert len(_access_writes(fake)) == pushes + 2
     [listed] = await access.list_players(W1, "admin")
     assert listed.password == new_password
 
@@ -449,14 +459,14 @@ async def test_rotate_unknown_player(access: AccessService) -> None:
 async def test_rename_player(access: AccessService, store: WorldStore, fake: FakeProvisioner) -> None:
     await access.invite_user(W1, "admin", "gw-kind")
     await access.invite_user(W2, "admin", "gw-kind")
-    pushes = len(fake.written)
+    pushes = len(_access_writes(fake))
     change = await access.rename_player("admin", "gw-kind", "Mia_2")
     assert (change.player_name, change.password, change.applied) == ("Mia_2", PASSWORD, True)
     for world_id in (W1, W2):
         assert store.access_entries(world_id).keys() == {"Mia_2"}
         assert _verifier_ok(store.world_access(world_id)["gw-kind"], "Mia_2", PASSWORD)
         assert _generation(store, world_id) == 2
-    assert len(fake.written) == pushes + 2
+    assert len(_access_writes(fake)) == pushes + 2
 
 
 async def test_rename_collision_and_validation(
@@ -488,9 +498,9 @@ async def test_fingerprint_stored_then_reprovision_on_new_secret(
     assert store.get_meta("secret_fingerprint") == fingerprint(TEST_SECRET)
 
     # Gleicher Fingerabdruck: nichts.
-    pushes = len(fake.written)
+    pushes = len(_access_writes(fake))
     await access.sync_world(W1, "admin")
-    assert len(fake.written) == pushes
+    assert len(_access_writes(fake)) == pushes
 
     fake_secret.value = NEW_SECRET
     await access.sync_world(W1, "admin")
@@ -499,7 +509,7 @@ async def test_fingerprint_stored_then_reprovision_on_new_secret(
     for world_id in (W1, W2):
         assert _verifier_ok(store.world_access(world_id)["gw-kind"], "Kind", new_password)
         assert _generation(store, world_id) == 2
-    assert len(fake.written) == pushes + 2
+    assert len(_access_writes(fake)) == pushes + 2
     [listed] = await access.list_players(W1, "admin")
     assert listed.password == new_password
 
@@ -604,7 +614,7 @@ async def test_revoke_user_wins_against_parallel_group_invite(
     assert result.applied is True
     # Der Widerruf gilt sofort, in der Datenbank und in der Zugangsdatei.
     assert "gw-kind" not in store.world_access(W1)
-    assert "Kind" not in _written_access_file(fake.written[-1][1])
+    assert "Kind" not in _written_access_file(_access_writes(fake)[-1])
     # Veralteter Blick erkannt: Drossel aufgehoben, der nächste Besuch gleicht sofort ab.
     assert access_service.SYNC_STATE.last is None
     # Der Abgleich holt das Gruppen-Mitglied über die parallele Einladung regulär zurück.

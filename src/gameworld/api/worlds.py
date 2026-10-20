@@ -100,6 +100,8 @@ class WorldOut(BaseModel):
     invited_players: list[str]
     # Läuft die Welt noch ohne geladenen Zugangsschutz? Dann braucht sie einen Neustart.
     access_restart_needed: bool
+    # Läuft die Welt noch ohne geladenen Zeit-Mod? Dann braucht sie einen Neustart.
+    time_restart_needed: bool
 
 
 class WorldListOut(BaseModel):

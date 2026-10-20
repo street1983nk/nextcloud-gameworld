@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import tarfile
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -14,6 +15,7 @@ import pytest
 
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
+from gameworld.playtime.plan import DayRule, WeekPlan
 from gameworld.provisioner.access_mod import ACCESS_FILE_NAME, render_access_file
 from gameworld.provisioner.client import (
     ContainerInfo,
@@ -27,7 +29,7 @@ from gameworld.provisioner.client import (
 )
 from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
 from gameworld.provisioner.spec import WorldPayload
-from gameworld.provisioner.time_mod import LEDGER_FILE_NAME, RULES_FILE_NAME
+from gameworld.provisioner.time_mod import LEDGER_FILE_NAME, LEDGER_HEADER, RULES_FILE_NAME
 from gameworld.worlds import service as service_module
 from gameworld.worlds.service import (
     CREATE_FAILED,
@@ -76,6 +78,10 @@ class FakeProvisioner:
     access_states: dict[str, StatusFile] = field(default_factory=dict)
     access_state_error: ProvisionerError | None = None
     access_state_reads: list[str] = field(default_factory=list)
+    # Zählbücher des Zeit-Mods pro Welt (fehlt: None) und ein optionaler Lesefehler.
+    ledgers: dict[str, StatusFile] = field(default_factory=dict)
+    ledger_error: ProvisionerError | None = None
+    ledger_reads: list[str] = field(default_factory=list)
 
     def ensure_image(self) -> None:
         return None
@@ -157,6 +163,13 @@ class FakeProvisioner:
         if self.access_state_error is not None:
             raise self.access_state_error
         return self.access_states.get(world_id)
+
+    def read_time_ledger(self, world_id: str) -> StatusFile | None:
+        self._known(world_id)
+        self.ledger_reads.append(world_id)
+        if self.ledger_error is not None:
+            raise self.ledger_error
+        return self.ledgers.get(world_id)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:
         _, status = self._known(world_id)
@@ -1174,7 +1187,9 @@ def _time_rules_of(archive_bytes: bytes) -> bytes:
 def _assert_empty_rules(content: bytes) -> None:
     lines = content.decode("ascii").split("\n")
     head = lines[0].split(" ")
-    assert head[:3] == ["gameworld-time", "1", "0"]
+    # Generation kommt jetzt aus der Datenbank (ab 04-03), nicht mehr fest 0.
+    assert head[:2] == ["gameworld-time", "1"]
+    assert int(head[2]) >= 0
     assert int(head[3]) > 0
     assert lines[1:] == ["end", ""]
 
@@ -1308,6 +1323,149 @@ async def test_api_create_has_no_world_key_but_new_fields(client: httpx.AsyncCli
     assert row.world_key not in created.text
     assert body["invited_players"] == []
     assert isinstance(body["access_restart_needed"], bool)
+    assert isinstance(body["time_restart_needed"], bool)
     listing = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
-    assert {"invited_players", "access_restart_needed"} <= listing.keys()
+    assert {"invited_players", "access_restart_needed", "time_restart_needed"} <= listing.keys()
     assert "world_key" not in listing
+
+
+# 04-03: Zeit-Mod aus Schema 4 (Zählbuch verbuchen, Regeldatei rendern, Neustart-Hinweis)
+
+TIME_WEEK = WeekPlan({weekday: DayRule(True, 60, None, None) for weekday in range(1, 8)})
+
+
+def _rules_of(archive_bytes: bytes) -> bytes:
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as tar:
+        if RULES_FILE_NAME not in tar.getnames():
+            return b""
+        handle = tar.extractfile(RULES_FILE_NAME)
+        assert handle is not None
+        return handle.read()
+
+
+def _ledger_status(mtime: str, written_at: int, **seconds: int) -> StatusFile:
+    lines = [f"{LEDGER_HEADER} {written_at} 0", *(f"{name} {value}" for name, value in seconds.items()), "end", ""]
+    return StatusFile(mtime, "\n".join(lines).encode("ascii"))
+
+
+def _tar_names(archive_bytes: bytes) -> list[str]:
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as tar:
+        return tar.getnames()
+
+
+async def test_push_access_also_pushes_time_rules(service: WorldService, fake: FakeProvisioner) -> None:
+    """Einladungspfad: push_access schreibt im selben Sperrblock auch die Regeldatei (push_time)."""
+    created = await service.create_world("Welt")
+    fake.written.clear()
+    with service.mutation():
+        assert service.push_access(created.id) is True
+    assert len(fake.written) == 2
+    assert ACCESS_FILE_NAME in _tar_names(fake.written[0][1])
+    assert RULES_FILE_NAME in _tar_names(fake.written[1][1])
+
+
+async def test_newly_invited_child_appears_in_rules_immediately(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia")
+    store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
+    fake.written.clear()
+    with service.mutation():
+        service.push_access(created.id)
+    assert b"\nMia " in _rules_of(fake.written[1][1])
+
+
+async def test_launch_books_ledger_before_rendering(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """_launch liest das Zählbuch vor dem Rendern (Pitfall 7) und verbucht Kinder mit Regeln."""
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia")
+    store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
+    store.set_ledger_seen(created.id, {"Mia": 10})
+    fake.ledgers[created.id] = _ledger_status(FRESH, int(time.time()), Mia=70)
+    await service.stop_world(created.id)
+    fake.ledger_reads.clear()
+
+    await service.start_world(created.id)
+
+    assert created.id in fake.ledger_reads
+    from gameworld.playtime.plan import load_zone, local_day
+
+    berlin_day = local_day(int(time.time()), load_zone(""))
+    assert store.usage("nc-mia", berlin_day) == 60
+    assert store.ledger_seen(created.id) == {"Mia": 70}
+
+
+async def test_tick_time_skips_when_locked(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    del created
+    fake.written.clear()
+    assert service_module._LOCK.acquire(blocking=False)
+    try:
+        service.tick_time()
+    finally:
+        service_module._LOCK.release()
+    assert fake.written == []
+
+
+async def test_tick_time_renders_running_worlds(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia")
+    store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
+    fake.written.clear()
+    fake.ledger_reads.clear()
+
+    service.tick_time()
+
+    assert created.id in fake.ledger_reads
+    assert any(b"\nMia " in _rules_of(archive) for _world_id, archive in fake.written)
+
+
+async def test_tick_time_isolates_read_error(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = await service.create_world("Kaputt")
+    healthy = await service.create_world("Heil")
+    _invite_players(store, healthy.id, "Mia")
+    store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
+    fake.written.clear()
+    real = fake.read_time_ledger
+
+    def flaky(world_id: str) -> StatusFile | None:
+        if world_id == broken.id:
+            raise ProvisionerError("Das Spielzeit-Zählbuch der Welt ist nicht lesbar.")
+        return real(world_id)
+
+    monkeypatch.setattr(fake, "read_time_ledger", flaky)
+    service.tick_time()
+
+    assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == healthy.id)
+
+
+async def test_time_restart_needed_missing_ledger(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    view = await _view_of(service, world_id)
+    assert view.status == "running"
+    assert view.time_restart_needed is True
+
+
+async def test_time_restart_needed_fresh_ledger(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.ledgers[world_id] = StatusFile(FRESH, b"gameworld-time-used 1 1 0\nend\n")
+    assert (await _view_of(service, world_id)).time_restart_needed is False
+
+
+async def test_time_restart_needed_stale_ledger(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.ledgers[world_id] = StatusFile(STALE, b"gameworld-time-used 1 1 0\nend\n")
+    assert (await _view_of(service, world_id)).time_restart_needed is True
+
+
+async def test_time_restart_needed_read_error_is_false(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.ledger_error = ProvisionerError("Das Spielzeit-Zählbuch der Welt ist nicht lesbar.")
+    assert (await _view_of(service, world_id)).time_restart_needed is False

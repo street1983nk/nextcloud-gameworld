@@ -13,7 +13,6 @@ import logging
 import secrets
 import tarfile
 import threading
-import time
 import uuid
 import zipfile
 from collections.abc import Iterator
@@ -24,8 +23,9 @@ from time import monotonic
 import anyio.to_thread
 
 from gameworld.config import Settings
+from gameworld.playtime.engine import TimeEngine
 from gameworld.provisioner.access_mod import render_access_file
-from gameworld.provisioner.archive import build_access_tar, build_world_files, build_world_payload
+from gameworld.provisioner.archive import build_access_tar, build_time_tar, build_world_files, build_world_payload
 from gameworld.provisioner.client import (
     ContainerInfo,
     DockerProvisioner,
@@ -40,7 +40,7 @@ from gameworld.provisioner.luanti_conf import normalize_world_name, render_minet
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_name
 from gameworld.provisioner.status_mod import parse_players
-from gameworld.provisioner.time_mod import render_time_file
+from gameworld.provisioner.time_mod import parse_ledger
 from gameworld.worlds.ports import NoFreePortError, allocate_port
 from gameworld.worlds.reconciler import ReconcileAction, decide_boot, decide_periodic, needs_volume_check
 from gameworld.worlds.status import (
@@ -128,6 +128,8 @@ class WorldView:
     invited_players: list[str]
     # Läuft die Welt ohne geladenen Zugangsschutz (vor dem Update gestartet)? Nur bei status running.
     access_restart_needed: bool
+    # Läuft die Welt ohne geladenen Zeit-Mod (kein Zählbuch)? Dann braucht sie einen Neustart.
+    time_restart_needed: bool
 
 
 def _view(
@@ -139,6 +141,7 @@ def _view(
     *,
     invited_players: list[str],
     access_restart_needed: bool = False,
+    time_restart_needed: bool = False,
 ) -> WorldView:
     preset = PRESETS.get(row.preset)
     # UNKNOWN (Docker nicht erreichbar) behält Vorrang vor dem Preset-Fehler.
@@ -147,6 +150,7 @@ def _view(
         status = WorldStatus(ERROR, TEXT_UNKNOWN_PRESET)
         players = None
         access_restart_needed = False
+        time_restart_needed = False
     return WorldView(
         id=row.id,
         name=row.name,
@@ -166,6 +170,7 @@ def _view(
         delete_only=delete_only(row),
         invited_players=invited_players,
         access_restart_needed=access_restart_needed,
+        time_restart_needed=time_restart_needed,
     )
 
 
@@ -179,6 +184,8 @@ class WorldService:
         self._store = store
         self._provisioner = provisioner
         self._settings = settings
+        # Rechnet Regeldateien aus Schema 4 und verbucht das Zählbuch (synchron, nur Store).
+        self._time = TimeEngine(store)
         # Cache der Weltenliste: (Zeitpunkt aus monotonic, Ansichten). Die
         # Generation verhindert, dass eine vor einer Mutation begonnene Liste
         # danach noch im Cache landet.
@@ -237,14 +244,34 @@ class WorldService:
         return render_access_file(generation, self._store.access_entries(row.id))
 
     def _time_file(self, row: WorldRow) -> bytes:
-        """Regeldatei des Zeit-Mods für diese Welt.
+        """Regeldatei des Zeit-Mods für diese Welt, frisch aus Schema 4.
 
-        Bis 04-03 ohne Regeln (Kopf und Schlusszeile, Generation 0): Die Welt
-        trägt den Mod, begrenzt aber niemanden (Opt-in, O-10). Ab 04-03 kommen
-        Pläne, Verbrauch und Welt-Fenster aus Schema 4.
+        Vor dem Rendern wird das Zählbuch der Welt gelesen und verbucht (Pitfall
+        7: auch bei gestopptem Container, bevor der neue Start das Volume anfasst).
+        Ohne Regeln bleibt es bei Kopf und Schlusszeile (Opt-in, O-10).
         """
-        del row
-        return render_time_file(0, int(time.time()), None, {})
+        try:
+            self._book_ledger(row.id)
+        except ProvisionerError as exc:
+            # Ein unlesbares Zählbuch darf den Start nicht verhindern; der Rest kommt aus der DB.
+            LOG.warning("Welt %s: Zählbuch vor dem Rendern nicht lesbar: %s", row.id, exc)
+        data, _changed = self._time.render(row.id)
+        return data
+
+    def _book_ledger(self, world_id: str) -> None:
+        """Liest das Zählbuch der Welt und verbucht die Zuwächse; fehlt es, passiert nichts.
+
+        Ein fehlender Container (WorldNotFoundError) heißt: nichts verbuchen.
+        Andere Lesefehler (ProvisionerError) reicht der Aufrufer weiter und
+        isoliert sie pro Welt (tick_time); der Dateiinhalt wird nie protokolliert.
+        """
+        try:
+            status_file = self._provisioner.read_time_ledger(world_id)
+        except WorldNotFoundError:
+            return
+        if status_file is None:
+            return
+        self._time.book(world_id, parse_ledger(status_file.content))
 
     def mutation(self) -> contextlib.AbstractContextManager[None]:
         """Dieselbe Sperre wie Welt-Mutationen, mit Cache-Verwurf (für den Zugangsdienst).
@@ -271,11 +298,13 @@ class WorldService:
             self._invalidate_cache()
 
     def push_access(self, world_id: str) -> bool:
-        """Schreibt die aktuelle Zugangsdatei in die laufende oder gestoppte Welt.
+        """Schreibt die aktuelle Zugangs- und Regeldatei in die laufende oder gestoppte Welt.
 
-        Nur innerhalb von mutation() aufrufen. False heißt: Die Datei liegt noch
+        Nur innerhalb von mutation() aufrufen. False heißt: Die Dateien liegen noch
         nicht in der Welt; die Datenbank bleibt maßgeblich, und der nächste Start
-        schreibt sie (_launch). Inhalte der Datei werden nie protokolliert.
+        schreibt sie (_launch). Im selben Sperrblock folgt push_time: Ein frisch
+        eingeladenes Kind mit Regeln steht sofort in der Regeldatei, nicht erst nach
+        dem nächsten Takt. Inhalte der Dateien werden nie protokolliert.
         """
         access_file = self._access_file(self._row(world_id))
         try:
@@ -286,7 +315,56 @@ class WorldService:
         except ProvisionerError as exc:
             LOG.warning("Welt %s: Zugangsdatei nicht geschrieben, sie kommt beim nächsten Start: %s", world_id, exc)
             return False
+        return self.push_time(world_id)
+
+    def push_time(self, world_id: str) -> bool:
+        """Schreibt die aktuelle Regeldatei in die laufende oder gestoppte Welt.
+
+        Nur innerhalb von mutation() (oder try_mutation) aufrufen. Rendert immer
+        frisch aus der Datenbank (bei einer Änderung zählt die Generation hoch) und
+        schreibt sie. False heißt: kein Container oder Docker weg, der nächste Start
+        schreibt sie. Inhalte der Datei werden nie protokolliert.
+        """
+        data, _changed = self._time.render(world_id)
+        try:
+            self._provisioner.write_world_files(world_id, build_time_tar(data))
+        except WorldNotFoundError:
+            LOG.info("Welt %s: kein Container, die Regeldatei kommt beim nächsten Start", world_id)
+            return False
+        except ProvisionerError as exc:
+            LOG.warning("Welt %s: Regeldatei nicht geschrieben, sie kommt beim nächsten Start: %s", world_id, exc)
+            return False
         return True
+
+    def tick_time(self) -> None:
+        """15-s-Zeittakt: Zählbuch aller laufenden Welten verbuchen, geänderte Regeldateien schreiben.
+
+        Nimmt nur try_mutation() (nie blockierend, Pitfall 6): Läuft gerade eine
+        Elternaktion, wird der Takt übersprungen. Erst werden alle Welten verbucht,
+        dann gerendert: So sieht Welt B den Verbrauch aus Welt A (ein Kontingent über
+        alle Welten, O-03). Ein Fehler einer Welt betrifft nur diese Welt.
+        """
+        with self.try_mutation() as acquired:
+            if not acquired:
+                return
+            managed = self._provisioner.list_managed()
+            running = [
+                row
+                for row in self._store.list_worlds()
+                if (info := managed.get(row.id)) is not None and info.status == RUNNING
+            ]
+            for row in running:
+                try:
+                    self._book_ledger(row.id)
+                except ProvisionerError as exc:
+                    LOG.warning("Welt %s: Zählbuch im Takt nicht verbucht: %s", row.id, exc)
+            for row in running:
+                try:
+                    data, changed = self._time.render(row.id)
+                    if changed:
+                        self._provisioner.write_world_files(row.id, build_time_tar(data))
+                except ProvisionerError as exc:
+                    LOG.warning("Welt %s: Regeldatei im Takt nicht geschrieben: %s", row.id, exc)
 
     @contextlib.contextmanager
     def _payload(self, row: WorldRow) -> Iterator[WorldPayload]:
@@ -424,6 +502,29 @@ class WorldService:
             return False
         return written is None or written < started
 
+    def _time_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
+        """Läuft die Welt noch ohne geladenen Zeit-Mod (vor dem Update gestartet)?
+
+        Nur bei status running: Der Zeit-Mod schreibt sein Zählbuch bei mods_loaded.
+        Fehlt es oder ist es älter als der Start des Containers, trägt die Welt den
+        Zeit-Mod noch nicht und braucht einen Neustart. Gleiche Regel und Isolierung
+        wie _access_restart_needed; ein Lesefehler betrifft nur diese Welt.
+        """
+        if container is None or status.code != RUNNING:
+            return False
+        try:
+            ledger = self._provisioner.read_time_ledger(row.id)
+        except ProvisionerError as exc:
+            LOG.warning("Spielzeitstand von Welt %s nicht lesbar: %s", row.id, exc)
+            return False
+        if ledger is None:
+            return True
+        written = parse_docker_time(ledger.mtime)
+        started = parse_docker_time(container.started_at)
+        if started is None:
+            return False
+        return written is None or written < started
+
     def _memory(self, row: WorldRow, container: ContainerInfo | None) -> MemoryUsage | None:
         """RAM nur für laufende Container; ein Fehler betrifft nur diese Welt."""
         if container is None or container.status != "running":
@@ -455,6 +556,7 @@ class WorldService:
             self._memory(row, container),
             invited_players=self._invited(row),
             access_restart_needed=self._access_restart_needed(row, container, status),
+            time_restart_needed=self._time_restart_needed(row, container, status),
         )
 
     def _launch(self, row: WorldRow) -> None:

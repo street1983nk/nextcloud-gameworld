@@ -7,7 +7,10 @@ Ablauf jeder Änderung:
    Fingerabdruck prüfen. Scheitert hier etwas, ist nichts geschrieben (T-03-24).
 2. Unter der Welt-Sperre im Worker-Thread: Einladung schreiben, effektive
    Spieler abgleichen, bei Änderung Generation hochzählen und die Zugangsdatei
-   sofort in die Welt schreiben (``WorldService.push_access``).
+   sofort in die Welt schreiben (``WorldService.push_access``). Im selben
+   Sperrblock schreibt push_access auch die Regeldatei des Zeit-Mods
+   (``push_time``): Ein frisch eingeladenes Kind mit Spielzeit-Regeln steht sofort
+   mit Zeile in der Regeldatei, nicht erst nach dem nächsten 15-s-Takt.
 
 Effektive Spieler einer Welt sind die direkt eingeladenen Konten plus die
 Mitglieder eingeladener Gruppen, jeweils nur, wenn Nextcloud sie als vorhanden

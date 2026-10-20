@@ -48,6 +48,11 @@ class FakeProvisioner:
         if world_id not in self.created:
             raise WorldNotFoundError("Diese Welt gibt es nicht (mehr).")
 
+    def read_time_ledger(self, world_id: str) -> None:
+        if world_id not in self.created:
+            raise WorldNotFoundError("Diese Welt gibt es nicht (mehr).")
+        return
+
     def start_world(self, world_id: str) -> None:
         del world_id
         raise DockerUnavailableError(MESSAGE)

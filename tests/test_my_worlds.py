@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import tarfile
 from pathlib import Path
 from typing import cast
 
@@ -16,6 +18,7 @@ from gameworld.access.roles import Profile
 from gameworld.access.secret import SecretUnavailableError
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
+from gameworld.provisioner.access_mod import ACCESS_FILE_NAME
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds import service as world_service
 from gameworld.worlds.service import WorldService
@@ -30,6 +33,16 @@ NEW_SECRET = bytes(range(2, 34))
 FRIEND = "gw-freund"
 FRIEND_PASSWORD = derive_password(TEST_SECRET, FRIEND, 0)
 KIND_GROUPS: dict[str, tuple[str, ...]] = {"gw-kind": ("familie",)}
+
+
+def _access_writes(fake: FakeProvisioner) -> list[bytes]:
+    """Nur Zugangsdatei-Tars; push_access schreibt seit 04-03 zusätzlich die Regeldatei (push_time)."""
+    result: list[bytes] = []
+    for _world_id, archive in fake.written:
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+            if ACCESS_FILE_NAME in tar.getnames():
+                result.append(archive)
+    return result
 
 
 def _world(world_id: str, name: str, port: int) -> WorldRow:
@@ -169,7 +182,7 @@ async def test_group_invite_provisions_on_own_visit(
     row = store.get_world(W2)
     assert row is not None
     generation = row.access_generation
-    pushes = len(fake.written)
+    pushes = len(_access_writes(fake))
 
     response = await _mine(client)
     assert response.status_code == 200
@@ -179,7 +192,7 @@ async def test_group_invite_provisions_on_own_visit(
     row = store.get_world(W2)
     assert row is not None
     assert row.access_generation == generation + 1
-    assert len(fake.written) == pushes + 1
+    assert len(_access_writes(fake)) == pushes + 1
 
     # Zweiter Aufruf ändert nichts.
     again = await _mine(client)
@@ -187,7 +200,7 @@ async def test_group_invite_provisions_on_own_visit(
     row = store.get_world(W2)
     assert row is not None
     assert row.access_generation == generation + 1
-    assert len(fake.written) == pushes + 1
+    assert len(_access_writes(fake)) == pushes + 1
 
 
 async def test_lazy_provisioning_never_removes(
