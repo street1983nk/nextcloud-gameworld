@@ -196,7 +196,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04-07-PLAN.md , Kind-Ansicht: eigene Restzeit und Öffnungszeiten der Welten, nur eigene Werte
+- [x] 04-07-PLAN.md , Kind-Ansicht: eigene Restzeit und Öffnungszeiten der Welten, nur eigene Werte
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -245,6 +245,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
-| 4. Spielzeitlimits | 6/8 | In Progress|  |
+| 4. Spielzeitlimits | 7/8 | In Progress|  |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |

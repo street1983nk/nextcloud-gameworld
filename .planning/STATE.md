@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-06-PLAN.md (Eltern-UI Spielzeit, Ferien, Welt-Zeitfenster, Zeitzone); nächste Welle 04-07
-last_updated: "2026-10-20T18:01:30.816Z"
+stopped_at: Completed 04-07-PLAN.md (Kind-Ansicht Restzeit und Welt-Fenster); Plan 8 of 8, nächste Welle 04-08 (Abnahme, Owner-Checkpoint)
+last_updated: "2026-10-20T18:16:29.509Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04 (spielzeitlimits) , EXECUTING
-Plan: 7 of 8
-Status: Ready to execute (04-06 fertig, nächste Welle 7 = 04-07)
+Plan: 8 of 8
+Status: Ready to execute (04-07 fertig, Plan 8 of 8, nächste Welle 04-08 = Abnahme, Owner-Checkpoint)
 Last activity: 2026-10-20
 
-Progress: [█████████░] 93%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [█████████░] 93%
 | Phase 04 P04 | 60 min | 2 tasks | 6 files |
 | Phase 04 P05 | 75 min | 2 tasks | 12 files |
 | Phase 04 P06 | 35 min | 2 tasks | 10 files |
+| Phase 04 P07 | 25 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -152,6 +153,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-05: Welt-Zeitfenster per POST/DELETE /api/playtime/worlds/{id}/window; alle Tage geschlossen = 422, immer offen = DELETE; die Welt läuft weiter (O-05), Reconciler unverändert
 - [Phase 04]: 04-05: Verwalter-Schnappschuss meta time_admins aus Gruppe admin (Abfrage vor der Sperre, Drossel 60 s, Änderungen mit force, Dashboard nur try_mutation); frei-Zeile für eingeladene Verwalter, ohne Stand keine Freistellung
 - [Phase 04]: 04-06: Eltern-UI mit reiner Logik in playtime.js (Node-Prüfskript); Kind-Chip höchstens 30 Zeichen, sonst entfällt das Zeitfenster; 'Keine Begrenzung' = DELETE; Welt-Fenster 'ganzer Tag' = 0 bis 1440, alle Tage zu sperrt Speichern; Spielzeitdaten lädt ParentView höchstens alle 30 s
+- [Phase 04]: 04-07: Kind-API /api/my/playtime liefert Struktur (limited, state, remaining_minutes, until_minute, next mit days_ahead), der Browser formuliert; Rest unter 60 s = aufgebraucht/fenster (MIN_LEFT), Minuten nie über das Fensterende; /api/my/worlds je Welt window_open und window_next, kein Wochenplan
 
 ### Pending Todos
 
@@ -173,6 +175,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T18:01:30.798Z
-Stopped at: Completed 04-06-PLAN.md (Eltern-UI Spielzeit, Ferien, Welt-Zeitfenster, Zeitzone); nächste Welle 04-07
+Last session: 2026-10-20T18:16:23.274Z
+Stopped at: Completed 04-07-PLAN.md (Kind-Ansicht Restzeit und Welt-Fenster); Plan 8 of 8, nächste Welle 04-08 (Abnahme, Owner-Checkpoint)
 Resume file: None
