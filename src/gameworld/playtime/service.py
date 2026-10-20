@@ -1,13 +1,13 @@
 """Spielzeit-Regeln je Kind setzen, entfernen und auflisten (ZEIT-01, Verwalter).
 
-Nur die ExApp kann ein Kontingent ueber alle Welten rechnen (O-03): Dieser Dienst
+Nur die ExApp kann ein Kontingent über alle Welten rechnen (O-03): Dieser Dienst
 schreibt den Wochenplan eines Kindes in die Datenbank und schiebt die Regeldatei
 sofort in jede Welt des Kindes (``WorldService.push_time``), ohne Welt-Neustart.
 
 Sperr-Regel (wie access/service.py): Nextcloud-Aufrufe (Anzeigename) laufen immer
-ausserhalb von ``worlds.mutation()``; unter der Sperre nur Store und das Schreiben
-der Regeldatei. Der Anzeigename ist Beiwerk: Faellt Nextcloud aus, steht der
-Konto-Name statt des Anzeigenamens, die Regel selbst haengt nicht daran.
+außerhalb von ``worlds.mutation()``; unter der Sperre nur Store und das Schreiben
+der Regeldatei. Der Anzeigename ist Beiwerk: Fällt Nextcloud aus, steht der
+Konto-Name statt des Anzeigenamens, die Regel selbst hängt nicht daran.
 """
 
 from __future__ import annotations

@@ -2,18 +2,18 @@
 
 Nur diese Schicht verbindet die reinen Module (``playtime.plan``,
 ``playtime.ledger``, ``provisioner.time_mod``) mit der Datenbank (Schema 4). Sie
-ist synchron und kennt kein Docker: Sie liest und schreibt ausschliesslich den
-Store und reine Funktionen. Der Aufrufer (``WorldService``) liest das Zaehlbuch
+ist synchron und kennt kein Docker: Sie liest und schreibt ausschließlich den
+Store und reine Funktionen. Der Aufrufer (``WorldService``) liest das Zählbuch
 aus der Welt und schreibt die Regeldatei; der 15-s-Takt und der Einladungspfad
 rufen diese Methoden unter der Welt-Sperre bzw. ``try_mutation`` auf.
 
-``book`` verbucht die Zaehlbuch-Zuwaechse einer Welt auf den lokalen Tag jedes
-Kindes mit Regeln (ein Kontingent ueber alle Welten, O-03) und verankert den
+``book`` verbucht die Zählbuch-Zuwächse einer Welt auf den lokalen Tag jedes
+Kindes mit Regeln (ein Kontingent über alle Welten, O-03) und verankert den
 gesehenen Stand neu. ``render`` rechnet je Welt die Regeldatei aus der Datenbank:
-fuer jedes eingeladene Kind mit Regeln eine Zeile mit absolutem Fenster und
-Deckel im Zaehlbuch-Mass (gesehener Stand plus Restsekunden), dazu die Welt-Zeile
+für jedes eingeladene Kind mit Regeln eine Zeile mit absolutem Fenster und
+Deckel im Zählbuch-Maß (gesehener Stand plus Restsekunden), dazu die Welt-Zeile
 aus dem Welt-Fenster. Der Regelteil wird je Welt zwischengespeichert; nur bei
-einer Aenderung zaehlt die Generation hoch und der Kopf bekommt einen neuen
+einer Änderung zählt die Generation hoch und der Kopf bekommt einen neuen
 Zeitpunkt, damit die Bytes nicht in jedem Takt wechseln (Pitfall 6).
 """
 
@@ -30,9 +30,9 @@ from gameworld.playtime.plan import ChildState, evaluate_child, evaluate_world, 
 from gameworld.provisioner.time_mod import Ledger, TimeLine, render_time_file
 from gameworld.worlds.store import WorldStore
 
-# Verbrauch hoechstens einmal pro Stunde aufraeumen (A8/Pitfall 9).
+# Verbrauch höchstens einmal pro Stunde aufräumen (A8/Pitfall 9).
 _PRUNE_INTERVAL_SECONDS = 3600
-# Aufbewahrung: heute und 7 Tage zurueck.
+# Aufbewahrung: heute und 7 Tage zurück.
 _RETENTION_DAYS = 7
 
 
@@ -47,13 +47,13 @@ class _Rendered:
 
 
 class TimeEngine:
-    """Rechnet Regeldateien aus Schema 4 und verbucht Zaehlbuch-Zuwaechse (rein bis auf den Store)."""
+    """Rechnet Regeldateien aus Schema 4 und verbucht Zählbuch-Zuwächse (rein bis auf den Store)."""
 
     def __init__(self, store: WorldStore, clock: Callable[[], float] = time.time) -> None:
         self._store = store
         self._clock = clock
         # Zuletzt gerenderter Stand je Welt (Speicher): verhindert, dass sich die
-        # Bytes in jedem Takt aendern (nur bei echter Aenderung neue Generation).
+        # Bytes in jedem Takt ändern (nur bei echter Änderung neue Generation).
         self._cache: dict[str, _Rendered] = {}
         self._last_prune: int | None = None
 
@@ -64,11 +64,11 @@ class TimeEngine:
         return load_zone(self._store.get_meta("time_zone") or "")
 
     def book(self, world_id: str, ledger: Ledger | None) -> None:
-        """Verbucht die Zuwaechse des Zaehlbuchs; verankert den gesehenen Stand neu.
+        """Verbucht die Zuwächse des Zählbuchs; verankert den gesehenen Stand neu.
 
-        Nur Kinder mit Regeln werden verbucht (Opt-in, O-10); fuer alle anderen
-        Namen wird der Stand nur verankert (Schutz gegen Doppelzaehlung). Ein
-        fehlendes Zaehlbuch (None) aendert nichts.
+        Nur Kinder mit Regeln werden verbucht (Opt-in, O-10); für alle anderen
+        Namen wird der Stand nur verankert (Schutz gegen Doppelzählung). Ein
+        fehlendes Zählbuch (None) ändert nichts.
         """
         if ledger is None:
             return
@@ -85,10 +85,10 @@ class TimeEngine:
         self._store.set_ledger_seen(world_id, new_seen)
 
     def render(self, world_id: str) -> tuple[bytes, bool]:
-        """Regeldatei der Welt aus der Datenbank; (Bytes, geaendert).
+        """Regeldatei der Welt aus der Datenbank; (Bytes, geändert).
 
-        ``geaendert`` False heisst: Der Regelteil ist gleich geblieben, die Bytes
-        und die Generation sind unveraendert (Anti-Pattern "Regeldatei in jedem
+        ``geändert`` False heißt: Der Regelteil ist gleich geblieben, die Bytes
+        und die Generation sind unverändert (Anti-Pattern "Regeldatei in jedem
         Takt neu schreiben").
         """
         tz = self._zone()
@@ -115,7 +115,7 @@ class TimeEngine:
         return rendered
 
     def child_state(self, nc_user: str) -> ChildState | None:
-        """Auswertung fuer ein Kind (API und Kind-Ansicht); None heisst: keine Regeln (Opt-in)."""
+        """Auswertung für ein Kind (API und Kind-Ansicht); None heißt: keine Regeln (Opt-in)."""
         plans = self._store.child_plans()
         if nc_user not in plans:
             return None
