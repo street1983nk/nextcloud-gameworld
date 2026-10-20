@@ -19,10 +19,12 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import astuple, dataclass, fields
+from datetime import date
 
+from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -59,12 +61,58 @@ CREATE TABLE IF NOT EXISTS world_access (
   verifier TEXT NOT NULL,
   PRIMARY KEY (world_id, nc_user)
 );
+CREATE TABLE IF NOT EXISTS time_children (
+  nc_user TEXT PRIMARY KEY,
+  updated_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS time_plans (
+  nc_user TEXT NOT NULL,
+  plan TEXT NOT NULL CHECK (plan IN ('normal', 'ferien')),
+  weekday INTEGER NOT NULL CHECK (weekday BETWEEN 1 AND 7),
+  allowed INTEGER NOT NULL CHECK (allowed IN (0, 1)),
+  limit_minutes INTEGER CHECK (limit_minutes IS NULL OR limit_minutes BETWEEN 1 AND 1440),
+  window_start INTEGER CHECK (window_start IS NULL OR window_start BETWEEN 0 AND 1439),
+  window_end INTEGER CHECK (window_end IS NULL OR window_end BETWEEN 1 AND 1440),
+  PRIMARY KEY (nc_user, plan, weekday)
+);
+CREATE TABLE IF NOT EXISTS holidays (
+  id INTEGER PRIMARY KEY,
+  label TEXT NOT NULL DEFAULT '' CHECK (length(label) <= 60),
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  CHECK (start_date <= end_date)
+);
+CREATE TABLE IF NOT EXISTS world_windows (
+  world_id TEXT NOT NULL,
+  weekday INTEGER NOT NULL CHECK (weekday BETWEEN 1 AND 7),
+  window_start INTEGER NOT NULL,
+  window_end INTEGER NOT NULL,
+  PRIMARY KEY (world_id, weekday)
+);
+CREATE TABLE IF NOT EXISTS time_usage (
+  nc_user TEXT NOT NULL,
+  day TEXT NOT NULL,
+  seconds INTEGER NOT NULL,
+  PRIMARY KEY (nc_user, day)
+);
+CREATE TABLE IF NOT EXISTS time_ledger_seen (
+  world_id TEXT NOT NULL,
+  player_name TEXT NOT NULL,
+  seconds INTEGER NOT NULL,
+  PRIMARY KEY (world_id, player_name)
+);
 """
+
+# Namen der sechs Spielzeit-Tabellen aus Schema 4 (Migrationstest, Selbstdokumentation).
+TIME_TABLES = frozenset({"time_children", "time_plans", "holidays", "world_windows", "time_usage", "time_ledger_seen"})
 
 # Schema 1 auf 2: Phase-1-Welten spielen Minetest Game, also das Kreativ-Preset.
 ADD_PRESET = "ALTER TABLE worlds ADD COLUMN preset TEXT NOT NULL DEFAULT 'mtg_kreativ'"
 # Schema 2 auf 3: Zähler der Zugangsdatei je Welt (Kopfzeile, Rückmeldung des Mods).
 ADD_ACCESS_GENERATION = "ALTER TABLE worlds ADD COLUMN access_generation INTEGER NOT NULL DEFAULT 0"
+# Schema 3 auf 4: Zähler der Regeldatei je Welt (Zeit-Mod, wie access_generation).
+ADD_TIME_GENERATION = "ALTER TABLE worlds ADD COLUMN time_generation INTEGER NOT NULL DEFAULT 0"
 
 
 @dataclass
@@ -82,6 +130,7 @@ class WorldRow:
     created_at: str
     preset: str = DEFAULT_PRESET_ID
     access_generation: int = 0
+    time_generation: int = 0
 
 
 @dataclass(frozen=True)
@@ -104,6 +153,9 @@ class InviteRow:
 
 COLUMNS = tuple(field.name for field in fields(WorldRow))
 UPDATABLE = frozenset(COLUMNS) - {"id"}
+
+# Eine Zeile aus time_plans: nc_user, plan, weekday, allowed, limit_minutes, window_start, window_end.
+_PlanRow = tuple[str, str, int, int, int | None, int | None, int | None]
 
 
 class WorldStore:
@@ -134,6 +186,8 @@ class WorldStore:
                 connection.execute(ADD_PRESET)
             if "access_generation" not in columns:
                 connection.execute(ADD_ACCESS_GENERATION)
+            if "time_generation" not in columns:
+                connection.execute(ADD_TIME_GENERATION)
             connection.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -342,3 +396,162 @@ class WorldStore:
         with self._connect() as connection:
             connection.execute("DELETE FROM invites WHERE world_id = ?", (world_id,))
             connection.execute("DELETE FROM world_access WHERE world_id = ?", (world_id,))
+
+    # Spielzeit: Regeln, Ferien, Welt-Fenster, Verbrauch und Zählbuchstände (Schema 4)
+
+    @staticmethod
+    def _plan_rows(nc_user: str, plan: str, week: WeekPlan) -> list[_PlanRow]:
+        return [
+            (nc_user, plan, weekday, int(rule.allowed), rule.limit_minutes, rule.window_start, rule.window_end)
+            for weekday, rule in sorted(week.days.items())
+        ]
+
+    def set_child_plan(
+        self, nc_user: str, normal: WeekPlan, holiday: WeekPlan | None, updated_by: str, updated_at: str
+    ) -> None:
+        """Wochenplan (und optional Ferienplan) eines Kindes, in einer Transaktion.
+
+        Schreibt die Zeile in ``time_children`` (Kind hat Regeln, O-10) und 7 bzw.
+        14 Zeilen ``time_plans`` (normal, ferien). Ein früherer Plan wird ersetzt.
+        """
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO time_children (nc_user, updated_by, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(nc_user) DO UPDATE SET updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+                (nc_user, updated_by, updated_at),
+            )
+            connection.execute("DELETE FROM time_plans WHERE nc_user = ?", (nc_user,))
+            rows = self._plan_rows(nc_user, "normal", normal)
+            if holiday is not None:
+                rows.extend(self._plan_rows(nc_user, "ferien", holiday))
+            connection.executemany(
+                "INSERT INTO time_plans (nc_user, plan, weekday, allowed, limit_minutes, window_start, window_end) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+
+    def clear_child(self, nc_user: str) -> None:
+        """Entfernt Regeln und Verbrauch eines Kindes (zurück auf keine Begrenzung, O-10)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM time_children WHERE nc_user = ?", (nc_user,))
+            connection.execute("DELETE FROM time_plans WHERE nc_user = ?", (nc_user,))
+            connection.execute("DELETE FROM time_usage WHERE nc_user = ?", (nc_user,))
+
+    def child_plans(self) -> dict[str, tuple[WeekPlan, WeekPlan | None]]:
+        """Nur Kinder mit Zeile in ``time_children``: je Kind Normalplan und Ferienplan (oder None)."""
+        with self._connect() as connection:
+            children = [str(row[0]) for row in connection.execute("SELECT nc_user FROM time_children").fetchall()]
+            rows = connection.execute(
+                "SELECT nc_user, plan, weekday, allowed, limit_minutes, window_start, window_end FROM time_plans"
+            ).fetchall()
+        grouped: dict[str, dict[str, dict[int, DayRule]]] = {}
+        for nc_user, plan, weekday, allowed, limit_minutes, window_start, window_end in rows:
+            rule = DayRule(bool(allowed), limit_minutes, window_start, window_end)
+            grouped.setdefault(str(nc_user), {}).setdefault(str(plan), {})[int(weekday)] = rule
+        result: dict[str, tuple[WeekPlan, WeekPlan | None]] = {}
+        for nc_user in children:
+            plans = grouped.get(nc_user, {})
+            if "normal" not in plans:
+                continue
+            holiday = WeekPlan(days=plans["ferien"]) if "ferien" in plans else None
+            result[nc_user] = (WeekPlan(days=plans["normal"]), holiday)
+        return result
+
+    def add_usage(self, nc_user: str, day: date, seconds: int) -> None:
+        """Addiert verbrauchte Sekunden auf den lokalen Tag eines Kindes (nur Tagessummen, Pitfall 9)."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO time_usage (nc_user, day, seconds) VALUES (?, ?, ?) "
+                "ON CONFLICT(nc_user, day) DO UPDATE SET seconds = seconds + excluded.seconds",
+                (nc_user, day.isoformat(), seconds),
+            )
+
+    def usage(self, nc_user: str, day: date) -> int:
+        """Verbrauchte Sekunden eines Kindes an einem lokalen Tag (0, wenn keine Zeile)."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT seconds FROM time_usage WHERE nc_user = ? AND day = ?", (nc_user, day.isoformat())
+            ).fetchone()
+        return 0 if row is None else int(row[0])
+
+    def prune_usage(self, before_day: date) -> None:
+        """Löscht Verbrauchszeilen vor einem Tag (Aufbewahrung heute plus 7 Tage, A8/Pitfall 9)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM time_usage WHERE day < ?", (before_day.isoformat(),))
+
+    def ledger_seen(self, world_id: str) -> dict[str, int]:
+        """Zuletzt gesehener Zählbuch-Stand einer Welt: Spielername auf Sekunden."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT player_name, seconds FROM time_ledger_seen WHERE world_id = ?", (world_id,)
+            ).fetchall()
+        return {str(row[0]): int(row[1]) for row in rows}
+
+    def set_ledger_seen(self, world_id: str, seen: dict[str, int]) -> None:
+        """Ersetzt den gesehenen Zählbuch-Stand einer Welt atomar."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
+            connection.executemany(
+                "INSERT INTO time_ledger_seen (world_id, player_name, seconds) VALUES (?, ?, ?)",
+                [(world_id, name, seconds) for name, seconds in sorted(seen.items())],
+            )
+
+    def add_holiday(self, start: date, end: date, label: str) -> int:
+        """Ferienzeitraum für den Haushalt anlegen; gibt die neue id zurück (O-08)."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO holidays (label, start_date, end_date) VALUES (?, ?, ?)",
+                (label, start.isoformat(), end.isoformat()),
+            )
+        rowid = cursor.lastrowid
+        return int(rowid) if rowid is not None else 0
+
+    def remove_holiday(self, holiday_id: int) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute("DELETE FROM holidays WHERE id = ?", (holiday_id,))
+        return cursor.rowcount > 0
+
+    def list_holidays(self) -> list[Holiday]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT start_date, end_date, label FROM holidays ORDER BY start_date, id"
+            ).fetchall()
+        return [Holiday(date.fromisoformat(str(row[0])), date.fromisoformat(str(row[1])), str(row[2])) for row in rows]
+
+    def set_world_window(self, world_id: str, weekday: int, window_start: int, window_end: int) -> None:
+        """Zeitfenster einer Welt an einem Wochentag setzen (ZEIT-05)."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO world_windows (world_id, weekday, window_start, window_end) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(world_id, weekday) DO UPDATE SET "
+                "window_start = excluded.window_start, window_end = excluded.window_end",
+                (world_id, weekday, window_start, window_end),
+            )
+
+    def clear_world_window(self, world_id: str) -> None:
+        """Alle Zeitfenster einer Welt entfernen (Welt ist dann immer offen)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
+
+    def world_window(self, world_id: str) -> dict[int, tuple[int, int]] | None:
+        """Welt-Fenster je Wochentag oder None (keine Zeilen = immer offen)."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT weekday, window_start, window_end FROM world_windows WHERE world_id = ?", (world_id,)
+            ).fetchall()
+        if not rows:
+            return None
+        return {int(row[0]): (int(row[1]), int(row[2])) for row in rows}
+
+    def bump_time_generation(self, world_id: str) -> int:
+        """Zählt die Generation der Regeldatei einer Welt hoch und gibt den neuen Wert zurück."""
+        with self._connect() as connection:
+            connection.execute("UPDATE worlds SET time_generation = time_generation + 1 WHERE id = ?", (world_id,))
+            row = connection.execute("SELECT time_generation FROM worlds WHERE id = ?", (world_id,)).fetchone()
+        return 0 if row is None else int(row[0])
+
+    def delete_time_data(self, world_id: str) -> None:
+        """Welt-Fenster und gesehene Zählbuchstände einer gelöschten Welt (kein PRAGMA foreign_keys)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
+            connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
