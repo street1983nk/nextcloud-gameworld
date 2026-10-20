@@ -168,6 +168,12 @@
 			@invite="switchToInvite"
 			@close="playersWorld = null" />
 
+		<PlaytimeSection
+			:playtime="playtime"
+			:loading="playtimeLoading"
+			:error="playtimeError"
+			@changed="loadPlaytime" />
+
 		<!-- Hat sich ein Elternteil selbst eingeladen, steht hier die eigene Verbindungsinfo. -->
 		<section v-if="myWorlds.length > 0" class="gameworld__mine">
 			<h3>Meine Verbindungsinfo</h3>
@@ -193,11 +199,13 @@ import ConnectionCard from '../components/ConnectionCard.vue'
 import InviteDialog from '../components/InviteDialog.vue'
 import JoinHostSettings from '../components/JoinHostSettings.vue'
 import PlayerManager from '../components/PlayerManager.vue'
+import PlaytimeSection from '../components/PlaytimeSection.vue'
 import SetupCheck from '../components/SetupCheck.vue'
 import {
 	createWorld,
 	deleteWorld,
 	errorText,
+	getPlaytime,
 	listMyWorlds,
 	listPresets,
 	listWorlds,
@@ -215,6 +223,8 @@ const CHIP_VARIANT = {
 	unknown: 'warning',
 }
 const POLL_MS = 5000
+// Spielzeit (Verbrauch heute) ändert sich langsam: höchstens alle 30 s neu laden.
+const PLAYTIME_POLL_MS = 30000
 // Ab diesem Anteil am Limit wird der RAM-Balken als Fehler markiert.
 const MEMORY_WARN_PERCENT = 90
 const MIB = 1048576
@@ -243,6 +253,11 @@ const busy = reactive({})
 const pendingDelete = ref(null)
 // Eigene Welten, falls der Verwalter sich selbst eingeladen hat (gleiche Daten wie in der Spieleransicht).
 const myWorlds = ref([])
+// Antwort von GET /api/playtime (Kinder, Ferien, Zeitzone) oder null.
+const playtime = ref(null)
+const playtimeLoading = ref(true)
+const playtimeError = ref('')
+let playtimeLoadedAt = 0
 
 const selectedDescription = computed(() => presets.value.find((preset) => preset.id === selectedPreset.value)?.description ?? '')
 
@@ -366,6 +381,36 @@ async function refresh() {
 	}
 }
 
+// Nur die Antwort des zuletzt gestarteten Abrufs zählt (wie bei der Weltenliste).
+let playtimeSeq = 0
+
+async function loadPlaytime() {
+	const seq = ++playtimeSeq
+	playtimeLoadedAt = Date.now()
+	try {
+		const result = await getPlaytime()
+		if (seq === playtimeSeq) {
+			playtime.value = result
+			playtimeError.value = ''
+		}
+	} catch (err) {
+		if (seq === playtimeSeq) {
+			playtimeError.value = `Die Spielzeiten konnten nicht geladen werden: ${errorText(err)}`
+		}
+	} finally {
+		if (seq === playtimeSeq) {
+			playtimeLoading.value = false
+		}
+	}
+}
+
+// Im Takt der Weltenliste, aber höchstens alle 30 s.
+function maybeLoadPlaytime() {
+	if (Date.now() - playtimeLoadedAt >= PLAYTIME_POLL_MS) {
+		loadPlaytime()
+	}
+}
+
 // Alle 5 s, nur bei sichtbarem Tab; nach jeder Aktion sofort (run, submit).
 let timer = null
 // Nach dem Abbau darf ein noch laufender Abruf keinen neuen Timer setzen.
@@ -377,6 +422,7 @@ function schedule() {
 	if (!unmounted && document.visibilityState === 'visible') {
 		timer = setTimeout(async () => {
 			await refresh()
+			maybeLoadPlaytime()
 			schedule()
 		}, POLL_MS)
 	}
@@ -385,6 +431,7 @@ function schedule() {
 function onTabChange() {
 	if (document.visibilityState === 'visible') {
 		refresh()
+		maybeLoadPlaytime()
 	}
 	schedule()
 }
@@ -443,7 +490,7 @@ async function submit() {
 
 onMounted(async () => {
 	document.addEventListener('visibilitychange', onTabChange)
-	await Promise.all([loadPresets(), refresh()])
+	await Promise.all([loadPresets(), refresh(), loadPlaytime()])
 	schedule()
 })
 

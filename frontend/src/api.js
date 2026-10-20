@@ -133,6 +133,24 @@ export async function renamePlayer(ncUser, playerName) {
 	return response.data
 }
 
+// Spielzeit (04-03 bis 04-05): Kinder mit Regeln und Verbrauch, Ferien, Zeitzone.
+export async function getPlaytime() {
+	const response = await axios.get(`${apiBase}/api/playtime`)
+	return response.data
+}
+
+// normal und holiday sind je 7 Tage im API-Format; holiday null heißt: Normalplan gilt auch in den Ferien.
+export async function saveChildPlan(ncUser, normal, holiday) {
+	const response = await axios.post(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`, { normal, holiday })
+	return response.data
+}
+
+// Keine Begrenzung: alle Regeln des Kindes entfernen.
+export async function clearChildPlan(ncUser) {
+	const response = await axios.delete(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`)
+	return response.data
+}
+
 // Suche über Nextclouds eigene Autovervollständigung (Benutzer 0, Gruppen 1),
 // mit Nextclouds Regeln, wer wen finden darf. Keine eigene Benutzerliste.
 export async function searchAccounts(term) {
