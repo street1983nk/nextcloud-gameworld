@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-10-20T01:00:00.000Z"
+stopped_at: Completed 03-07-PLAN.md
+last_updated: "2026-10-20T12:00:00.000Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
   percent: 33
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 3, Zugang und Rollen (Ausführung, 6 von 7 Plänen)
+**Current focus:** Phase 3, Zugang und Rollen (alle 7 Pläne fertig, Owner-Abnahme erteilt, Phasen-Verifikation steht an)
 
 ## Current Position
 
 Phase: 3 (Zugang und Rollen), In Progress
-Plan: 03-06 complete, nächster 03-07
+Plan: 03-07 complete (7 von 7), nächster Schritt Phasen-Verifikation
 Status: Executing Phase 3
 Last activity: 2026-10-20
 
@@ -70,6 +70,7 @@ Progress: [███░░░░░░░] 33% (2 von 6 Phasen)
 | Phase 03 P04 | 20 min | 2 tasks | 13 files |
 | Phase 03 P05 | 35 min | 2 tasks | 11 files |
 | Phase 03 P06 | 40 min | 2 tasks | 13 files |
+| Phase 03 P07 | 120 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-06: /api/my/worlds nimmt die Welt-Sperre nie blockierend (Fingerabdruck blocking=False, Provisionierung try_mutation); bei belegter Sperre folgt die Ergänzung beim nächsten 5-s-Abruf
 - [Phase 03]: 03-06: Lazy Provisionierung nur für Gruppen-Einladungen mit gid aus der signierten Selbstauskunft, nur Hinzufügen; Entfernen bleibt beim Verwalter-Abgleich
 - [Phase 03]: 03-06: join_host in meta, leer = host null, Frontend nimmt window.location.hostname; Validator Hostname-Labels oder IP-Literal, max. 253, ohne Schema/Pfad/Port
+- [Phase 03]: 03-07: Owner-Abnahme 20.10.2026 erteilt ('Abgenommen'); A6 Anleitungstexte 'Ja, übernehmen', A8 Adresse aus Browser-Hostname 'Ja, bestätigt', A9 Kindertexte im Spiel 'Ja, übernehmen'; acceptance-phase3.sh 75/75 inklusive Regression Phase 1 und 2
+- [Phase 03]: 03-07: Offen fürs Phasen-Audit: Live-Join mit echtem Luanti-Client, Kick nach Widerruf (A7) mit echtem Client
 
 ### Pending Todos
 
@@ -143,7 +146,7 @@ None yet.
 ### Blockers/Concerns
 
 - [Phase 1] Research nötig: Welt-Daten-Ablage (Named Volume vs. Container-FS + Archive-API), Luanti-Image-Wahl, Headless-Administration
-- [Phase 3] Research nötig: Whitelist-Mod-Wahl (Whiter List vs. ct_whitelist vs. AntumDeluge) gegen Luanti 5.17 verifizieren
+- [Phase 3] Erledigt: eigener Welt-Mod gameworld_access statt Whitelist-Mod (ct_whitelist auf ContentDB nicht mehr auffindbar)
 - [Phase 4] Research nötig: Spielzeit-Durchsetzungspfad Mod vs. Scheduler-Stopp, Umgehungs-Caveat bewerten
 
 ## Deferred Items
@@ -156,6 +159,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T01:00:00.000Z
-Stopped at: Completed 03-06-PLAN.md
+Last session: 2026-10-20T12:00:00.000Z
+Stopped at: Completed 03-07-PLAN.md
 Resume file: None

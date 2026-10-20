@@ -148,7 +148,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 03-07-PLAN.md , Phasenabnahme: acceptance-phase3.sh K1 bis K5 plus gemeinsame Playwright-Abnahme, Doku, ct_whitelist-Korrektur
+- [x] 03-07-PLAN.md , Phasenabnahme: acceptance-phase3.sh K1 bis K5 plus gemeinsame Playwright-Abnahme, Doku, ct_whitelist-Korrektur
 
 **UI hint**: yes
 **Research flag**: yes (Whitelist-Mod-Wahl: Whiter List vs. ct_whitelist vs. AntumDeluge gegen Luanti 5.17 testen; Zusammenspiel Whitelist-Mod und Auth-Provisionierung)
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
-| 3. Zugang und Rollen | 6/7 | In Progress | - |
+| 3. Zugang und Rollen | 7/7 | In Progress | - |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |

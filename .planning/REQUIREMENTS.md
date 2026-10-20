@@ -16,14 +16,14 @@
 ### Zugang & Sicherheit
 
 - [x] **ZUGANG-01**: Welten sind privat per Default: kein `server_announce`, keine öffentliche Sichtbarkeit, keine "öffentlich machen"-Option im UI
-- [ ] **ZUGANG-02**: Elternteil kann Nextcloud-Benutzer und -Gruppen in eine Welt einladen; Gameworld provisioniert dafür Luanti-Spieler-Accounts (Name und Passwort)
-- [ ] **ZUGANG-03**: Nicht eingeladene Spieler werden serverseitig am Join gehindert (Whitelist-Durchsetzung, nicht nur UI)
-- [ ] **ZUGANG-04**: Jeder eingeladene Spieler sieht eine Verbindungsinfo-Ansicht (Adresse, Port, Spielername, Schritt-für-Schritt-Anleitung für den Luanti-Client)
+- [x] **ZUGANG-02**: Elternteil kann Nextcloud-Benutzer und -Gruppen in eine Welt einladen; Gameworld provisioniert dafür Luanti-Spieler-Accounts (Name und Passwort)
+- [x] **ZUGANG-03**: Nicht eingeladene Spieler werden serverseitig am Join gehindert (Whitelist-Durchsetzung, nicht nur UI)
+- [x] **ZUGANG-04**: Jeder eingeladene Spieler sieht eine Verbindungsinfo-Ansicht (Adresse, Port, Spielername, Schritt-für-Schritt-Anleitung für den Luanti-Client)
 
 ### Rollen
 
-- [ ] **ROLLE-01**: Eltern verwalten, Kinder spielen: die Kind-Ansicht zeigt nur eigene Welten und Verbindungsinfo, keine Verwaltungsfunktionen
-- [ ] **ROLLE-02**: Rollen werden aus Nextcloud-Gruppen abgeleitet; Gameworld hat keine eigene Benutzerverwaltung
+- [x] **ROLLE-01**: Eltern verwalten, Kinder spielen: die Kind-Ansicht zeigt nur eigene Welten und Verbindungsinfo, keine Verwaltungsfunktionen
+- [x] **ROLLE-02**: Rollen werden aus Nextcloud-Gruppen abgeleitet; Gameworld hat keine eigene Benutzerverwaltung
 
 ### Spielzeit
 
@@ -75,11 +75,11 @@
 | WELT-04 | Phase 1 | Complete |
 | WELT-05 | Phase 1 | Complete |
 | ZUGANG-01 | Phase 1 | Complete |
-| ZUGANG-02 | Phase 3 | Pending |
-| ZUGANG-03 | Phase 3 | Pending |
-| ZUGANG-04 | Phase 3 | Pending |
-| ROLLE-01 | Phase 3 | Pending |
-| ROLLE-02 | Phase 3 | Pending |
+| ZUGANG-02 | Phase 3 | Complete |
+| ZUGANG-03 | Phase 3 | Complete |
+| ZUGANG-04 | Phase 3 | Complete |
+| ROLLE-01 | Phase 3 | Complete |
+| ROLLE-02 | Phase 3 | Complete |
 | ZEIT-01 | Phase 4 | Pending |
 | ZEIT-02 | Phase 4 | Pending |
 | BACKUP-01 | Phase 5 | Pending |
