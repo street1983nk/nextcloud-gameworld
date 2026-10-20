@@ -27,6 +27,7 @@ from gameworld.provisioner.client import (
 )
 from gameworld.provisioner.presets import MTG_KREATIV, PRESETS
 from gameworld.provisioner.spec import WorldPayload
+from gameworld.provisioner.time_mod import LEDGER_FILE_NAME, RULES_FILE_NAME
 from gameworld.worlds import service as service_module
 from gameworld.worlds.service import (
     CREATE_FAILED,
@@ -1153,6 +1154,48 @@ async def test_missing_container_on_write_recreates_then_writes_and_starts(
 async def test_payload_carries_empty_access_file(service: WorldService, payload_args: list[tuple[object, ...]]) -> None:
     await service.create_world("Welt")
     assert payload_args[0][3] == EMPTY_ACCESS
+
+
+# 04-01: Zeit-Mod und Regeldatei in jeder Welt, vor jedem Start neu geschrieben.
+
+
+def _time_rules_of(archive_bytes: bytes) -> bytes:
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as tar:
+        names = tar.getnames()
+        assert "worldmods/gameworld_time/init.lua" in names
+        assert "worldmods/gameworld_time/mod.conf" in names
+        assert RULES_FILE_NAME in names
+        assert LEDGER_FILE_NAME not in names
+        handle = tar.extractfile(RULES_FILE_NAME)
+        assert handle is not None
+        return handle.read()
+
+
+def _assert_empty_rules(content: bytes) -> None:
+    lines = content.decode("ascii").split("\n")
+    head = lines[0].split(" ")
+    assert head[:3] == ["gameworld-time", "1", "0"]
+    assert int(head[3]) > 0
+    assert lines[1:] == ["end", ""]
+
+
+async def test_payload_carries_empty_time_rules(service: WorldService, payload_args: list[tuple[object, ...]]) -> None:
+    await service.create_world("Welt")
+    time_file = payload_args[0][4]
+    assert isinstance(time_file, bytes)
+    _assert_empty_rules(time_file)
+
+
+async def test_every_start_writes_time_mod_and_rules(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    _assert_empty_rules(_time_rules_of(fake.written[0][1]))
+    await service.stop_world(created.id)
+    fake.written.clear()
+
+    await service.restart_world(created.id)
+
+    assert [world for world, _ in fake.written] == [created.id]
+    _assert_empty_rules(_time_rules_of(fake.written[0][1]))
 
 
 # 03-05: Spielernamen und Zugangsschutz-Status in der Weltenliste, kein Weltschlüssel in der API.

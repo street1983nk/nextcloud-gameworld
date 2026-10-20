@@ -9,7 +9,7 @@ from dataclasses import replace
 
 import pytest
 
-from gameworld.provisioner import access_mod, archive
+from gameworld.provisioner import access_mod, archive, status_mod, time_mod
 from gameworld.provisioner.client import ProvisionerError
 from gameworld.provisioner.presets import MTG_KREATIV, PRESETS, Preset
 from gameworld.provisioner.spec import WorldPayload
@@ -197,6 +197,74 @@ def test_world_files_tar_carries_both_mods_and_access_file() -> None:
     assert not any(name.endswith(access_mod.STATE_FILE_NAME) for name in members)
     for name in members:
         assert archive._safe_relative(name) == name, name
+
+
+RULES = b"gameworld-time 1 0 1792792800\nend\n"
+
+
+def test_time_mod_and_rules_are_in_every_world() -> None:
+    payload = archive.build_world_payload(MTG_KREATIV, "x\n", "gameid = minetest\n", ACCESS, RULES)
+    raw = payload.archive.read()
+    payload.archive.close()
+    members = _tar_members(raw)
+    time_dir = members[time_mod.MOD_DIR]
+    assert time_dir.isdir()
+    assert (time_dir.uid, time_dir.mode) == (30000, 0o755)
+    for name in ("init.lua", "mod.conf"):
+        member = members[f"{time_mod.MOD_DIR}/{name}"]
+        assert (member.uid, member.gid, member.mode) == (30000, 30000, 0o644), name
+    assert _tar_read(raw, f"{time_mod.MOD_DIR}/init.lua") == time_mod.MOD_INIT_LUA.encode("utf-8")
+    rules = members[f".minetest/worlds/world/{time_mod.RULES_FILE_NAME}"]
+    assert (rules.uid, rules.gid, rules.mode) == (0, 0, 0o444)
+    assert _tar_read(raw, f".minetest/worlds/world/{time_mod.RULES_FILE_NAME}") == RULES
+    # Das Zählbuch gehört dem Mod und steht nie im Tar.
+    assert not any(name.endswith(time_mod.LEDGER_FILE_NAME) for name in members)
+
+
+def test_payload_without_time_file_has_mod_but_no_rules() -> None:
+    names = _members(_kreativ())
+    assert f"{time_mod.MOD_DIR}/init.lua" in names
+    assert not any(name.endswith(time_mod.RULES_FILE_NAME) for name in names)
+
+
+def test_world_files_tar_carries_time_mod_and_rules() -> None:
+    raw = archive.build_world_files(ACCESS, RULES)
+    members = _tar_members(raw)
+    assert [mod_dir for mod_dir, _, _ in archive.WORLD_MODS] == [
+        status_mod.MOD_DIR,
+        access_mod.MOD_DIR,
+        time_mod.MOD_DIR,
+    ]
+    directory = members["worldmods/gameworld_time"]
+    assert directory.isdir()
+    assert (directory.uid, directory.mode) == (30000, 0o755)
+    for name in ("init.lua", "mod.conf"):
+        member = members[f"worldmods/gameworld_time/{name}"]
+        assert (member.uid, member.mode) == (30000, 0o644), name
+    assert _tar_read(raw, "worldmods/gameworld_time/mod.conf") == time_mod.MOD_CONF.encode("utf-8")
+    rules = members[time_mod.RULES_FILE_NAME]
+    assert (rules.uid, rules.gid, rules.mode) == (0, 0, 0o444)
+    assert rules.mtime > 0
+    assert _tar_read(raw, time_mod.RULES_FILE_NAME) == RULES
+    assert not any(name.endswith(time_mod.LEDGER_FILE_NAME) for name in members)
+    for name in members:
+        assert archive._safe_relative(name) == name, name
+
+
+def test_world_files_without_time_file_has_no_rules() -> None:
+    members = _tar_members(archive.build_world_files(ACCESS))
+    assert "worldmods/gameworld_time/init.lua" in members
+    assert time_mod.RULES_FILE_NAME not in members
+
+
+def test_time_tar_has_exactly_the_rules_file() -> None:
+    raw = archive.build_time_tar(RULES)
+    members = _tar_members(raw)
+    assert list(members) == [time_mod.RULES_FILE_NAME]
+    member = members[time_mod.RULES_FILE_NAME]
+    assert (member.uid, member.gid, member.mode) == (0, 0, 0o444)
+    assert archive._safe_relative(member.name) == member.name
+    assert _tar_read(raw, time_mod.RULES_FILE_NAME) == RULES
 
 
 def test_access_tar_has_exactly_the_access_file() -> None:

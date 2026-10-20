@@ -13,6 +13,7 @@ import logging
 import secrets
 import tarfile
 import threading
+import time
 import uuid
 import zipfile
 from collections.abc import Iterator
@@ -39,6 +40,7 @@ from gameworld.provisioner.luanti_conf import normalize_world_name, render_minet
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, get_preset
 from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_name
 from gameworld.provisioner.status_mod import parse_players
+from gameworld.provisioner.time_mod import render_time_file
 from gameworld.worlds.ports import NoFreePortError, allocate_port
 from gameworld.worlds.reconciler import ReconcileAction, decide_boot, decide_periodic, needs_volume_check
 from gameworld.worlds.status import (
@@ -234,6 +236,16 @@ class WorldService:
         generation = row.access_generation if fresh is None else fresh.access_generation
         return render_access_file(generation, self._store.access_entries(row.id))
 
+    def _time_file(self, row: WorldRow) -> bytes:
+        """Regeldatei des Zeit-Mods für diese Welt.
+
+        Bis 04-03 ohne Regeln (Kopf und Schlusszeile, Generation 0): Die Welt
+        trägt den Mod, begrenzt aber niemanden (Opt-in, O-10). Ab 04-03 kommen
+        Pläne, Verbrauch und Welt-Fenster aus Schema 4.
+        """
+        del row
+        return render_time_file(0, int(time.time()), None, {})
+
     def mutation(self) -> contextlib.AbstractContextManager[None]:
         """Dieselbe Sperre wie Welt-Mutationen, mit Cache-Verwurf (für den Zugangsdienst).
 
@@ -291,6 +303,7 @@ class WorldService:
                 render_minetest_conf(row.name, row.world_key, preset),
                 render_world_mt(preset),
                 self._access_file(row),
+                self._time_file(row),
             )
         except (OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
             LOG.warning("Weltdaten für Welt %s nicht vorbereitet: %r", row.id, exc)
@@ -447,9 +460,11 @@ class WorldService:
     def _launch(self, row: WorldRow) -> None:
         """Startet den Container; bei belegtem Port Neuerzeugung mit dem nächsten freien Port.
 
-        Vor jedem Startversuch schreibt er beide Welt-Mods und die aktuelle
-        Zugangsdatei in den Weltordner (put_archive, kein exec): So bekommen auch
-        ältere Welten den Zugangs-Mod, und der Mod-Code folgt App-Updates.
+        Vor jedem Startversuch schreibt er alle drei Welt-Mods, die aktuelle
+        Zugangsdatei und die Regeldatei des Zeit-Mods in den Weltordner
+        (put_archive, kein exec): So bekommen auch ältere Welten Zugangs- und
+        Zeit-Mod, und der Mod-Code folgt App-Updates. Das Zählbuch im Volume
+        bleibt unberührt.
         Das Volume mit den Weltdaten bleibt dabei erhalten; nur minetest.conf,
         world.mt und das Spiel werden neu eingespielt (deterministischer Inhalt).
         Fehlt der Container ganz (Fehlerpfad der Port-Saga oder docker rm von
@@ -464,7 +479,8 @@ class WorldService:
         while True:
             try:
                 # Im selben try: Fehlt der Container schon beim Schreiben, greift die Neuerzeugung.
-                self._provisioner.write_world_files(row.id, build_world_files(self._access_file(row)))
+                world_files = build_world_files(self._access_file(row), self._time_file(row))
+                self._provisioner.write_world_files(row.id, world_files)
                 self._provisioner.start_world(row.id)
                 return
             except WorldNotFoundError:

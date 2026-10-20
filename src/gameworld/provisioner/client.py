@@ -26,6 +26,7 @@ from docker.models.containers import Container
 from gameworld.provisioner.access_mod import STATE_FILE
 from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, WorldPayload, resource_name, world_spec
 from gameworld.provisioner.status_mod import PLAYERS_FILE
+from gameworld.provisioner.time_mod import LEDGER_FILE
 
 LOG = logging.getLogger(__name__)
 
@@ -440,6 +441,15 @@ class DockerProvisioner:
         Fehlerabbildung wie bei der Status-Datei.
         """
         return self._read(lambda: self._read_world_file(world_id, STATE_FILE, "Der Zugangsstand der Welt"))
+
+    def read_time_ledger(self, world_id: str) -> StatusFile | None:
+        """Zählbuch des Zeit-Mods (mtime und gekappter Inhalt) oder None.
+
+        Der Mod schreibt es beim Start, im Takt bei verbundenen Spielern und beim
+        Verlassen. Über get_archive, deshalb auch bei gestoppter Welt lesbar; kein
+        exec. Gleiche Kappung und Fehlerabbildung wie bei der Status-Datei.
+        """
+        return self._read(lambda: self._read_world_file(world_id, LEDGER_FILE, "Das Spielzeit-Zählbuch der Welt"))
 
     def _read_world_file(self, world_id: str, path: str, label: str) -> StatusFile | None:
         container = self._owned(world_id)

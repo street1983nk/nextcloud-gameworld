@@ -1,13 +1,16 @@
 """Das Tar, das beim Erzeugen einer Welt in ihr Volume geschrieben wird.
 
 Inhalt: ``minetest.conf`` (root-eigen, 0444, der Server kann sie lesen, aber
-nicht umschreiben), die Welt-Metadaten, die Welt-Mods gameworld_status und
-gameworld_access, die Zugangsdatei (root-eigen, 0444) und das Spiel des
-Presets. Alles außer conf und Zugangsdatei gehört dem Luanti-Nutzer 30000.
+nicht umschreiben), die Welt-Metadaten, die Welt-Mods gameworld_status,
+gameworld_access und gameworld_time, Zugangs- und Regeldatei (root-eigen, 0444)
+und das Spiel des Presets. Alles außer conf, Zugangs- und Regeldatei gehört dem
+Luanti-Nutzer 30000. Das Zählbuch des Zeit-Mods steht nie im Tar: Es gehört dem
+Mod und überlebt so jeden Neustart.
 
-Dazu kommen zwei kleine Tars relativ zum Weltordner: ``build_world_files``
-(beide Mods und Zugangsdatei, vor jedem Start) und ``build_access_tar`` (nur
-die Zugangsdatei, bei Einladungsänderungen in die laufende Welt).
+Dazu kommen drei kleine Tars relativ zum Weltordner: ``build_world_files``
+(alle Mods, Zugangs- und Regeldatei, vor jedem Start), ``build_access_tar``
+(nur die Zugangsdatei, bei Einladungsänderungen in die laufende Welt) und
+``build_time_tar`` (nur die Regeldatei).
 
 Das Spiel-Zip wird vor jeder Nutzung per SHA256 gegen die Konstante im Preset
 geprüft. Die Spieldateien werden einzeln ins Tar gestreamt, das Tar liegt bis
@@ -27,7 +30,7 @@ import zipfile
 from posixpath import normpath
 from typing import BinaryIO, cast
 
-from gameworld.provisioner import access_mod, status_mod
+from gameworld.provisioner import access_mod, status_mod, time_mod
 from gameworld.provisioner.client import ProvisionerError
 from gameworld.provisioner.presets import Preset
 from gameworld.provisioner.spec import WorldPayload
@@ -44,6 +47,7 @@ WORLD_DIR = ".minetest/worlds/world"
 WORLD_MODS = (
     (status_mod.MOD_DIR, status_mod.MOD_INIT_LUA, status_mod.MOD_CONF),
     (access_mod.MOD_DIR, access_mod.MOD_INIT_LUA, access_mod.MOD_CONF),
+    (time_mod.MOD_DIR, time_mod.MOD_INIT_LUA, time_mod.MOD_CONF),
 )
 ACCESS_FILE_MODE = 0o444
 
@@ -145,12 +149,14 @@ def _relative_to_world(path: str) -> str:
     return path[len(prefix) :]
 
 
-def build_world_files(access_file: bytes) -> bytes:
-    """Unkomprimiertes Tar für ``put_archive`` in den Weltordner: beide Mods und Zugangsdatei.
+def build_world_files(access_file: bytes, time_file: bytes | None = None) -> bytes:
+    """Unkomprimiertes Tar für ``put_archive`` in den Weltordner: alle Mods, Zugangs- und Regeldatei.
 
     Läuft vor jedem Start (``_launch``): aktualisiert den Mod-Code nach
-    App-Updates und rüstet Welten ohne Zugangs-Mod nach. Alle Namen sind relativ
-    zum Weltordner, ohne ``..`` und ohne absoluten Pfad.
+    App-Updates und rüstet Welten ohne Zugangs- oder Zeit-Mod nach. Alle Namen
+    sind relativ zum Weltordner, ohne ``..`` und ohne absoluten Pfad.
+    ``time_file`` None lässt die Regeldatei weg (nur für ältere Testaufrufe;
+    ``_launch`` übergibt sie immer).
     """
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
@@ -161,6 +167,8 @@ def build_world_files(access_file: bytes) -> bytes:
             _add_file(tar, f"{relative}/init.lua", init_lua.encode("utf-8"))
             _add_file(tar, f"{relative}/mod.conf", mod_conf.encode("utf-8"))
         _add_access_file(tar, access_mod.ACCESS_FILE_NAME, access_file)
+        if time_file is not None:
+            _add_access_file(tar, time_mod.RULES_FILE_NAME, time_file)
     return buffer.getvalue()
 
 
@@ -172,14 +180,25 @@ def build_access_tar(access_file: bytes) -> bytes:
     return buffer.getvalue()
 
 
-def build_world_payload(preset: Preset, minetest_conf: str, world_mt: str, access_file: bytes) -> WorldPayload:
+def build_time_tar(time_file: bytes) -> bytes:
+    """Tar mit genau der Regeldatei, relativ zum Weltordner (für laufende Welten)."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        _add_access_file(tar, time_mod.RULES_FILE_NAME, time_file)
+    return buffer.getvalue()
+
+
+def build_world_payload(
+    preset: Preset, minetest_conf: str, world_mt: str, access_file: bytes, time_file: bytes | None = None
+) -> WorldPayload:
     """Unkomprimiertes Tar für ``put_archive`` nach ``/var/lib/minetest``.
 
     Der Aufrufer schließt ``archive`` nach ``put_archive`` (gibt die temporäre
     Datei frei). Die Spielerliste des Status-Mods steht nie im Payload: Der Mod legt
     die Datei erst beim Start an, sonst wäre die Bereitschaftsprüfung falsch. Das
-    gilt auch für die State-Datei des Zugangs-Mods. ``access_file`` ist die
-    Zugangsdatei (bei neuen Welten: Kopf und Schlusszeile, niemand eingeladen).
+    gilt auch für die State-Datei des Zugangs-Mods und das Zählbuch des
+    Zeit-Mods. ``access_file`` ist die Zugangsdatei (bei neuen Welten: Kopf und
+    Schlusszeile, niemand eingeladen), ``time_file`` die Regeldatei (None: keine).
     """
     game_root = f".minetest/games/{preset.game_dir}"
     zip_path = _verified_zip(preset)
@@ -210,6 +229,8 @@ def build_world_payload(preset: Preset, minetest_conf: str, world_mt: str, acces
                     _add_file(tar, f"{mod_dir}/init.lua", init_lua.encode("utf-8"))
                     _add_file(tar, f"{mod_dir}/mod.conf", mod_conf.encode("utf-8"))
                 _add_access_file(tar, f"{WORLD_DIR}/{access_mod.ACCESS_FILE_NAME}", access_file)
+                if time_file is not None:
+                    _add_access_file(tar, f"{WORLD_DIR}/{time_mod.RULES_FILE_NAME}", time_file)
                 for name, info in game:
                     with zipped.open(info) as source:
                         member = _file_info(f"{game_root}/{name}", info.file_size, uid=LUANTI_UID, mode=0o644)

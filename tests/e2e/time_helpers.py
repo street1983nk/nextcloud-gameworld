@@ -14,9 +14,10 @@ import httpx
 from docker.models.containers import Container
 
 from gameworld.provisioner.access_mod import render_access_file
-from gameworld.provisioner.archive import build_access_tar
+from gameworld.provisioner.archive import build_access_tar, build_time_tar
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.provisioner.luanti_auth import make_verifier
+from gameworld.provisioner.time_mod import Ledger, parse_ledger
 from gameworld.worlds.store import WorldStore
 from tests.conftest import appapi_headers, docker_url
 from tests.e2e.test_status_e2e import wait_for_status
@@ -49,6 +50,23 @@ def write_access(app_env: Path, world_id: str, generation: int, players: dict[st
     """Zugangsdatei mit SRP-Verifiern aus Spielername -> Passwort in die Welt schreiben."""
     entries = {name: make_verifier(name, password) for name, password in players.items()}
     provisioner(app_env).write_world_files(world_id, build_access_tar(render_access_file(generation, entries)))
+
+
+def write_rules(app_env: Path, world_id: str, content: bytes) -> None:
+    """Regeldatei des Zeit-Mods direkt in die Welt schreiben (wie später die ExApp)."""
+    provisioner(app_env).write_world_files(world_id, build_time_tar(content))
+
+
+def read_ledger_raw(app_env: Path, world_id: str) -> bytes:
+    ledger = provisioner(app_env).read_time_ledger(world_id)
+    assert ledger is not None, "Zählbuch fehlt"
+    return ledger.content
+
+
+def read_ledger(app_env: Path, world_id: str) -> Ledger:
+    parsed = parse_ledger(read_ledger_raw(app_env, world_id))
+    assert parsed is not None, "Zählbuch unvollständig"
+    return parsed
 
 
 def docker_api() -> docker.DockerClient:
