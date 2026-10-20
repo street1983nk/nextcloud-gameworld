@@ -128,7 +128,7 @@ function copyToSchoolDays() {
 <style scoped>
 .day-tiles {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 	gap: 12px;
 }
 
@@ -144,6 +144,18 @@ function copyToSchoolDays() {
 
 .day-tiles__tile--off {
 	background: var(--color-background-hover);
+}
+
+/* NcSelect bringt eine Mindestbreite mit; in der Kachel bleibt es in deren Breite. */
+.day-tiles__tile :deep(.v-select.select) {
+	min-width: 0;
+	width: 100%;
+	max-width: 100%;
+}
+
+.day-tiles__tile :deep(.button-vue__text) {
+	white-space: normal;
+	text-align: start;
 }
 
 .day-tiles__name {

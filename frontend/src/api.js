@@ -151,6 +151,34 @@ export async function clearChildPlan(ncUser) {
 	return response.data
 }
 
+// Ferienliste des Haushalts; Daten als JJJJ-MM-TT, Bezeichnung optional.
+export async function addHoliday(label, startDate, endDate) {
+	const response = await axios.post(`${apiBase}/api/playtime/holidays`, { label, start_date: startDate, end_date: endDate })
+	return response.data
+}
+
+export async function removeHoliday(id) {
+	const response = await axios.delete(`${apiBase}/api/playtime/holidays/${encodeURIComponent(id)}`)
+	return response.data
+}
+
+// IANA-Name, etwa Europe/Berlin; das Backend kennt nur Namen aus tzdata.
+export async function setTimeZone(timeZone) {
+	const response = await axios.post(`${apiBase}/api/playtime/time-zone`, { time_zone: timeZone })
+	return response.data
+}
+
+// days: genau 7 Tage { weekday, open, window_start, window_end }; "immer offen" ist clearWorldWindow.
+export async function setWorldWindow(worldId, days) {
+	const response = await axios.post(`${apiBase}/api/playtime/worlds/${encodeURIComponent(worldId)}/window`, { days })
+	return response.data
+}
+
+export async function clearWorldWindow(worldId) {
+	const response = await axios.delete(`${apiBase}/api/playtime/worlds/${encodeURIComponent(worldId)}/window`)
+	return response.data
+}
+
 // Suche über Nextclouds eigene Autovervollständigung (Benutzer 0, Gruppen 1),
 // mit Nextclouds Regeln, wer wen finden darf. Keine eigene Benutzerliste.
 export async function searchAccounts(term) {

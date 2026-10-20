@@ -78,6 +78,12 @@
 						<div v-if="world.status === 'running'" class="gameworld__players">
 							{{ playersText(world) }}
 						</div>
+						<NcChip
+							v-if="world.time_window"
+							class="gameworld__window"
+							:text="windowSummary(world.time_window)"
+							variant="secondary"
+							no-close />
 					</td>
 					<td>{{ world.preset_title }}</td>
 					<td>{{ world.port }}</td>
@@ -87,8 +93,14 @@
 							:text="world.status_text"
 							:variant="chipVariant(world.status)"
 							no-close />
-						<NcNoteCard v-if="world.access_restart_needed" type="warning" class="gameworld__restart">
+						<NcNoteCard v-if="world.access_restart_needed && world.time_restart_needed" type="warning" class="gameworld__restart">
+							Neustart nötig, damit nur Eingeladene spielen können und Spielzeiten gelten.
+						</NcNoteCard>
+						<NcNoteCard v-else-if="world.access_restart_needed" type="warning" class="gameworld__restart">
 							Neustart nötig, damit nur Eingeladene spielen können.
+						</NcNoteCard>
+						<NcNoteCard v-else-if="world.time_restart_needed" type="warning" class="gameworld__restart">
+							Neustart nötig, damit Spielzeiten gelten.
 						</NcNoteCard>
 					</td>
 					<td class="gameworld__invited">
@@ -134,6 +146,9 @@
 							<NcButton @click="openPlayers(world)">
 								Spieler
 							</NcButton>
+							<NcButton @click="openWindow(world)">
+								Zeitfenster
+							</NcButton>
 						</template>
 						<NcButton
 							variant="error"
@@ -167,12 +182,19 @@
 			@changed="refresh"
 			@invite="switchToInvite"
 			@close="playersWorld = null" />
+		<WorldWindowDialog
+			v-if="windowWorld"
+			:key="`window-${windowWorld.id}`"
+			:world="windowWorld"
+			@saved="refresh"
+			@close="windowWorld = null" />
 
 		<PlaytimeSection
 			:playtime="playtime"
 			:loading="playtimeLoading"
 			:error="playtimeError"
 			@changed="loadPlaytime" />
+		<HolidayList :holidays="playtime?.holidays ?? []" @changed="loadPlaytime" />
 
 		<!-- Hat sich ein Elternteil selbst eingeladen, steht hier die eigene Verbindungsinfo. -->
 		<section v-if="myWorlds.length > 0" class="gameworld__mine">
@@ -181,6 +203,7 @@
 		</section>
 
 		<JoinHostSettings />
+		<TimeZoneSetting :time-zone="playtime?.time_zone ?? ''" @changed="onTimeZoneChanged" />
 	</div>
 </template>
 
@@ -196,11 +219,15 @@ import NcRadioGroup from '@nextcloud/vue/components/NcRadioGroup'
 import NcRadioGroupButton from '@nextcloud/vue/components/NcRadioGroupButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import ConnectionCard from '../components/ConnectionCard.vue'
+import HolidayList from '../components/HolidayList.vue'
 import InviteDialog from '../components/InviteDialog.vue'
 import JoinHostSettings from '../components/JoinHostSettings.vue'
 import PlayerManager from '../components/PlayerManager.vue'
 import PlaytimeSection from '../components/PlaytimeSection.vue'
 import SetupCheck from '../components/SetupCheck.vue'
+import TimeZoneSetting from '../components/TimeZoneSetting.vue'
+import WorldWindowDialog from '../components/WorldWindowDialog.vue'
+import { windowSummary } from '../playtime.js'
 import {
 	createWorld,
 	deleteWorld,
@@ -244,6 +271,8 @@ const createdWorld = ref(null)
 // Offene Dialoge: { id, name } der Welt oder null.
 const inviteWorld = ref(null)
 const playersWorld = ref(null)
+// Zeitfenster-Dialog: { id, name, time_window } beim Öffnen kopiert.
+const windowWorld = ref(null)
 // Fehler einer Aktion: bleibt stehen, bis die nächste Aktion startet.
 const error = ref('')
 // Fehler beim Abfragen der Liste: verschwindet beim nächsten erfolgreichen Abruf.
@@ -294,12 +323,26 @@ function onDialogOpen(open) {
 // Nur id und Name gehen an die Dialoge; die Liste darf sich beim Polling ändern.
 function openInvite(world) {
 	playersWorld.value = null
+	windowWorld.value = null
 	inviteWorld.value = { id: world.id, name: world.name }
 }
 
 function openPlayers(world) {
 	inviteWorld.value = null
+	windowWorld.value = null
 	playersWorld.value = { id: world.id, name: world.name }
+}
+
+function openWindow(world) {
+	inviteWorld.value = null
+	playersWorld.value = null
+	windowWorld.value = { id: world.id, name: world.name, time_window: world.time_window ?? null }
+}
+
+// Die Zeitzone ändert, welcher Tag heute ist: Spielzeit und Weltenliste neu laden.
+function onTimeZoneChanged() {
+	loadPlaytime()
+	refresh()
 }
 
 function switchToInvite() {
@@ -562,6 +605,10 @@ onUnmounted(() => {
 
 .gameworld__restart {
 	margin-top: 8px;
+}
+
+.gameworld__window {
+	margin-top: 4px;
 }
 
 .gameworld__actions {
