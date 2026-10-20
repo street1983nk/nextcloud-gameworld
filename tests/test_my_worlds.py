@@ -235,6 +235,29 @@ async def test_host_comes_from_setting(client: httpx.AsyncClient, service: World
     assert world["host"] is None
 
 
+async def test_failed_world_shows_fixed_text_to_child(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    """AR-24: last_error (Docker-Interna wie Containername mit Instanz-ID) erreicht die Kind-Ansicht nie."""
+    del service
+    await _invite(client, W1, "user", "gw-kind")
+    last_error = f"500 Server Error: Container gw-x-{W1} konnte nicht starten"
+    store.update_world(W1, op_state="failed", last_error=last_error)
+
+    response = await _mine(client)
+    assert response.status_code == 200
+    [world] = response.json()["worlds"]
+    assert world["status"] == "error"
+    assert world["status_text"] == "Diese Welt hat gerade ein Problem. Sag deinen Eltern Bescheid."
+    assert last_error not in response.text
+    assert f"gw-x-{W1}" not in response.text
+
+    # Positivkontrolle: Die Verwalter-Ansicht zeigt last_error unverändert.
+    admin = await client.get("/api/worlds", headers=appapi_headers())
+    assert admin.status_code == 200
+    assert last_error in admin.text
+
+
 async def test_role_failure_is_503(
     client: httpx.AsyncClient, service: WorldService, role_lookup_error: list[str]
 ) -> None:

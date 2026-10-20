@@ -19,6 +19,12 @@ from gameworld.api.worlds import ServiceDep
 
 router = APIRouter(prefix="/api")
 
+# AR-24 (T-03-39): Bei op_state "failed" ist status_text der gespeicherte
+# last_error und kann Docker-Interna tragen (Containername mit Instanz-ID,
+# Port). Die Kind-Ansicht bekommt stattdessen diesen festen Text; die
+# Verwalter-Ansicht (/api/worlds) behält last_error unverändert.
+TEXT_WELT_PROBLEM = "Diese Welt hat gerade ein Problem. Sag deinen Eltern Bescheid."
+
 
 class MeOut(BaseModel):
     user_id: str
@@ -71,12 +77,15 @@ async def my_worlds(uid: UserDep, roles: RolesDep, access: AccessDep, service: S
         view = views.get(entry.world_id)
         if view is None:
             continue
+        # Nur bei failed fließt last_error in status_text (worlds/status.py);
+        # dieser eine Pfad bekommt hier den festen Kindertext (AR-24).
+        status_text = TEXT_WELT_PROBLEM if view.op_state == "failed" else view.status_text
         worlds.append(
             MyWorldOut(
                 id=view.id,
                 name=view.name,
                 status=view.status,
-                status_text=view.status_text,
+                status_text=status_text,
                 host=host,
                 port=view.port,
                 player_name=entry.player_name,
