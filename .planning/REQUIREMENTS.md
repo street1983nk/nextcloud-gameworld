@@ -24,6 +24,7 @@
 
 - [x] **ROLLE-01**: Eltern verwalten, Kinder spielen: die Kind-Ansicht zeigt nur eigene Welten und Verbindungsinfo, keine Verwaltungsfunktionen
 - [x] **ROLLE-02**: Rollen werden aus Nextcloud-Gruppen abgeleitet; Gameworld hat keine eigene Benutzerverwaltung
+- [ ] **ROLLE-03**: NC-Admin kann zusätzliche Verwalter-Gruppen einstellen (z. B. "lehrkraefte"); deren Mitglieder verwalten Welten ohne NC-Admin zu sein; Default bleibt Gruppe admin (Owner-Entscheid 20.10.2026 für Schulen/Vereine mit Nextcloud)
 
 ### Spielzeit
 
@@ -31,6 +32,7 @@
 - [ ] **ZEIT-02**: Das Limit wird serverseitig durchgesetzt, nicht nur angezeigt (Implementierungspfad Mod vs. Scheduler-Stopp wird per Phasen-Research entschieden; bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist zu bewerten)
 - [ ] **ZEIT-03**: Elternteil kann einen einfachen Wochenplan festlegen: pro Wochentag erlaubt/nicht erlaubt mit eigenem Limit und Zeitfenster (z. B. "nur Samstag und Sonntag, je 2 Stunden"); Voreinstellungen statt Konfigsprache (Owner-Anforderung 20.10.2026)
 - [ ] **ZEIT-04**: Elternteil kann Ferienzeiträume anlegen (von/bis-Datum), in denen eigene Regeln gelten (z. B. täglich statt nur Wochenende); die Umschaltung passiert automatisch am Datum, ohne dass Eltern daran denken müssen (Owner-Anforderung 20.10.2026)
+- [ ] **ZEIT-05**: Verwalter kann ein Zeitfenster pro Welt festlegen (z. B. "Mittwoch 10 bis 12 Uhr" als Unterrichtsstunde); außerhalb ist die Welt nicht betretbar, Durchsetzung serverseitig wie beim Wochenplan (Owner-Entscheid 20.10.2026 für Schulen/Vereine)
 
 ### Backup
 
@@ -48,9 +50,11 @@
 - **Zeitgesteuerte/automatische Backups** , erst wenn manuelles Backup zuverlässig läuft
 - **Aktivitäts-Benachrichtigungen** (NC Notifications: "Welt gestartet", "Mia ist beigetreten") , Transparenz statt Überwachung
 - **Weitere Presets und Feinschalter** (PvP, Chat, Schwierigkeitsgrad) , nach Feedback echter Familien
+- **Klassen-Preset für Unterricht** (kreativ, höheres max_users für ~30 Schüler, Chat-Schalter) , Schul-Brainstorm 20.10.2026, nur ein weiterer Registry-Eintrag, aber erst nach Pilot-Feedback
+- **Handout-/Beamer-Ansicht** (Verbindungsinfo einer Welt druckfreundlich bzw. als QR-Code für die Klasse) , Schul-Brainstorm 20.10.2026
 - **Kuratierte Mod-Auswahl für Eltern** , Kuratierung ist Pflegeaufwand, erst nach Produktvalidierung
 - **Minecraft Java via Crafty oder itzg-Image (MVP 2)** , eigener Rechts-Research-Task zuerst (EULA/Guidelines)
-- **Vereins-/Gruppenbetrieb (Teckids, CoderDojo)** , braucht Mandanten-/Rollenmodell jenseits Familie
+- **Vereins-/Schul-Mandantenmodell (Teckids, CoderDojo, Schulen)** , Welt-Besitzer (jede Lehrkraft sieht nur eigene Welten), Ressourcen-Budgets pro Verwalter, Schuljahres-Archivierung via Backup; Einstieg in v1 über ROLLE-03 + ZEIT-05
 
 ## Out of Scope
 
@@ -86,12 +90,14 @@
 | ZEIT-02 | Phase 4 | Pending |
 | ZEIT-03 | Phase 4 | Pending |
 | ZEIT-04 | Phase 4 | Pending |
+| ZEIT-05 | Phase 4 | Pending |
+| ROLLE-03 | Phase 6 | Pending |
 | BACKUP-01 | Phase 5 | Pending |
 | BACKUP-02 | Phase 5 | Pending |
 | PLATT-01 | Phase 6 | Pending |
 | PLATT-02 | Phase 2 | Complete |
 
-**Coverage:** 19/19 v1-Requirements gemappt (Stand 2026-10-20; ZEIT-03/04 am 20.10.2026 auf Owner-Wunsch ergänzt)
+**Coverage:** 21/21 v1-Requirements gemappt (Stand 2026-10-20; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026 auf Owner-Wunsch ergänzt)
 
 ---
 *Requirements for: Gameworld v1 (MVP 1, Luanti, Familien)*

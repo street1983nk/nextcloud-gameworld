@@ -158,14 +158,15 @@ Plans:
 **Goal**: Eltern legen Spielzeit pro Kind fest, mit Wochenplan und Ferienzeiten, und können sich darauf verlassen, dass der Server sie durchsetzt
 **Mode:** mvp
 **Depends on**: Phase 3
-**Requirements**: ZEIT-01, ZEIT-02, ZEIT-03, ZEIT-04
+**Requirements**: ZEIT-01, ZEIT-02, ZEIT-03, ZEIT-04, ZEIT-05
 **Success Criteria** (what must be TRUE):
 
   1. Elternteil legt pro Kind ein tägliches Spielzeitlimit und/oder ein Spielzeitfenster fest (z. B. maximal 2 Stunden, nur bis 19 Uhr)
   2. Elternteil legt einen einfachen Wochenplan fest: pro Wochentag erlaubt/nicht erlaubt mit eigenem Limit und Fenster (typischer Fall "nur am Wochenende"); die Eingabe ist kindersicherungs-üblich einfach (Tages-Kacheln/Schalter, sinnvolle Voreinstellungen), keine Konfigsprache (Owner-Anforderung 20.10.2026)
   3. Elternteil legt Ferienzeiträume (von/bis-Datum) mit eigenen Regeln an; am Datum schaltet Gameworld automatisch zwischen Normal- und Ferienregeln um, ohne dass Eltern daran denken müssen (Owner-Anforderung 20.10.2026)
-  4. Bei Erreichen des Limits oder außerhalb erlaubter Zeiten wird das Kind serverseitig getrennt und am Wieder-Join gehindert, nicht nur per Anzeige informiert
-  5. Das Limit hält auch nach Welt-Neustart und Rejoin-Versuch (bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist bewertet und abgefangen oder dokumentiert)
+  4. Verwalter kann zusätzlich ein Zeitfenster PRO WELT festlegen (z. B. "Mittwoch 10 bis 12 Uhr" für eine Unterrichtsstunde); außerhalb ist die Welt nicht betretbar; dieselbe Durchsetzungsmechanik wie beim Wochenplan (Owner-Entscheid 20.10.2026, Schul-/Vereins-Nutzung)
+  5. Bei Erreichen des Limits oder außerhalb erlaubter Zeiten wird das Kind serverseitig getrennt und am Wieder-Join gehindert, nicht nur per Anzeige informiert
+  6. Das Limit hält auch nach Welt-Neustart und Rejoin-Versuch (bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist bewertet und abgefangen oder dokumentiert)
 
 **Plans**: TBD
 **UI hint**: yes
@@ -187,16 +188,17 @@ Plans:
 
 ### Phase 6: Store-Release
 
-**Goal**: Jede Familie kann Gameworld direkt aus dem Nextcloud App Store installieren, mit ehrlicher Erklärung der Zusatz-Privilegien
+**Goal**: Jede Familie und jede Schule mit Nextcloud kann Gameworld direkt aus dem Nextcloud App Store installieren, mit ehrlicher Erklärung der Zusatz-Privilegien
 **Mode:** mvp
 **Depends on**: Phase 1, Phase 2, Phase 3, Phase 4, Phase 5
-**Requirements**: PLATT-01
+**Requirements**: PLATT-01, ROLLE-03
 **Success Criteria** (what must be TRUE):
 
   1. Gameworld ist über den Nextcloud App Store installierbar (AppAPI/HaRP, Ziel NC 32+); Installation vom Registry-Tag ist auf AIO und Standard-Compose getestet
   2. Der Setup-Check erklärt einen fehlenden oder falsch konfigurierten Docker-Proxy mit einer klaren, handlungsfähigen Fehlermeldung
   3. Deinstallation räumt auf; verwaiste Welt-Container sind per Orphan-Kommando auffindbar und entfernbar
   4. Store-Listing und privacy.md erklären die Zusatz-Privilegien (Socket-Proxy, UDP-Ports) ehrlich und vollständig
+  5. Ein NC-Admin kann zusätzliche Verwalter-Gruppen einstellen (z. B. "lehrkraefte" oder "eltern"); Mitglieder dieser Gruppen verwalten Welten, ohne NC-Admins zu sein; Default bleibt die Gruppe admin (Owner-Entscheid 20.10.2026, Schul-/Vereins-Nutzung)
 
 **Plans**: TBD
 
