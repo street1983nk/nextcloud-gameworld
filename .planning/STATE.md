@@ -144,7 +144,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- [Phase 6, Härtung] AR-23 aus 03-SECURITY.md: Zugangsdatei und worldmods liegen im Luanti-UID-Weltordner (Spiel-Lua könnte sie ersetzen; Spiele hash-gepinnt). Prüfen, ob beides in ein root-eigenes Verzeichnis kann, das Luantis Mod-Security nur lesend erlaubt (Owner-Entscheid 20.10.2026: in Phase 6 mitnehmen).
 
 ### Blockers/Concerns
 
