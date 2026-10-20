@@ -520,11 +520,18 @@ class WorldStore:
         return cursor.rowcount > 0
 
     def list_holidays(self) -> list[Holiday]:
+        return [holiday for _holiday_id, holiday in self.holiday_rows()]
+
+    def holiday_rows(self) -> list[tuple[int, Holiday]]:
+        """Ferienzeiträume mit id, sortiert nach Beginn (für die Verwalter-API)."""
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT start_date, end_date, label FROM holidays ORDER BY start_date, id"
+                "SELECT id, start_date, end_date, label FROM holidays ORDER BY start_date, id"
             ).fetchall()
-        return [Holiday(date.fromisoformat(str(row[0])), date.fromisoformat(str(row[1])), str(row[2])) for row in rows]
+        return [
+            (int(row[0]), Holiday(date.fromisoformat(str(row[1])), date.fromisoformat(str(row[2])), str(row[3])))
+            for row in rows
+        ]
 
     def set_world_window(self, world_id: str, weekday: int, window_start: int, window_end: int) -> None:
         """Zeitfenster einer Welt an einem Wochentag setzen (ZEIT-05)."""

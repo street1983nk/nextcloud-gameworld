@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -227,6 +228,64 @@ def test_render_without_rules_is_empty(engine: TimeEngine, store: WorldStore) ->
 
     assert changed is True
     assert _lines(data)[1:] == ["end", ""]
+
+
+# Ferien und Zeitzone (04-04)
+
+
+def _not_today() -> WeekPlan:
+    weekday = TODAY.isoweekday()
+    return WeekPlan({wd: DayRule(wd != weekday, 60, None, None) for wd in range(1, 8)})
+
+
+def test_render_holiday_plan_applies_in_holiday(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _not_today(), _week())
+    _invite(store, "w1", "gw-mia")
+    store.add_holiday(TODAY, TODAY, "Herbstferien")
+
+    data, _ = engine.render("w1")
+
+    parts = _line(data, "Mia")
+    assert parts is not None
+    assert parts[4] == "ok"
+    assert int(parts[3]) == day_bounds(TODAY, ZONE)[1]
+
+
+def test_render_holiday_ended_yesterday_uses_normal(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _not_today(), _week())
+    _invite(store, "w1", "gw-mia")
+    store.add_holiday(TODAY - timedelta(days=2), TODAY - timedelta(days=1), "Vorbei")
+
+    data, _ = engine.render("w1")
+
+    parts = _line(data, "Mia")
+    assert parts is not None
+    assert parts[4] == "tag"
+
+
+def test_render_follows_time_zone_without_cache(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _week())
+    _invite(store, "w1", "gw-mia")
+
+    berlin, _ = engine.render("w1")
+    store.set_meta("time_zone", "Pacific/Kiritimati")
+    kiritimati, changed = engine.render("w1")
+
+    zone = load_zone("Pacific/Kiritimati")
+    berlin_parts = _line(berlin, "Mia")
+    parts = _line(kiritimati, "Mia")
+    assert berlin_parts is not None
+    assert parts is not None
+    assert changed is True
+    assert int(berlin_parts[3]) == day_bounds(TODAY, ZONE)[1]
+    assert int(parts[3]) == day_bounds(local_day(FIXED, zone), zone)[1]
+    assert parts[3] != berlin_parts[3]
 
 
 # Kind-Ansicht
