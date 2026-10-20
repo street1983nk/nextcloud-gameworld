@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: phase_complete
-stopped_at: Phase 3 complete (verified 5/5)
-last_updated: "2026-10-20T14:30:00.000Z"
+status: phase_planned
+stopped_at: Phase 4 geplant (8 Pläne, Checker PASSED Runde 2)
+last_updated: "2026-10-20T11:50:00.000Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 3 abgeschlossen (Owner-Abnahme 20.10., Review-Warnings gefixt, Verifikation passed 5/5); als Nächstes Security-Audit Phase 3, danach Planung Phase 4 (Spielzeitlimits inkl. ZEIT-03/04/05)
+**Current focus:** Phase 4 (Spielzeitlimits) ist GEPLANT: Research 058713e, 8 Pläne in 8 seriellen Wellen (43dbbb9, Revision 8790bab), Checker Runde 1 FAILED (2 Blocker, 11 Warnungen) -> Revision -> Runde 2 PASSED. Phase 3 komplett inkl. Security-Audit SECURED 48/48 (67c5f03), AR-24/25 gefixt (efba3d0, 9e8e5ed). Ausführung startet auf Owner-Wort.
 
 ## Current Position
 
-Phase: 3 (Zugang und Rollen), Complete (2026-10-20)
-Plan: 7 von 7 complete; Review 0 Critical / 2 Warnings (gefixt 7126f94, 0760c7f), Verifikation 58fa998 passed 5/5
-Status: Phase 3 complete, Security-Audit ausstehend
+Phase: 4 (Spielzeitlimits), Planned (2026-10-20), Execution ausstehend
+Plan: 04-01 bis 04-08 bereit; Owner-Entscheide O-01..O-12 in den Plänen (AFK zählt, Opt-in, fail closed, gameworld_time-Mod, Europe/Berlin, ein Kontingent über alle Welten, ZEIT-05 nur Join-Sperre, Rejoin-Guard 2 s in Welle 1)
+Status: Ready to execute (/gsd:execute-phase 4)
 Last activity: 2026-10-20
 
 Progress: [█████░░░░░] 50% (3 von 6 Phasen)
