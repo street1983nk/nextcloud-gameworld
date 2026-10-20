@@ -1,0 +1,72 @@
+"""Gemeinsame Hilfen der e2e-Tests von Phase 4 (Spielzeit und Wiederbeitritts-Sperre).
+
+Übernommen aus test_access_e2e.py (dort unverändert): laufende Welt über die
+API erzeugen, Zugangs- und Regeldatei per put_archive schreiben, Zählbuch
+lesen, Containerzustand und Startzeitpunkt aus Docker.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import docker
+import httpx
+from docker.models.containers import Container
+
+from gameworld.provisioner.access_mod import render_access_file
+from gameworld.provisioner.archive import build_access_tar
+from gameworld.provisioner.client import DockerProvisioner
+from gameworld.provisioner.luanti_auth import make_verifier
+from gameworld.worlds.store import WorldStore
+from tests.conftest import appapi_headers, docker_url
+from tests.e2e.test_status_e2e import wait_for_status
+
+HOST = "127.0.0.1"
+MTG_READY = 30.0
+VOXELIBRE_READY = 90.0
+
+
+async def create_running_world(client: httpx.AsyncClient, preset: str, ready_seconds: float) -> tuple[str, int]:
+    """Welt über die API anlegen und warten, bis sie läuft; (world_id, port)."""
+    created = await client.post("/api/worlds", json={"name": "Zeitwelt", "preset": preset}, headers=appapi_headers())
+    assert created.status_code == 201, created.text
+    body = created.json()
+    world_id = str(body["id"])
+    world = await wait_for_status(client, world_id, "running", ready_seconds)
+    return world_id, int(str(world["port"]))
+
+
+async def delete_world(client: httpx.AsyncClient, world_id: str) -> None:
+    deleted = await client.delete(f"/api/worlds/{world_id}", headers=appapi_headers())
+    assert deleted.status_code == 204, deleted.text
+
+
+def provisioner(app_env: Path) -> DockerProvisioner:
+    return DockerProvisioner(docker_url(), WorldStore(app_env / "gameworld.sqlite3").instance_id())
+
+
+def write_access(app_env: Path, world_id: str, generation: int, players: dict[str, str]) -> None:
+    """Zugangsdatei mit SRP-Verifiern aus Spielername -> Passwort in die Welt schreiben."""
+    entries = {name: make_verifier(name, password) for name, password in players.items()}
+    provisioner(app_env).write_world_files(world_id, build_access_tar(render_access_file(generation, entries)))
+
+
+def docker_api() -> docker.DockerClient:
+    return docker.DockerClient(base_url=docker_url(), version="auto", timeout=60)
+
+
+def _container(api: docker.DockerClient, world_id: str) -> Container:
+    matches = api.containers.list(all=True, filters={"label": [f"gameworld.world_id={world_id}"]})
+    assert len(matches) == 1, matches
+    container = matches[0]
+    container.reload()
+    return container
+
+
+def started_at(api: docker.DockerClient, world_id: str) -> str:
+    """StartedAt aus docker inspect; ändert sich nur, wenn der Container neu startet."""
+    return str((_container(api, world_id).attrs.get("State") or {}).get("StartedAt") or "")
+
+
+def container_status(api: docker.DockerClient, world_id: str) -> str:
+    return str(_container(api, world_id).status)

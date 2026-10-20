@@ -2,7 +2,10 @@
 
 Belegt Negativ- und Positiv-Join gegen echte Welten ohne Luanti-Client
 (Success Criterion 2 der Phase 3). Übernommen aus dem getesteten Spike unter
-``.planning/phases/03-zugang-und-rollen/spike/``.
+``.planning/phases/03-zugang-und-rollen/spike/``. ``session()`` (Phase 4,
+Spike ``.planning/phases/04-spielzeitlimits/spike/session_probe.py``) tritt
+vollständig bis ``on_joinplayer`` bei, hält die Sitzung und schneidet Chat
+und Trennen mit.
 
 Ablauf wie der echte Client (Luanti 5.17.0: ``src/network/mtp/internal.h``,
 ``src/network/mtp/threads.cpp``, ``src/client/client.cpp`` sendInit/startAuth,
@@ -107,16 +110,17 @@ class Probe:
         self.peer_id = 0
         self.seq = {0: SEQ_INITIAL, 1: SEQ_INITIAL, 2: SEQ_INITIAL}
 
-    def _send(self, channel: int, body: bytes) -> None:
+    def send_raw(self, channel: int, body: bytes) -> None:
+        """Ein MTP-Paket ohne Zuverlässigkeitsschicht (ACK, PING, DISCO)."""
         self.sock.sendto(struct.pack(">IHB", PROTO, self.peer_id, channel) + body, self.addr)
 
     def send_reliable(self, channel: int, command: int, payload: bytes = b"") -> None:
         seq = self.seq[channel]
         self.seq[channel] = (seq + 1) % 65536
-        self._send(channel, struct.pack(">BH", 3, seq) + b"\x01" + struct.pack(">H", command) + payload)
+        self.send_raw(channel, struct.pack(">BH", 3, seq) + b"\x01" + struct.pack(">H", command) + payload)
 
     def send_original(self, channel: int, command: int, payload: bytes) -> None:
-        self._send(channel, b"\x01" + struct.pack(">H", command) + payload)
+        self.send_raw(channel, b"\x01" + struct.pack(">H", command) + payload)
 
     def recv_command(self, deadline: float) -> tuple[int, bytes]:
         """Nächstes Nutzpaket (Kommando, Daten); quittiert zuverlässige Pakete."""
@@ -138,7 +142,7 @@ class Probe:
         ptype = body[0]
         if ptype == 3:  # RELIABLE
             seq = struct.unpack(">H", body[1:3])[0]
-            self._send(channel, struct.pack(">BBH", 0, 0, seq))  # ACK
+            self.send_raw(channel, struct.pack(">BBH", 0, 0, seq))  # ACK
             return self.handle(channel, body[3:])
         if ptype == 0:  # CONTROL
             if body[1] == 1:  # SET_PEER_ID
@@ -151,7 +155,7 @@ class Probe:
 
     def close(self) -> None:
         try:
-            self._send(0, struct.pack(">BB", 0, 3))  # DISCO
+            self.send_raw(0, struct.pack(">BB", 0, 3))  # DISCO
         finally:
             self.sock.close()
 
@@ -216,11 +220,129 @@ def join(host: str, port: int, name: str, password: str | None = None, timeout: 
         probe.close()
 
 
+TOSERVER_INIT2 = 0x11
+TOSERVER_CLIENT_READY = 0x43
+TOCLIENT_HELLO = 0x02
+TOCLIENT_AUTH_ACCEPT = 0x03
+TOCLIENT_ACCESS_DENIED = 0x0A
+TOCLIENT_CHAT_MESSAGE = 0x2F
+TOCLIENT_SRP_BYTES_S_B = 0x60
+SESSION_VERSION = b"5.17.0-gameworld-test"
+FORMSPEC_VERSION = 10
+PING_SECONDS = 3.0
+
+
+def _wide(data: bytes, offset: int) -> tuple[str, int]:
+    """wstring aus dem Protokoll: u16 Länge in Zeichen, dann UTF-16BE."""
+    length = struct.unpack(">H", data[offset : offset + 2])[0]
+    raw = data[offset + 2 : offset + 2 + 2 * length]
+    return raw.decode("utf-16-be", "replace"), offset + 2 + 2 * length
+
+
+def _chat(data: bytes) -> str:
+    """Text einer TOCLIENT_CHAT_MESSAGE: u8 Version, u8 Typ, wstring Absender, wstring Text, u64 Zeit."""
+    try:
+        _sender, offset = _wide(data, 2)
+        message, _ = _wide(data, offset)
+    except (struct.error, IndexError):
+        return "<unlesbar>"
+    return message
+
+
+def session(
+    host: str,
+    port: int,
+    name: str,
+    password: str,
+    hold: float,
+    timeout: float = 8.0,
+) -> dict[str, object]:
+    """Vollständiger Join bis ``on_joinplayer``, dann bis ``hold`` Sekunden halten oder bis zum Kick.
+
+    Nach AUTH_ACCEPT wie der echte Client: TOSERVER_INIT2 (Kanal 1, zuverlässig,
+    Sprache) und TOSERVER_CLIENT_READY (Version, Formspec-Version); danach
+    zuverlässige Pakete quittieren, alle 3 s CONTROL PING senden, Chat (0x2F)
+    und ACCESS_DENIED (0x0A) mitschneiden. ``result`` ist held, kicked, denied
+    (vor dem Betreten), unexpected oder no_peer_id; ``events`` ist eine Liste
+    von ``{"t": Sekunden seit CLIENT_READY, "kind": "chat" | "kick", "text": ...}``.
+    ``timeout`` gilt für die Anmeldung bis AUTH_ACCEPT, ``hold`` danach.
+    """
+    probe = Probe(host, port)
+    events: list[dict[str, object]] = []
+    deadline = time.monotonic() + timeout
+    try:
+        probe.send_reliable(0, 0)
+        while probe.peer_id == 0 and time.monotonic() < deadline:
+            try:
+                data, _ = probe.sock.recvfrom(65535)
+            except TimeoutError:
+                probe.send_reliable(0, 0)
+                continue
+            probe.handle(data[6], data[7:])
+        if probe.peer_id == 0:
+            return {"result": "no_peer_id"}
+        init = struct.pack(">BH", 29, 0) + struct.pack(">HH", 37, 53) + _str16(name.encode())
+        probe.send_original(1, 0x02, init)
+        command, data = probe.recv_command(deadline)
+        if command == TOCLIENT_ACCESS_DENIED:
+            return {**_parse_denied(data), "stage": "init"}
+        if command != TOCLIENT_HELLO:
+            return {"result": "unexpected", "command": command}
+        srp = SrpClient(name, password)
+        probe.send_reliable(1, 0x51, _str16(srp.bytes_a()) + b"\x01")
+        command, data = probe.recv_command(deadline)
+        if command == TOCLIENT_ACCESS_DENIED:
+            return {**_parse_denied(data), "stage": "A"}
+        if command != TOCLIENT_SRP_BYTES_S_B:
+            return {"result": "unexpected", "command": command}
+        salt_len = struct.unpack(">H", data[:2])[0]
+        salt = data[2 : 2 + salt_len]
+        b_len = struct.unpack(">H", data[2 + salt_len : 4 + salt_len])[0]
+        probe.send_reliable(1, 0x52, _str16(srp.process(salt, data[4 + salt_len : 4 + salt_len + b_len])))
+        command, data = probe.recv_command(deadline)
+        if command == TOCLIENT_ACCESS_DENIED:
+            return {**_parse_denied(data), "stage": "M"}
+        if command != TOCLIENT_AUTH_ACCEPT:
+            return {"result": "unexpected", "command": command}
+        probe.send_reliable(1, TOSERVER_INIT2, _str16(b"de"))
+        ready = struct.pack(">BBBB", 5, 17, 0, 0) + _str16(SESSION_VERSION) + struct.pack(">H", FORMSPEC_VERSION)
+        probe.send_reliable(1, TOSERVER_CLIENT_READY, ready)
+        joined_at = time.monotonic()
+        last_ping = joined_at
+        probe.sock.settimeout(0.5)
+        while time.monotonic() - joined_at < hold:
+            if time.monotonic() - last_ping > PING_SECONDS:
+                probe.send_raw(0, struct.pack(">BB", 0, 2))  # CONTROL PING
+                last_ping = time.monotonic()
+            try:
+                command, data = probe.recv_command(time.monotonic() + 0.5)
+            except TimeoutError:
+                continue
+            t = round(time.monotonic() - joined_at, 1)
+            if command == TOCLIENT_CHAT_MESSAGE:
+                events.append({"t": t, "kind": "chat", "text": _chat(data)})
+            elif command == TOCLIENT_ACCESS_DENIED:
+                denied = _parse_denied(data)
+                events.append({"t": t, "kind": "kick", "text": str(denied["reason"])})
+                return {
+                    "result": "kicked",
+                    "after_s": t,
+                    "code": denied["code"],
+                    "reason": denied["reason"],
+                    "events": events,
+                }
+        return {"result": "held", "after_s": round(time.monotonic() - joined_at, 1), "events": events}
+    finally:
+        probe.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI für Abnahmeskripte: ein Join-Versuch, Ergebnis als JSON auf stdout.
 
     Das Passwort erscheint nie in der Ausgabe; ``reason`` stammt vom Server.
     Exit 0 auch bei ``denied``: Die Bewertung macht der Aufrufer (jq).
+    Mit ``--hold SEKUNDEN`` (Passwort nötig) läuft statt des Join-Versuchs eine
+    Sitzung bis ``on_joinplayer``, die so lange gehalten wird (session()).
     """
     parser = argparse.ArgumentParser(description="Luanti-Join-Prober (nur Tests)")
     parser.add_argument("host")
@@ -228,9 +350,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("name")
     parser.add_argument("password", nargs="?", default=None)
     parser.add_argument("--timeout", type=float, default=6.0)
+    parser.add_argument("--hold", type=float, default=None, metavar="SEKUNDEN")
     args = parser.parse_args(argv)
+    if args.hold is not None and args.password is None:
+        parser.error("--hold braucht ein Passwort")
     try:
-        result = join(args.host, args.port, args.name, args.password, timeout=args.timeout)
+        if args.hold is None:
+            result = join(args.host, args.port, args.name, args.password, timeout=args.timeout)
+        else:
+            result = session(args.host, args.port, args.name, args.password, args.hold, timeout=args.timeout)
     except (TimeoutError, OSError):
         result = {"result": "timeout"}
     print(json.dumps(result, ensure_ascii=False))

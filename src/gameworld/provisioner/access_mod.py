@@ -18,7 +18,11 @@ Serverstart ohne gültige Datei darf niemand hinein. Nach erfolgreichem Laden
 schreibt der Mod die Generation nach ``gameworld_access_state.txt``.
 
 Fünf falsche Passwörter sperren einen Namen für zehn Minuten (nur im Speicher).
-Spieler, deren Einladung endet, trennt der Mod im 5-s-Takt. Der Mod schreibt
+Spieler, deren Einladung endet, trennt der Mod im 5-s-Takt per
+``core.disconnect_player`` (ohne "Kicked: " vor dem Text). Ein Eingeladener,
+der unter seinem Namen noch verbunden ist oder vor weniger als 2 s gegangen
+ist, wird im Prejoin mit einem Wartetext abgelehnt (Wiederbeitritts-Sperre
+gegen den Rejoin-Absturz von Luanti 5.17.0, 04-RESEARCH.md Pitfall 1). Der Mod schreibt
 nie IP-Adressen und braucht weder ``secure.trusted_mods`` noch
 ``secure.http_mods``. Der Lua-Quelltext bleibt reines ASCII: Die Texte an die
 Kinder stehen hier als Python-Konstanten mit Umlauten und gehen als
@@ -47,6 +51,7 @@ TEXT_DENY = "Du bist in diese Welt nicht eingeladen. Frag deine Eltern."
 TEXT_KICK = "Deine Einladung für diese Welt wurde beendet."
 TEXT_LOCKED = "Zu viele falsche Passwörter. Bitte in 10 Minuten nochmal versuchen."
 TEXT_CASE_HINT = "Achte auf Groß- und Kleinschreibung: "
+TEXT_WAIT = "Bitte einen Moment warten und dann nochmal beitreten."
 
 VERIFIER = re.compile(r"#1#[A-Za-z0-9+/=]+#[A-Za-z0-9+/=]+")
 
@@ -73,9 +78,14 @@ local DENY = {_lua_string(TEXT_DENY)}
 local KICK = {_lua_string(TEXT_KICK)}
 local LOCKED = {_lua_string(TEXT_LOCKED)}
 local CASE_HINT = {_lua_string(TEXT_CASE_HINT)}
+local WAIT = {_lua_string(TEXT_WAIT)}
 local FAIL_LIMIT = 5
 local LOCK_SECONDS = 600
 local TICK_SECONDS = 5
+-- Wiederbeitritts-Sperre: Ein Join unter demselben Namen binnen weniger als
+-- 0,5 s nach dem Verlassen bringt Luanti 5.17.0 zum Absturz (on_joinplayer der
+-- Spiele bekommt nil, 04-RESEARCH.md Pitfall 1). 2 s Abstand verhindern das.
+local COOLDOWN = 2
 
 local allowed, last = {{}}, nil
 
@@ -134,6 +144,22 @@ core.register_on_authplayer(function(name, _ip, ok)
   fails[name] = f
 end)
 
+-- Zeitpunkt des Verlassens je Name (nur im Speicher, nur Eingeladene).
+local left_at = {{}}
+
+core.register_on_leaveplayer(function(player)
+  left_at[player:get_player_name()] = core.get_us_time()
+end)
+
+local function too_soon(name)
+  if core.get_player_by_name(name) then return true end
+  local t = left_at[name]
+  if not t then return false end
+  if (core.get_us_time() - t) / 1e6 < COOLDOWN then return true end
+  left_at[name] = nil
+  return false
+end
+
 core.register_on_prejoinplayer(function(name)
   if locked(name) then return LOCKED end
   load()
@@ -143,6 +169,8 @@ core.register_on_prejoinplayer(function(name)
     if variant then return CASE_HINT .. variant end
     return DENY
   end
+  -- Noch verbunden oder gerade erst gegangen: kurz warten lassen.
+  if too_soon(name) then return WAIT end
   -- Vor der Anmeldung: legt das Konto an oder setzt das Passwort neu.
   local auth = core.get_auth_handler().get_auth(name)
   if not auth or auth.password ~= hash then
@@ -154,7 +182,8 @@ local function tick()
   load()
   for _, player in ipairs(core.get_connected_players()) do
     local name = player:get_player_name()
-    if not allowed[name] then core.kick_player(name, KICK) end
+    -- disconnect_player: kein "Kicked: " vor dem Kindertext.
+    if not allowed[name] then core.disconnect_player(name, KICK) end
   end
   core.after(TICK_SECONDS, tick)
 end

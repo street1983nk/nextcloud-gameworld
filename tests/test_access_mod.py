@@ -71,11 +71,33 @@ def test_lua_contains_enforcement_points() -> None:
         "register_on_prejoinplayer",
         "set_player_password",
         "register_on_authplayer",
-        "kick_player",
+        "disconnect_player",
+        "register_on_leaveplayer",
+        "get_player_by_name",
+        "local COOLDOWN = 2",
         "safe_file_write",
         "^gameworld%-access 1 (%d+)$",
     ):
         assert needle in MOD_INIT_LUA
+
+
+def test_revocation_uses_disconnect_without_kicked_prefix() -> None:
+    # kick_player stellt "Kicked: " vor den Kindertext (04-RESEARCH.md State of the Art).
+    assert "kick_player" not in MOD_INIT_LUA
+    assert "core.disconnect_player(name, KICK)" in MOD_INIT_LUA
+
+
+def test_rejoin_guard_text_and_order() -> None:
+    assert access_mod.TEXT_WAIT == "Bitte einen Moment warten und dann nochmal beitreten."
+    assert f"local WAIT = {access_mod._lua_string(access_mod.TEXT_WAIT)}" in MOD_INIT_LUA
+    # Nicht Eingeladene bekommen nie den Wartetext: Die Sperre steht nach der
+    # Einladungsprüfung und vor set_player_password.
+    deny = MOD_INIT_LUA.index("return DENY")
+    wait = MOD_INIT_LUA.index("return WAIT")
+    password = MOD_INIT_LUA.index("core.set_player_password(name, hash)")
+    assert deny < wait < password
+    # Alte Einträge werden beim Prüfen gelöscht (kein Wachstum).
+    assert "left_at[name] = nil" in MOD_INIT_LUA
 
 
 @pytest.mark.parametrize("forbidden", ["http", "io.popen", "os.execute", "require"])
@@ -106,7 +128,13 @@ def test_lua_source_is_ascii_without_dashes() -> None:
     assert MOD_INIT_LUA.isascii()
     assert MOD_CONF.isascii()
     # Gedankenstriche sind verboten (Owner-Regel), auch in den Texten.
-    for text in (access_mod.TEXT_DENY, access_mod.TEXT_KICK, access_mod.TEXT_LOCKED, access_mod.TEXT_CASE_HINT):
+    for text in (
+        access_mod.TEXT_DENY,
+        access_mod.TEXT_KICK,
+        access_mod.TEXT_LOCKED,
+        access_mod.TEXT_CASE_HINT,
+        access_mod.TEXT_WAIT,
+    ):
         assert chr(0x2013) not in text
         assert chr(0x2014) not in text
 
