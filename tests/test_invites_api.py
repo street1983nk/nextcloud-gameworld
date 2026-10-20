@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import cast
 
+import anyio
 import httpx
 import pytest
 
@@ -173,6 +174,44 @@ async def test_nextcloud_or_secret_down_is_503(
     assert (await _invite(client)).status_code == 503
     assert (await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())).status_code == 503
     assert store.list_invites(W1) == []
+
+
+async def test_secret_change_with_busy_lock_hides_player_passwords(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_secret: StaticSecret
+) -> None:
+    """AR-25 (wie WR-02): Neues Geheimnis bei belegter Sperre: 503 statt noch nicht gültiger Passwörter.
+
+    Die Welten tragen noch die alten Verifier; ein Passwort aus dem neuen
+    Geheimnis liefe in die Fehlversuch-Sperre des Welt-Mods. Nach Freigabe
+    der Sperre provisioniert der nächste Abruf neu und zeigt das gültige.
+    """
+    del service
+    from gameworld.access.secret import fingerprint
+    from gameworld.worlds import service as world_service
+
+    assert (await _invite(client)).status_code == 200
+    new_secret = bytes(range(2, 34))
+    fake_secret.value = new_secret
+    new_password = derive_password(new_secret, "gw-kind", 0)
+    lock = world_service._LOCK  # pyright: ignore[reportPrivateUsage]
+    lock.acquire()
+    try:
+        with anyio.fail_after(5):
+            response = await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())
+        # Keine Passwörter, solange die Verifier nicht zum Geheimnis passen.
+        assert response.status_code == 503
+        assert new_password not in response.text
+        assert PASSWORD not in response.text
+        # Nichts neu provisioniert: alter Fingerabdruck, alte Verifier.
+        assert store.get_meta("secret_fingerprint") == fingerprint(TEST_SECRET)
+    finally:
+        lock.release()
+    # Sperre frei: Neuprovisionierung läuft, die Verwalteransicht zeigt das gültige Passwort.
+    response = await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())
+    assert response.status_code == 200
+    [player] = response.json()["players"]
+    assert player["password"] == new_password
+    assert store.get_meta("secret_fingerprint") == fingerprint(new_secret)
 
 
 async def test_nothing_secret_leaks_into_logs_or_errors(

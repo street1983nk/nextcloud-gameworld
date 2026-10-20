@@ -267,6 +267,13 @@ class AccessService:
     async def list_players(self, world_id: str, acting_uid: str) -> list[PlayerInfo]:
         await self._require_world(world_id)
         secret = await self._secret.get()
+        # Eigener Schritt außerhalb von worlds.mutation() (Sperr-Regel, nicht
+        # reentrant). Wie WR-02 bei my_worlds (AR-25, T-03-30): Konnte nach
+        # einem Geheimniswechsel wegen belegter Sperre noch nicht neu
+        # provisioniert werden, zeigt die Verwalteransicht kein Passwort, das
+        # die Welten noch nicht kennen (503 beim Aufrufer).
+        if not await self._ensure_fingerprint(secret, blocking=False):
+            raise SecretUnavailableError(MSG_REPROVISION_PENDING)
         access = await anyio.to_thread.run_sync(self._store.world_access, world_id)
         invites = await self._invite_keys(world_id)
         direct = {target for kind, target in invites if kind == KIND_USER}
