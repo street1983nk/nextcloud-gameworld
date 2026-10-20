@@ -9,12 +9,14 @@ import {
 	formatMinutes,
 	fromApiDays,
 	fromWindowDays,
+	kidPlaytimeText,
 	summarize,
 	toApiDays,
 	toWindowDays,
 	usageText,
 	validateDays,
 	windowSummary,
+	windowText,
 } from '../src/playtime.js'
 
 function day(days, weekday) {
@@ -129,5 +131,51 @@ allDay.forEach((entry) => { entry.allowed = entry.weekday === 6; entry.fullDay =
 assert.deepEqual(toWindowDays(allDay)[5], { weekday: 6, open: true, window_start: 0, window_end: 1440 })
 assert.deepEqual(toWindowDays(allDay)[0], { weekday: 1, open: false, window_start: null, window_end: null })
 assert.equal(windowSummary(toWindowDays(allDay)), 'Offen Sa ganztags')
+
+// Kind-Ansicht (04-07): Restzeit aus /api/my/playtime
+const kid = (state, remaining, until, next = null) => ({
+	limited: true, state, remaining_minutes: remaining, until_minute: until, next,
+})
+assert.equal(kidPlaytimeText(null), null)
+assert.equal(kidPlaytimeText({ limited: false, state: null, remaining_minutes: null, until_minute: null, next: null }), null)
+assert.equal(kidPlaytimeText(kid('ok', 45, 1140)), 'Noch 45 Minuten, bis 19 Uhr')
+assert.equal(kidPlaytimeText(kid('ok', 45, null)), 'Noch 45 Minuten')
+assert.equal(kidPlaytimeText(kid('ok', 1, 1170)), 'Noch 1 Minute, bis 19:30 Uhr')
+assert.equal(kidPlaytimeText(kid('ok', null, 1140)), 'Spielen bis 19 Uhr')
+assert.equal(kidPlaytimeText(kid('ok', null, null)), null)
+assert.equal(
+	kidPlaytimeText(kid('aufgebraucht', 0, null, { weekday: 6, minute: 600, days_ahead: 3 })),
+	'Heute ist keine Spielzeit mehr. Nächste Spielzeit: Samstag 10 Uhr',
+)
+assert.equal(
+	kidPlaytimeText(kid('fenster', 0, null, { weekday: 3, minute: 900, days_ahead: 0 })),
+	'Gerade ist keine Spielzeit. Nächste Spielzeit: heute 15 Uhr',
+)
+assert.equal(
+	kidPlaytimeText(kid('tag', 0, null, { weekday: 6, minute: 570, days_ahead: 3 })),
+	'Heute ist kein Spieltag. Nächste Spielzeit: Samstag 9:30 Uhr',
+)
+assert.equal(
+	kidPlaytimeText(kid('aufgebraucht', 0, null, { weekday: 3, minute: 0, days_ahead: 7 })),
+	'Heute ist keine Spielzeit mehr. Nächste Spielzeit: nächsten Mittwoch 0 Uhr',
+)
+assert.equal(kidPlaytimeText(kid('tag', 0, null, null)), 'Heute ist kein Spieltag.')
+
+// Welt-Fenster in der Kind-Ansicht (window_open, window_next aus /api/my/worlds)
+assert.equal(windowText({ window_open: null, window_next: null }), null)
+assert.equal(windowText({}), null)
+assert.equal(
+	windowText({ window_open: true, window_next: { weekday: 3, start: 600, end: 720 } }),
+	'Offen Mittwoch 10 bis 12 Uhr',
+)
+assert.equal(
+	windowText({ window_open: false, window_next: { weekday: 3, start: 600, end: 720 } }),
+	'Gerade geschlossen. Offen Mittwoch 10 bis 12 Uhr',
+)
+assert.equal(
+	windowText({ window_open: false, window_next: { weekday: 6, start: 0, end: 1440 } }),
+	'Gerade geschlossen. Offen Samstag ganztags',
+)
+assert.equal(windowText({ window_open: false, window_next: null }), 'Gerade geschlossen')
 
 console.log('playtime.check: alle Prüfungen bestanden')
