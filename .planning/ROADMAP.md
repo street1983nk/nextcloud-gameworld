@@ -176,7 +176,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion; seriell wegen gemeinsamem Live-Dev-Stack)*
 
-- [ ] 04-02-PLAN.md , Zeitrechnung und Gedächtnis: tzdata, reine Plan-Auswertung mit Golden Vectors (Sommerzeit, Ferienwechsel, Tagesende), Zählbuch-Verbuchung, Schema 4
+- [x] 04-02-PLAN.md , Zeitrechnung und Gedächtnis: tzdata, reine Plan-Auswertung mit Golden Vectors (Sommerzeit, Ferienwechsel, Tagesende), Zählbuch-Verbuchung, Schema 4
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

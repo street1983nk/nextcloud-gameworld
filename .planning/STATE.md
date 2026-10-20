@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: phase_planned
-stopped_at: 04-01 fertig (Rejoin-Sperre + gameworld_time live belegt, 680 Tests grün), weiter mit 04-02
-last_updated: "2026-10-20T11:50:00.000Z"
+stopped_at: 04-02 fertig (tzdata + reine Plan-Auswertung mit Golden Vectors, Verbuchung, Schema 4; 697 Nicht-Docker-Tests grün), weiter mit 04-03
+last_updated: "2026-10-20T13:10:00.000Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
@@ -72,6 +72,7 @@ Progress: [█████░░░░░] 50% (3 von 6 Phasen)
 | Phase 03 P06 | 40 min | 2 tasks | 13 files |
 | Phase 03 P07 | 120 min | 2 tasks | 6 files |
 | Phase 04 P01 | 35 min | 3 tasks | 13 files |
+| Phase 04 P02 | 30 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
