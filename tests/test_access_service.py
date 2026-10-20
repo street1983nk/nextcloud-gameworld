@@ -7,6 +7,7 @@ import base64
 import io
 import logging
 import tarfile
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import cast
 
@@ -14,14 +15,16 @@ import anyio
 import pytest
 
 from gameworld.access.accounts import derive_password
-from gameworld.access.directory import DirectoryUnavailableError
+from gameworld.access.directory import DirectoryUnavailableError, DirectoryUser
 from gameworld.access.secret import SecretUnavailableError, fingerprint
 from gameworld.access.service import (
     AccessResult,
     AccessService,
+    InviteKey,
     InviteTargetError,
     PlayerNameTakenError,
     PlayerNotFoundError,
+    _Resolution,  # pyright: ignore[reportPrivateUsage]
 )
 from gameworld.config import load_settings
 from gameworld.provisioner.access_mod import ACCESS_FILE_NAME
@@ -557,3 +560,95 @@ async def test_secret_change_during_sync_all_no_deadlock(
         assert await access.sync_all("admin") is True
     _assert_all_verifiers_new(store, 0)
     assert _lock_free()
+
+
+# WR-01: Ein Widerruf darf nie von der keep-Regel (parallel committete, noch
+# nicht aufgelöste Einladung) still rückgängig gemacht werden.
+
+
+def _resolve_then(
+    access: AccessService, monkeypatch: pytest.MonkeyPatch, parallel_commit: Callable[[], Awaitable[object]]
+) -> None:
+    """Spielt den Wettlauf nach: access löst auf, dann committet eine parallele Aktion, dann wendet access an."""
+    original = access._resolve  # pyright: ignore[reportPrivateUsage]
+
+    async def resolve_then_commit(
+        acting_uid: str, invites: set[InviteKey], known: dict[str, DirectoryUser] | None = None
+    ) -> _Resolution:
+        resolution = await original(acting_uid, invites, known)
+        monkeypatch.setattr(access, "_resolve", original)  # nur beim ersten Aufruf dazwischenfunken
+        await parallel_commit()
+        return resolution
+
+    monkeypatch.setattr(access, "_resolve", resolve_then_commit)
+
+
+async def test_revoke_user_wins_against_parallel_group_invite(
+    access: AccessService,
+    store: WorldStore,
+    worlds: WorldService,
+    fake: FakeProvisioner,
+    fake_directory: FakeDirectory,
+    fake_secret: StaticSecret,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """revoke liest die Einladungen, ein zweiter Verwalter committet invite_group, revoke wendet an."""
+    from gameworld.access import service as access_service
+
+    await access.invite_user(W1, "admin", "gw-kind")
+    parallel = AccessService(store, worlds, fake_directory, fake_secret)
+    _resolve_then(access, monkeypatch, lambda: parallel.invite_group(W1, "admin-b", "familie"))
+    access_service.SYNC_STATE.last = 123.0
+
+    result = await access.revoke(W1, "admin", "user", "gw-kind")
+    assert result.applied is True
+    # Der Widerruf gilt sofort, in der Datenbank und in der Zugangsdatei.
+    assert "gw-kind" not in store.world_access(W1)
+    assert "Kind" not in _written_access_file(fake.written[-1][1])
+    # Veralteter Blick erkannt: Drossel aufgehoben, der nächste Besuch gleicht sofort ab.
+    assert access_service.SYNC_STATE.last is None
+    # Der Abgleich holt das Gruppen-Mitglied über die parallele Einladung regulär zurück.
+    assert await access.sync_all("admin") is True
+    assert set(store.world_access(W1)) == {"gw-kind"}
+
+
+async def test_revoke_group_wins_but_keeps_parallel_invited(
+    access: AccessService,
+    store: WorldStore,
+    worlds: WorldService,
+    fake_directory: FakeDirectory,
+    fake_secret: StaticSecret,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gruppen-Widerruf entfernt deren Mitglieder auch dann, wenn parallel eine andere Einladung committet."""
+    fake_directory.users["gw-mia"] = ("Mia Müller", True)
+    fake_directory.groups["freunde"] = ["gw-mia"]
+    await access.invite_group(W1, "admin", "familie")
+    parallel = AccessService(store, worlds, fake_directory, fake_secret)
+    _resolve_then(access, monkeypatch, lambda: parallel.invite_group(W1, "admin-b", "freunde"))
+
+    result = await access.revoke(W1, "admin", "group", "familie")
+    assert result.applied is True
+    # Das familie-Mitglied ist raus; die parallel committete Einladung bleibt bestehen.
+    assert set(store.world_access(W1)) == {"gw-mia"}
+    assert await access.sync_all("admin") is True
+    assert set(store.world_access(W1)) == {"gw-mia"}
+
+
+async def test_sync_keeps_parallel_committed_invite(
+    access: AccessService,
+    store: WorldStore,
+    worlds: WorldService,
+    fake_directory: FakeDirectory,
+    fake_secret: StaticSecret,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Die keep-Regel bleibt für Nicht-Widerrufe: Ein Abgleich wirft parallel Eingeladene nicht raus."""
+    fake_directory.users["gw-mia"] = ("Mia Müller", True)
+    await access.invite_group(W1, "admin", "familie")
+    parallel = AccessService(store, worlds, fake_directory, fake_secret)
+    _resolve_then(access, monkeypatch, lambda: parallel.invite_user(W1, "admin-b", "gw-mia"))
+
+    result = await access.sync_world(W1, "admin")
+    assert result.applied is True
+    assert set(store.world_access(W1)) == {"gw-kind", "gw-mia"}

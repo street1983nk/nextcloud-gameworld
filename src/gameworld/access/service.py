@@ -178,13 +178,16 @@ class AccessService:
         await self._require_world(world_id)
         secret = await self._secret.get()
         await self._ensure_fingerprint(secret)
-        invites = await self._invite_keys(world_id) - {(kind, target)}
+        # Auch den widerrufenen Schlüssel auflösen: So ist unter der Sperre
+        # bekannt, wer nur über ihn Zugang hatte, und die keep-Regel kann den
+        # Widerruf nicht still rückgängig machen (siehe _apply_sync).
+        invites = await self._invite_keys(world_id) | {(kind, target)}
         resolution = await self._resolve(acting_uid, invites)
 
         def change() -> None:
             self._store.remove_invite(world_id, kind, target)
 
-        return await self._apply(world_id, change, resolution, secret)
+        return await self._apply(world_id, change, resolution, secret, revoked=(kind, target))
 
     async def sync_world(self, world_id: str, acting_uid: str) -> AccessResult:
         """Gleicht eine Welt mit Nextcloud ab: neue Gruppenmitglieder rein, Ausgetretene raus."""
@@ -393,9 +396,14 @@ class AccessService:
         return await anyio.to_thread.run_sync(self.reprovision_all, secret, blocking)
 
     async def _apply(
-        self, world_id: str, change: Callable[[], None], resolution: _Resolution, secret: bytes
+        self,
+        world_id: str,
+        change: Callable[[], None],
+        resolution: _Resolution,
+        secret: bytes,
+        revoked: InviteKey | None = None,
     ) -> AccessResult:
-        result = await anyio.to_thread.run_sync(self._apply_sync, world_id, change, resolution, secret, True)
+        result = await anyio.to_thread.run_sync(self._apply_sync, world_id, change, resolution, secret, True, revoked)
         return AccessResult(applied=True) if result is None else result
 
     async def _sync(self, world_id: str, acting_uid: str, secret: bytes, *, blocking: bool) -> AccessResult | None:
@@ -451,6 +459,7 @@ class AccessService:
         resolution: _Resolution,
         secret: bytes,
         blocking: bool,
+        revoked: InviteKey | None = None,
     ) -> AccessResult | None:
         """None nur ohne Warten bei belegter Sperre."""
         with self._locked(blocking) as acquired:
@@ -468,11 +477,26 @@ class AccessService:
             }
             # Parallel neu Eingeladene (nicht aufgelöst) behalten ihren Stand bis zum nächsten Abgleich.
             keep: set[str] = set()
-            for kind, target in current_keys - resolution.resolved:
+            unresolved = current_keys - resolution.resolved
+            for kind, target in unresolved:
                 if kind == KIND_USER:
                     keep.add(target)
                 else:
                     keep |= set(self._store.world_access(world_id))
+            if unresolved:
+                # Der Blick auf die Einladungen war veraltet: Drossel aufheben,
+                # der nächste Verwalter-Besuch gleicht sofort ab.
+                SYNC_STATE.last = None
+            if revoked is not None:
+                # Ein expliziter Widerruf gewinnt gegen die keep-Regel: Konten,
+                # die nur über den widerrufenen Schlüssel Zugang hatten, werden
+                # nie still zurückgeholt; der nächste Abgleich ergänzt, was eine
+                # parallele Einladung legitim hinzugefügt hat.
+                if revoked[0] == KIND_USER:
+                    keep.discard(revoked[1])
+                for uid, sources in resolution.sources.items():
+                    if revoked in sources and uid not in wanted:
+                        keep.discard(uid)
             if not self._apply_effective(world_id, wanted, keep, secret):
                 return AccessResult(applied=True)
             return AccessResult(applied=self._worlds.push_access(world_id))
