@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Fundament** - ExApp-Gerüst plus Provisioner-Kern: gehärtete private Luanti-Container über gescopten Socket-Proxy (completed 2026-10-19)
 - [x] **Phase 2: One-Click-Welten** - Welt-Verwaltung im UI mit Presets, Status, Reconciler und Update-/Reboot-Überlebensfähigkeit (completed 2026-10-19)
-- [ ] **Phase 3: Zugang und Rollen** - Einladungen über Nextcloud-Konten, serverseitige Whitelist, Eltern verwalten, Kinder spielen
+- [x] **Phase 3: Zugang und Rollen** - Einladungen über Nextcloud-Konten, serverseitige Whitelist, Eltern verwalten, Kinder spielen (completed 2026-10-20)
 - [ ] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt
 - [ ] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip
 - [ ] **Phase 6: Store-Release** - Härtung, Setup-Check, Cleanup und Veröffentlichung im Nextcloud App Store
@@ -211,7 +211,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
-| 3. Zugang und Rollen | 7/7 | In Progress | - |
+| 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 0/TBD | Not started | - |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |

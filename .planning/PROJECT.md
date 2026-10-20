@@ -17,12 +17,12 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 - One-Click-Welten mit kindgerechten Presets (Bauen kreativ, Abenteuer sanft via VoxeLibre), Start/Stopp/Neustart im Dashboard mit Live-Status aus Docker (Phase 2, Owner-Abnahme 19.10.2026)
 - Sichtbarkeit pro Welt: Online-Spieler und RAM-Verbrauch im Dashboard (Phase 2)
 - Welten überleben ExApp-Updates und Host-Reboots per Label-Reconciliation und persistenten Volumes (Phase 2)
+- Einladungen über Nextcloud-Konten und -Gruppen mit automatischer Spieler-Provisionierung; nicht Eingeladene scheitern serverseitig am Join (eigener Welt-Mod gameworld_access, UDP-Prober-Beweis) (Phase 3, Owner-Abnahme 20.10.2026)
+- Eltern verwalten, Kinder spielen: Rollen aus NC-Gruppen, Kind-Ansicht nur eigene Welten mit Verbindungsinfo und Anleitung, Verwaltungsrouten serverseitig gesperrt; Spielpasswörter HMAC-abgeleitet, nie im Klartext in der DB (Phase 3)
 
 ### Active
 
-- [ ] Spieler einladen über Nextcloud-Konten/-Gruppen, keine fremden Spieler
 - [ ] Weltsicherung (Backup/Restore) in Nextcloud Files
-- [ ] Elternkontrolle: Kinder spielen, verwalten aber nicht (keine Admin-Zugänge für Kinder)
 - [ ] Spielzeitlimits/Spielzeitfenster pro Kind, serverseitig durchgesetzt
 - [ ] Ressourcenlimits pro Welt (RAM/CPU), damit der Heimserver stabil bleibt
 - [ ] Installation als ExApp über den Nextcloud App Store (AppAPI, Docker-Deploy)
@@ -30,7 +30,7 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 ### Out of Scope
 
 - Minecraft Java (MVP 2) , erst nach Luanti-MVP; EULA-/Guideline-Risiko, zusätzlicher Engine-Aufwand (+8 bis 12 Tage via Crafty)
-- Vereine/Gruppen-Betrieb (Teckids, CoderDojo) , Pilot nach Familien-MVP; braucht Rollen-/Mandantenmodell
+- Vereine/Schulen-Mandantenmodell (Welt-Besitzer, Budgets) , Pilot nach Familien-MVP; v1-Einstieg für Schulen kommt aber über ROLLE-03 (einstellbare Verwalter-Gruppen, Phase 6) und ZEIT-05 (Zeitfenster pro Welt, Phase 4) (Owner 20.10.2026)
 - Öffentliche Server, Serverlisten, Monetarisierung , Gegenentwurf zu Aternos/Minehut ist gerade die Privatheit
 - Bedrock/Konsolen-Crossplay , anderes Protokoll (raknet/geyser), nicht MVP
 - Eigene Mod-/Plugin-Marktplätze , Kinder installieren nichts selbst; kuratierte Inhalte später
@@ -64,6 +64,9 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 | ExApp in Python (AppAPI) | Vorhandenes Skillset aus Findling/Connector, Store-Prozess bekannt | Pending |
 | Vertical-MVP-Slices statt Schichten | Jede Phase liefert eine nutzbare Fähigkeit, frühes Testen mit echter Welt | Pending |
 | Spielzeitlimits in v1 statt v1.x | Owner-Entscheid 19.10.2026: größte Elternsorge laut Research, gehört ins Kernversprechen | Pending |
+| Spielpasswörter per HMAC-Ableitung statt Klartext in DB | Owner-Rückfrage 19.10.2026 zur DB-Sicherheit; Geheimnis verschlüsselt in appconfig_ex, players-Tabelle ohne Passwortfeld | Umgesetzt (Phase 3) |
+| Verwalter = NC-Gruppe admin (v1) | Einfachstes Familienmodell; Schulen folgen über einstellbare Verwalter-Gruppen (ROLLE-03, Phase 6) | Umgesetzt (Phase 3) |
+| Spielzeit mit Wochenplan, Ferienzeiten und Welt-Zeitfenster | Owner 20.10.2026: Wochenend-Regeln und Ferien sind der Alltag; Welt-Zeitfenster macht Unterrichtsstunden möglich (ZEIT-03/04/05) | Pending (Phase 4) |
 
 ## Evolution
 

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-10-20T12:00:00.000Z"
+status: phase_complete
+stopped_at: Phase 3 complete (verified 5/5)
+last_updated: "2026-10-20T14:30:00.000Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 19
   completed_plans: 19
-  percent: 33
+  percent: 50
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 3, Zugang und Rollen (alle 7 Pläne fertig, Owner-Abnahme erteilt, Phasen-Verifikation steht an)
+**Current focus:** Phase 3 abgeschlossen (Owner-Abnahme 20.10., Review-Warnings gefixt, Verifikation passed 5/5); als Nächstes Security-Audit Phase 3, danach Planung Phase 4 (Spielzeitlimits inkl. ZEIT-03/04/05)
 
 ## Current Position
 
-Phase: 3 (Zugang und Rollen), In Progress
-Plan: 03-07 complete (7 von 7), nächster Schritt Phasen-Verifikation
-Status: Executing Phase 3
+Phase: 3 (Zugang und Rollen), Complete (2026-10-20)
+Plan: 7 von 7 complete; Review 0 Critical / 2 Warnings (gefixt 7126f94, 0760c7f), Verifikation 58fa998 passed 5/5
+Status: Phase 3 complete, Security-Audit ausstehend
 Last activity: 2026-10-20
 
-Progress: [███░░░░░░░] 33% (2 von 6 Phasen)
+Progress: [█████░░░░░] 50% (3 von 6 Phasen)
 
 ## Performance Metrics
 
@@ -138,6 +138,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-06: join_host in meta, leer = host null, Frontend nimmt window.location.hostname; Validator Hostname-Labels oder IP-Literal, max. 253, ohne Schema/Pfad/Port
 - [Phase 03]: 03-07: Owner-Abnahme 20.10.2026 erteilt ('Abgenommen'); A6 Anleitungstexte 'Ja, übernehmen', A8 Adresse aus Browser-Hostname 'Ja, bestätigt', A9 Kindertexte im Spiel 'Ja, übernehmen'; acceptance-phase3.sh 75/75 inklusive Regression Phase 1 und 2
 - [Phase 03]: 03-07: Offen fürs Phasen-Audit: Live-Join mit echtem Luanti-Client, Kick nach Widerruf (A7) mit echtem Client
+- [Phase 03]: Review-Fixes: Widerruf gewinnt gegen keep-Regel bei parallelem Gruppen-Abgleich (7126f94); my_worlds antwortet bei ausstehender Neuprovisionierung 503 statt ungültigem Passwort (0760c7f); Info-Findings IN-01..07 dokumentiert offen in 03-REVIEW.md
+- [Roadmap 20.10.]: Owner-Anforderung Spielzeit: ZEIT-03 Wochenplan pro Wochentag, ZEIT-04 Ferienzeiträume mit eigenen Regeln, ZEIT-05 Zeitfenster pro Welt (Unterrichtsstunde); benutzerfreundlich, keine Konfigsprache (Commits 1050040, aa82290)
+- [Roadmap 20.10.]: Owner-Entscheid Schulen: ROLLE-03 einstellbare Verwalter-Gruppen in Phase 6; Klassen-Preset, Handout-/QR-Ansicht und Mandantenmodell als v2-Kandidaten
 
 ### Pending Todos
 
@@ -159,6 +162,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T12:00:00.000Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-10-20T14:30:00.000Z
+Stopped at: Phase 3 complete (Review gefixt, Verifikation passed 5/5); nächster Schritt /gsd:secure-phase 3, danach /gsd:plan-phase 4
 Resume file: None
