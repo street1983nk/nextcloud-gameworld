@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-05-PLAN.md (Zeitfenster pro Welt, Verwalter frei); nächste Welle 04-06
-last_updated: "2026-10-20T17:43:33.651Z"
+stopped_at: Completed 04-06-PLAN.md (Eltern-UI Spielzeit, Ferien, Welt-Zeitfenster, Zeitzone); nächste Welle 04-07
+last_updated: "2026-10-20T18:01:30.816Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 25
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04 (spielzeitlimits) , EXECUTING
-Plan: 6 of 8
-Status: Ready to execute (04-05 fertig, nächste Welle 6 = 04-06)
+Plan: 7 of 8
+Status: Ready to execute (04-06 fertig, nächste Welle 7 = 04-07)
 Last activity: 2026-10-20
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [█████████░] 89%
 | Phase 04 P03 | 95 min | 3 tasks | 17 files |
 | Phase 04 P04 | 60 min | 2 tasks | 6 files |
 | Phase 04 P05 | 75 min | 2 tasks | 12 files |
+| Phase 04 P06 | 35 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-04: Ferien- und Zeitzonen-Änderung schreibt die Regeldatei aller Welten unter mutation(); höchstens 50 Zeiträume, je höchstens 366 Tage
 - [Phase 04]: 04-05: Welt-Zeitfenster per POST/DELETE /api/playtime/worlds/{id}/window; alle Tage geschlossen = 422, immer offen = DELETE; die Welt läuft weiter (O-05), Reconciler unverändert
 - [Phase 04]: 04-05: Verwalter-Schnappschuss meta time_admins aus Gruppe admin (Abfrage vor der Sperre, Drossel 60 s, Änderungen mit force, Dashboard nur try_mutation); frei-Zeile für eingeladene Verwalter, ohne Stand keine Freistellung
+- [Phase 04]: 04-06: Eltern-UI mit reiner Logik in playtime.js (Node-Prüfskript); Kind-Chip höchstens 30 Zeichen, sonst entfällt das Zeitfenster; 'Keine Begrenzung' = DELETE; Welt-Fenster 'ganzer Tag' = 0 bis 1440, alle Tage zu sperrt Speichern; Spielzeitdaten lädt ParentView höchstens alle 30 s
 
 ### Pending Todos
 
@@ -171,6 +173,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T17:43:28.301Z
-Stopped at: Completed 04-05-PLAN.md (Zeitfenster pro Welt, Verwalter frei); nächste Welle 04-06
+Last session: 2026-10-20T18:01:30.798Z
+Stopped at: Completed 04-06-PLAN.md (Eltern-UI Spielzeit, Ferien, Welt-Zeitfenster, Zeitzone); nächste Welle 04-07
 Resume file: None

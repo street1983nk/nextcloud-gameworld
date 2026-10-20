@@ -28,7 +28,7 @@
 
 ### Spielzeit
 
-- [ ] **ZEIT-01**: Elternteil kann pro Kind ein tägliches Spielzeitlimit und/oder ein Spielzeitfenster festlegen (z. B. maximal 2 Stunden, nur bis 19 Uhr)
+- [x] **ZEIT-01**: Elternteil kann pro Kind ein tägliches Spielzeitlimit und/oder ein Spielzeitfenster festlegen (z. B. maximal 2 Stunden, nur bis 19 Uhr)
 - [x] **ZEIT-02**: Das Limit wird serverseitig durchgesetzt, nicht nur angezeigt (Implementierungspfad Mod vs. Scheduler-Stopp wird per Phasen-Research entschieden; bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist zu bewerten)
 - [x] **ZEIT-03**: Elternteil kann einen einfachen Wochenplan festlegen: pro Wochentag erlaubt/nicht erlaubt mit eigenem Limit und Zeitfenster (z. B. "nur Samstag und Sonntag, je 2 Stunden"); Voreinstellungen statt Konfigsprache (Owner-Anforderung 20.10.2026)
 - [x] **ZEIT-04**: Elternteil kann Ferienzeiträume anlegen (von/bis-Datum), in denen eigene Regeln gelten (z. B. täglich statt nur Wochenende); die Umschaltung passiert automatisch am Datum, ohne dass Eltern daran denken müssen (Owner-Anforderung 20.10.2026)
@@ -86,7 +86,7 @@
 | ZUGANG-04 | Phase 3 | Complete |
 | ROLLE-01 | Phase 3 | Complete |
 | ROLLE-02 | Phase 3 | Complete |
-| ZEIT-01 | Phase 4 | Pending |
+| ZEIT-01 | Phase 4 | Complete |
 | ZEIT-02 | Phase 4 | Complete |
 | ZEIT-03 | Phase 4 | Complete |
 | ZEIT-04 | Phase 4 | Complete |
