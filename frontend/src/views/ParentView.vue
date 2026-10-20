@@ -3,7 +3,7 @@
 	<div class="gameworld">
 		<h2>Gameworld</h2>
 		<p class="gameworld__hint">
-			Jede Welt ist privat: Nur wer den Weltschlüssel kennt, kann beitreten. Gameworld kündigt keine Welt im Internet an.
+			Jede Welt ist privat: Nur eingeladene Nextcloud-Konten können beitreten. Gameworld kündigt keine Welt im Internet an.
 		</p>
 
 		<SetupCheck @update:ok="onSetupOk" @checked="refresh" />
@@ -42,8 +42,11 @@
 			</div>
 		</form>
 
-		<NcNoteCard v-if="createdKey" type="success">
-			Welt erstellt. Weltschlüssel für den Beitritt: <strong>{{ createdKey }}</strong>
+		<NcNoteCard v-if="createdWorld" type="success">
+			<p>Welt erstellt. Lade jetzt Spieler ein.</p>
+			<NcButton variant="primary" @click="openInvite(createdWorld)">
+				Spieler einladen
+			</NcButton>
 		</NcNoteCard>
 		<NcNoteCard v-if="error" type="error">
 			{{ error }}
@@ -63,6 +66,7 @@
 					<th>Spielart</th>
 					<th>UDP-Port</th>
 					<th>Status</th>
+					<th>Spieler</th>
 					<th>Arbeitsspeicher</th>
 					<th>Aktionen</th>
 				</tr>
@@ -83,6 +87,12 @@
 							:text="world.status_text"
 							:variant="chipVariant(world.status)"
 							no-close />
+						<NcNoteCard v-if="world.access_restart_needed" type="warning" class="gameworld__restart">
+							Neustart nötig, damit nur Eingeladene spielen können.
+						</NcNoteCard>
+					</td>
+					<td class="gameworld__invited">
+						{{ invitedText(world) }}
 					</td>
 					<td class="gameworld__memory">
 						<template v-if="world.memory_used_bytes !== null && world.memory_limit_bytes">
@@ -117,6 +127,14 @@
 								Starten
 							</NcButton>
 						</template>
+						<template v-if="!world.delete_only">
+							<NcButton @click="openInvite(world)">
+								Einladen
+							</NcButton>
+							<NcButton @click="openPlayers(world)">
+								Spieler
+							</NcButton>
+						</template>
 						<NcButton
 							variant="error"
 							:disabled="Boolean(busy[world.id])"
@@ -135,6 +153,20 @@
 			:message="deleteMessage"
 			:buttons="deleteButtons"
 			@update:open="onDialogOpen" />
+
+		<InviteDialog
+			v-if="inviteWorld"
+			:key="`invite-${inviteWorld.id}`"
+			:world="inviteWorld"
+			@done="refresh"
+			@close="inviteWorld = null" />
+		<PlayerManager
+			v-if="playersWorld"
+			:key="`players-${playersWorld.id}`"
+			:world="playersWorld"
+			@changed="refresh"
+			@invite="switchToInvite"
+			@close="playersWorld = null" />
 	</div>
 </template>
 
@@ -149,10 +181,13 @@ import NcProgressBar from '@nextcloud/vue/components/NcProgressBar'
 import NcRadioGroup from '@nextcloud/vue/components/NcRadioGroup'
 import NcRadioGroupButton from '@nextcloud/vue/components/NcRadioGroupButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
+import InviteDialog from '../components/InviteDialog.vue'
+import PlayerManager from '../components/PlayerManager.vue'
 import SetupCheck from '../components/SetupCheck.vue'
 import {
 	createWorld,
 	deleteWorld,
+	errorText,
 	listPresets,
 	listWorlds,
 	restartWorld,
@@ -183,7 +218,11 @@ const presets = ref([])
 const presetsError = ref('')
 const selectedPreset = ref('')
 const name = ref('')
-const createdKey = ref('')
+// Nach dem Erstellen: { id, name } der neuen Welt für den Hinweis "Lade jetzt Spieler ein".
+const createdWorld = ref(null)
+// Offene Dialoge: { id, name } der Welt oder null.
+const inviteWorld = ref(null)
+const playersWorld = ref(null)
 // Fehler einer Aktion: bleibt stehen, bis die nächste Aktion startet.
 const error = ref('')
 // Fehler beim Abfragen der Liste: verschwindet beim nächsten erfolgreichen Abruf.
@@ -224,18 +263,28 @@ function onDialogOpen(open) {
 	}
 }
 
-function errorText(err) {
-	const detail = err?.response?.data?.detail
-	if (typeof detail === 'string' && detail !== '') {
-		return detail
+// Nur id und Name gehen an die Dialoge; die Liste darf sich beim Polling ändern.
+function openInvite(world) {
+	playersWorld.value = null
+	inviteWorld.value = { id: world.id, name: world.name }
+}
+
+function openPlayers(world) {
+	inviteWorld.value = null
+	playersWorld.value = { id: world.id, name: world.name }
+}
+
+function switchToInvite() {
+	const world = playersWorld.value
+	if (world) {
+		openInvite(world)
 	}
-	// FastAPI-Validierungsfehler (422) liefern detail als Liste von Objekten;
-	// so erreicht die deutsche Meldung zu ungültigen Weltnamen die Eltern.
-	const msg = Array.isArray(detail) ? detail[0]?.msg : undefined
-	if (typeof msg === 'string' && msg !== '') {
-		return msg.replace(/^Value error, /, '')
-	}
-	return 'Die Anfrage an Gameworld ist fehlgeschlagen.'
+}
+
+// Spielernamen kommen gefiltert aus der API ([A-Za-z0-9_-]), Ausgabe nur per Textinterpolation.
+function invitedText(world) {
+	const invited = world.invited_players ?? []
+	return invited.length === 0 ? 'Noch niemand eingeladen' : invited.join(', ')
 }
 
 function chipVariant(status) {
@@ -361,11 +410,10 @@ async function submit() {
 	}
 	creating.value = true
 	error.value = ''
-	createdKey.value = ''
+	createdWorld.value = null
 	try {
 		const world = await createWorld(name.value.trim(), selectedPreset.value)
-		// Nur diese eine Antwort enthält den Schlüssel; die Liste zeigt ihn nie.
-		createdKey.value = world.world_key
+		createdWorld.value = { id: world.id, name: world.name }
 		name.value = ''
 	} catch (err) {
 		error.value = errorText(err)
@@ -391,7 +439,7 @@ onUnmounted(() => {
 
 <style scoped>
 .gameworld {
-	max-width: 820px;
+	max-width: 1040px;
 	padding: 24px;
 }
 
@@ -433,6 +481,7 @@ onUnmounted(() => {
 }
 
 .gameworld__players,
+.gameworld__invited,
 .gameworld__memory-text {
 	font-size: 0.9em;
 	color: var(--color-text-maxcontrast);
@@ -440,6 +489,10 @@ onUnmounted(() => {
 
 .gameworld__memory {
 	min-width: 160px;
+}
+
+.gameworld__restart {
+	margin-top: 8px;
 }
 
 .gameworld__actions {

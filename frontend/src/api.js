@@ -6,7 +6,7 @@
 // /exapps/gameworld.
 import axios from '@nextcloud/axios'
 import { loadState } from '@nextcloud/initial-state'
-import { generateUrl } from '@nextcloud/router'
+import { generateOcsUrl, generateUrl } from '@nextcloud/router'
 
 const fallback = { apiBase: generateUrl('/apps/app_api/proxy/gameworld') }
 
@@ -26,6 +26,20 @@ function readConfig() {
 }
 
 export const apiBase = readConfig().apiBase ?? fallback.apiBase
+
+// Deutsche Meldung aus einer Fehlerantwort der API (detail als Text oder als
+// FastAPI-Validierungsliste), sonst ein allgemeiner Satz.
+export function errorText(err) {
+	const detail = err?.response?.data?.detail
+	if (typeof detail === 'string' && detail !== '') {
+		return detail
+	}
+	const msg = Array.isArray(detail) ? detail[0]?.msg : undefined
+	if (typeof msg === 'string' && msg !== '') {
+		return msg.replace(/^Value error, /, '')
+	}
+	return 'Die Anfrage an Gameworld ist fehlgeschlagen.'
+}
 
 // Für alle angemeldeten Konten: Nutzer, Anzeigename und Rolle (verwalter oder spieler).
 export async function getMe() {
@@ -71,4 +85,57 @@ export async function restartWorld(id) {
 
 export async function deleteWorld(id) {
 	await axios.delete(`${apiBase}/api/worlds/${id}`)
+}
+
+// Einladungen und Spieler (03-03/03-04). Passwörter kommen abgeleitet aus der
+// API und werden im Frontend nie gespeichert, nur angezeigt.
+export async function listPlayers(worldId) {
+	const response = await axios.get(`${apiBase}/api/worlds/${worldId}/players`)
+	return response.data
+}
+
+// kind: 'user' oder 'group'; das Backend prüft Konto oder Gruppe erneut bei Nextcloud.
+export async function invite(worldId, kind, target) {
+	const response = await axios.post(`${apiBase}/api/worlds/${worldId}/invites`, { kind, target })
+	return response.data
+}
+
+export async function removeInvite(worldId, kind, target) {
+	const response = await axios.post(`${apiBase}/api/worlds/${worldId}/invites/remove`, { kind, target })
+	return response.data
+}
+
+// Neues Passwort in allen Welten des Kontos; das alte gilt sofort nicht mehr.
+export async function rotatePassword(ncUser) {
+	const response = await axios.post(`${apiBase}/api/players/password`, { nc_user: ncUser })
+	return response.data
+}
+
+export async function renamePlayer(ncUser, playerName) {
+	const response = await axios.post(`${apiBase}/api/players/name`, { nc_user: ncUser, player_name: playerName })
+	return response.data
+}
+
+// Suche über Nextclouds eigene Autovervollständigung (Benutzer 0, Gruppen 1),
+// mit Nextclouds Regeln, wer wen finden darf. Keine eigene Benutzerliste.
+export async function searchAccounts(term) {
+	const response = await axios.get(generateOcsUrl('core/autocomplete/get'), {
+		params: {
+			search: term,
+			itemType: '',
+			itemId: '',
+			shareTypes: [0, 1],
+			limit: 20,
+			format: 'json',
+		},
+		headers: { 'OCS-APIRequest': 'true' },
+	})
+	const entries = response.data?.ocs?.data ?? []
+	return entries
+		.filter((entry) => entry.source === 'users' || entry.source === 'groups')
+		.map((entry) => ({
+			kind: entry.source === 'groups' ? 'group' : 'user',
+			id: String(entry.id),
+			label: String(entry.label ?? entry.id),
+		}))
 }
