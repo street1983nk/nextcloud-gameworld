@@ -79,6 +79,10 @@ class TimeEngine:
     def _now(self) -> int:
         return int(self._clock())
 
+    def now(self) -> int:
+        """Jetzt (Epoch) nach der Uhr dieser Rechnung; die Kind-Ansicht rechnet mit derselben Uhr."""
+        return self._now()
+
     def _zone(self) -> ZoneInfo:
         return load_zone(self._store.get_meta("time_zone") or "")
 

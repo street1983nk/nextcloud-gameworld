@@ -30,10 +30,12 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import time
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from time import monotonic
+from zoneinfo import ZoneInfo
 
 import anyio.to_thread
 
@@ -43,10 +45,12 @@ from gameworld.access.service import MSG_NO_PLAYER, PlayerNotFoundError
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
 from gameworld.playtime.plan import (
     DEFAULT_TIME_ZONE,
+    WEEKDAY_TOKENS,
     ChildState,
     Holiday,
     WeekPlan,
     WindowDay,
+    evaluate_world,
     load_zone,
     local_day,
     window_days,
@@ -65,6 +69,10 @@ MSG_ADMIN_NO_RULES = "Verwalter haben keine Spielzeitregeln."
 MSG_WINDOW_NEEDS_OPEN_DAY = "Eine Welt mit Zeitfenster braucht mindestens einen offenen Tag."
 # Verwalter-Schnappschuss höchstens so oft aus Nextcloud holen (wie SYNC_INTERVAL_SECONDS).
 ADMINS_INTERVAL_SECONDS = 60
+# Kind-Ansicht: weniger Rest gilt als aufgebraucht, gleiche Schwelle wie MIN_LEFT im Welt-Mod (Pitfall 8).
+MIN_LEFT_SECONDS = 60
+# Lesefehler der Zeitregeln (Datenbank, Zeitzone, kaputte Zeilen) werden 503.
+_READ_ERRORS = (sqlite3.Error, ValueError, KeyError)
 
 
 @dataclass
@@ -138,6 +146,117 @@ class WorldWindowResult:
     world_id: str
     time_window: list[WindowDay] | None
     applied: bool
+
+
+@dataclass(frozen=True)
+class NextTime:
+    """Nächste Spielzeit für die Kind-Ansicht: ISO-Wochentag 1..7 und lokale Minute 0..1439."""
+
+    weekday: int
+    minute: int
+
+
+@dataclass(frozen=True)
+class MyPlaytime:
+    """Eigene Restzeit eines Kindes (Kind-Ansicht, 04-07); bewusst ohne Pläne und Verbrauch.
+
+    ``state``: ok | aufgebraucht | fenster | tag (None ohne Regeln). ``remaining_minutes``
+    abgerundet und nie über das Fensterende hinaus, None ohne Limit. ``until_minute``
+    lokal ab 00:00, None heißt Tagesende. ``next`` nur, wenn gerade nicht gespielt werden darf.
+    """
+
+    limited: bool
+    state: str | None
+    remaining_minutes: int | None
+    until_minute: int | None
+    next: NextTime | None
+
+
+UNLIMITED = MyPlaytime(limited=False, state=None, remaining_minutes=None, until_minute=None, next=None)
+
+
+@dataclass(frozen=True)
+class WindowSlot:
+    """Ein Öffnungsfenster einer Welt: Wochentag und Minuten (Ende 1440 = Mitternacht)."""
+
+    weekday: int
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class MyWorldWindow:
+    """Fensterstatus einer Welt für die Kind-Ansicht: offen (None = kein Fenster) und das aktuelle oder nächste."""
+
+    open: bool | None
+    next: WindowSlot | None
+
+
+NO_WINDOW = MyWorldWindow(open=None, next=None)
+
+
+class PlaytimeUnavailableError(RuntimeError):
+    """Die Zeitregeln ließen sich nicht lesen (503, nie Daten anderer)."""
+
+
+def parse_hint(token: str) -> NextTime | None:
+    """Token wie ``Sa-10:00`` (plan.next_hint) in Wochentag und Minute; ``-`` oder Unsinn ergibt None."""
+    day, _, clock = token.partition("-")
+    hours, _, minutes = clock.partition(":")
+    if day not in WEEKDAY_TOKENS or not hours.isdigit() or not minutes.isdigit():
+        return None
+    return NextTime(weekday=WEEKDAY_TOKENS.index(day) + 1, minute=int(hours) * 60 + int(minutes))
+
+
+def _until_minute(until: int, day: date, tz: ZoneInfo) -> int | None:
+    """Lokale Minute des Fensterendes; None, wenn es das Tagesende (Folgetag 00:00) ist."""
+    local = datetime.fromtimestamp(until, tz)
+    if local.date() != day:
+        return None
+    return local.hour * 60 + local.minute
+
+
+def kid_playtime(state: ChildState, now: int, tz: ZoneInfo) -> MyPlaytime:
+    """Auswertung eines Kindes in die Struktur der Kind-Ansicht (rein).
+
+    Unter MIN_LEFT_SECONDS Rest gilt die Zeit als aufgebraucht bzw. das Fenster
+    als zu (Pitfall 8, dieselbe Schwelle wie MIN_LEFT im Welt-Mod). Die Minuten
+    reichen nie über das Fensterende hinaus.
+    """
+    next_time = parse_hint(state.next_hint)
+    if state.reason == "tag":
+        return MyPlaytime(limited=True, state="tag", remaining_minutes=0, until_minute=None, next=next_time)
+    blocked = "aufgebraucht" if state.reason == "limit" else None
+    if state.reason == "fenster" or (blocked is None and state.until - now < MIN_LEFT_SECONDS):
+        blocked = "fenster"
+    elif blocked is None and state.rest_s is not None and state.rest_s < MIN_LEFT_SECONDS:
+        blocked = "aufgebraucht"
+    if blocked is not None:
+        return MyPlaytime(limited=True, state=blocked, remaining_minutes=0, until_minute=None, next=next_time)
+    remaining = None if state.rest_s is None else min(state.rest_s, state.until - now) // 60
+    return MyPlaytime(
+        limited=True,
+        state="ok",
+        remaining_minutes=remaining,
+        until_minute=_until_minute(state.until, state.day, tz),
+        next=None,
+    )
+
+
+def world_window_status(now: int, tz: ZoneInfo, windows: dict[int, tuple[int, int]] | None) -> MyWorldWindow:
+    """Welt-Fenster für die Kind-Ansicht: offen jetzt plus heutiges, sonst nächstes Fenster (kein Wochenplan)."""
+    state = evaluate_world(now, tz, windows)
+    if state is None or windows is None:
+        return NO_WINDOW
+    if state.reason == "ok":
+        today = local_day(now, tz).isoweekday()
+        start, end = windows[today]
+        return MyWorldWindow(open=True, next=WindowSlot(weekday=today, start=start, end=end))
+    upcoming = parse_hint(state.next_hint)
+    slot = None if upcoming is None else windows.get(upcoming.weekday)
+    if upcoming is None or slot is None:
+        return MyWorldWindow(open=False, next=None)
+    return MyWorldWindow(open=False, next=WindowSlot(weekday=upcoming.weekday, start=slot[0], end=slot[1]))
 
 
 @dataclass(frozen=True)
@@ -244,6 +363,48 @@ class TimeService:
         await self.refresh_admins(acting_uid, force=True)
         return await anyio.to_thread.run_sync(self._window_sync, world_id, None)
 
+    async def my_playtime(self, nc_user: str, *, exempt: bool) -> MyPlaytime:
+        """Eigene Restzeit für die Kind-Ansicht; ``nc_user`` kommt aus der signierten Anfrage.
+
+        ``exempt`` (Verwalter laut Selbstauskunft) und Konten im Verwalter-Schnappschuss
+        sind frei wie im Welt-Mod (A4); ohne Regeln keine Begrenzung (O-10). Liest
+        nur, ohne Sperre. Lesefehler: PlaytimeUnavailableError.
+        """
+        if exempt:
+            return UNLIMITED
+        return await anyio.to_thread.run_sync(self._my_playtime_sync, nc_user)
+
+    async def my_world_windows(self, world_ids: list[str]) -> dict[str, MyWorldWindow]:
+        """Fensterstatus je eigener Welt (offen jetzt, aktuelles oder nächstes Fenster); Lesefehler: 503."""
+        return await anyio.to_thread.run_sync(self._my_world_windows_sync, world_ids)
+
+    def _my_playtime_sync(self, nc_user: str) -> MyPlaytime:
+        try:
+            if nc_user in self._admins():
+                return UNLIMITED
+            engine = self._worlds.time
+            state = engine.child_state(nc_user)
+            if state is None:
+                return UNLIMITED
+            return kid_playtime(state, engine.now(), self._zone())
+        except _READ_ERRORS as exc:
+            LOG.warning("Spielzeit für die Kind-Ansicht nicht lesbar: %s", type(exc).__name__)
+            raise PlaytimeUnavailableError from exc
+
+    def _my_world_windows_sync(self, world_ids: list[str]) -> dict[str, MyWorldWindow]:
+        try:
+            now = self._worlds.time.now()
+            tz = self._zone()
+            return {
+                world_id: world_window_status(now, tz, self._store.world_window(world_id)) for world_id in world_ids
+            }
+        except _READ_ERRORS as exc:
+            LOG.warning("Welt-Zeitfenster für die Kind-Ansicht nicht lesbar: %s", type(exc).__name__)
+            raise PlaytimeUnavailableError from exc
+
+    def _zone(self) -> ZoneInfo:
+        return load_zone(self._store.get_meta("time_zone") or "")
+
     # Unter der Sperre (Worker-Thread)
 
     def _store_admins_sync(self, value: str) -> bool:
@@ -329,7 +490,7 @@ class TimeService:
         return all(results)
 
     def _today(self) -> date:
-        return local_day(int(time.time()), load_zone(self._store.get_meta("time_zone") or ""))
+        return local_day(int(time.time()), self._zone())
 
     def _holiday_view(self, holiday_id: int, holiday: Holiday, today: date | None = None) -> HolidayView:
         day = self._today() if today is None else today
