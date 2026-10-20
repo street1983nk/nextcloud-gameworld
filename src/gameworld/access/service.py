@@ -40,7 +40,7 @@ import anyio.to_thread
 from gameworld.access.accounts import derive_password, suggest_player_name, validate_player_name
 from gameworld.access.directory import Directory, DirectoryUnavailableError, DirectoryUser
 from gameworld.access.roles import Profile
-from gameworld.access.secret import PlayerSecret, fingerprint
+from gameworld.access.secret import PlayerSecret, SecretUnavailableError, fingerprint
 from gameworld.provisioner.client import WorldNotFoundError
 from gameworld.provisioner.luanti_auth import make_verifier
 from gameworld.worlds.service import NOT_FOUND, WorldService
@@ -58,6 +58,7 @@ MSG_UNKNOWN_ACCOUNT = "Dieses Nextcloud-Konto gibt es nicht oder es ist deaktivi
 MSG_UNKNOWN_GROUP = "Diese Nextcloud-Gruppe gibt es nicht."
 MSG_NO_PLAYER = "Für dieses Nextcloud-Konto gibt es noch keinen Spieler."
 MSG_NAME_TAKEN = "Diesen Spielernamen hat schon jemand anderes."
+MSG_REPROVISION_PENDING = "Die Zugangsdaten werden gerade erneuert; bitte gleich noch einmal abrufen."
 
 InviteKey = tuple[str, str]
 
@@ -310,11 +311,20 @@ class AccessService:
         Wartet nie auf die Welt-Sperre (Polling alle 5 s darf nie hinter einem
         Erzeugen hängen und keine Worker-Threads stapeln): Bei belegter Sperre
         folgen Fingerabdruck-Abgleich und Provisionierung beim nächsten Abruf.
+
+        Konnte nach einem Geheimniswechsel wegen belegter Sperre noch nicht neu
+        provisioniert werden, antwortet der Abruf mit SecretUnavailableError
+        (503 beim Aufrufer): Die Welten tragen dann noch die alten Verifier,
+        und ein Passwort aus dem neuen Geheimnis wäre irreführend; das Kind
+        tippte sich damit in die Fehlversuch-Sperre des Welt-Mods.
         """
         uid = profile.user_id
         secret = await self._secret.get()
         # Eigener Schritt außerhalb von worlds.mutation() (Sperr-Regel, nicht reentrant).
-        await self._ensure_fingerprint(secret, blocking=False)
+        if not await self._ensure_fingerprint(secret, blocking=False):
+            # Lieber kurz nicht verfügbar als ein noch nicht gültiges Passwort
+            # anzeigen; der 5-s-Poll versucht es ohnehin gleich erneut.
+            raise SecretUnavailableError(MSG_REPROVISION_PENDING)
         groups = set(profile.groups)
         pending = await anyio.to_thread.run_sync(self._pending_group_worlds, uid, groups)
         if pending:

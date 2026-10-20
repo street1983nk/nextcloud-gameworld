@@ -271,6 +271,43 @@ async def test_secret_change_before_my_worlds_no_deadlock(
     assert _lock_free()
 
 
+async def test_secret_change_with_busy_lock_shows_no_wrong_password(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_secret: StaticSecret
+) -> None:
+    """WR-02: Neues Geheimnis bei belegter Sperre: 503 statt eines noch nicht gültigen Passworts.
+
+    Die Welten tragen noch die alten Verifier; ein Passwort aus dem neuen
+    Geheimnis liefe in die Fehlversuch-Sperre des Welt-Mods. Der 5-s-Poll
+    bekommt nach Freigabe der Sperre die neuen Zugangsdaten.
+    """
+    del service
+    await _invite(client, W1, "user", "gw-kind")
+    fake_secret.value = NEW_SECRET
+    new_password = derive_password(NEW_SECRET, "gw-kind", 0)
+    lock = world_service._LOCK  # pyright: ignore[reportPrivateUsage]
+    lock.acquire()
+    try:
+        with anyio.fail_after(5):
+            response = await _mine(client)
+        # Keine Zugangsdaten, solange die Verifier nicht zum Geheimnis passen.
+        assert response.status_code == 503
+        assert new_password not in response.text
+        assert PASSWORD not in response.text
+        # Nichts neu provisioniert: alter Fingerabdruck, alte Verifier.
+        from gameworld.access.secret import fingerprint
+
+        assert store.get_meta("secret_fingerprint") == fingerprint(TEST_SECRET)
+    finally:
+        lock.release()
+    # Sperre frei: Neuprovisionierung läuft, das Kind sieht das gültige Passwort.
+    response = await _mine(client)
+    assert response.status_code == 200
+    [world] = response.json()["worlds"]
+    assert world["password"] == new_password
+    assert store.get_meta("secret_fingerprint") == fingerprint(NEW_SECRET)
+    assert _lock_free()
+
+
 async def test_busy_lock_never_blocks_my_worlds(
     client: httpx.AsyncClient,
     service: WorldService,
