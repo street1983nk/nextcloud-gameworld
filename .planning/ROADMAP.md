@@ -180,7 +180,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03-PLAN.md , Tageslimit und Zeitfenster pro Kind Ende zu Ende: TimeEngine, Verwalter-API, 15-s-Zeittakt im Lifespan, ein Kontingent über alle Welten, Neustart-Hinweis, Prober-Beweis
+- [x] 04-03-PLAN.md , Tageslimit und Zeitfenster pro Kind Ende zu Ende: TimeEngine, Verwalter-API, 15-s-Zeittakt im Lifespan, ein Kontingent über alle Welten, Neustart-Hinweis, Prober-Beweis
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
