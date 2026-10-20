@@ -18,10 +18,13 @@ S = (B - k*g^x)^(a + u*x) mod N, K = H(S), M = H(H(N) xor H(g), H(Name), Salz, A
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import json
 import secrets
 import socket
 import struct
+import sys
 import time
 
 from gameworld.provisioner.luanti_auth import G, N
@@ -211,3 +214,28 @@ def join(host: str, port: int, name: str, password: str | None = None, timeout: 
         return {**hello, "result": "unexpected", "command": command}
     finally:
         probe.close()
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI für Abnahmeskripte: ein Join-Versuch, Ergebnis als JSON auf stdout.
+
+    Das Passwort erscheint nie in der Ausgabe; ``reason`` stammt vom Server.
+    Exit 0 auch bei ``denied``: Die Bewertung macht der Aufrufer (jq).
+    """
+    parser = argparse.ArgumentParser(description="Luanti-Join-Prober (nur Tests)")
+    parser.add_argument("host")
+    parser.add_argument("port", type=int)
+    parser.add_argument("name")
+    parser.add_argument("password", nargs="?", default=None)
+    parser.add_argument("--timeout", type=float, default=6.0)
+    args = parser.parse_args(argv)
+    try:
+        result = join(args.host, args.port, args.name, args.password, timeout=args.timeout)
+    except (TimeoutError, OSError):
+        result = {"result": "timeout"}
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

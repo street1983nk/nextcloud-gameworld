@@ -67,6 +67,18 @@ sh scripts/dev/acceptance-phase2.sh
 
 Das Skript stoppt für K2 kurz den Dienst `gameworld-docker-proxy` und beendet für K4 zweimal den ExApp-Prozess (Update- und Reboot-Simulation über `register-exapp.sh`, ohne `--rm-data`); ein trap stellt beides in jedem Fall wieder her. Es fasst nur Container mit Gameworld-Labels an und vergleicht Zustand und Startzeit aller anderen Container vor und nach K4. Höchstens eine VoxeLibre-Welt existiert gleichzeitig. Am Ende ruft es `acceptance-phase1.sh` als Regression. Laufzeit etwa 4 bis 5 Minuten, Exit 0 nur bei "N von N Prüfungen bestanden".
 
+## Phasenabnahme Phase 3
+
+Belegt die fünf Erfolgskriterien von Phase 3 (Einladen und Provisionieren, Join nur für Eingeladene, Verbindungsinfo für Kinder, Kind-Ansicht und Sperre, Rollen aus Nextcloud ohne gespeicherte Passwörter) gegen den laufenden Stack mit echten Nextcloud-Konten:
+
+```sh
+sh scripts/dev/acceptance-phase3.sh
+```
+
+Werkzeuge: docker-CLI, curl, jq, tar, grep, sha256sum und `uv`. Einziges Python-Werkzeug ist der UDP-Prober `tests/e2e/luanti_probe.py`, aufgerufen über seine CLI (`uv run python -m tests.e2e.luanti_probe HOST PORT NAME [PASSWORT]`, Ausgabe JSON). Die Spalten der Tabelle `players` liest das Skript mit `sqlite3`, falls installiert, sonst lesend über die Python-Standardbibliothek.
+
+Das Skript legt kurzzeitig die Gruppe `gw-familie` und das Wegwerfkonto `gw-abnahme2` an, nimmt `gw-kind` für K5 kurz in die Gruppe `admin` auf (zweimal 35 s Wartezeit für den Rollen-Cache), setzt die Spieler-Adresse auf `192.168.178.20` und startet die ExApp einmal neu. Ein trap räumt alles in jedem Fall auf: Welt, Gruppe, Konto, Spieler-Adresse leer, `gw-kind` nicht in `admin`. Spielpasswörter erscheinen nie in der Ausgabe. Am Ende ruft es `acceptance-phase1.sh` und `acceptance-phase2.sh` als Regression. Laufzeit etwa 10 Minuten, Exit 0 nur bei "N von N Prüfungen bestanden". Mit `GAMEWORLD_SKIP_REGRESSION=1` entfällt die Regression für schnelle Iterationen; der Lauf endet dann bewusst mit Exit 1.
+
 ## Abbauen
 
 ```sh

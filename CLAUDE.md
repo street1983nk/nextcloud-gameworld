@@ -38,7 +38,7 @@ Gameworld ist ein kindgerechtes Gameserver-Portal als Nextcloud-ExApp. Familien 
 |---------|---------|---------|-------------|
 | aiodocker | 0.27.0 (05/2026, aio-libs, aktiv) | Async-Docker-Client | Nur falls Live-Log-/Konsolen-Streaming spaeter echte Async-Streams braucht; API-Abdeckung duenner als docker-py |
 | tecnativa/docker-socket-proxy | aktuelles Image | Gescopter Docker-API-Zugriff | Pflichtbestandteil des Deployments (siehe oben) |
-| ct_whitelist (ContentDB) | aktuell, braucht Luanti 5.12+ | Whitelist pro Welt, Live-Reload von `whitelist.txt` | Luanti hat KEINE eingebaute Whitelist. ct_whitelist laedt die Datei bei Aenderung neu, d. h. Einladungen wirken ohne Server-Neustart; Gameworld schreibt die Datei ins World-Verzeichnis |
+| gameworld_access (eigener Welt-Mod, von Gameworld mitgeliefert) | im Gameworld-Code, Luanti 5.17.0 | Prejoin-Whitelist pro Welt plus Passwort-Provisionierung per SRP-Verifier | Luanti hat KEINE eingebaute Whitelist. Gameworld schreibt `gameworld_access.txt` per put_archive (root, 0444) aus den Nextcloud-Einladungen; der Mod lädt sie bei jedem Join-Versuch und alle 5 s neu, lehnt nicht Eingeladene im Prejoin ab und setzt für Eingeladene den SRP-Verifier, Einladungen und neue Passwörter wirken ohne Server-Neustart. ct_whitelist auf ContentDB nicht mehr auffindbar (19.10.2026), siehe 03-RESEARCH.md |
 | tarfile (stdlib) + nc_py_api Files | stdlib / 0.30.3 | Welt-Backup als tar.gz, Upload nach Nextcloud Files via WebDAV (`files.upload_stream` fuer grosse Archive) | Backup/Restore-Phase; Welt vor dem Tar stoppen oder sqlite-Backup nutzen (map.sqlite ist bei laufendem Server inkonsistent) |
 | @nextcloud/initial-state, @nextcloud/l10n, @nextcloud/router, @nextcloud/axios | aktuelle 2026er Linien | Frontend-Integration in Nextcloud | Standard-Begleiter zu @nextcloud/vue 9 |
 | Vite + @nextcloud/vite-config | aktuell | Frontend-Build | Aktueller Nextcloud-Standard; NICHT das webpack/Babel-Setup des alten ui_example kopieren |
@@ -67,7 +67,7 @@ Gameworld ist ein kindgerechtes Gameserver-Portal als Nextcloud-ExApp. Familien 
 | Eigene Provisionierung | Pelican Panel | Noch v1.0.0-rc.1 (10.10.2026), kein Stable; PHP-Panel + Wings-Daemon ist fuer einen Heimserver massiv ueberdimensioniert |
 | Eigene Provisionierung | LuHost (Modpol / Media Economies Design Lab, CU Boulder, git.medlab.host) | Nicht als Dependency: junges Lab-Projekt ohne stabile API. Aber wertvolle Feature-Referenz (Live-Konsole, World-Auswahl, One-Click-Backup, ContentDB-Browsing) |
 | ghcr.io/luanti-org/luanti | lscr.io/linuxserver/luanti | Falls LinuxServer-Komfort (PUID/PGID-Handling) gebraucht wird; offizielle Images bleiben naeher am Upstream-Release |
-| ct_whitelist-Mod | Direktes Schreiben der Auth-DB (`auth.sqlite`) | Nur falls Mod-Ansatz in der Praxis hakt; DB-Schreiben erfordert gestoppten Server, Whitelist-Datei nicht |
+| Eigener Welt-Mod gameworld_access | Direktes Schreiben der Auth-DB (`auth.sqlite`) | Nur falls der Mod-Ansatz in der Praxis hakt; DB-Schreiben erfordert gestoppten Server, die Zugangsdatei nicht (ct_whitelist auf ContentDB nicht mehr auffindbar (19.10.2026), siehe 03-RESEARCH.md) |
 ## What NOT to Use
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
@@ -80,9 +80,9 @@ Gameworld ist ein kindgerechtes Gameserver-Portal als Nextcloud-ExApp. Familien 
 | Mojang-/Minecraft-Anteile in MVP 1 | EULA-/Guideline-Risiko, Owner-Entscheid Luanti-first | Luanti 5.17 |
 ## Stack Patterns by Variant
 - `minetest.conf` pro Welt von Gameworld generiert: `server_announce = false` (keine oeffentliche Serverliste), `max_users` klein, `disallow_empty_password = true`, `default_privs` ohne Admin-Rechte
-- Whitelist via ct_whitelist: Gameworld schreibt `whitelist.txt` aus den Nextcloud-Einladungen, Mod laedt live nach
+- Whitelist und Spielpasswörter via eigenem Welt-Mod gameworld_access: Gameworld schreibt `gameworld_access.txt` (Spielername plus SRP-Verifier) per put_archive aus den Nextcloud-Einladungen, der Mod lädt live nach (ct_whitelist auf ContentDB nicht mehr auffindbar (19.10.2026), siehe 03-RESEARCH.md)
 - Kinder-Konten bekommen nie `privs`-Vergabe; Elternkontrolle laeuft komplett ueber die ExApp-UI
-- Konfiguration: ausschliesslich ueber Dateien (`minetest.conf`, `world.mt`, `whitelist.txt`) vor Start bzw. mit Live-Reload
+- Konfiguration: ausschliesslich ueber Dateien (`minetest.conf`, `world.mt`, `gameworld_access.txt`) vor Start bzw. mit Live-Reload
 - Luanti hat kein RCON und keine eingebaute Admin-HTTP-API; Terminal-Konsole braucht ncurses-Build
 - Fuer Live-Kommandos zwei Kandidaten: (a) `docker attach`/stdin an den Server-Prozess, (b) kleiner mitgelieferter Lua-Agent-Mod (Datei-Queue im World-Dir oder HTTP-Polling via `secure.http_mods` gegen die ExApp). LuHost nutzt das Konsolen-Muster erfolgreich. Entscheid in der Konsolen-Phase
 - Welt stoppen (Container stop) -> World-Dir aus dem Shared Volume per tarfile packen -> `files.upload_stream` in einen Gameworld-Ordner der Eltern-Nutzerin -> Container wieder starten; Restore umgekehrt
@@ -93,7 +93,7 @@ Gameworld ist ein kindgerechtes Gameserver-Portal als Nextcloud-ExApp. Familien 
 | nc_py_api 0.30.3 | Nextcloud 31, 32, 33 | Badges im Repo; Python 3.10-3.13 |
 | HaRP | Nextcloud 32+ | DSP-Removal fuer NC 35 angekuendigt |
 | @nextcloud/vue 9.13.1 | Vue ^3.5.18, Nextcloud 30+ | v8 = Vue 2, nicht mehr verwenden |
-| ct_whitelist | Luanti 5.12+ | passt zu 5.17.0 |
+| gameworld_access (eigener Welt-Mod) | Luanti 5.17.0 | ersetzt ct_whitelist; ct_whitelist auf ContentDB nicht mehr auffindbar (19.10.2026), siehe 03-RESEARCH.md |
 | Luanti-Client | Luanti-Server gleicher Minor-Version | Client/Server muessen zusammenpassen; Server-Version-Pin ist gleichzeitig Client-Vorgabe fuer die Familie |
 | Luanti 5.16.0 | kaputt | Release Notes: broken, 5.16.1 nutzen; nie 5.16.0 pinnen |
 ## Sources
@@ -105,7 +105,7 @@ Gameworld ist ein kindgerechtes Gameserver-Portal als Nextcloud-ExApp. Familien 
 - https://docs.nextcloud.com/server/stable/developer_manual/exapp_development/development_overview/ExAppHarpIntegration.html , start.sh/FRP-Client im ExApp-Image (MEDIUM, nur ueber Suchtreffer gesichtet)
 - https://api.github.com/repos/luanti-org/luanti/releases , 5.17.0 Stable (20.08.2026), 5.18.0-rc1, 5.16.0 broken (HIGH)
 - https://raw.githubusercontent.com/luanti-org/luanti/master/doc/docker_server.md + https://docs.luanti.org/for-server-hosts/setup/containers/ , ghcr.io/luanti-org/luanti, Volumes, Port 30000/udp (HIGH)
-- https://content.luanti.org/packages/GreatBigDiamond/ct_whitelist , Live-Reload-Whitelist, Luanti 5.12+ (MEDIUM)
+- https://content.luanti.org/packages/GreatBigDiamond/ct_whitelist , ct_whitelist auf ContentDB nicht mehr auffindbar (19.10.2026), siehe 03-RESEARCH.md; ersetzt durch den eigenen Welt-Mod gameworld_access
 - https://wiki.luanti.org/Console , Terminal-Konsole braucht ncurses-Build (MEDIUM)
 - https://pypi.org/pypi/docker/json , docker-py 7.2.0 (HIGH)
 - https://pypi.org/pypi/aiodocker/json , 0.27.0 (05/2026), aio-libs, aktiv (HIGH)
