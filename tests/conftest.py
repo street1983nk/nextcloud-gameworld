@@ -103,13 +103,16 @@ TEST_SECRET = bytes(range(32))
 class FakeDirectory:
     """Nextcloud-Konten ohne Nextcloud: gw-kind aktiv, gw-aus deaktiviert, alles andere fehlt.
 
-    Gruppe familie: gw-kind und gw-aus; im Test änderbar (groups).
+    gw-kind2 und admin sind aktiv (Spielzeit-e2e: zweites Kind als Positivkontrolle,
+    admin für Welt-Fenster ab 04-05). Gruppe familie: gw-kind und gw-aus; im Test änderbar (groups).
     """
 
     def __init__(self) -> None:
         self.users: dict[str, tuple[str, bool]] = {
             "gw-kind": ("Kind (Dev)", True),
+            "gw-kind2": ("Kind 2 (Dev)", True),
             "gw-aus": ("Aus (Dev)", False),
+            "admin": ("Admin (Dev)", True),
         }
         self.groups: dict[str, list[str]] = {"familie": ["gw-kind", "gw-aus"]}
         self.calls: list[tuple[str, str]] = []
