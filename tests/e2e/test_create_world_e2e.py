@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import re
 import tarfile
 import time
+from pathlib import Path
 
 import docker
 import httpx
 import pytest
 from docker.models.containers import Container
 
+from gameworld.worlds.store import WorldStore
 from tests.conftest import appapi_headers, docker_url
 
 pytestmark = [pytest.mark.docker, pytest.mark.usefixtures("docker_cleanup")]
@@ -41,13 +44,19 @@ def _read_file(container: Container, path: str) -> tuple[tarfile.TarInfo, str]:
         return member, handle.read().decode("utf-8")
 
 
-async def test_create_world_runs_hardened_private_container(client: httpx.AsyncClient) -> None:
+async def test_create_world_runs_hardened_private_container(client: httpx.AsyncClient, app_env: Path) -> None:
     response = await client.post("/api/worlds", json={"name": "Testwelt"}, headers=appapi_headers())
     assert response.status_code == 201, response.text
     created = response.json()
     assert re.fullmatch(r"[0-9a-f]{12}", created["id"])
     assert 30015 <= created["port"] <= 30019
-    assert created["world_key"]
+    # Seit 03-05 verlässt der Weltschlüssel die API nicht mehr; er bleibt in DB und conf.
+    assert "world_key" not in created
+    row = WorldStore(app_env / "gameworld.sqlite3").get_world(created["id"])
+    assert row is not None
+    world_key = row.world_key
+    assert world_key
+    assert world_key not in response.text
     assert created["name"] == "Testwelt"
 
     api = docker.DockerClient(base_url=docker_url(), version="auto", timeout=60)
@@ -86,7 +95,7 @@ async def test_create_world_runs_hardened_private_container(client: httpx.AsyncC
         assert member.mode & 0o777 == 0o444
         lines = conf.splitlines()
         assert "server_announce = false" in lines
-        assert f"default_password = {created['world_key']}" in lines
+        assert f"default_password = {world_key}" in lines
     finally:
         api.close()
 
@@ -97,3 +106,16 @@ async def test_create_world_runs_hardened_private_container(client: httpx.AsyncC
     assert len(mine) == 1
     assert mine[0]["docker_status"] == "running"
     assert "world_key" not in mine[0]
+    assert mine[0]["invited_players"] == []
+
+    # Frisch gestartete Welt mit Zugangs-Mod: kein Hinweis "Neustart nötig", sobald sie läuft.
+    deadline = time.monotonic() + 30.0
+    world = mine[0]
+    while time.monotonic() < deadline:
+        response = await client.get("/api/worlds", headers=appapi_headers())
+        world = next(item for item in response.json()["worlds"] if item["id"] == created["id"])
+        if world["status"] == "running" and world["access_restart_needed"] is False:
+            break
+        await asyncio.sleep(1.0)
+    assert world["status"] == "running", world
+    assert world["access_restart_needed"] is False, world

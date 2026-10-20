@@ -71,6 +71,10 @@ class FakeProvisioner:
     missing_volumes: set[str] = field(default_factory=set)
     # Per write_world_files geschriebene Tars (Welt, Archiv), in Reihenfolge.
     written: list[tuple[str, bytes]] = field(default_factory=list)
+    # State-Dateien des Zugangs-Mods pro Welt (fehlt: None) und ein optionaler Lesefehler.
+    access_states: dict[str, StatusFile] = field(default_factory=dict)
+    access_state_error: ProvisionerError | None = None
+    access_state_reads: list[str] = field(default_factory=list)
 
     def ensure_image(self) -> None:
         return None
@@ -145,6 +149,13 @@ class FakeProvisioner:
         if self.status_error is not None:
             raise self.status_error
         return self.status_files.get(world_id)
+
+    def read_access_state(self, world_id: str) -> StatusFile | None:
+        self._known(world_id)
+        self.access_state_reads.append(world_id)
+        if self.access_state_error is not None:
+            raise self.access_state_error
+        return self.access_states.get(world_id)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:
         _, status = self._known(world_id)
@@ -1142,3 +1153,118 @@ async def test_missing_container_on_write_recreates_then_writes_and_starts(
 async def test_payload_carries_empty_access_file(service: WorldService, payload_args: list[tuple[object, ...]]) -> None:
     await service.create_world("Welt")
     assert payload_args[0][3] == EMPTY_ACCESS
+
+
+# 03-05: Spielernamen und Zugangsschutz-Status in der Weltenliste, kein Weltschlüssel in der API.
+
+VERIFIER = "#1#c2FsdA==#dmVyaWZpZXI="
+
+
+def _invite_players(store: WorldStore, world_id: str, *names: str) -> None:
+    from gameworld.worlds.store import PlayerRow
+
+    verifiers: dict[str, str] = {}
+    for name in names:
+        nc_user = f"nc-{name.lower()}"
+        if store.get_player(nc_user) is None:
+            store.insert_player(PlayerRow(nc_user=nc_user, player_name=name, rotation=0))
+        verifiers[nc_user] = VERIFIER
+    store.apply_world_access(world_id, verifiers)
+
+
+async def test_fresh_access_state_needs_no_restart(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.access_states[world_id] = StatusFile(FRESH, b"3")
+    view = await _view_of(service, world_id)
+    assert view.status == "running"
+    assert view.access_restart_needed is False
+
+
+async def test_missing_access_state_needs_restart(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    view = await _view_of(service, world_id)
+    assert view.status == "running"
+    assert view.access_restart_needed is True
+
+
+async def test_stale_access_state_needs_restart(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.access_states[world_id] = StatusFile(STALE, b"1")
+    assert (await _view_of(service, world_id)).access_restart_needed is True
+
+
+@pytest.mark.usefixtures("clock")
+async def test_access_state_only_read_when_running(service: WorldService, fake: FakeProvisioner) -> None:
+    """Gestoppt, startend oder fehlerhaft: kein Hinweis, kein Lesen der State-Datei."""
+    starting = await _running_world(service, fake, "Startend", mtime=STALE)
+    stopped = await _running_world(service, fake, "Gestoppt")
+    await service.stop_world(stopped)
+    broken = await _running_world(service, fake, "Kaputt")
+    fake.containers[broken] = (fake.containers[broken][0], "exited")
+    fake.extra[broken]["exit_code"] = 137
+    fake.access_state_reads.clear()
+
+    views = {view.id: view for view in await service.list_worlds()}
+
+    assert [views[world].status for world in (starting, stopped, broken)] == ["starting", "stopped", "error"]
+    assert all(views[world].access_restart_needed is False for world in (starting, stopped, broken))
+    assert fake.access_state_reads == []
+
+
+async def test_access_state_error_is_isolated(service: WorldService, fake: FakeProvisioner) -> None:
+    first = await _running_world(service, fake, "Eins")
+    second = await _running_world(service, fake, "Zwei")
+    fake.access_state_error = ProvisionerError("Der Zugangsstand der Welt ist nicht lesbar.")
+    views = {view.id: view for view in await service.list_worlds()}
+    assert views[first].access_restart_needed is False
+    assert views[second].access_restart_needed is False
+    assert views[first].status == views[second].status == "running"
+
+
+async def test_invited_players_are_sorted_names(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia", "Leo")
+    view = await _view_of(service, created.id)
+    assert view.invited_players == ["Leo", "Mia"]
+    assert VERIFIER not in repr(view)
+
+
+@pytest.mark.usefixtures("clock")
+async def test_invited_players_shown_when_docker_unreachable(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia")
+    fake.list_error = DockerUnavailableError("Proxy weg")
+    view = await _view_of(service, created.id)
+    assert view.status == "unknown"
+    assert view.invited_players == ["Mia"]
+    assert view.access_restart_needed is False
+
+
+@pytest.mark.usefixtures("clock")
+async def test_cache_copies_invited_players(service: WorldService, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia")
+    first = await _view_of(service, created.id)
+    first.invited_players.append("Eindringling")
+    assert (await _view_of(service, created.id)).invited_players == ["Mia"]
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_create_has_no_world_key_but_new_fields(client: httpx.AsyncClient, store: WorldStore) -> None:
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    assert created.status_code == 201
+    body = created.json()
+    assert "world_key" not in body
+    row = store.get_world(body["id"])
+    assert row is not None
+    assert row.world_key
+    assert row.world_key not in created.text
+    assert body["invited_players"] == []
+    assert isinstance(body["access_restart_needed"], bool)
+    listing = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
+    assert {"invited_players", "access_restart_needed"} <= listing.keys()
+    assert "world_key" not in listing

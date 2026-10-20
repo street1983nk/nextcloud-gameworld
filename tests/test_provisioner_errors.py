@@ -442,3 +442,25 @@ def test_broken_status_archive_is_provisioner_error(prov: DockerProvisioner, fak
         prov.read_status_file(WORLD)
     assert not isinstance(info.value, DockerUnavailableError)
     assert container.paths == [PLAYERS_FILE]
+
+
+def test_read_access_state(prov: DockerProvisioner, fake: FakeClient) -> None:
+    """03-05: Die State-Datei des Zugangs-Mods kommt über denselben gekappten Leser."""
+    from gameworld.provisioner.access_mod import STATE_FILE
+
+    container = ArchiveContainer(_tar(b"7"))
+    fake.containers.list = _listing(container)
+    assert prov.read_access_state(WORLD) == StatusFile("2026-10-19T18:19:47.1Z", b"7")
+    assert container.paths == [STATE_FILE]
+
+
+def test_read_access_state_missing_is_none(prov: DockerProvisioner, fake: FakeClient) -> None:
+    fake.containers.list = _listing(ArchiveContainer(None))
+    assert prov.read_access_state(WORLD) is None
+
+
+def test_broken_access_state_is_provisioner_error(prov: DockerProvisioner, fake: FakeClient) -> None:
+    fake.containers.list = _listing(ArchiveContainer(b"kein tar" * 200))
+    with pytest.raises(ProvisionerError, match="Zugangsstand") as info:
+        prov.read_access_state(WORLD)
+    assert not isinstance(info.value, DockerUnavailableError)

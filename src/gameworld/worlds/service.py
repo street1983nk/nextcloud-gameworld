@@ -16,7 +16,7 @@ import threading
 import uuid
 import zipfile
 from collections.abc import Iterator
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from time import monotonic
 
@@ -47,6 +47,7 @@ from gameworld.worlds.status import (
     STATUS_MOD_SCHEMA,
     WorldStatus,
     derive_status,
+    parse_docker_time,
     schema_version,
 )
 from gameworld.worlds.store import WorldRow, WorldStore
@@ -121,11 +122,10 @@ class WorldView:
     memory_limit_bytes: int | None
     # Weltdaten fehlen oder Erstellen brach ab: Die Oberfläche bietet nur Löschen an, Starten gibt 409.
     delete_only: bool
-
-
-@dataclass
-class CreatedWorld(WorldView):
-    world_key: str
+    # Spielernamen aller Eingeladenen (aus der Datenbank, nie Passwörter oder Verifier).
+    invited_players: list[str]
+    # Läuft die Welt ohne geladenen Zugangsschutz (vor dem Update gestartet)? Nur bei status running.
+    access_restart_needed: bool
 
 
 def _view(
@@ -134,6 +134,9 @@ def _view(
     status: WorldStatus,
     players: list[str] | None = None,
     memory: MemoryUsage | None = None,
+    *,
+    invited_players: list[str],
+    access_restart_needed: bool = False,
 ) -> WorldView:
     preset = PRESETS.get(row.preset)
     # UNKNOWN (Docker nicht erreichbar) behält Vorrang vor dem Preset-Fehler.
@@ -141,6 +144,7 @@ def _view(
         # Nur diese eine Welt zeigt den Fehler; die Liste aller Welten bleibt lesbar (WR-02).
         status = WorldStatus(ERROR, TEXT_UNKNOWN_PRESET)
         players = None
+        access_restart_needed = False
     return WorldView(
         id=row.id,
         name=row.name,
@@ -158,12 +162,14 @@ def _view(
         memory_used_bytes=None if memory is None else memory.used,
         memory_limit_bytes=None if memory is None else memory.limit,
         delete_only=delete_only(row),
+        invited_players=invited_players,
+        access_restart_needed=access_restart_needed,
     )
 
 
 def _copy(view: WorldView) -> WorldView:
     """Unabhängige Kopie, damit Aufrufer den Cache nie verändern."""
-    return replace(view, players=list(view.players))
+    return replace(view, players=list(view.players), invited_players=list(view.invited_players))
 
 
 class WorldService:
@@ -178,7 +184,7 @@ class WorldService:
         self._list_cache: tuple[float, list[WorldView]] | None = None
         self._cache_generation = 0
 
-    async def create_world(self, name: str, preset_id: str = DEFAULT_PRESET_ID) -> CreatedWorld:
+    async def create_world(self, name: str, preset_id: str = DEFAULT_PRESET_ID) -> WorldView:
         clean = normalize_world_name(name)
         # Unbekannte Presets scheitern vor Lock, Port-Vergabe und Datenbank.
         get_preset(preset_id)
@@ -352,6 +358,7 @@ class WorldService:
                         reachable=False,
                         status_mtime=None,
                     ),
+                    invited_players=self._invited(row),
                 )
                 for row in rows
             ]
@@ -374,6 +381,35 @@ class WorldService:
             LOG.warning("Status-Datei von Welt %s nicht lesbar: %s", row.id, exc)
             return None
         return status_file
+
+    def _invited(self, row: WorldRow) -> list[str]:
+        """Spielernamen der Eingeladenen, sortiert; nur die Namen, nie die Verifier."""
+        return sorted(self._store.access_entries(row.id))
+
+    def _access_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
+        """Läuft die Welt noch ohne geladenen Zugangsschutz (03-RESEARCH.md Pitfall 4)?
+
+        Nur bei status running: Der Zugangs-Mod schreibt seine State-Datei, sobald
+        er eine Zugangsdatei geladen hat. Fehlt sie oder ist sie älter als der
+        Start des Containers, wurde die Welt vor dem Update gestartet und braucht
+        einen Neustart. Gleiche Regel wie die Bereitschaft (mtime >= StartedAt).
+        Ein Lesefehler betrifft nur diese Welt: False plus Warnung.
+        """
+        if container is None or status.code != RUNNING:
+            return False
+        try:
+            state = self._provisioner.read_access_state(row.id)
+        except ProvisionerError as exc:
+            LOG.warning("Zugangsstand von Welt %s nicht lesbar: %s", row.id, exc)
+            return False
+        if state is None:
+            return True
+        written = parse_docker_time(state.mtime)
+        started = parse_docker_time(container.started_at)
+        if started is None:
+            # Ohne lesbaren Startzeitpunkt zählt nur, dass die Datei da ist.
+            return False
+        return written is None or written < started
 
     def _memory(self, row: WorldRow, container: ContainerInfo | None) -> MemoryUsage | None:
         """RAM nur für laufende Container; ein Fehler betrifft nur diese Welt."""
@@ -398,7 +434,15 @@ class WorldService:
         # Spieler nur aus einer Datei dieses Laufs: running setzt mtime >= StartedAt voraus (Pitfall 3).
         players = parse_players(status_file.content) if status.code == RUNNING and status_file is not None else []
         docker_status = MISSING if container is None else container.status
-        return _view(row, docker_status, status, players, self._memory(row, container))
+        return _view(
+            row,
+            docker_status,
+            status,
+            players,
+            self._memory(row, container),
+            invited_players=self._invited(row),
+            access_restart_needed=self._access_restart_needed(row, container, status),
+        )
 
     def _launch(self, row: WorldRow) -> None:
         """Startet den Container; bei belegtem Port Neuerzeugung mit dem nächsten freien Port.
@@ -489,7 +533,7 @@ class WorldService:
 
     # Abläufe
 
-    def _create_world_sync(self, name: str, preset_id: str) -> CreatedWorld:
+    def _create_world_sync(self, name: str, preset_id: str) -> WorldView:
         with self._mutating():
             instance = self._store.instance_id()
             world_id = uuid.uuid4().hex[:12]
@@ -532,7 +576,9 @@ class WorldService:
                 raise failure from exc
 
             self._store.update_world(world_id, op_state="ready")
-            return CreatedWorld(**asdict(self._current(world_id)), world_key=secret)
+            # Der Weltschlüssel wird seit 03-05 nicht mehr angezeigt; Zugang über
+            # provisionierte Konten. Er bleibt als default_password in der conf.
+            return self._current(world_id)
 
     def _list_worlds_sync(self) -> list[WorldView]:
         # Ohne _LOCK (Pitfall 6): Statuslesen darf nie hinter einem Erzeugen warten.

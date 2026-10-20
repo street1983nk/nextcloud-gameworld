@@ -23,6 +23,7 @@ import requests.exceptions
 import urllib3.exceptions
 from docker.models.containers import Container
 
+from gameworld.provisioner.access_mod import STATE_FILE
 from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, WorldPayload, resource_name, world_spec
 from gameworld.provisioner.status_mod import PLAYERS_FILE
 
@@ -428,12 +429,22 @@ class DockerProvisioner:
         Volume noch nie geschrieben. Den Container löst _owned auf, fremde
         Container sind ausgeschlossen. Kein Follow-Stream (Pitfall 8).
         """
-        return self._read(lambda: self._read_status_file(world_id))
+        return self._read(lambda: self._read_world_file(world_id, PLAYERS_FILE, "Die Status-Datei der Welt"))
 
-    def _read_status_file(self, world_id: str) -> StatusFile | None:
+    def read_access_state(self, world_id: str) -> StatusFile | None:
+        """State-Datei des Zugangs-Mods (mtime und gekappter Inhalt) oder None.
+
+        Der Mod schreibt sie, sobald er eine Zugangsdatei geladen hat. Fehlt sie
+        oder ist sie älter als der Start des Containers, läuft die Welt noch ohne
+        geladenen Zugangsschutz (03-RESEARCH.md Pitfall 4). Gleiche Kappung und
+        Fehlerabbildung wie bei der Status-Datei.
+        """
+        return self._read(lambda: self._read_world_file(world_id, STATE_FILE, "Der Zugangsstand der Welt"))
+
+    def _read_world_file(self, world_id: str, path: str, label: str) -> StatusFile | None:
         container = self._owned(world_id)
         try:
-            stream, stat = container.get_archive(PLAYERS_FILE)
+            stream, stat = container.get_archive(path)
         except docker.errors.NotFound:
             return None
         try:
@@ -442,7 +453,7 @@ class DockerProvisioner:
             # Gekappter oder abgebrochener Strom, Datei mitten im Umbenennen: Der
             # Inhalt stammt aus von Lua beschreibbarer Datei. Als ProvisionerError
             # bleibt der Fehler an dieser einen Welt (WR-04), ohne zweiten Versuch.
-            raise ProvisionerError("Die Status-Datei der Welt ist nicht lesbar.") from exc
+            raise ProvisionerError(f"{label} ist nicht lesbar.") from exc
         return StatusFile(mtime=str((stat or {}).get("mtime") or ""), content=content)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:

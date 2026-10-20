@@ -124,7 +124,10 @@ async def test_fresh_world_is_closed_and_invitation_opens_it(client: httpx.Async
     assert join(HOST, port, "Mia", MIA_PASSWORD)["result"] == "auth_accept"
     assert_denied(join(HOST, port, "Mia", "Falsch-Wort-11"), "WRONG_PASSWORD")
     # Der Weltschlüssel (default_password) öffnet ein provisioniertes Konto nicht (A9).
-    assert_denied(join(HOST, port, "Mia", str(created["world_key"])), "WRONG_PASSWORD")
+    # Seit 03-05 nicht mehr in der API-Antwort, deshalb aus der Datenbank gelesen.
+    row = WorldStore(app_env / "gameworld.sqlite3").get_world(world_id)
+    assert row is not None
+    assert_denied(join(HOST, port, "Mia", row.world_key), "WRONG_PASSWORD")
 
 
 async def test_half_file_revocation_state_and_restart(

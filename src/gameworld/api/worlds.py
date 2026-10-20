@@ -96,10 +96,10 @@ class WorldOut(BaseModel):
     memory_limit_bytes: int | None
     # Weltdaten fehlen oder Erstellen brach ab: nur Löschen, Starten und Neustarten geben 409.
     delete_only: bool
-
-
-class CreatedWorldOut(WorldOut):
-    world_key: str
+    # Spielernamen der Eingeladenen, ohne Passwörter (die liefert nur /api/worlds/{id}/players).
+    invited_players: list[str]
+    # Läuft die Welt noch ohne geladenen Zugangsschutz? Dann braucht sie einen Neustart.
+    access_restart_needed: bool
 
 
 class WorldListOut(BaseModel):
@@ -145,7 +145,8 @@ async def list_worlds(
 
 
 @router.post("/worlds", status_code=status.HTTP_201_CREATED)
-async def create_world(body: CreateWorldRequest, service: ServiceDep) -> CreatedWorldOut:
+async def create_world(body: CreateWorldRequest, service: ServiceDep) -> WorldOut:
+    # Seit 03-05 ohne Weltschlüssel: Zugang nur über eingeladene, provisionierte Konten.
     # Ungültige Namen weist schon das Pydantic-Modell ab (AfterValidator mit
     # normalize_world_name, 422 mit Detail-Liste); der Dienst sieht nur noch
     # normalisierte Namen, ein eigener ValueError-Zweig wäre toter Code.
@@ -157,7 +158,7 @@ async def create_world(body: CreateWorldRequest, service: ServiceDep) -> Created
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
     except ProvisionerError as exc:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from None
-    return CreatedWorldOut(**asdict(created))
+    return _out(created)
 
 
 # IDs erzeugt nur die App (uuid4().hex[:12]); alles andere ist 422 (T-01-17).
