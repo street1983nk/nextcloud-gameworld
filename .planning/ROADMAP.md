@@ -172,7 +172,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md , Durchsetzung im Spielserver: 2-s-Wiederbeitritts-Sperre in gameworld_access (Live-Nachweis per Session-Prober, MTG und VoxeLibre), Welt-Mod gameworld_time mit Prejoin-Sperre, Vorwarnung 10/5/1 min, Trennen und neustartfestem Zählbuch
+- [x] 04-01-PLAN.md , Durchsetzung im Spielserver: 2-s-Wiederbeitritts-Sperre in gameworld_access (Live-Nachweis per Session-Prober, MTG und VoxeLibre), Welt-Mod gameworld_time mit Prejoin-Sperre, Vorwarnung 10/5/1 min, Trennen und neustartfestem Zählbuch
 
 **Wave 2** *(blocked on Wave 1 completion; seriell wegen gemeinsamem Live-Dev-Stack)*
 
