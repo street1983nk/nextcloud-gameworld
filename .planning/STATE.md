@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: phase_planned
-stopped_at: 04-03 fertig (TimeEngine, Verwalter-API /api/playtime, 15-s-Zeittakt im Lifespan, ein Kontingent über alle Welten; e2e Limit/Neustart/zwei Welten/Fenster/Opt-in grün, Gesamtsuite mit Docker 759 passed, Live-Dev-Stack GET /api/playtime 200), weiter mit 04-04
-last_updated: "2026-10-20T16:45:00.000Z"
+status: executing
+stopped_at: Completed 04-04-PLAN.md (Ferien, Ferienplan, Zeitzone); nächste Welle 04-05
+last_updated: "2026-10-20T17:06:07.635Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 27
+  completed_plans: 23
   percent: 50
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 4 (Spielzeitlimits) ist GEPLANT: Research 058713e, 8 Pläne in 8 seriellen Wellen (43dbbb9, Revision 8790bab), Checker Runde 1 FAILED (2 Blocker, 11 Warnungen) -> Revision -> Runde 2 PASSED. Phase 3 komplett inkl. Security-Audit SECURED 48/48 (67c5f03), AR-24/25 gefixt (efba3d0, 9e8e5ed). Ausführung startet auf Owner-Wort.
+**Current focus:** Phase 04 — spielzeitlimits
 
 ## Current Position
 
-Phase: 4 (Spielzeitlimits), Planned (2026-10-20), Execution ausstehend
-Plan: 04-01 bis 04-08 bereit; Owner-Entscheide O-01..O-12 in den Plänen (AFK zählt, Opt-in, fail closed, gameworld_time-Mod, Europe/Berlin, ein Kontingent über alle Welten, ZEIT-05 nur Join-Sperre, Rejoin-Guard 2 s in Welle 1)
-Status: Ready to execute (/gsd:execute-phase 4)
+Phase: 04 (spielzeitlimits) — EXECUTING
+Plan: 5 of 8
+Status: Ready to execute (04-04 fertig, nächste Welle 5 = 04-05)
 Last activity: 2026-10-20
 
-Progress: [█████░░░░░] 50% (3 von 6 Phasen)
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [█████░░░░░] 50% (3 von 6 Phasen)
 | Phase 04 P01 | 35 min | 3 tasks | 13 files |
 | Phase 04 P02 | 30 min | 2 tasks | 9 files |
 | Phase 04 P03 | 95 min | 3 tasks | 17 files |
+| Phase 04 P04 | 60 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Review-Fixes: Widerruf gewinnt gegen keep-Regel bei parallelem Gruppen-Abgleich (7126f94); my_worlds antwortet bei ausstehender Neuprovisionierung 503 statt ungültigem Passwort (0760c7f); Info-Findings IN-01..07 dokumentiert offen in 03-REVIEW.md
 - [Roadmap 20.10.]: Owner-Anforderung Spielzeit: ZEIT-03 Wochenplan pro Wochentag, ZEIT-04 Ferienzeiträume mit eigenen Regeln, ZEIT-05 Zeitfenster pro Welt (Unterrichtsstunde); benutzerfreundlich, keine Konfigsprache (Commits 1050040, aa82290)
 - [Roadmap 20.10.]: Owner-Entscheid Schulen: ROLLE-03 einstellbare Verwalter-Gruppen in Phase 6; Klassen-Preset, Handout-/QR-Ansicht und Mandantenmodell als v2-Kandidaten
+- [Phase 04]: 04-04: Zeitzone über eigene Route /api/playtime/time-zone (nur available_timezones), /api/settings unverändert; holiday null = Normalplan in den Ferien
+- [Phase 04]: 04-04: Ferien- und Zeitzonen-Änderung schreibt die Regeldatei aller Welten unter mutation(); höchstens 50 Zeiträume, je höchstens 366 Tage
 
 ### Pending Todos
 
@@ -165,6 +168,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T14:30:00.000Z
-Stopped at: Phase 3 complete (Review gefixt, Verifikation passed 5/5); nächster Schritt /gsd:secure-phase 3, danach /gsd:plan-phase 4
+Last session: 2026-10-20T17:05:49.298Z
+Stopped at: Completed 04-04-PLAN.md (Ferien, Ferienplan, Zeitzone); nächste Welle 04-05
 Resume file: None

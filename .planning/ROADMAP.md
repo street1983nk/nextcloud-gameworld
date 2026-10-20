@@ -184,7 +184,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04-04-PLAN.md , Wochenplan, Ferien und Zeitzone: Ferienplan je Kind, Haushalts-Ferienliste, automatische Umschaltung am Datum, Zeitzonen-Einstellung, Live-Nachweis
+- [x] 04-04-PLAN.md , Wochenplan, Ferien und Zeitzone: Ferienplan je Kind, Haushalts-Ferienliste, automatische Umschaltung am Datum, Zeitzonen-Einstellung, Live-Nachweis
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -245,6 +245,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
-| 4. Spielzeitlimits | 0/TBD | Not started | - |
+| 4. Spielzeitlimits | 4/8 | In Progress|  |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |
