@@ -155,15 +155,17 @@ Plans:
 
 ### Phase 4: Spielzeitlimits
 
-**Goal**: Eltern legen Spielzeit pro Kind fest und können sich darauf verlassen, dass der Server sie durchsetzt
+**Goal**: Eltern legen Spielzeit pro Kind fest, mit Wochenplan und Ferienzeiten, und können sich darauf verlassen, dass der Server sie durchsetzt
 **Mode:** mvp
 **Depends on**: Phase 3
-**Requirements**: ZEIT-01, ZEIT-02
+**Requirements**: ZEIT-01, ZEIT-02, ZEIT-03, ZEIT-04
 **Success Criteria** (what must be TRUE):
 
   1. Elternteil legt pro Kind ein tägliches Spielzeitlimit und/oder ein Spielzeitfenster fest (z. B. maximal 2 Stunden, nur bis 19 Uhr)
-  2. Bei Erreichen des Limits wird das Kind serverseitig getrennt und am Wieder-Join gehindert, nicht nur per Anzeige informiert
-  3. Das Limit hält auch nach Welt-Neustart und Rejoin-Versuch (bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist bewertet und abgefangen oder dokumentiert)
+  2. Elternteil legt einen einfachen Wochenplan fest: pro Wochentag erlaubt/nicht erlaubt mit eigenem Limit und Fenster (typischer Fall "nur am Wochenende"); die Eingabe ist kindersicherungs-üblich einfach (Tages-Kacheln/Schalter, sinnvolle Voreinstellungen), keine Konfigsprache (Owner-Anforderung 20.10.2026)
+  3. Elternteil legt Ferienzeiträume (von/bis-Datum) mit eigenen Regeln an; am Datum schaltet Gameworld automatisch zwischen Normal- und Ferienregeln um, ohne dass Eltern daran denken müssen (Owner-Anforderung 20.10.2026)
+  4. Bei Erreichen des Limits oder außerhalb erlaubter Zeiten wird das Kind serverseitig getrennt und am Wieder-Join gehindert, nicht nur per Anzeige informiert
+  5. Das Limit hält auch nach Welt-Neustart und Rejoin-Versuch (bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist bewertet und abgefangen oder dokumentiert)
 
 **Plans**: TBD
 **UI hint**: yes

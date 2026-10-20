@@ -29,6 +29,8 @@
 
 - [ ] **ZEIT-01**: Elternteil kann pro Kind ein tägliches Spielzeitlimit und/oder ein Spielzeitfenster festlegen (z. B. maximal 2 Stunden, nur bis 19 Uhr)
 - [ ] **ZEIT-02**: Das Limit wird serverseitig durchgesetzt, nicht nur angezeigt (Implementierungspfad Mod vs. Scheduler-Stopp wird per Phasen-Research entschieden; bekannter Umgehungs-Caveat des Playtime-Limit-Mods ist zu bewerten)
+- [ ] **ZEIT-03**: Elternteil kann einen einfachen Wochenplan festlegen: pro Wochentag erlaubt/nicht erlaubt mit eigenem Limit und Zeitfenster (z. B. "nur Samstag und Sonntag, je 2 Stunden"); Voreinstellungen statt Konfigsprache (Owner-Anforderung 20.10.2026)
+- [ ] **ZEIT-04**: Elternteil kann Ferienzeiträume anlegen (von/bis-Datum), in denen eigene Regeln gelten (z. B. täglich statt nur Wochenende); die Umschaltung passiert automatisch am Datum, ohne dass Eltern daran denken müssen (Owner-Anforderung 20.10.2026)
 
 ### Backup
 
@@ -82,12 +84,14 @@
 | ROLLE-02 | Phase 3 | Complete |
 | ZEIT-01 | Phase 4 | Pending |
 | ZEIT-02 | Phase 4 | Pending |
+| ZEIT-03 | Phase 4 | Pending |
+| ZEIT-04 | Phase 4 | Pending |
 | BACKUP-01 | Phase 5 | Pending |
 | BACKUP-02 | Phase 5 | Pending |
 | PLATT-01 | Phase 6 | Pending |
 | PLATT-02 | Phase 2 | Complete |
 
-**Coverage:** 17/17 v1-Requirements gemappt (2026-10-19)
+**Coverage:** 19/19 v1-Requirements gemappt (Stand 2026-10-20; ZEIT-03/04 am 20.10.2026 auf Owner-Wunsch ergänzt)
 
 ---
 *Requirements for: Gameworld v1 (MVP 1, Luanti, Familien)*
