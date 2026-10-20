@@ -266,6 +266,19 @@ class WorldStore:
             row = connection.execute("SELECT access_generation FROM worlds WHERE id = ?", (world_id,)).fetchone()
         return 0 if row is None else int(row[0])
 
+    def group_invited_worlds(self, gids: set[str]) -> list[str]:
+        """Welten mit einer Gruppen-Einladung für eine der Gruppen (lazy Provisionierung, 03-06)."""
+        if not gids:
+            return []
+        placeholders = ", ".join("?" for _ in gids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT DISTINCT world_id FROM invites WHERE kind = 'group' AND target IN ({placeholders}) "  # noqa: S608
+                "ORDER BY world_id",
+                sorted(gids),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
     def access_entries(self, world_id: str) -> dict[str, str]:
         """Inhalt der Zugangsdatei: Spielername auf Verifier."""
         with self._connect() as connection:

@@ -166,3 +166,34 @@ async def test_group_rotation_rename_and_sync_in_running_world(
 
     # Kein Neustart im ganzen Ablauf: derselbe Container, derselbe Startzeitpunkt.
     assert _started_at(api, world_id) == started
+
+
+async def test_group_member_fetches_own_data_and_joins_without_parent_visit(
+    client: httpx.AsyncClient, fake_directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """03-06: Gruppe eingeladen, kein Verwalter-Abgleich mit Mitgliedern; das Kind holt sich
+    über /api/my/worlds selbst Zugang und kommt mit genau diesen Daten in die laufende Welt."""
+    from gameworld.access import roles
+    from gameworld.access.roles import Profile
+
+    async def lookup(uid: str) -> Profile:
+        if uid == "admin":
+            return Profile(user_id=uid, display_name="Admin", groups=("admin",))
+        return Profile(user_id=uid, display_name="Kind (Dev)", groups=("familie",))
+
+    monkeypatch.setattr(roles, "_role_service", roles.RoleService(lookup))
+    # Das Verzeichnis kennt kein Mitglied: Nur die Selbstauskunft des Kindes nennt die Gruppe.
+    fake_directory.groups["familie"] = []
+
+    world_id, port = await _create_running(client, "Familienwelt")
+    invited = await client.post(f"/api/worlds/{world_id}/invites", json=GROUP, headers=appapi_headers())
+    assert invited.status_code == 200, invited.text
+    assert invited.json()["players"] == []
+    assert_denied(join(HOST, port, "Kind"), "CUSTOM_STRING", NOT_INVITED)
+
+    mine = await client.get("/api/my/worlds", headers=appapi_headers("gw-kind"))
+    assert mine.status_code == 200, mine.text
+    [world] = mine.json()["worlds"]
+    assert (world["id"], world["port"], world["status"]) == (world_id, port, "running")
+    name, password = str(world["player_name"]), str(world["password"])
+    assert join(HOST, port, name, password)["result"] == "auth_accept"

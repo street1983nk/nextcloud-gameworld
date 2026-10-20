@@ -9,6 +9,8 @@ Welten eines Kontos (A2).
 
 from __future__ import annotations
 
+import ipaddress
+import re
 import unicodedata
 from typing import Annotated, Literal
 
@@ -37,6 +39,10 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
 MSG_INVALID_TARGET = "Ungültige Konto- oder Gruppen-ID."
+MSG_INVALID_HOST = "Bitte nur einen Rechnernamen oder eine IP-Adresse eintragen, ohne http:// und ohne Port."
+# Spieler-Adresse (Pattern 7): leer heißt Hostname des Browsers.
+JOIN_HOST_KEY = "join_host"
+_HOST_LABEL = re.compile(r"[A-Za-z0-9-]{1,63}")
 
 
 def _clean_target(value: str) -> str:
@@ -44,6 +50,39 @@ def _clean_target(value: str) -> str:
     if not value.strip() or any(unicodedata.category(char) in {"Cc", "Cf"} for char in value):
         raise ValueError(MSG_INVALID_TARGET)
     return value
+
+
+def _clean_host(value: str) -> str:
+    """Spieler-Adresse: leer, Hostname oder IP-Literal; kein Schema, Pfad, Port (T-03-42)."""
+    if not value:
+        return value
+    if len(value) > 253 or any(unicodedata.category(char) in {"Cc", "Cf"} for char in value):
+        raise ValueError(MSG_INVALID_HOST)
+    if "://" in value or "/" in value:
+        raise ValueError(MSG_INVALID_HOST)
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        address = None
+    if address is not None:
+        return value
+    # Ein Doppelpunkt ist nur in IPv6-Literalen erlaubt (oben schon angenommen).
+    if ":" in value:
+        raise ValueError(MSG_INVALID_HOST)
+    for label in value.split("."):
+        if not _HOST_LABEL.fullmatch(label) or label.startswith("-") or label.endswith("-"):
+            raise ValueError(MSG_INVALID_HOST)
+    return value
+
+
+class SettingsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    join_host: Annotated[str, Field(max_length=253), AfterValidator(_clean_host)]
+
+
+class SettingsOut(BaseModel):
+    join_host: str
 
 
 class InviteRequest(BaseModel):
@@ -196,6 +235,18 @@ async def reset_password(body: PlayerRef, access: AccessDep, uid: VerwalterDep) 
         return _change_out(await access.rotate_password(uid, body.nc_user))
     except _PLAYER_ERRORS as exc:
         raise _http_error(exc) from None
+
+
+@router.get("/settings")
+async def get_settings(service: ServiceDep) -> SettingsOut:
+    value = await anyio.to_thread.run_sync(service.store.get_meta, JOIN_HOST_KEY)
+    return SettingsOut(join_host=value or "")
+
+
+@router.post("/settings")
+async def save_settings(body: SettingsIn, service: ServiceDep) -> SettingsOut:
+    await anyio.to_thread.run_sync(service.store.set_meta, JOIN_HOST_KEY, body.join_host)
+    return SettingsOut(join_host=body.join_host)
 
 
 @router.post("/players/name")

@@ -39,6 +39,7 @@ import anyio.to_thread
 
 from gameworld.access.accounts import derive_password, suggest_player_name, validate_player_name
 from gameworld.access.directory import Directory, DirectoryUnavailableError, DirectoryUser
+from gameworld.access.roles import Profile
 from gameworld.access.secret import PlayerSecret, fingerprint
 from gameworld.provisioner.client import WorldNotFoundError
 from gameworld.provisioner.luanti_auth import make_verifier
@@ -102,6 +103,15 @@ class PlayerChange:
     player_name: str
     password: str
     applied: bool
+
+
+@dataclass(frozen=True)
+class MyWorld:
+    """Zugangsdaten des anfragenden Kontos für eine Welt (nur eigene Daten, Pitfall 7)."""
+
+    world_id: str
+    player_name: str
+    password: str
 
 
 @dataclass
@@ -283,6 +293,32 @@ class AccessService:
             )
         return players
 
+    async def my_worlds(self, profile: Profile) -> list[MyWorld]:
+        """Eigene Welten samt Zugangsdaten, nur für profile.user_id (ZUGANG-04, ROLLE-01).
+
+        Das Profil stammt aus der Selbstauskunft im Namen des angemeldeten
+        Kontos (signierte AppAPI-Anfrage), nie aus Daten des Browsers.
+
+        Lazy Provisionierung (ZUGANG-02 ohne Verwalter-Besuch): Steht eine der
+        eigenen Gruppen in einer Gruppen-Einladung und hat das Konto dort noch
+        keinen Zugang, bekommt es ihn jetzt. Nur Hinzufügen: Entfernen braucht
+        die Gruppenauflösung im Verwalter-Kontext (Pitfall 6), siehe sync_all.
+
+        Wartet nie auf die Welt-Sperre (Polling alle 5 s darf nie hinter einem
+        Erzeugen hängen und keine Worker-Threads stapeln): Bei belegter Sperre
+        folgen Fingerabdruck-Abgleich und Provisionierung beim nächsten Abruf.
+        """
+        uid = profile.user_id
+        secret = await self._secret.get()
+        # Eigener Schritt außerhalb von worlds.mutation() (Sperr-Regel, nicht reentrant).
+        await self._ensure_fingerprint(secret, blocking=False)
+        groups = set(profile.groups)
+        pending = await anyio.to_thread.run_sync(self._pending_group_worlds, uid, groups)
+        if pending:
+            user = DirectoryUser(uid=uid, display_name=profile.display_name, enabled=True)
+            await anyio.to_thread.run_sync(self._provision_self, pending, user, groups, secret)
+        return await anyio.to_thread.run_sync(self._my_worlds_sync, uid, secret)
+
     def list_invites(self, world_id: str) -> list[tuple[str, str, str, str]]:
         """Einladungen als (kind, target, invited_by, created_at), für die Verwalteransicht."""
         return [
@@ -462,6 +498,45 @@ class AccessService:
             return False
         self._store.apply_world_access(world_id, target)
         return True
+
+    def _pending_group_worlds(self, uid: str, groups: set[str]) -> list[str]:
+        """Welten mit Einladung einer eigenen Gruppe, in denen das Konto noch keinen Zugang hat."""
+        return [
+            world_id
+            for world_id in self._store.group_invited_worlds(groups)
+            if uid not in self._store.world_access(world_id)
+        ]
+
+    def _provision_self(self, world_ids: list[str], user: DirectoryUser, groups: set[str], secret: bytes) -> None:
+        """Ergänzt das eigene Konto in Welten seiner Gruppen-Einladungen; nur Hinzufügen.
+
+        Ohne Warten auf die Sperre; unter ihr wird jede Welt neu geprüft (Welt
+        gelöscht, Einladung entfernt, schon eingetragen). Ruft nie _ensure_fingerprint.
+        """
+        with self._worlds.try_mutation() as acquired:
+            if not acquired:
+                return
+            invited = set(self._store.group_invited_worlds(groups))
+            for world_id in world_ids:
+                if world_id not in invited or self._store.get_world(world_id) is None:
+                    continue
+                current = self._store.world_access(world_id)
+                if user.uid in current:
+                    continue
+                player = self._ensure_player(user)
+                self._store.apply_world_access(world_id, {**current, user.uid: self._verifier(player, secret)})
+                LOG.info("Welt %s: Konto über eigene Gruppen-Einladung ergänzt", world_id)
+                self._worlds.push_access(world_id)
+
+    def _my_worlds_sync(self, uid: str, secret: bytes) -> list[MyWorld]:
+        player = self._store.get_player(uid)
+        if player is None:
+            return []
+        password = derive_password(secret, uid, player.rotation)
+        return [
+            MyWorld(world_id=world_id, player_name=player.player_name, password=password)
+            for world_id in self._store.player_worlds(uid)
+        ]
 
     def _rewrite_player(self, player: PlayerRow, secret: bytes) -> bool:
         """Neuer Name oder neue Rotation: alle Verifier des Kontos neu, in einer Transaktion.
