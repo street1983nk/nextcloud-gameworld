@@ -543,6 +543,15 @@ class WorldStore:
                 (world_id, weekday, window_start, window_end),
             )
 
+    def replace_world_window(self, world_id: str, windows: dict[int, tuple[int, int]]) -> None:
+        """Alle Zeitfenster einer Welt in einer Transaktion ersetzen (fehlender Wochentag = geschlossen)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
+            connection.executemany(
+                "INSERT INTO world_windows (world_id, weekday, window_start, window_end) VALUES (?, ?, ?, ?)",
+                [(world_id, weekday, start, end) for weekday, (start, end) in sorted(windows.items())],
+            )
+
     def clear_world_window(self, world_id: str) -> None:
         """Alle Zeitfenster einer Welt entfernen (Welt ist dann immer offen)."""
         with self._connect() as connection:

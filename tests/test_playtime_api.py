@@ -12,13 +12,14 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
+from gameworld.access.directory import DirectoryUnavailableError
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.provisioner.time_mod import RULES_FILE_NAME
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldRow, WorldStore
-from tests.conftest import appapi_headers
+from tests.conftest import FakeDirectory, appapi_headers
 from tests.test_service_lifecycle import FakeProvisioner
 
 W1 = "aaaaaaaaaaa1"
@@ -415,3 +416,230 @@ async def test_holiday_switches_rules_immediately(
     assert added.status_code == 200
     line = _last_rules(fake).split("\nKind ")[1].split("\n")[0]
     assert line.split(" ")[3] == "ok"
+
+
+# Welt-Zeitfenster und Verwalter-Freistellung (04-05, ZEIT-05, O-05, A4)
+
+
+def _window_days(open_days: dict[int, tuple[int, int]]) -> list[dict[str, object]]:
+    days: list[dict[str, object]] = []
+    for weekday in range(1, 8):
+        window = open_days.get(weekday)
+        if window is None:
+            days.append({"weekday": weekday, "open": False})
+        else:
+            days.append({"weekday": weekday, "open": True, "window_start": window[0], "window_end": window[1]})
+    return days
+
+
+def _world_line(fake: FakeProvisioner) -> str | None:
+    for line in _last_rules(fake).split("\n"):
+        if line.startswith("welt "):
+            return line
+    return None
+
+
+def _admin_invited(store: WorldStore) -> None:
+    store.insert_player(PlayerRow(nc_user="admin", player_name="Chef", rotation=0))
+    store.apply_world_access(W1, {**store.world_access(W1), "admin": VERIFIER})
+
+
+async def test_world_window_set_and_cleared(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake: FakeProvisioner
+) -> None:
+    del service
+    fake.written.clear()
+    response = await client.post(
+        f"/api/playtime/worlds/{W1}/window", json={"days": _window_days({3: (600, 720)})}, headers=appapi_headers()
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["world_id"] == W1
+    assert data["applied"] is True
+    assert len(data["time_window"]) == 7
+    assert data["time_window"][2] == {"weekday": 3, "open": True, "window_start": 600, "window_end": 720}
+    assert data["time_window"][0] == {"weekday": 1, "open": False, "window_start": None, "window_end": None}
+    assert store.world_window(W1) == {3: (600, 720)}
+    assert _world_line(fake) is not None
+
+    # Ein neues Fenster ersetzt das alte vollständig (fehlender Tag = geschlossen).
+    replaced = await client.post(
+        f"/api/playtime/worlds/{W1}/window", json={"days": _window_days({5: (900, 1020)})}, headers=appapi_headers()
+    )
+    assert replaced.status_code == 200
+    assert store.world_window(W1) == {5: (900, 1020)}
+
+    fake.written.clear()
+    cleared = await client.delete(f"/api/playtime/worlds/{W1}/window", headers=appapi_headers())
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json() == {"world_id": W1, "time_window": None, "applied": True}
+    assert store.world_window(W1) is None
+    assert _world_line(fake) is None
+
+
+_CLOSED_WITH_WINDOW = {"weekday": 1, "open": False, "window_start": 600, "window_end": 720}
+_EXTRA_DAY_FIELD = {"weekday": 1, "open": True, "window_start": 600, "window_end": 720, "foo": 1}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"days": _window_days({3: (600, 720)})[:6]},  # nur 6 Tage
+        {"days": [*_window_days({3: (600, 720)})[:6], {"weekday": 1, "open": False}]},  # Dublette
+        {"days": [{"weekday": 1, "open": True}, *_window_days({})[1:]]},  # offen ohne Fenster
+        {"days": [{"weekday": 1, "open": True, "window_start": 600}, *_window_days({})[1:]]},  # nur Anfang
+        {"days": _window_days({1: (720, 600)})},  # Ende vor Beginn
+        {"days": _window_days({1: (600, 600)})},  # Ende gleich Beginn
+        {"days": _window_days({1: (-1, 600)})},  # Anfang negativ
+        {"days": _window_days({1: (600, 1441)})},  # Ende zu groß
+        {"days": [_CLOSED_WITH_WINDOW, *_window_days({})[1:]]},  # geschlossen mit Fenster
+        {"days": _window_days({})},  # alles geschlossen (immer offen heißt: Fenster entfernen)
+        {"days": [{"weekday": 8, "open": False}, *_window_days({})[1:]]},  # Wochentag 8
+        {"days": _window_days({1: (600, 720)}), "extra": 1},  # unbekanntes Feld
+        {"days": [_EXTRA_DAY_FIELD, *_window_days({})[1:]]},  # unbekanntes Tagesfeld
+    ],
+)
+async def test_invalid_world_window_is_422(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, body: object
+) -> None:
+    del service
+    response = await client.post(f"/api/playtime/worlds/{W1}/window", json=body, headers=appapi_headers())
+    assert response.status_code == 422, response.text
+    assert store.world_window(W1) is None
+
+
+async def test_world_window_unknown_world_is_404(client: httpx.AsyncClient, service: WorldService) -> None:
+    del service
+    body = {"days": _window_days({3: (600, 720)})}
+    response = await client.post("/api/playtime/worlds/bbbbbbbbbbbb/window", json=body, headers=appapi_headers())
+    assert response.status_code == 404
+    deleted = await client.delete("/api/playtime/worlds/bbbbbbbbbbbb/window", headers=appapi_headers())
+    assert deleted.status_code == 404
+    bad = await client.post("/api/playtime/worlds/NICHT-HEX/window", json=body, headers=appapi_headers())
+    assert bad.status_code == 422
+
+
+@pytest.mark.parametrize("method", ["POST", "DELETE"])
+async def test_world_window_forbidden_for_child(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, method: str
+) -> None:
+    del service
+    body = {"days": _window_days({3: (600, 720)})} if method == "POST" else None
+    response = await client.request(
+        method, f"/api/playtime/worlds/{W1}/window", json=body, headers=appapi_headers("gw-kind")
+    )
+    assert response.status_code != 200
+    assert store.world_window(W1) is None
+
+
+async def test_world_list_carries_time_window(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    del service
+    listed = await client.get("/api/worlds", headers=appapi_headers())
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["worlds"][0]["time_window"] is None
+
+    await client.post(
+        f"/api/playtime/worlds/{W1}/window", json={"days": _window_days({3: (600, 720)})}, headers=appapi_headers()
+    )
+    listed = await client.get("/api/worlds", headers=appapi_headers())
+    [world] = listed.json()["worlds"]
+    assert len(world["time_window"]) == 7
+    assert world["time_window"][2]["open"] is True
+    assert store.world_window(W1) == {3: (600, 720)}
+
+
+async def test_get_playtime_fills_admin_snapshot_and_hides_admins(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake: FakeProvisioner
+) -> None:
+    del service
+    _admin_invited(store)
+    fake.written.clear()
+
+    response = await client.get("/api/playtime", headers=appapi_headers())
+
+    assert response.status_code == 200, response.text
+    assert store.get_meta("time_admins") == '["admin"]'
+    assert [child["nc_user"] for child in response.json()["children"]] == ["gw-kind"]
+    # Die geänderte Liste schreibt die Regeldatei aller Welten: Chef ist frei.
+    assert "\nChef -1 -1 -1 frei -\n" in _last_rules(fake)
+
+
+async def test_admin_snapshot_keeps_last_state_on_directory_error(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_directory: FakeDirectory
+) -> None:
+    del service
+    store.set_meta("time_admins", '["admin", "lehrerin"]')
+    fake_directory.error = DirectoryUnavailableError("weg")
+
+    response = await client.get("/api/playtime", headers=appapi_headers())
+
+    assert response.status_code == 200, response.text
+    assert store.get_meta("time_admins") == '["admin", "lehrerin"]'
+
+
+async def test_admin_snapshot_change_rerenders_all_worlds(
+    client: httpx.AsyncClient,
+    service: WorldService,
+    store: WorldStore,
+    fake: FakeProvisioner,
+    fake_directory: FakeDirectory,
+) -> None:
+    del service
+    _second_worlds(store, fake)
+    await client.get("/api/playtime", headers=appapi_headers())
+    fake_directory.groups["admin"] = ["admin", "gw-kind2"]
+    fake.written.clear()
+
+    # Gedrosselt: der zweite Abruf innerhalb von 60 s fragt Nextcloud nicht erneut.
+    await client.get("/api/playtime", headers=appapi_headers())
+    assert fake.written == []
+    assert store.get_meta("time_admins") == '["admin"]'
+
+    # Eine Änderung (force) holt die Liste neu und schreibt alle Welten mit Container neu.
+    await client.post(
+        f"/api/playtime/worlds/{W1}/window", json={"days": _window_days({3: (600, 720)})}, headers=appapi_headers()
+    )
+    assert store.get_meta("time_admins") == '["admin", "gw-kind2"]'
+    assert _rules_worlds(fake) == {W1, W2}
+
+
+async def test_post_children_for_admin_is_422(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    del service
+    _admin_invited(store)
+    response = await client.post("/api/playtime/children/admin", json=_plan_body(), headers=appapi_headers())
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Verwalter haben keine Spielzeitregeln."
+    assert "admin" not in store.child_plans()
+
+
+async def test_group_lookup_never_runs_under_world_lock(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_directory: FakeDirectory
+) -> None:
+    del service
+    _admin_invited(store)
+    await client.get("/api/playtime", headers=appapi_headers())
+    await client.post("/api/playtime/children/gw-kind", json=_plan_body(), headers=appapi_headers())
+    await client.delete("/api/playtime/children/gw-kind", headers=appapi_headers())
+    await client.post(
+        f"/api/playtime/worlds/{W1}/window", json={"days": _window_days({3: (600, 720)})}, headers=appapi_headers()
+    )
+    await client.delete(f"/api/playtime/worlds/{W1}/window", headers=appapi_headers())
+    await client.get("/api/worlds", headers=appapi_headers())
+
+    admin_calls = [call for call in fake_directory.group_calls if call[1] == "admin"]
+    assert len(admin_calls) >= 5
+    assert fake_directory.lock_held
+    assert not any(fake_directory.lock_held)
+
+
+async def test_world_list_never_fails_on_admin_refresh_error(
+    client: httpx.AsyncClient, service: WorldService, fake_directory: FakeDirectory
+) -> None:
+    del service
+    fake_directory.error = RuntimeError("kaputt")
+    response = await client.get("/api/worlds", headers=appapi_headers())
+    assert response.status_code == 200, response.text

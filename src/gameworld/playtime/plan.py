@@ -50,6 +50,12 @@ class DayRule:
                 raise ValueError("Der Fensteranfang liegt vor dem Fensterende.")
 
 
+def check_world_window(window_start: int, window_end: int) -> tuple[int, int]:
+    """Prüft ein Welt-Fenster mit derselben Regel wie ein Kinder-Fenster (ValueError bei Unsinn)."""
+    DayRule(allowed=True, limit_minutes=None, window_start=window_start, window_end=window_end)
+    return window_start, window_end
+
+
 @dataclass(frozen=True)
 class WeekPlan:
     """Wochenplan: genau die sieben ISO-Wochentage 1..7 auf je eine DayRule."""
@@ -94,6 +100,30 @@ class WorldState:
     until: int
     reason: str
     next_hint: str
+
+
+@dataclass(frozen=True)
+class WindowDay:
+    """Ein Wochentag des Welt-Zeitfensters für API und Weltenliste (ZEIT-05)."""
+
+    weekday: int
+    open: bool
+    window_start: int | None
+    window_end: int | None
+
+
+def window_days(windows: dict[int, tuple[int, int]] | None) -> list[WindowDay] | None:
+    """Welt-Fenster als sieben Wochentage; None heißt: kein Fenster, die Welt ist immer offen."""
+    if windows is None:
+        return None
+    days: list[WindowDay] = []
+    for weekday in range(1, 8):
+        window = windows.get(weekday)
+        if window is None:
+            days.append(WindowDay(weekday=weekday, open=False, window_start=None, window_end=None))
+        else:
+            days.append(WindowDay(weekday=weekday, open=True, window_start=window[0], window_end=window[1]))
+    return days
 
 
 def load_zone(name: str) -> ZoneInfo:

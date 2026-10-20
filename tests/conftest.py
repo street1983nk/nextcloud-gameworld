@@ -86,10 +86,13 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     from gameworld.access import directory, roles, secret
     from gameworld.access import service as access_service
     from gameworld.api import worlds
+    from gameworld.playtime import service as playtime_service
 
     monkeypatch.setattr(worlds, "_service", None)
     # Drossel des Abgleichs beim Verwalter-Besuch beginnt je Test frisch.
     monkeypatch.setattr(access_service, "SYNC_STATE", access_service.SyncState())
+    # Ebenso die Drossel des Verwalter-Schnappschusses (04-05).
+    monkeypatch.setattr(playtime_service, "ADMINS_STATE", playtime_service.AdminsState())
     monkeypatch.setattr(roles, "_role_service", roles.RoleService(fake_lookup))
     monkeypatch.setattr(directory, "_directory", FakeDirectory())
     monkeypatch.setattr(secret, "_player_secret", StaticSecret())
@@ -104,7 +107,10 @@ class FakeDirectory:
     """Nextcloud-Konten ohne Nextcloud: gw-kind aktiv, gw-aus deaktiviert, alles andere fehlt.
 
     gw-kind2 und admin sind aktiv (Spielzeit-e2e: zweites Kind als Positivkontrolle,
-    admin für Welt-Fenster ab 04-05). Gruppe familie: gw-kind und gw-aus; im Test änderbar (groups).
+    admin für Welt-Fenster ab 04-05). Gruppe familie: gw-kind und gw-aus, Gruppe admin:
+    admin (Verwalter-Schnappschuss, 04-05); im Test änderbar (groups). ``lock_held``
+    hält für jede Gruppenabfrage fest, ob die Welt-Sperre dabei belegt war (Sperrregel:
+    Nextcloud-Aufrufe nie unter mutation()).
     """
 
     def __init__(self) -> None:
@@ -114,7 +120,8 @@ class FakeDirectory:
             "gw-aus": ("Aus (Dev)", False),
             "admin": ("Admin (Dev)", True),
         }
-        self.groups: dict[str, list[str]] = {"familie": ["gw-kind", "gw-aus"]}
+        self.groups: dict[str, list[str]] = {"familie": ["gw-kind", "gw-aus"], "admin": ["admin"]}
+        self.lock_held: list[bool] = []
         self.calls: list[tuple[str, str]] = []
         self.group_calls: list[tuple[str, str]] = []
         self.error: Exception | None = None
@@ -127,7 +134,10 @@ class FakeDirectory:
         return None if entry is None else DirectoryUser(uid=uid, display_name=entry[0], enabled=entry[1])
 
     async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
+        from gameworld.worlds import service as world_service
+
         self.group_calls.append((acting_uid, gid))
+        self.lock_held.append(world_service._LOCK.locked())  # pyright: ignore[reportPrivateUsage]
         if self.error is not None:
             raise self.error
         members = self.groups.get(gid)

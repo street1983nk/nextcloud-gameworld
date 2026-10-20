@@ -486,6 +486,36 @@ async def test_delete_removes_row_after_docker_cleanup(
     assert store.get_world(created.id) is None
 
 
+async def test_delete_removes_world_window_and_seen_ledger(service: WorldService, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    other = await service.create_world("Andere")
+    for world_id in (created.id, other.id):
+        store.replace_world_window(world_id, {3: (600, 720)})
+        store.set_ledger_seen(world_id, {"Kind": 30})
+
+    await service.delete_world(created.id)
+
+    assert store.world_window(created.id) is None
+    assert store.ledger_seen(created.id) == {}
+    # Die andere Welt behält ihre Daten.
+    assert store.world_window(other.id) == {3: (600, 720)}
+    assert store.ledger_seen(other.id) == {"Kind": 30}
+
+
+async def test_list_worlds_carries_time_window(service: WorldService, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    assert {view.id: view for view in await service.list_worlds()}[created.id].time_window is None
+
+    # Wie ein Dienst unter der Sperre ändern: Der Listen-Cache wird dabei verworfen.
+    with service.try_mutation() as acquired:
+        assert acquired
+        store.replace_world_window(created.id, {1: (600, 720)})
+
+    [view] = [view for view in await service.list_worlds() if view.id == created.id]
+    assert view.time_window is not None
+    assert [day.open for day in view.time_window] == [True, False, False, False, False, False, False]
+
+
 async def test_failed_delete_keeps_row(service: WorldService, fake: FakeProvisioner, store: WorldStore) -> None:
     created = await service.create_world("Welt")
     fake.remove_error = ProvisionerError("Docker hat die Anfrage abgelehnt: kaputt")

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import pytest
 
-from gameworld.playtime.engine import TimeEngine
+from gameworld.playtime.engine import META_TIME_ADMINS, TimeEngine, parse_admins
 from gameworld.playtime.plan import DayRule, WeekPlan, day_bounds, load_zone, local_day
 from gameworld.provisioner.time_mod import LEDGER_HEADER, Ledger
 from gameworld.worlds.store import PlayerRow, WorldRow, WorldStore
@@ -325,3 +325,94 @@ def test_book_parses_mod_ledger(engine: TimeEngine, store: WorldStore) -> None:
     engine.book("w1", parsed)
 
     assert store.usage("gw-mia", TODAY) == 60
+
+
+# Welt-Fenster und Verwalter-Freistellung (04-05, ZEIT-05, O-11/A4)
+
+# Mi 2026-10-21 09:00 und Do 2026-10-22 12:00 Europe/Berlin (Sommerzeit, vor der Umstellung am 25.10.).
+WED_0900 = FIXED - 3 * 86400 - 3 * 3600
+THU_1200 = FIXED - 2 * 86400
+
+
+def _epoch(day: date, hour: int) -> int:
+    return int(datetime.combine(day, time(hour), tzinfo=ZONE).timestamp())
+
+
+def test_world_line_before_window_on_open_day(store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    store.replace_world_window("w1", {3: (600, 720)})
+    engine = TimeEngine(store, clock=lambda: float(WED_0900))
+
+    data, _ = engine.render("w1")
+
+    wednesday = local_day(WED_0900, ZONE)
+    assert wednesday.isoweekday() == 3
+    assert _line(data, "welt") == ["welt", str(_epoch(wednesday, 10)), str(_epoch(wednesday, 12)), "welt", "Mi-10:00"]
+
+
+def test_world_line_on_closed_day_points_to_next_open_day(store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    store.replace_world_window("w1", {3: (600, 720)})
+    engine = TimeEngine(store, clock=lambda: float(THU_1200))
+
+    data, _ = engine.render("w1")
+
+    assert _line(data, "welt") == ["welt", "0", "0", "welt", "Mi-10:00"]
+
+
+def test_world_without_window_has_no_world_line(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    data, _ = engine.render("w1")
+    assert _line(data, "welt") is None
+
+
+def test_invited_admin_gets_frei_line_without_window(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "admin", "Chef")
+    _player(store, "gw-leo", "Leo")
+    _invite(store, "w1", "admin")
+    _invite(store, "w1", "gw-leo")
+    store.set_meta(META_TIME_ADMINS, '["admin"]')
+
+    data, _ = engine.render("w1")
+
+    assert _line(data, "Chef") == ["Chef", "-1", "-1", "-1", "frei", "-"]
+    # Kind ohne Regeln und ohne Verwaltung: keine Zeile (Opt-in, T-04-27).
+    assert _line(data, "Leo") is None
+
+
+def test_frei_beats_old_rules_and_child_never_frei(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    store.replace_world_window("w1", {1: (600, 720)})
+    _player(store, "admin", "Chef")
+    _player(store, "gw-mia", "Mia")
+    _invite(store, "w1", "admin")
+    _invite(store, "w1", "gw-mia")
+    _plan(store, "admin", _week(limit=30))
+    _plan(store, "gw-mia", _week(limit=30))
+    store.set_meta(META_TIME_ADMINS, '["admin"]')
+
+    data, _ = engine.render("w1")
+
+    assert _line(data, "Chef") == ["Chef", "-1", "-1", "-1", "frei", "-"]
+    mia = _line(data, "Mia")
+    assert mia is not None
+    assert mia[4] != "frei"
+
+
+@pytest.mark.parametrize("raw", [None, "", "kaputt", '{"admin": 1}', "[1, 2]"])
+def test_missing_or_broken_admin_snapshot_gives_no_frei(engine: TimeEngine, store: WorldStore, raw: str | None) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "admin", "Chef")
+    _invite(store, "w1", "admin")
+    if raw is not None:
+        store.set_meta(META_TIME_ADMINS, raw)
+
+    data, _ = engine.render("w1")
+
+    assert _line(data, "Chef") is None
+
+
+def test_parse_admins_reads_sorted_json_list() -> None:
+    assert parse_admins('["admin", "lehrerin"]') == frozenset({"admin", "lehrerin"})
+    assert parse_admins(None) == frozenset()

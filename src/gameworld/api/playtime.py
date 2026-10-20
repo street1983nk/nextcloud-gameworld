@@ -1,4 +1,4 @@
-"""Verwalter-API für Spielzeit-Regeln je Kind, Ferien und Zeitzone (ZEIT-01, ZEIT-03, ZEIT-04).
+"""Verwalter-API für Spielzeit-Regeln je Kind, Ferien, Zeitzone und Welt-Fenster (ZEIT-01, ZEIT-03..05).
 
 Nur Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (require_verwalter
 routerweit, T-04-15, T-04-24). Der Körper eines Kindes trägt den Wochenplan
@@ -12,6 +12,11 @@ höchstens 50 Zeiträume (T-04-23). Die Zeitzone hat eine eigene Route, damit de
 Vertrag von /api/settings unverändert bleibt; angenommen werden nur Namen aus
 zoneinfo.available_timezones() (nie ein Pfad, T-04-22).
 
+Das Zeitfenster einer Welt (ZEIT-05) kommt als genau sieben Wochentage mit
+"open" und Fenster in Minuten; ein geschlossener Tag hat kein Fenster. Die Welt
+läuft weiter (O-05): Nur Kinder werden außerhalb abgewiesen bzw. am Fensterende
+getrennt, Verwalter sind freigestellt (A4).
+
 Setzen läuft über POST, Entfernen über DELETE (info.xml ^/api/.* ADMIN deckt GET,
 POST, DELETE; eine neue HTTP-Methode wird nicht eingeführt). Ungültige Eingaben
 weist schon das Pydantic-Modell bzw. die Plan-Validierung mit 422 ab (T-04-16).
@@ -19,6 +24,7 @@ weist schon das Pydantic-Modell bzw. die Plan-Validierung mit 422 ab (T-04-16).
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import date
 from typing import Annotated, Self
 from zoneinfo import available_timezones
@@ -31,8 +37,8 @@ from gameworld.access.roles import require_verwalter
 from gameworld.access.secret import SecretUnavailableError
 from gameworld.access.service import PlayerNotFoundError
 from gameworld.api.invites import _clean_target  # pyright: ignore[reportPrivateUsage]
-from gameworld.api.worlds import ServiceDep
-from gameworld.playtime.plan import ChildState, DayRule, Holiday, WeekPlan
+from gameworld.api.worlds import ServiceDep, WindowDayOut, WorldId
+from gameworld.playtime.plan import ChildState, DayRule, Holiday, WeekPlan, check_world_window
 from gameworld.playtime.service import (
     ChildResult,
     ChildView,
@@ -41,7 +47,10 @@ from gameworld.playtime.service import (
     HolidayView,
     PlaytimeView,
     TimeService,
+    WorldWindowResult,
 )
+from gameworld.provisioner.client import WorldNotFoundError
+from gameworld.worlds.service import NOT_FOUND
 
 # Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-04-15).
 router = APIRouter(prefix="/api/playtime", dependencies=[Depends(require_verwalter)])
@@ -110,6 +119,34 @@ class TimeZoneIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     time_zone: Annotated[str, AfterValidator(_known_zone)] = Field(max_length=64)
+
+
+class WindowDayIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    weekday: int = Field(ge=1, le=7)
+    open: bool
+    # Bereiche prüft check_world_window (wie DayRule): Anfang 0..1439, Ende 1..1440, Anfang vor Ende.
+    window_start: int | None = None
+    window_end: int | None = None
+
+
+class WorldWindowIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    days: list[WindowDayIn] = Field(min_length=7, max_length=7)
+
+    @model_validator(mode="after")
+    def _seven_days(self) -> Self:
+        if {day.weekday for day in self.days} != set(range(1, 8)):
+            raise ValueError("Ein Zeitfenster braucht genau die sieben Wochentage 1 bis 7.")
+        return self
+
+
+class WorldWindowOut(BaseModel):
+    world_id: str
+    time_window: list[WindowDayOut] | None
+    applied: bool
 
 
 class DayOut(BaseModel):
@@ -182,6 +219,25 @@ def _to_week(days: list[DayIn]) -> WeekPlan:
     )
 
 
+def _to_windows(days: list[WindowDayIn]) -> dict[int, tuple[int, int]]:
+    """Offene Tage auf ihr Fenster; jede ungültige Angabe wirft ValueError (422)."""
+    windows: dict[int, tuple[int, int]] = {}
+    for day in days:
+        if not day.open:
+            if day.window_start is not None or day.window_end is not None:
+                raise ValueError("Ein geschlossener Tag hat kein Zeitfenster.")
+            continue
+        if day.window_start is None or day.window_end is None:
+            raise ValueError("Ein offener Tag braucht Anfang und Ende des Zeitfensters.")
+        windows[day.weekday] = check_world_window(day.window_start, day.window_end)
+    return windows
+
+
+def _window_out(result: WorldWindowResult) -> WorldWindowOut:
+    days = None if result.time_window is None else [WindowDayOut(**asdict(day)) for day in result.time_window]
+    return WorldWindowOut(world_id=result.world_id, time_window=days, applied=result.applied)
+
+
 def _days_out(week: WeekPlan) -> list[DayOut]:
     return [
         DayOut(
@@ -237,6 +293,8 @@ def _holiday_result_out(result: HolidayResult) -> HolidayOut:
 
 
 def _http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, WorldNotFoundError):
+        return HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     if isinstance(exc, PlayerNotFoundError | HolidayNotFoundError):
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, ValueError):
@@ -244,7 +302,14 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE)
 
 
-_ERRORS = (PlayerNotFoundError, HolidayNotFoundError, ValueError, DirectoryUnavailableError, SecretUnavailableError)
+_ERRORS = (
+    PlayerNotFoundError,
+    HolidayNotFoundError,
+    WorldNotFoundError,
+    ValueError,
+    DirectoryUnavailableError,
+    SecretUnavailableError,
+)
 
 
 def _playtime_out(view: PlaytimeView) -> PlaytimeOut:
@@ -307,3 +372,21 @@ async def set_time_zone(body: TimeZoneIn, service: TimeDep) -> TimeZoneOut:
     except _ERRORS as exc:
         raise _http_error(exc) from None
     return TimeZoneOut(time_zone=body.time_zone, applied=applied)
+
+
+@router.post("/worlds/{world_id}/window")
+async def set_world_window(
+    world_id: WorldId, body: WorldWindowIn, service: TimeDep, uid: VerwalterDep
+) -> WorldWindowOut:
+    try:
+        return _window_out(await service.set_world_window(uid, world_id, _to_windows(body.days)))
+    except _ERRORS as exc:
+        raise _http_error(exc) from None
+
+
+@router.delete("/worlds/{world_id}/window")
+async def clear_world_window(world_id: WorldId, service: TimeDep, uid: VerwalterDep) -> WorldWindowOut:
+    try:
+        return _window_out(await service.clear_world_window(uid, world_id))
+    except _ERRORS as exc:
+        raise _http_error(exc) from None

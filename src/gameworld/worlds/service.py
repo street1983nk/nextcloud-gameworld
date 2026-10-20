@@ -24,6 +24,7 @@ import anyio.to_thread
 
 from gameworld.config import Settings
 from gameworld.playtime.engine import TimeEngine
+from gameworld.playtime.plan import WindowDay, window_days
 from gameworld.provisioner.access_mod import render_access_file
 from gameworld.provisioner.archive import build_access_tar, build_time_tar, build_world_files, build_world_payload
 from gameworld.provisioner.client import (
@@ -130,6 +131,8 @@ class WorldView:
     access_restart_needed: bool
     # Läuft die Welt ohne geladenen Zeit-Mod (kein Zählbuch)? Dann braucht sie einen Neustart.
     time_restart_needed: bool
+    # Welt-Zeitfenster (ZEIT-05): sieben Wochentage oder None (immer offen).
+    time_window: list[WindowDay] | None = None
 
 
 def _view(
@@ -142,6 +145,7 @@ def _view(
     invited_players: list[str],
     access_restart_needed: bool = False,
     time_restart_needed: bool = False,
+    time_window: list[WindowDay] | None = None,
 ) -> WorldView:
     preset = PRESETS.get(row.preset)
     # UNKNOWN (Docker nicht erreichbar) behält Vorrang vor dem Preset-Fehler.
@@ -171,12 +175,18 @@ def _view(
         invited_players=invited_players,
         access_restart_needed=access_restart_needed,
         time_restart_needed=time_restart_needed,
+        time_window=time_window,
     )
 
 
 def _copy(view: WorldView) -> WorldView:
     """Unabhängige Kopie, damit Aufrufer den Cache nie verändern."""
-    return replace(view, players=list(view.players), invited_players=list(view.invited_players))
+    return replace(
+        view,
+        players=list(view.players),
+        invited_players=list(view.invited_players),
+        time_window=None if view.time_window is None else list(view.time_window),
+    )
 
 
 class WorldService:
@@ -455,6 +465,7 @@ class WorldService:
                         status_mtime=None,
                     ),
                     invited_players=self._invited(row),
+                    time_window=self._time_window(row),
                 )
                 for row in rows
             ]
@@ -481,6 +492,10 @@ class WorldService:
     def _invited(self, row: WorldRow) -> list[str]:
         """Spielernamen der Eingeladenen, sortiert; nur die Namen, nie die Verifier."""
         return sorted(self._store.access_entries(row.id))
+
+    def _time_window(self, row: WorldRow) -> list[WindowDay] | None:
+        """Welt-Zeitfenster aus der Datenbank (ZEIT-05); None heißt: immer offen."""
+        return window_days(self._store.world_window(row.id))
 
     def _access_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
         """Läuft die Welt noch ohne geladenen Zugangsschutz (03-RESEARCH.md Pitfall 4)?
@@ -562,6 +577,7 @@ class WorldService:
             invited_players=self._invited(row),
             access_restart_needed=self._access_restart_needed(row, container, status),
             time_restart_needed=self._time_restart_needed(row, container, status),
+            time_window=self._time_window(row),
         )
 
     def _launch(self, row: WorldRow) -> None:
@@ -827,6 +843,7 @@ class WorldService:
                 self._provisioner.remove_world(row.id, keep_volume=False)
                 self._store.delete_world(row.id)
                 self._store.delete_access_data(row.id)
+                self._store.delete_time_data(row.id)
             case ReconcileAction.ADOPT_RUNNING:
                 self._store.update_world(row.id, desired_state="running")
             case ReconcileAction.NONE:
@@ -859,5 +876,7 @@ class WorldService:
                 raise
             # Erst nach erfolgreichem Aufräumen: kein Volume ohne Eintrag (T-01-21).
             self._store.delete_world(world_id)
-            # Kein PRAGMA foreign_keys: Einladungen und Zugang der Welt explizit löschen.
+            # Kein PRAGMA foreign_keys: Einladungen, Zugang, Welt-Fenster und
+            # gesehene Zählbuchstände der Welt explizit löschen.
             self._store.delete_access_data(world_id)
+            self._store.delete_time_data(world_id)

@@ -19,6 +19,7 @@ from gameworld.access.roles import require_verwalter
 from gameworld.access.secret import PlayerSecret, get_player_secret
 from gameworld.access.service import AccessService
 from gameworld.config import load_settings
+from gameworld.playtime.service import TimeService
 from gameworld.provisioner.client import (
     DockerProvisioner,
     DockerUnavailableError,
@@ -76,6 +77,13 @@ class CreateWorldRequest(BaseModel):
     preset: Annotated[str, Field(max_length=64), AfterValidator(validate_preset_id)] = DEFAULT_PRESET_ID
 
 
+class WindowDayOut(BaseModel):
+    weekday: int
+    open: bool
+    window_start: int | None
+    window_end: int | None
+
+
 class WorldOut(BaseModel):
     id: str
     name: str
@@ -102,6 +110,8 @@ class WorldOut(BaseModel):
     access_restart_needed: bool
     # Läuft die Welt noch ohne geladenen Zeit-Mod? Dann braucht sie einen Neustart.
     time_restart_needed: bool
+    # Welt-Zeitfenster (ZEIT-05): sieben Wochentage oder null (immer offen).
+    time_window: list[WindowDayOut] | None
 
 
 class WorldListOut(BaseModel):
@@ -142,6 +152,12 @@ async def list_worlds(
         await AccessService(service.store, service, directory, secret).sync_all(uid)
     except Exception as exc:
         LOG.warning("Abgleich der Einladungen beim Verwalter-Besuch gescheitert: %s", type(exc).__name__)
+    # Verwalter-Schnappschuss für die Freistellung (A4), gedrosselt und nie
+    # blockierend (try_mutation); ein Fehler erreicht die Weltenliste nie (T-04-29).
+    try:
+        await TimeService(service, directory).refresh_admins(uid, blocking=False)
+    except Exception as exc:
+        LOG.warning("Verwalter-Stand beim Verwalter-Besuch nicht aktualisiert: %s", type(exc).__name__)
     views = await service.list_worlds()
     return WorldListOut(worlds=[WorldOut(**asdict(view)) for view in views])
 

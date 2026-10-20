@@ -11,14 +11,16 @@ rufen diese Methoden unter der Welt-Sperre bzw. ``try_mutation`` auf.
 Kindes mit Regeln (ein Kontingent über alle Welten, O-03) und verankert den
 gesehenen Stand neu. ``render`` rechnet je Welt die Regeldatei aus der Datenbank:
 für jedes eingeladene Kind mit Regeln eine Zeile mit absolutem Fenster und
-Deckel im Zählbuch-Maß (gesehener Stand plus Restsekunden), dazu die Welt-Zeile
-aus dem Welt-Fenster. Der Regelteil wird je Welt zwischengespeichert; nur bei
+Deckel im Zählbuch-Maß (gesehener Stand plus Restsekunden), für jedes eingeladene
+Verwalter-Konto aus dem Schnappschuss ``time_admins`` die Zeile ``frei`` (O-11/A4),
+dazu die Welt-Zeile aus dem Welt-Fenster. Der Regelteil wird je Welt zwischengespeichert; nur bei
 einer Änderung zählt die Generation hoch und der Kopf bekommt einen neuen
 Zeitpunkt, damit die Bytes nicht in jedem Takt wechseln (Pitfall 6).
 """
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from dataclasses import astuple, dataclass
@@ -34,6 +36,23 @@ from gameworld.worlds.store import WorldStore
 _PRUNE_INTERVAL_SECONDS = 3600
 # Aufbewahrung: heute und 7 Tage zurück.
 _RETENTION_DAYS = 7
+# meta-Schlüssel des Verwalter-Schnappschusses (JSON-Liste, sortiert; playtime/service.py).
+META_TIME_ADMINS = "time_admins"
+# Verwalter sind freigestellt (O-11/A4): Welt-Fenster und eigene Grenzen gelten nicht.
+_FREI = TimeLine(cap=-1, start=-1, until=-1, reason="frei", next_hint="-")
+
+
+def parse_admins(raw: str | None) -> frozenset[str]:
+    """Verwalter-Schnappschuss aus meta; fehlt er oder ist er kaputt, gibt es keine Freistellung (fail closed)."""
+    if not raw:
+        return frozenset()
+    try:
+        value: object = json.loads(raw)
+    except ValueError:
+        return frozenset()
+    if not isinstance(value, list):
+        return frozenset()
+    return frozenset(item for item in value if isinstance(item, str))  # pyright: ignore[reportUnknownVariableType]
 
 
 @dataclass(frozen=True)
@@ -96,11 +115,18 @@ class TimeEngine:
         plans = self._store.child_plans()
         holidays = self._store.list_holidays()
         seen = self._store.ledger_seen(world_id)
+        admins = parse_admins(self._store.get_meta(META_TIME_ADMINS))
         today = local_day(now, tz)
         players: dict[str, TimeLine] = {}
         for name in self._store.access_entries(world_id):
             nc_user = self._store.player_name_owner(name)
-            if nc_user is None or nc_user not in plans:
+            if nc_user is None:
+                continue
+            if nc_user in admins:
+                # Eingeladene Verwalter: Zeile frei, auch ohne Welt-Fenster (A4).
+                players[name] = _FREI
+                continue
+            if nc_user not in plans:
                 continue
             normal, holiday = plans[nc_user]
             used = self._store.usage(nc_user, today)
