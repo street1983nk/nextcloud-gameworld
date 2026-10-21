@@ -24,7 +24,7 @@ from datetime import date
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -102,10 +102,101 @@ CREATE TABLE IF NOT EXISTS time_ledger_seen (
   seconds INTEGER NOT NULL,
   PRIMARY KEY (world_id, player_name)
 );
+CREATE TABLE IF NOT EXISTS pause_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  started_by TEXT NOT NULL,
+  ab INTEGER NOT NULL,
+  bis INTEGER NOT NULL,
+  art TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS play_daily (
+  day TEXT NOT NULL,
+  nc_user TEXT NOT NULL,
+  world_id TEXT NOT NULL,
+  seconds INTEGER NOT NULL,
+  PRIMARY KEY (day, nc_user, world_id)
+);
+CREATE TABLE IF NOT EXISTS event_cursor (
+  world_id TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS event_outbox (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  world_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL,
+  detail TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS world_run_state (
+  world_id TEXT PRIMARY KEY,
+  running INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS join_attempts (
+  day TEXT NOT NULL,
+  world_id TEXT NOT NULL,
+  name_fold TEXT NOT NULL,
+  player_name TEXT NOT NULL,
+  first_at INTEGER NOT NULL,
+  last_at INTEGER NOT NULL,
+  count INTEGER NOT NULL,
+  notified INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, world_id, name_fold)
+);
+CREATE TABLE IF NOT EXISTS daily_flags (
+  day TEXT NOT NULL,
+  flag TEXT NOT NULL,
+  PRIMARY KEY (day, flag)
+);
+CREATE TABLE IF NOT EXISTS review_prefs (
+  nc_user TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  minute INTEGER NOT NULL DEFAULT 1200
+);
+CREATE TABLE IF NOT EXISTS review_sent (
+  nc_user TEXT NOT NULL,
+  day TEXT NOT NULL,
+  PRIMARY KEY (nc_user, day)
+);
+CREATE TABLE IF NOT EXISTS bot_presence (
+  world_id TEXT NOT NULL,
+  nc_user TEXT NOT NULL,
+  last_kind TEXT NOT NULL,
+  last_at INTEGER NOT NULL,
+  PRIMARY KEY (world_id, nc_user)
+);
+CREATE TABLE IF NOT EXISTS talk_rooms (
+  world_id TEXT PRIMARY KEY,
+  token TEXT NOT NULL,
+  owner_uid TEXT NOT NULL,
+  read_only INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'ok'
+);
 """
 
 # Namen der sechs Spielzeit-Tabellen aus Schema 4 (Migrationstest, Selbstdokumentation).
 TIME_TABLES = frozenset({"time_children", "time_plans", "holidays", "world_windows", "time_usage", "time_ledger_seen"})
+# Namen der Tabellen aus Schema 5 (Phase 4.1: Benachrichtigung, Pause, Rückblick, Talk).
+NOTIFY_TABLES = frozenset(
+    {
+        "pause_state",
+        "play_daily",
+        "event_cursor",
+        "event_outbox",
+        "world_run_state",
+        "join_attempts",
+        "daily_flags",
+        "review_prefs",
+        "review_sent",
+        "bot_presence",
+        "talk_rooms",
+    }
+)
+# Höchstens so viele Zeilen in der Outbox; die ältesten fallen weg (T-04.1-07).
+OUTBOX_MAX = 1000
+# Eine Outbox-Zeile vor dem Speichern: Art, Spielername (oder leer), Epoch, Zusatz.
+OutboxEntry = tuple[str, str, int, str]
 
 # Schema 1 auf 2: Phase-1-Welten spielen Minetest Game, also das Kreativ-Preset.
 ADD_PRESET = "ALTER TABLE worlds ADD COLUMN preset TEXT NOT NULL DEFAULT 'mtg_kreativ'"
@@ -149,6 +240,18 @@ class InviteRow:
     target: str
     invited_by: str
     created_at: str
+
+
+@dataclass(frozen=True)
+class OutboxRow:
+    """Ein noch nicht versendetes Ereignis (Takt legt ab, Event-Loop versendet)."""
+
+    id: int
+    world_id: str
+    kind: str
+    name: str
+    at: int
+    detail: str
 
 
 COLUMNS = tuple(field.name for field in fields(WorldRow))
@@ -500,18 +603,32 @@ class WorldStore:
             ).fetchall()
         return {str(row[0]): int(row[1]) for row in rows}
 
-    def book_usage(self, world_id: str, day: date, usage: dict[str, int], seen: dict[str, int]) -> None:
+    def book_usage(
+        self,
+        world_id: str,
+        day: date,
+        usage: dict[str, int],
+        seen: dict[str, int],
+        *,
+        play: dict[str, int] | None = None,
+    ) -> None:
         """Verbucht Sekunden je Kind und verankert den gesehenen Zählbuch-Stand in EINER Transaktion.
 
         Scheitert ein Schritt (Datenbank gesperrt, Prozessabbruch), bleibt beides
         beim alten Stand: Der nächste Takt verbucht denselben Zuwachs genau einmal,
-        nie doppelt (WR-05).
+        nie doppelt (WR-05). ``play`` (Konto auf Sekunden) landet in derselben
+        Transaktion in ``play_daily`` je Welt, auch für Konten ohne Regeln (Pitfall 3).
         """
         with self._connect() as connection:
             connection.executemany(
                 "INSERT INTO time_usage (nc_user, day, seconds) VALUES (?, ?, ?) "
                 "ON CONFLICT(nc_user, day) DO UPDATE SET seconds = seconds + excluded.seconds",
                 [(nc_user, day.isoformat(), seconds) for nc_user, seconds in sorted(usage.items())],
+            )
+            connection.executemany(
+                "INSERT INTO play_daily (day, nc_user, world_id, seconds) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(day, nc_user, world_id) DO UPDATE SET seconds = seconds + excluded.seconds",
+                [(day.isoformat(), nc_user, world_id, seconds) for nc_user, seconds in sorted((play or {}).items())],
             )
             connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
             connection.executemany(
@@ -603,3 +720,113 @@ class WorldStore:
         with self._connect() as connection:
             connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
             connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
+
+    # Ereignisse, Laufzustand, Tagesspielzeit je Welt und Drosseln (Schema 5)
+
+    def event_cursor(self, world_id: str) -> int | None:
+        """Zuletzt verarbeitete Sequenz der Ereignisdatei oder None (Erstkontakt)."""
+        with self._connect() as connection:
+            row = connection.execute("SELECT seq FROM event_cursor WHERE world_id = ?", (world_id,)).fetchone()
+        return None if row is None else int(row[0])
+
+    @staticmethod
+    def _cap_outbox(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "DELETE FROM event_outbox WHERE id NOT IN (SELECT id FROM event_outbox ORDER BY id DESC LIMIT ?)",
+            (OUTBOX_MAX,),
+        )
+
+    def take_events(self, world_id: str, cursor: int, rows: list[OutboxEntry]) -> None:
+        """Cursor setzen und neue Ereignisse in die Outbox legen, in EINER Transaktion.
+
+        Danach höchstens OUTBOX_MAX Zeilen, die ältesten fallen weg (T-04.1-07).
+        """
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO event_cursor (world_id, seq) VALUES (?, ?) "
+                "ON CONFLICT(world_id) DO UPDATE SET seq = excluded.seq",
+                (world_id, cursor),
+            )
+            connection.executemany(
+                "INSERT INTO event_outbox (world_id, kind, name, at, detail) VALUES (?, ?, ?, ?, ?)",
+                [(world_id, kind, name, at, detail) for kind, name, at, detail in rows],
+            )
+            self._cap_outbox(connection)
+
+    def add_outbox(self, world_id: str, kind: str, name: str, at: int, detail: str = "") -> None:
+        """Einzelnes Ereignis ohne Ereignisdatei (Start, Stopp, Pause) in die Outbox legen."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO event_outbox (world_id, kind, name, at, detail) VALUES (?, ?, ?, ?, ?)",
+                (world_id, kind, name, at, detail),
+            )
+            self._cap_outbox(connection)
+
+    def outbox_batch(self, limit: int = 100) -> list[OutboxRow]:
+        """Älteste Outbox-Zeilen zuerst, höchstens ``limit``."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, world_id, kind, name, at, detail FROM event_outbox ORDER BY id LIMIT ?", (limit,)
+            ).fetchall()
+        return [OutboxRow(int(row[0]), str(row[1]), str(row[2]), str(row[3]), int(row[4]), str(row[5])) for row in rows]
+
+    def delete_outbox(self, ids: list[int]) -> None:
+        """Versendete (oder verworfene) Outbox-Zeilen entfernen."""
+        with self._connect() as connection:
+            connection.executemany("DELETE FROM event_outbox WHERE id = ?", [(row_id,) for row_id in ids])
+
+    def run_state(self, world_id: str) -> bool | None:
+        """Zuletzt im Takt beobachteter Laufzustand oder None (noch nie beobachtet)."""
+        with self._connect() as connection:
+            row = connection.execute("SELECT running FROM world_run_state WHERE world_id = ?", (world_id,)).fetchone()
+        return None if row is None else bool(row[0])
+
+    def set_run_state(self, world_id: str, *, running: bool) -> None:
+        """Beobachteten Laufzustand einer Welt festhalten (Pitfall 10)."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO world_run_state (world_id, running) VALUES (?, ?) "
+                "ON CONFLICT(world_id) DO UPDATE SET running = excluded.running",
+                (world_id, int(running)),
+            )
+
+    def play_seconds(self, day: date) -> dict[tuple[str, str], int]:
+        """Gespielte Sekunden eines lokalen Tages je (Konto, Welt)."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT nc_user, world_id, seconds FROM play_daily WHERE day = ?", (day.isoformat(),)
+            ).fetchall()
+        return {(str(row[0]), str(row[1])): int(row[2]) for row in rows}
+
+    def _prune_days(self, table: str, before_day: date) -> None:
+        with self._connect() as connection:
+            connection.execute(f"DELETE FROM {table} WHERE day < ?", (before_day.isoformat(),))  # noqa: S608
+
+    def prune_play_daily(self, before_day: date) -> None:
+        """Tagesspielzeit je Welt vor einem Tag löschen (7 Tage wie time_usage)."""
+        self._prune_days("play_daily", before_day)
+
+    def prune_join_attempts(self, before_day: date) -> None:
+        """Gemerkte Fremdversuche vor einem Tag löschen."""
+        self._prune_days("join_attempts", before_day)
+
+    def prune_daily_flags(self, before_day: date) -> None:
+        """Tages-Merker vor einem Tag löschen."""
+        self._prune_days("daily_flags", before_day)
+
+    def prune_review_sent(self, before_day: date) -> None:
+        """Versand-Merker des Rückblicks vor einem Tag löschen."""
+        self._prune_days("review_sent", before_day)
+
+    def delete_notify_data(self, world_id: str) -> None:
+        """Ereignis- und Spielzeitdaten einer gelöschten Welt; der Talk-Raum bleibt (eigener Abgleich)."""
+        with self._connect() as connection:
+            for table in (
+                "event_cursor",
+                "event_outbox",
+                "world_run_state",
+                "play_daily",
+                "join_attempts",
+                "bot_presence",
+            ):
+                connection.execute(f"DELETE FROM {table} WHERE world_id = ?", (world_id,))  # noqa: S608

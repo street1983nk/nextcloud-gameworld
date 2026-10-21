@@ -23,7 +23,7 @@ import requests.exceptions
 import urllib3.exceptions
 from docker.models.containers import Container
 
-from gameworld.provisioner.access_mod import STATE_FILE
+from gameworld.provisioner.access_mod import EVENTS_FILE, STATE_FILE
 from gameworld.provisioner.spec import DATA_DIR, LUANTI_IMAGE, WorldPayload, resource_name, world_spec
 from gameworld.provisioner.status_mod import PLAYERS_FILE
 from gameworld.provisioner.time_mod import LEDGER_FILE
@@ -46,6 +46,10 @@ STATUS_ARCHIVE_MAX = 64 * 1024
 # Schlusszeile und die Verbuchung stand still (WR-03). 256 KiB tragen rund 8000.
 LEDGER_FILE_MAX = 256 * 1024
 LEDGER_ARCHIVE_MAX = LEDGER_FILE_MAX + STATUS_ARCHIVE_MAX
+# Die Ereignisdatei ist ein Ringpuffer mit 200 Zeilen (je bis rund 50 Bytes);
+# 16 KiB reichen mit Reserve, mehr schreibt nur fremder Lua-Code (T-04.1-07).
+EVENTS_FILE_MAX = 16 * 1024
+EVENTS_ARCHIVE_MAX = EVENTS_FILE_MAX + STATUS_ARCHIVE_MAX
 # Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
 # Leseversuch heilt (Pitfall 4). Timeouts werden nie wiederholt; Achtung:
 # ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
@@ -463,6 +467,24 @@ class DockerProvisioner:
                 "Das Spielzeit-Zählbuch der Welt",
                 file_max=LEDGER_FILE_MAX,
                 archive_max=LEDGER_ARCHIVE_MAX,
+                warn_truncated=True,
+            )
+        )
+
+    def read_events(self, world_id: str) -> StatusFile | None:
+        """Ereignisdatei des Zugangs-Mods (mtime und gekappter Inhalt) oder None.
+
+        None heißt: Der Mod hat die Datei in diesem Volume noch nie geschrieben
+        (alter Mod ohne Ereignisse). Eigene Kappung EVENTS_FILE_MAX (T-04.1-07);
+        der Inhalt kommt nie ins Log, nur Welt-ID und Größe.
+        """
+        return self._read(
+            lambda: self._read_world_file(
+                world_id,
+                EVENTS_FILE,
+                "Die Ereignisdatei der Welt",
+                file_max=EVENTS_FILE_MAX,
+                archive_max=EVENTS_ARCHIVE_MAX,
                 warn_truncated=True,
             )
         )

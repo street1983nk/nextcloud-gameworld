@@ -482,6 +482,30 @@ def test_read_time_ledger_over_cap_logs_warning(
     assert "Spieler_" not in caplog.text
 
 
+def test_read_events_reads_event_file_with_own_cap(
+    prov: DockerProvisioner, fake: FakeClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """T-04.1-07/08: Ereignisdatei über get_archive, eigene Kappung, Warnung ohne Inhalt."""
+    from gameworld.provisioner.access_mod import EVENTS_FILE
+    from gameworld.provisioner.client import EVENTS_FILE_MAX
+
+    content = b"gameworld-events 1 1\n1 100 join lena\nend\n"
+    container = ArchiveContainer(_tar(content))
+    fake.containers.list = _listing(container)
+    events_file = prov.read_events(WORLD)
+    assert events_file is not None
+    assert events_file.content == content
+    assert container.paths == [EVENTS_FILE]
+    big = b"1 100 deny Fremder_geheim\n" * (EVENTS_FILE_MAX // 10)
+    fake.containers.list = _listing(ArchiveContainer(_tar(big)))
+    with caplog.at_level("WARNING"):
+        events_file = prov.read_events(WORLD)
+    assert events_file is not None
+    assert len(events_file.content) == EVENTS_FILE_MAX
+    assert "gekappt" in caplog.text
+    assert "Fremder_geheim" not in caplog.text
+
+
 def test_read_status_file_cap_stays_silent(
     prov: DockerProvisioner, fake: FakeClient, caplog: pytest.LogCaptureFixture
 ) -> None:
