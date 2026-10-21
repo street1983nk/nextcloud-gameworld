@@ -924,6 +924,14 @@ class WorldStore:
             )
         return cursor.rowcount == 1
 
+    def review_was_sent(self, nc_user: str, day: date) -> bool:
+        """Schon beansprucht? Spart dem Loop nach dem Versand das Neuberechnen des Inhalts."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM review_sent WHERE nc_user = ? AND day = ?", (nc_user, day.isoformat())
+            ).fetchone()
+        return row is not None
+
     def review_pref(self, nc_user: str) -> tuple[bool, int]:
         """(eingeschaltet, Minute) eines Verwalters; ohne Zeile Vorgabe an, 20:00 (D-12, D-15)."""
         with self._connect() as connection:

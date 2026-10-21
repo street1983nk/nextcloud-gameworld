@@ -14,8 +14,9 @@ from fastapi import FastAPI, HTTPException
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
-from gameworld.api import invites, me, pause, playtime, setup_check, worlds
+from gameworld.api import alerts, invites, me, pause, playtime, setup_check, worlds
 from gameworld.lifecycle import enabled_handler
+from gameworld.notify.loop import notify_forever
 from gameworld.playtime.ticker import time_forever
 from gameworld.worlds.reconciler import reconcile_forever
 
@@ -64,6 +65,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Zweiter Task: der 15-s-Zeittakt hält die Regeldateien aktuell (O-03).
         tasks.append(asyncio.create_task(reconcile_forever(service)))
         tasks.append(asyncio.create_task(time_forever(service)))
+        # Dritter Task: Outbox an Verwalter senden, Rückblick, 5-min-Wartung (04.1-04).
+        tasks.append(asyncio.create_task(notify_forever(service)))
     try:
         yield
     finally:
@@ -82,6 +85,7 @@ APP.include_router(setup_check.router)
 APP.include_router(invites.router)
 APP.include_router(playtime.router)
 APP.include_router(pause.router)
+APP.include_router(alerts.router)
 
 
 if __name__ == "__main__":
