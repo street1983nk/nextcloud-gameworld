@@ -10,7 +10,9 @@ Rich-Parameter vom Typ ``highlight``, vorher bereinigt und gekappt (T-04.1-16).
 from __future__ import annotations
 
 import unicodedata
+from datetime import datetime
 from typing import NamedTuple
+from zoneinfo import ZoneInfo
 
 ATTEMPT_SUBJECT = "Unbekannter Spielername in {world}"
 ATTEMPT_MESSAGE = "{player} wollte um {time} Uhr beitreten. Tippe hier, um nachzusehen."
@@ -72,3 +74,35 @@ def review_message(kids_text: str) -> NotifyText:
     return NotifyText(
         REVIEW_SUBJECT, REVIEW_MESSAGE, {"kids": highlight("kids", clean_value(kids_text, MAX_KIDS_LINE))}
     )
+
+
+# Texte des Gameworld-Bots im Talk-Raum (TALK-02, D-21 bis D-24). Kurz, deutsch,
+# ohne Gründe und ohne Namen der Eltern. Bot-Nachrichten sind kein Rich-Format:
+# Platzhalter werden per str.format nur mit bereinigten, escapten Werten gefüllt.
+BOT_JOIN = "{name} ist jetzt in der Welt."
+BOT_LEAVE = "{name} hat die Welt verlassen."
+BOT_START = "Die Welt ist gestartet."
+BOT_STOP = "Die Welt ist gestoppt."
+BOT_PAUSE = "Pause bis {clock} Uhr."
+BOT_SCHLUSS = "Für heute ist Schluss."
+BOT_PAUSE_END = "Die Pause ist vorbei."
+BOT_WARN10 = "Noch 10 Minuten Spielzeit für {name}."
+
+# Zeichen, die Talk im Chat als Markdown deuten könnte (04.1-RESEARCH.md, Annahme A3).
+_MD_SPECIAL = frozenset("\\`*_{}[]()#+-.!|>~<")
+
+
+def md_escape(value: str) -> str:
+    """Maskiert Markdown-Zeichen mit Backslash (T-04.1-31)."""
+    return "".join("\\" + char if char in _MD_SPECIAL else char for char in value)
+
+
+def bot_name(value: str) -> str:
+    """Name für den Bot-Text: bereinigt, auf 64 Zeichen gekappt, dann escaped."""
+    return md_escape(clean_value(value, MAX_DISPLAY))
+
+
+def bot_clock(epoch: int, tz: ZoneInfo) -> str:
+    """Uhrzeit H:MM in der Haushalts-Zeitzone, immer mit Minuten (etwa 19:00)."""
+    local = datetime.fromtimestamp(epoch, tz)
+    return f"{local.hour}:{local.minute:02d}"

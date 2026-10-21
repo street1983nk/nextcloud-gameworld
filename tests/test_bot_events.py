@@ -26,7 +26,7 @@ from tests.test_service_lifecycle import FakeProvisioner
 W1 = "ccccccccccc1"
 W2 = "ccccccccccc2"
 BERLIN = ZoneInfo("Europe/Berlin")
-TOKEN = "room-w1"
+ROOM = "room-w1"
 
 
 def _epoch(hour: int, minute: int = 0) -> int:
@@ -44,7 +44,7 @@ def store(app_env: Path, fake_directory: FakeDirectory) -> WorldStore:
     world_store.apply_world_access(W1, {"lena": VERIFIER, "tom": VERIFIER})
     world_store.set_meta(META_TIME_ADMINS, json.dumps(["admin"]))
     world_store.set_meta(META_LINK_ORIGIN, "https://cloud.example")
-    world_store.insert_talk_room(W1, TOKEN, "admin", "2026-10-21T10:00:00+00:00")
+    world_store.insert_talk_room(W1, ROOM, "admin", "2026-10-21T10:00:00+00:00")
     fake_directory.users["lena"] = ("Lena", True)
     return world_store
 
@@ -80,8 +80,8 @@ def test_bot_texts_follow_text_rules() -> None:
     constants = [value for name, value in vars(texts).items() if name.startswith("BOT_") and isinstance(value, str)]
     assert len(constants) >= 8
     for value in constants:
-        assert "–" not in value
-        assert "—" not in value
+        assert chr(0x2013) not in value
+        assert chr(0x2014) not in value
         assert "Mitternacht" not in value
         assert not re.search(r"(?<![\d:])0 Uhr", value)
         assert all(ord(char) < 0x2000 for char in value), value
@@ -101,7 +101,7 @@ async def test_join_uses_display_name_and_is_silent(
 ) -> None:
     store.add_outbox(W1, "join", "lena", _epoch(17, 0))
     await _run(service, fake_notifier, fake_directory, _epoch(17, 0), fake_talk)
-    assert fake_bot.sent == [(TOKEN, "Lena ist jetzt in der Welt.", True)]
+    assert fake_bot.sent == [(ROOM, "Lena ist jetzt in der Welt.", True)]
     assert store.outbox_batch() == []
 
 
@@ -123,7 +123,7 @@ async def test_presence_throttled_for_ten_minutes(
     assert len(fake_bot.sent) == 2
     store.add_outbox(W1, "leave", "lena", _epoch(17, 30))
     await _run(service, fake_notifier, fake_directory, _epoch(17, 30), fake_talk)
-    assert fake_bot.sent[-1] == (TOKEN, "Lena hat die Welt verlassen.", True)
+    assert fake_bot.sent[-1] == (ROOM, "Lena hat die Welt verlassen.", True)
 
 
 async def test_failed_send_does_not_update_throttle(
@@ -155,7 +155,7 @@ async def test_throttle_is_per_world(
     store.add_outbox(W1, "join", "lena", _epoch(17, 0))
     store.add_outbox(W2, "join", "lena", _epoch(17, 1))
     await _run(service, fake_notifier, fake_directory, _epoch(17, 1), fake_talk)
-    assert [token for token, _text, _silent in fake_bot.sent] == [TOKEN, "room-w2"]
+    assert [token for token, _text, _silent in fake_bot.sent] == [ROOM, "room-w2"]
 
 
 async def test_name_without_display_name_falls_back_to_escaped_player_name(
@@ -205,7 +205,7 @@ async def test_warn10_has_sound(
 ) -> None:
     store.add_outbox(W1, "warn10", "lena", _epoch(17, 0))
     await _run(service, fake_notifier, fake_directory, _epoch(17, 0), fake_talk)
-    assert fake_bot.sent == [(TOKEN, "Noch 10 Minuten Spielzeit für Lena.", False)]
+    assert fake_bot.sent == [(ROOM, "Noch 10 Minuten Spielzeit für Lena.", False)]
 
 
 @pytest.mark.parametrize(
@@ -233,7 +233,7 @@ async def test_world_and_pause_texts(
 ) -> None:
     store.add_outbox(W1, kind, "", _epoch(18, 0), detail)
     await _run(service, fake_notifier, fake_directory, _epoch(18, 0), fake_talk)
-    assert fake_bot.sent == [(TOKEN, text, silent)]
+    assert fake_bot.sent == [(ROOM, text, silent)]
 
 
 async def test_pause_start_with_broken_detail_sends_nothing(

@@ -978,6 +978,26 @@ class WorldStore:
             ):
                 connection.execute(f"DELETE FROM {table} WHERE world_id = ?", (world_id,))  # noqa: S608
 
+    # Drossel der Bot-Meldungen Beitritt/Verlassen (D-22, TALK-02)
+
+    def bot_presence_at(self, world_id: str, person: str) -> int | None:
+        """Zeitpunkt der letzten Bot-Meldung zu dieser Person in dieser Welt oder None."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT last_at FROM bot_presence WHERE world_id = ? AND nc_user = ?", (world_id, person)
+            ).fetchone()
+        return None if row is None else int(row[0])
+
+    def set_bot_presence(self, world_id: str, person: str, kind: str, at: int) -> None:
+        """Merkt die gesendete Meldung (nur nach erfolgreichem Senden aufrufen)."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO bot_presence (world_id, nc_user, last_kind, last_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(world_id, nc_user) DO UPDATE SET last_kind = excluded.last_kind, "
+                "last_at = excluded.last_at",
+                (world_id, person, kind, at),
+            )
+
     # Talk-Räume (Phase 4.1, TALK-01)
 
     def talk_room(self, world_id: str) -> TalkRoomRow | None:

@@ -26,7 +26,7 @@ import logging
 import os
 import time
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -37,21 +37,32 @@ from gameworld.notify.links import clean_origin, page_link
 from gameworld.notify.review import review_due, review_line
 from gameworld.notify.service import Notifier, get_notifier
 from gameworld.notify.texts import (
+    BOT_JOIN,
+    BOT_LEAVE,
+    BOT_PAUSE,
+    BOT_PAUSE_END,
+    BOT_SCHLUSS,
+    BOT_START,
+    BOT_STOP,
+    BOT_WARN10,
     MAX_DISPLAY,
     NotifyText,
     attempt_message,
+    bot_clock,
+    bot_name,
     clean_value,
     review_message,
     summary_message,
 )
 from gameworld.notify.throttle import is_case_variant
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
-from gameworld.playtime.pause import clock_text
+from gameworld.playtime.pause import OUTBOX_PAUSE_END, OUTBOX_PAUSE_SCHLUSS, OUTBOX_PAUSE_START, clock_text
 from gameworld.playtime.plan import local_day
 from gameworld.playtime.service import TimeService
+from gameworld.talk.bot import get_bot
 from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import WorldService
-from gameworld.worlds.store import OutboxRow, WorldRow, WorldStore
+from gameworld.worlds.store import TALK_STATE_OK, OutboxRow, WorldRow, WorldStore
 
 LOG = logging.getLogger(__name__)
 
@@ -83,6 +94,8 @@ class NotifyContext:
     tz: ZoneInfo
     admins: tuple[str, ...]
     origin: str | None
+    # Namen je Durchlauf zwischengespeichert: Spielername (casefold) -> (Schlüssel, Bot-Name).
+    names: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
 Handler = Callable[[NotifyContext, OutboxRow], Awaitable[None]]
@@ -166,7 +179,113 @@ async def handle_deny(context: NotifyContext, row: OutboxRow) -> None:
         await _deliver(context, context.admins, summary_message(), "versuch", {"tag": day.isoformat()})
 
 
-HANDLERS: dict[str, Handler] = {"deny": handle_deny}
+# Gameworld-Bot im Talk-Raum der Welt (TALK-02, D-21 bis D-24, D-28)
+
+# Beitritt/Verlassen derselben Person in derselben Welt höchstens alle 10 Minuten (D-22).
+PRESENCE_SECONDS = 600
+
+
+def _room_token(store: WorldStore, world_id: str) -> str | None:
+    world = store.get_world(world_id)
+    if world is None or world.desired_state == "deleted":
+        return None
+    row = store.talk_room(world_id)
+    if row is None or row.state != TALK_STATE_OK:
+        return None
+    return row.token
+
+
+async def _bot_room(context: NotifyContext, world_id: str) -> str | None:
+    """Raum-Token, wenn Talk mit Bots da ist und die Welt einen Raum hat; sonst None."""
+    if not context.admins:
+        return None
+    store = context.service.store
+    talk, bots = await get_talk_service(store).is_available(context.admins[0])
+    if not talk or not bots:
+        return None
+    return await anyio.to_thread.run_sync(_room_token, store, world_id)
+
+
+async def _bot_person(context: NotifyContext, player_name: str) -> tuple[str, str]:
+    """(Drossel-Schlüssel, Name für den Text): Konto und Anzeigename, Rückfall Spielername."""
+    cached = context.names.get(player_name.casefold())
+    if cached is not None:
+        return cached
+    store = context.service.store
+    nc_user = await anyio.to_thread.run_sync(store.player_name_owner, player_name)
+    label = player_name
+    if nc_user is not None:
+        try:
+            user = await context.directory.user(context.admins[0], nc_user)
+        except DirectoryUnavailableError:
+            user = None
+        if user is not None:
+            label = user.display_name
+    result = (nc_user or player_name.casefold(), bot_name(label))
+    context.names[player_name.casefold()] = result
+    return result
+
+
+def _fixed(text: str, *, silent: bool) -> Handler:
+    """Handler für einen festen Bot-Text ohne Namen (Start, Stopp, Schluss, Pausenende)."""
+
+    async def handler(context: NotifyContext, row: OutboxRow) -> None:
+        token = await _bot_room(context, row.world_id)
+        if token is not None:
+            await get_bot().send(token, text, silent=silent)
+
+    return handler
+
+
+def _presence(template: str) -> Handler:
+    """Beitritt oder Verlassen, still und gedrosselt über bot_presence (D-22, D-28)."""
+
+    async def handler(context: NotifyContext, row: OutboxRow) -> None:
+        token = await _bot_room(context, row.world_id)
+        if token is None:
+            return
+        store = context.service.store
+        person, name = await _bot_person(context, row.name)
+        last = await anyio.to_thread.run_sync(store.bot_presence_at, row.world_id, person)
+        if last is not None and row.at - last < PRESENCE_SECONDS:
+            return
+        if await get_bot().send(token, template.format(name=name), silent=True):
+            await anyio.to_thread.run_sync(store.set_bot_presence, row.world_id, person, row.kind, row.at)
+
+    return handler
+
+
+async def handle_warn10(context: NotifyContext, row: OutboxRow) -> None:
+    """Noch 10 Minuten Spielzeit, mit Ton (D-23, D-28)."""
+    token = await _bot_room(context, row.world_id)
+    if token is None:
+        return
+    _person, name = await _bot_person(context, row.name)
+    await get_bot().send(token, BOT_WARN10.format(name=name), silent=False)
+
+
+async def handle_pause_start(context: NotifyContext, row: OutboxRow) -> None:
+    """Pause bis H:MM Uhr in Haushalts-Zeitzone, mit Ton; ohne gültiges Ende nichts."""
+    try:
+        bis = int(row.detail)
+    except ValueError:
+        return
+    token = await _bot_room(context, row.world_id)
+    if token is not None:
+        await get_bot().send(token, BOT_PAUSE.format(clock=bot_clock(bis, context.tz)), silent=False)
+
+
+HANDLERS: dict[str, Handler] = {
+    "deny": handle_deny,
+    "join": _presence(BOT_JOIN),
+    "leave": _presence(BOT_LEAVE),
+    "warn10": handle_warn10,
+    "start": _fixed(BOT_START, silent=True),
+    "stop": _fixed(BOT_STOP, silent=True),
+    OUTBOX_PAUSE_START: handle_pause_start,
+    OUTBOX_PAUSE_SCHLUSS: _fixed(BOT_SCHLUSS, silent=False),
+    OUTBOX_PAUSE_END: _fixed(BOT_PAUSE_END, silent=True),
+}
 
 
 async def talk_reconcile(service: WorldService, acting: str) -> None:
