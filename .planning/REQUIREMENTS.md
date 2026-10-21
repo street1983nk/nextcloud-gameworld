@@ -40,6 +40,11 @@
 - [ ] **ELTERN-02**: Verwalter bekommen eine Push-Benachrichtigung, wenn ein nicht eingeladener Spielername eine Welt betreten will (gedrosselt) (Owner-Entscheid 21.10.2026)
 - [ ] **ELTERN-03**: Verwalter bekommen abends einen Tagesrückblick mit der Spielzeit je Kind, höchstens eine Benachrichtigung pro Tag, abschaltbar (Owner-Entscheid 21.10.2026)
 
+### Talk
+
+- [ ] **TALK-01**: Zu jeder Welt legt Gameworld einen Nextcloud-Talk-Raum an; Mitglieder folgen automatisch den Einladungen (inkl. Gruppen) plus Verwalter, Ausladen entfernt aus dem Raum, Löschen der Welt räumt den Raum ab; ohne Talk-App läuft Gameworld unverändert (Owner-Entscheid 21.10.2026)
+- [ ] **TALK-02**: Ein Gameworld-Talk-Bot meldet im Raum der Welt Start/Stopp, Beitritte und das nahende Ende der Spielzeit (Owner-Entscheid 21.10.2026)
+
 ### Backup
 
 - [ ] **BACKUP-01**: Elternteil kann pro Welt manuell ein Backup nach Nextcloud Files auslösen; der Snapshot ist konsistent (Welt wird sauber gestoppt oder eingefroren)
@@ -63,7 +68,7 @@
 - **Vereins-/Schul-Mandantenmodell (Teckids, CoderDojo, Schulen)** , Welt-Besitzer (jede Lehrkraft sieht nur eigene Welten), Ressourcen-Budgets pro Verwalter, Schuljahres-Archivierung via Backup; Einstieg in v1 über ROLLE-03 + ZEIT-05
 - **Bonuszeit heute** (Eltern geben +15/+30/+60 Minuten nur für heute frei, wie "Für heute ändern" bei Family Link) , Owner 21.10.2026 "find ich toll"
 - **Mehr Zeit anfragen** (Kind bittet im Spiel per Chatbefehl oder in der Kind-Ansicht um mehr Zeit; Mod schreibt die Bitte ins Welt-Volume, ExApp liest sie im 15-s-Takt; Eltern bekommen eine Push-Benachrichtigung in der Nextcloud-Handy-App mit Link auf eine mobile Freigabeseite: +15, +30, Ablehnen; höchstens eine offene Bitte, wenige pro Tag) , Owner 21.10.2026; ExApp-Benachrichtigungen können nur Text und Link, keine Knöpfe
-- **Nextcloud-Talk-Bot für Eltern** (ExApp registriert per AppAPI einen Talk-Bot: "Leo ist der Welt beigetreten", "Spielzeit in 5 Minuten zu Ende"; später optional Familien-Chat zur Welt nur für Eingeladene) , Owner-Entscheid 21.10.2026 nach Discord-Recherche, bleibt komplett auf dem eigenen Server
+- **Brücke Spielchat zu Talk-Raum** (Luanti-Chat erscheint im Talk-Raum der Welt und umgekehrt, abschaltbar) , erst wenn Nutzer danach fragen (Moderation, Aufwand); Talk-Raum und Bot selbst sind seit 21.10.2026 v1 (TALK-01/02)
 - **Discord-Webhook, nur ausgehend und optional** (Eltern schalten ein; "Welt läuft", "Mia spielt gerade"; verschickt die ExApp, kein Mod in der Welt, kein secure.http_mods) , nur auf Nachfrage aus der Community, eher für ältere Kinder ab 13 und Freundesgruppen (MVP 2), keine eigene App
 
 ## Out of Scope
@@ -77,7 +82,7 @@
 | Dateimanager / Raw-Config-Editor | Fußwaffe für die Zielgruppe "Eltern ohne Serverwissen" |
 | Multi-Node-Betrieb | Massive Komplexität für ein Ein-Host-Heimserver-Produkt |
 | Eigene Benutzer-/Accountverwaltung | Nextcloud-Konten sind die einzige Identität; DSGVO-Fläche |
-| Zwei-Wege-Chatbrücke zu Discord (oder anderen Diensten) | Umgeht das Einladungsmodell (Fremde schreiben mit Kindern), Chat verlässt den Heimserver, Discord erst ab 13; Owner-Entscheid 21.10.2026 |
+| Zwei-Wege-Chatbrücke zu Discord oder anderen externen Diensten (Nextcloud Talk ist kein externer Dienst) | Umgeht das Einladungsmodell (Fremde schreiben mit Kindern), Chat verlässt den Heimserver, Discord erst ab 13; Owner-Entscheid 21.10.2026 |
 | Chat-Vollprotokollierung | Überwachung statt Schutz; Privacy-Widerspruch zum Produktkern |
 | Bedrock/Crossplay (Geyser) | Anderes Protokoll, großer Testaufwand; Luanti-Client ist überall frei |
 | UPnP-Portöffnung | Sicherheitsrisiko; MVP ist LAN-first mit dokumentiertem VPN-Weg |
@@ -105,13 +110,15 @@
 | ELTERN-01 | Phase 4.1 | Pending |
 | ELTERN-02 | Phase 4.1 | Pending |
 | ELTERN-03 | Phase 4.1 | Pending |
+| TALK-01 | Phase 4.1 | Pending |
+| TALK-02 | Phase 4.1 | Pending |
 | ROLLE-03 | Phase 6 | Pending |
 | BACKUP-01 | Phase 5 | Pending |
 | BACKUP-02 | Phase 5 | Pending |
 | PLATT-01 | Phase 6 | Pending |
 | PLATT-02 | Phase 2 | Complete |
 
-**Coverage:** 24/24 v1-Requirements gemappt (Stand 2026-10-21; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026, ELTERN-01..03 am 21.10.2026 auf Owner-Wunsch ergänzt)
+**Coverage:** 26/26 v1-Requirements gemappt (Stand 2026-10-21; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026, ELTERN-01..03 und TALK-01/02 am 21.10.2026 auf Owner-Wunsch ergänzt)
 
 ---
 *Requirements for: Gameworld v1 (MVP 1, Luanti, Familien)*
