@@ -55,6 +55,8 @@
 - **Kuratierte Mod-Auswahl für Eltern** , Kuratierung ist Pflegeaufwand, erst nach Produktvalidierung
 - **Minecraft Java via Crafty oder itzg-Image (MVP 2)** , eigener Rechts-Research-Task zuerst (EULA/Guidelines)
 - **Vereins-/Schul-Mandantenmodell (Teckids, CoderDojo, Schulen)** , Welt-Besitzer (jede Lehrkraft sieht nur eigene Welten), Ressourcen-Budgets pro Verwalter, Schuljahres-Archivierung via Backup; Einstieg in v1 über ROLLE-03 + ZEIT-05
+- **Nextcloud-Talk-Bot für Eltern** (ExApp registriert per AppAPI einen Talk-Bot: "Leo ist der Welt beigetreten", "Spielzeit in 5 Minuten zu Ende"; später optional Familien-Chat zur Welt nur für Eingeladene) , Owner-Entscheid 21.10.2026 nach Discord-Recherche, bleibt komplett auf dem eigenen Server
+- **Discord-Webhook, nur ausgehend und optional** (Eltern schalten ein; "Welt läuft", "Mia spielt gerade"; verschickt die ExApp, kein Mod in der Welt, kein secure.http_mods) , nur auf Nachfrage aus der Community, eher für ältere Kinder ab 13 und Freundesgruppen (MVP 2), keine eigene App
 
 ## Out of Scope
 
@@ -67,6 +69,7 @@
 | Dateimanager / Raw-Config-Editor | Fußwaffe für die Zielgruppe "Eltern ohne Serverwissen" |
 | Multi-Node-Betrieb | Massive Komplexität für ein Ein-Host-Heimserver-Produkt |
 | Eigene Benutzer-/Accountverwaltung | Nextcloud-Konten sind die einzige Identität; DSGVO-Fläche |
+| Zwei-Wege-Chatbrücke zu Discord (oder anderen Diensten) | Umgeht das Einladungsmodell (Fremde schreiben mit Kindern), Chat verlässt den Heimserver, Discord erst ab 13; Owner-Entscheid 21.10.2026 |
 | Chat-Vollprotokollierung | Überwachung statt Schutz; Privacy-Widerspruch zum Produktkern |
 | Bedrock/Crossplay (Geyser) | Anderes Protokoll, großer Testaufwand; Luanti-Client ist überall frei |
 | UPnP-Portöffnung | Sicherheitsrisiko; MVP ist LAN-first mit dokumentiertem VPN-Weg |
