@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from dataclasses import astuple, dataclass, fields
 from datetime import date
 
+from gameworld.notify.throttle import ATTEMPT_LIMIT, Decision, decide
 from gameworld.playtime.pause import PauseState
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
@@ -198,6 +199,10 @@ NOTIFY_TABLES = frozenset(
 OUTBOX_MAX = 1000
 # Eine Outbox-Zeile vor dem Speichern: Art, Spielername (oder leer), Epoch, Zusatz.
 OutboxEntry = tuple[str, str, int, str]
+# Tages-Merker der Sammelnachricht für Fremdversuche (D-08).
+FLAG_ATTEMPTS_SUMMARY = "attempts_summary"
+# Vorgabe des Rückblicks: 20:00 Uhr Haushalts-Zeitzone (D-12).
+REVIEW_DEFAULT_MINUTE = 1200
 
 # Schema 1 auf 2: Phase-1-Welten spielen Minetest Game, also das Kreativ-Preset.
 ADD_PRESET = "ALTER TABLE worlds ADD COLUMN preset TEXT NOT NULL DEFAULT 'mtg_kreativ'"
@@ -253,6 +258,16 @@ class OutboxRow:
     name: str
     at: int
     detail: str
+
+
+@dataclass(frozen=True)
+class AttemptRow:
+    """Ein gemerkter Fremdversuch eines Tages (Seite versuch)."""
+
+    world_id: str
+    player_name: str
+    first_at: int
+    count: int
 
 
 COLUMNS = tuple(field.name for field in fields(WorldRow))
@@ -844,6 +859,87 @@ class WorldStore:
     def prune_review_sent(self, before_day: date) -> None:
         """Versand-Merker des Rückblicks vor einem Tag löschen."""
         self._prune_days("review_sent", before_day)
+
+    # Fremdversuche und Tagesrückblick (Schema 5, 04.1-04)
+
+    def claim_attempt(self, day: date, world_id: str, name: str, at: int, limit: int = ATTEMPT_LIMIT) -> Decision:
+        """Fremdversuch merken und den Versand beanspruchen, in EINER Transaktion (D-08, Pattern 6).
+
+        Neue Zeile je (Tag, Welt, Name ohne Groß/Klein): Einzelhinweis, solange
+        weniger als ``limit`` gemeldet sind, danach einmal am Tag die
+        Sammelnachricht (Merker ``attempts_summary`` in ``daily_flags``). Eine
+        bekannte Zeile zählt nur ``count`` hoch. Der Aufrufer sendet erst danach:
+        doppelt kommt nie etwas.
+        """
+        day_text = day.isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO join_attempts "
+                "(day, world_id, name_fold, player_name, first_at, last_at, count, notified) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1, 0)",
+                (day_text, world_id, name.casefold(), name, at, at),
+            )
+            is_new = cursor.rowcount == 1
+            if not is_new:
+                connection.execute(
+                    "UPDATE join_attempts SET count = count + 1, last_at = max(last_at, ?) "
+                    "WHERE day = ? AND world_id = ? AND name_fold = ?",
+                    (at, day_text, world_id, name.casefold()),
+                )
+                return "none"
+            notified = connection.execute(
+                "SELECT count(*) FROM join_attempts WHERE day = ? AND notified = 1", (day_text,)
+            ).fetchone()
+            summary = connection.execute(
+                "SELECT 1 FROM daily_flags WHERE day = ? AND flag = ?", (day_text, FLAG_ATTEMPTS_SUMMARY)
+            ).fetchone()
+            decision = decide(is_new, int(notified[0]), summary is not None, limit)
+            if decision == "single":
+                connection.execute(
+                    "UPDATE join_attempts SET notified = 1 WHERE day = ? AND world_id = ? AND name_fold = ?",
+                    (day_text, world_id, name.casefold()),
+                )
+            elif decision == "summary":
+                connection.execute(
+                    "INSERT OR IGNORE INTO daily_flags (day, flag) VALUES (?, ?)", (day_text, FLAG_ATTEMPTS_SUMMARY)
+                )
+        return decision
+
+    def attempts(self, day: date, world_id: str | None = None) -> list[AttemptRow]:
+        """Fremdversuche eines lokalen Tages (optional nur einer Welt), früheste zuerst."""
+        query = "SELECT world_id, player_name, first_at, count FROM join_attempts WHERE day = ?"
+        args: tuple[str, ...] = (day.isoformat(),)
+        if world_id is not None:
+            query += " AND world_id = ?"
+            args = (*args, world_id)
+        with self._connect() as connection:
+            rows = connection.execute(f"{query} ORDER BY first_at, world_id, name_fold", args).fetchall()
+        return [AttemptRow(str(row[0]), str(row[1]), int(row[2]), int(row[3])) for row in rows]
+
+    def claim_review(self, nc_user: str, day: date) -> bool:
+        """Rückblick beanspruchen: True nur beim ersten Aufruf je Verwalter und Tag (D-15, Pattern 5)."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO review_sent (nc_user, day) VALUES (?, ?)", (nc_user, day.isoformat())
+            )
+        return cursor.rowcount == 1
+
+    def review_pref(self, nc_user: str) -> tuple[bool, int]:
+        """(eingeschaltet, Minute) eines Verwalters; ohne Zeile Vorgabe an, 20:00 (D-12, D-15)."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT enabled, minute FROM review_prefs WHERE nc_user = ?", (nc_user,)
+            ).fetchone()
+        return (True, REVIEW_DEFAULT_MINUTE) if row is None else (bool(row[0]), int(row[1]))
+
+    def set_review_pref(self, nc_user: str, *, enabled: bool, minute: int) -> None:
+        """Rückblick-Einstellung eines Verwalters speichern."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO review_prefs (nc_user, enabled, minute) VALUES (?, ?, ?) "
+                "ON CONFLICT(nc_user) DO UPDATE SET enabled = excluded.enabled, minute = excluded.minute",
+                (nc_user, int(enabled), minute),
+            )
 
     def delete_notify_data(self, world_id: str) -> None:
         """Ereignis- und Spielzeitdaten einer gelöschten Welt; der Talk-Raum bleibt (eigener Abgleich)."""

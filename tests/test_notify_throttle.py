@@ -31,7 +31,7 @@ def store(tmp_path: pathlib.Path) -> WorldStore:
         (False, 5, False, "none"),
     ],
 )
-def test_decide(is_new: bool, notified: int, summary_claimed: bool, expected: str) -> None:  # noqa: FBT001
+def test_decide(is_new: bool, notified: int, summary_claimed: bool, expected: str) -> None:
     assert decide(is_new, notified, summary_claimed, 5) == expected
 
 

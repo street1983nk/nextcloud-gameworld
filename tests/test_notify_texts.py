@@ -6,7 +6,8 @@ import pytest
 
 from gameworld.notify import links, texts
 
-FORBIDDEN = re.compile(r"%|\||–|—|Mitternacht|(?<![0-9])0(:00)? Uhr")
+DASHES = chr(0x2013) + chr(0x2014)
+FORBIDDEN = re.compile(rf"%|\||[{DASHES}]|Mitternacht|(?<![0-9])0(:00)? Uhr")
 FIXED_TEXTS = (
     texts.ATTEMPT_SUBJECT,
     texts.ATTEMPT_MESSAGE,
