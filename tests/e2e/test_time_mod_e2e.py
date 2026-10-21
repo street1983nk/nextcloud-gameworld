@@ -27,6 +27,7 @@ from gameworld.playtime.plan import day_starts, local_day
 from gameworld.provisioner.time_mod import (
     LEDGER_HEADER,
     TEXT_LIMIT,
+    TEXT_START,
     TEXT_WELT,
     DayGrid,
     TimeLine,
@@ -223,3 +224,21 @@ async def test_time_mod_enforces_rules(client: httpx.AsyncClient, app_env: Path)
     write_rules(app_env, world_id, render_time_file(7, int(time.time()), None, {"Leo": level}))
     await anyio.sleep(COOLDOWN_PAUSE)
     assert join(HOST, port, "Leo", PASSWORDS["Leo"])["result"] == "auth_accept"
+
+    # (S13, WR-07) Alte Regeldatei nach dem Tageswechsel: Fenster vorbei, nächster Start schon
+    # erreicht. Kein widersprüchliches "Heute kannst du spielen", sondern "gleich nochmal".
+    await anyio.sleep(COOLDOWN_PAUSE)
+    stale_now = int(time.time())
+    stale = TimeLine(
+        cap=-1,
+        start=stale_now - 7200,
+        until=stale_now - 60,
+        reason="ok",
+        next_hint="-",
+        next_at=stale_now - 30,
+        next_minute=0,
+    )
+    write_rules(app_env, world_id, render_time_file(8, stale_now, None, {"Leo": stale}, days=DAYS))
+    stale_join = join(HOST, port, "Leo", PASSWORDS["Leo"])
+    _denied(stale_join, TEXT_START)
+    assert "spielen" not in str(stale_join["reason"]), stale_join

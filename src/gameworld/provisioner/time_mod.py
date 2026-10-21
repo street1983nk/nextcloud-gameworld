@@ -162,15 +162,28 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def kid_text(reason: str, days_ahead: int | None = None, weekday: int | None = None, minute: int | None = None) -> str:
+def kid_text(
+    reason: str,
+    days_ahead: int | None = None,
+    weekday: int | None = None,
+    minute: int | None = None,
+    *,
+    reached: bool = False,
+) -> str:
     """Kindertext zu Grund und nächstem Start; spiegelt text() im Lua-Mod exakt.
 
     ``days_ahead`` 0..7 (0 = heute), ``weekday`` ISO 1..7, ``minute`` 0..1439
     lokal. Fehlt eine Angabe oder liegt sie außerhalb, steht nur der Grundsatz da.
     Eine Uhrzeit erscheint nur bei ``minute`` > 0 (echte Startzeit der Eltern).
+    ``reached``: Der nächste Start ist schon erreicht, die Regeldatei also älter als
+    der Tageswechsel (ganzer Tag ohne Limit, am Tagesende getrennt). Dann gilt
+    TEXT_START statt "Jetzt ist noch keine Spielzeit. Heute kannst du spielen.",
+    das sich widerspräche (WR-07); die ExApp schreibt binnen 15 s neu.
     """
     base = _BASE.get(reason, TEXT_FENSTER)
-    if reason == "start" or days_ahead is None or weekday is None or minute is None:
+    if reason == "start" or reached:
+        return TEXT_START
+    if days_ahead is None or weekday is None or minute is None:
         return base
     if not all(_is_int(value) for value in (days_ahead, weekday, minute)):
         return base
@@ -403,6 +416,10 @@ end
 local function text(why, key)
   local s = TEXT[why] or TEXT.fenster
   if why == "start" then return s end
+  -- Naechster Start schon erreicht: Die Regeldatei ist aelter als der Tageswechsel,
+  -- die ExApp schreibt gleich neu; nie "Heute kannst du spielen" beim Trennen (WR-07).
+  local st = key and starts[key]
+  if st and st.at <= now() then return TEXT.start end
   local phrase, ahead = day_phrase(key)
   if not phrase then return s end
   if why == "fenster" and ahead == 0 then s = FENSTER_EARLY end

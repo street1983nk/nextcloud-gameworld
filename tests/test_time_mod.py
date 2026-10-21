@@ -218,6 +218,31 @@ def test_kid_text_next_week_with_minutes() -> None:
     assert kid_text("tag", 7, 6, 870).endswith("Nächsten Samstag ab 14:30 Uhr kannst du wieder spielen.")
 
 
+@pytest.mark.parametrize("reason", ["fenster", "limit", "tag", "welt"])
+def test_kid_text_reached_start_is_not_contradictory(reason: str) -> None:
+    """WR-07: Ganzer Tag ohne Limit, Folgetag erlaubt, Trennen am Tagesende mit alter Regeldatei.
+
+    Der nächste Start (heute, Minute 0) ist schon erreicht; statt "Jetzt ist noch
+    keine Spielzeit. Heute kannst du spielen." kommt der Satz für "gleich wieder".
+    """
+    assert kid_text(reason, 0, 4, 0) in {
+        "Jetzt ist noch keine Spielzeit. Heute kannst du spielen.",
+        "Deine Spielzeit für heute ist vorbei. Heute kannst du spielen.",
+        "Heute ist kein Spieltag. Heute kannst du spielen.",
+        "Diese Welt ist gerade zu. Heute ist sie wieder offen.",
+    }
+    text = kid_text(reason, 0, 4, 0, reached=True)
+    assert text == "Gameworld startet gleich. Bitte gleich nochmal versuchen."
+    assert "Heute" not in text
+
+
+def test_lua_text_treats_reached_start_as_soon() -> None:
+    """WR-07: text() im Mod prüft den erreichten Start vor dem Tagesbezug (Spiegel von kid_text)."""
+    body = MOD_INIT_LUA[MOD_INIT_LUA.index("local function text(why, key)") :]
+    guard = body.index("if st and st.at <= now() then return TEXT.start end")
+    assert guard < body.index("day_phrase(key)")
+
+
 def test_kid_text_never_says_midnight() -> None:
     forbidden = re.compile(r"(?<!\d)0 Uhr|00:00|Mitternacht|24 Uhr|\d+\.\d+\.")
     for reason in ("limit", "tag", "fenster", "welt"):
