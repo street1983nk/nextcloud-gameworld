@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04-07-PLAN.md (Kind-Ansicht Restzeit und Welt-Fenster); Plan 8 of 8, nächste Welle 04-08 (Abnahme, Owner-Checkpoint)
-last_updated: "2026-10-21T01:10:37.892Z"
-last_activity: 2026-10-20
+status: verifying
+stopped_at: Completed 04-08-PLAN.md (Phasenabnahme Phase 4, 2x 107 von 107, Owner abgenommen 21.10.); Phase 4 komplett, bereit für Phasen-Verifikation
+last_updated: "2026-10-21T13:29:59.026Z"
+last_activity: 2026-10-21
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 27
-  completed_plans: 26
-  percent: 43
+  completed_plans: 27
+  percent: 57
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 
 ## Current Position
 
-Phase: 04 (spielzeitlimits) , EXECUTING
+Phase: 04 (spielzeitlimits) , VERIFYING
 Plan: 8 of 8
-Status: Ready to execute (04-07 fertig, Plan 8 of 8, nächste Welle 04-08 = Abnahme, Owner-Checkpoint)
-Last activity: 2026-10-21 - Completed quick task 261021-481: Kindertexte ohne 0 Uhr und Mitternacht
+Status: Phase komplett (alle 8 Pläne), bereit für die Verifikation
+Last activity: 2026-10-21 - Completed 04-08 (Phasenabnahme, Owner "ok abgenommen")
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -78,6 +78,7 @@ Progress: [██████████] 96%
 | Phase 04 P05 | 75 min | 2 tasks | 12 files |
 | Phase 04 P06 | 35 min | 2 tasks | 10 files |
 | Phase 04 P07 | 25 min | 2 tasks | 11 files |
+| Phase 04 P08 | 2 Sitzungen | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -158,6 +159,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-05: Verwalter-Schnappschuss meta time_admins aus Gruppe admin (Abfrage vor der Sperre, Drossel 60 s, Änderungen mit force, Dashboard nur try_mutation); frei-Zeile für eingeladene Verwalter, ohne Stand keine Freistellung
 - [Phase 04]: 04-06: Eltern-UI mit reiner Logik in playtime.js (Node-Prüfskript); Kind-Chip höchstens 30 Zeichen, sonst entfällt das Zeitfenster; 'Keine Begrenzung' = DELETE; Welt-Fenster 'ganzer Tag' = 0 bis 1440, alle Tage zu sperrt Speichern; Spielzeitdaten lädt ParentView höchstens alle 30 s
 - [Phase 04]: 04-07: Kind-API /api/my/playtime liefert Struktur (limited, state, remaining_minutes, until_minute, next mit days_ahead), der Browser formuliert; Rest unter 60 s = aufgebraucht/fenster (MIN_LEFT), Minuten nie über das Fensterende; /api/my/worlds je Welt window_open und window_next, kein Wochenplan
+- [Phase 04]: 04-08: K5 der Phasenabnahme misst das Limit nach Vorlauf-Sitzung und Verankerung (Erstkontakt bis etwa 20 s einmalig je Kind und Welt ungezählt, dokumentiert)
 
 ### Pending Todos
 
@@ -185,6 +187,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-20T18:16:23.274Z
-Stopped at: Completed 04-07-PLAN.md (Kind-Ansicht Restzeit und Welt-Fenster); Plan 8 of 8, nächste Welle 04-08 (Abnahme, Owner-Checkpoint)
+Last session: 2026-10-21T13:29:52.581Z
+Stopped at: Completed 04-08-PLAN.md (Phasenabnahme Phase 4, Owner abgenommen 21.10.); Phase 4 komplett, nächster Schritt Phasen-Verifikation, danach Phase 4.1 Eltern-Handy
 Resume file: None

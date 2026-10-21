@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Fundament** - ExApp-Gerüst plus Provisioner-Kern: gehärtete private Luanti-Container über gescopten Socket-Proxy (completed 2026-10-19)
 - [x] **Phase 2: One-Click-Welten** - Welt-Verwaltung im UI mit Presets, Status, Reconciler und Update-/Reboot-Überlebensfähigkeit (completed 2026-10-19)
 - [x] **Phase 3: Zugang und Rollen** - Einladungen über Nextcloud-Konten, serverseitige Whitelist, Eltern verwalten, Kinder spielen (completed 2026-10-20)
-- [ ] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt
+- [x] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt (completed 2026-10-21)
 - [ ] **Phase 4.1: Eltern-Handy (INSERTED)** - Pause, Hinweis bei fremdem Beitrittsversuch, Tagesrückblick per Push über die Nextcloud-App
 - [ ] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip
 - [ ] **Phase 6: Store-Release** - Härtung, Setup-Check, Cleanup und Veröffentlichung im Nextcloud App Store
@@ -201,7 +201,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 04-08-PLAN.md , Phasenabnahme: acceptance-phase4.sh K1 bis K6 mit Regression Phase 1 bis 3 plus gemeinsame Playwright-Abnahme, Doku Spielzeit
+- [x] 04-08-PLAN.md , Phasenabnahme: acceptance-phase4.sh K1 bis K6 mit Regression Phase 1 bis 3 plus gemeinsame Playwright-Abnahme, Doku Spielzeit
 
 **UI hint**: yes
 **Research flag**: yes (Implementierungspfad Mod vs. Scheduler-Stopp; Umgehungs-Caveat des Playtime-Limit-Mods bewerten)
@@ -261,6 +261,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Fundament | 5/5 | Complete   | 2026-10-19 |
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
-| 4. Spielzeitlimits | 7/8 | In Progress|  |
+| 4. Spielzeitlimits | 8/8 | Complete   | 2026-10-21 |
 | 5. Backup und Restore | 0/TBD | Not started | - |
 | 6. Store-Release | 0/TBD | Not started | - |
