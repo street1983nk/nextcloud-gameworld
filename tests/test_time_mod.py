@@ -307,6 +307,47 @@ def test_lua_parses_day_and_start_lines() -> None:
     assert "^([%w_%-]+) (%-?%d+) (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$" in MOD_INIT_LUA
 
 
+def test_rules_file_with_base_line() -> None:
+    """WR-06: @base folgt der Zeile mit Deckel (nach @start), Zeilen ohne Anker bleiben wie bisher."""
+    mia = TimeLine(
+        cap=3600,
+        start=1792800000,
+        until=1792836000,
+        reason="ok",
+        next_hint="-",
+        next_at=1792911600,
+        next_minute=540,
+        base=900,
+    )
+    data = render_time_file(4, ISSUED, None, {"Mia": mia, "Leo": OK}, days=DAYS)
+    lines = data.decode("ascii").split("\n")
+    index = lines.index("Mia 3600 1792800000 1792836000 ok -")
+    assert lines[index + 1 : index + 3] == ["@start Mia 1792911600 540", "@base Mia 900"]
+    assert not any(line.startswith("@base Leo") for line in lines)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        TimeLine(cap=60, start=0, until=0, reason="ok", next_hint="-", base=-2),
+        TimeLine(cap=60, start=0, until=0, reason="ok", next_hint="-", base=61),
+        TimeLine(cap=-1, start=0, until=0, reason="ok", next_hint="-", base=0),
+        TimeLine(cap=-1, start=-1, until=-1, reason="frei", next_hint="-", base=0),
+        TimeLine(cap=60, start=0, until=0, reason="ok", next_hint="-", base=True),
+    ],
+)
+def test_invalid_base_raises(line: TimeLine) -> None:
+    with pytest.raises(ValueError, match="Anker"):
+        render_time_file(1, ISSUED, None, {"Mia": line})
+
+
+def test_lua_shifts_cap_when_ledger_is_behind_base() -> None:
+    """WR-06: Der Mod liest @base und zieht den Rückstand des Zählbuchs vom Deckel ab."""
+    assert "^@base ([%w_%-]+) (%d+)$" in MOD_INIT_LUA
+    assert "local behind = base - (used[name] or 0)" in MOD_INIT_LUA
+    assert "local rest = r.cap - (shifts[name] or 0) - (used[name] or 0)" in MOD_INIT_LUA
+
+
 def test_lua_contains_enforcement_points() -> None:
     for needle in (
         "register_on_prejoinplayer",

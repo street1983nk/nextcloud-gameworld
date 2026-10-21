@@ -176,6 +176,45 @@ def test_render_cap_for_child_with_limit(engine: TimeEngine, store: WorldStore) 
     assert int(parts[3]) <= day_bounds(TODAY, ZONE)[1]
 
 
+def _base(data: bytes, name: str) -> int | None:
+    for line in _lines(data):
+        parts = line.split(" ")
+        if parts[:2] == ["@base", name]:
+            return int(parts[2])
+    return None
+
+
+def test_render_base_anchor_follows_cap_not_every_tick(engine: TimeEngine, store: WorldStore) -> None:
+    """WR-06: @base = gesehener Stand, gegen den der Deckel gerechnet ist; bleibt, solange der Deckel bleibt."""
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _week(limit=60))
+    _invite(store, "w1", "gw-mia")
+    store.set_ledger_seen("w1", {"Mia": 900})
+
+    first, _ = engine.render("w1")
+    assert _base(first, "Mia") == 900
+    mia = _line(first, "Mia")
+    assert mia is not None
+    assert mia[1] == "4500"
+
+    # Mia spielt hier 120 s: Verbrauch und gesehener Stand wachsen gleich, der Deckel bleibt.
+    engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Mia": 1020}))
+    second, changed = engine.render("w1")
+    assert changed is False
+    assert second == first
+
+    # Verbrauch aus einer anderen Welt: Deckel sinkt, der Anker folgt dem neuen Stand.
+    store.add_usage("gw-mia", TODAY, 300)
+    third, changed = engine.render("w1")
+    assert changed is True
+    assert _base(third, "Mia") == 1020
+    # Ohne Limit kein Deckel und kein Anker.
+    _plan(store, "gw-mia", _week())
+    fourth, _ = engine.render("w1")
+    assert _base(fourth, "Mia") is None
+
+
 def test_render_shares_quota_across_worlds(engine: TimeEngine, store: WorldStore) -> None:
     _world(store, "w1", 30015)
     _world(store, "w2", 30016)

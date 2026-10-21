@@ -42,6 +42,18 @@ ExApp neu schreibt. Kompatibilität: Alte Mods lesen nur Zeilen, die mit
 Spielernamen nie vor, kein Fail-open); der neue Mod liest Dateien ohne
 ``@``-Zeilen und zeigt dann den Grundsatz ohne Zeitangabe.
 
+Seit WR-06 (Review Phase 4) folgt einer Zeile mit Deckel (``cap`` >= 0) noch::
+
+    @base <Spielername> <Sekunden>
+
+``base`` ist der Zählbuch-Stand, gegen den die ExApp den Deckel gerechnet hat
+(``cap - base`` = Rest beim Ausstellen). Liegt das Zählbuch des Mods beim Laden
+darunter (Zählbuch gelöscht, Sicherung zurückgespielt), verschiebt der Mod den
+Deckel um den Unterschied: Er gewährt dann nie mehr als den Rest beim Ausstellen,
+auch wenn die ExApp bis zum Fensterende nicht neu schreibt. Im Normalfall ist
+der Mod-Stand mindestens ``base`` und nichts ändert sich. ``base`` wechselt nur
+mit dem Deckel, nicht in jedem Takt (Pitfall 6). Alte Mods überspringen die Zeile.
+
 Format des Zählbuchs (schreibt nur der Mod)::
 
     gameworld-time-used 1 <os.time beim Schreiben> <geladene Generation>
@@ -227,6 +239,8 @@ local rules, world_rule, last, valid, generation = {{}}, nil, nil, nil, 0
 -- days: Wochentag von Tag 0 und 9 Tagesanfaenge (Zeile @tage); starts: je Schluessel
 -- (Spielername oder "welt") Epoch und lokale Minute der naechsten Oeffnung (@start).
 local days, starts = nil, {{}}
+-- shifts: je Name, um wie viel das Zaehlbuch beim Laden unter @base lag (WR-06).
+local shifts = {{}}
 local used = {{}}    -- Sekunden je Name, monoton ueber alle Neustarts
 local since = {{}}   -- get_us_time, bis zu dem die Zeit gutgeschrieben ist
 local warned = {{}}  -- je Name die schon gesendeten Vorwarnungen dieser Sitzung
@@ -276,10 +290,11 @@ local function load()
     if valid == nil then valid = "broken" end
     return
   end
-  local new, new_world, new_days, new_starts = {{}}, nil, nil, {{}}
+  local new, new_world, new_days, new_starts, new_bases = {{}}, nil, nil, {{}}, {{}}
   for i = 2, #lines - 1 do
     local line = lines[i]
     local sname, sat, smin = line:match("^@start ([%w_%-]+) (%d+) (%d+)$")
+    local bname, bsecs = line:match("^@base ([%w_%-]+) (%d+)$")
     local wf, wu, wr, wn = line:match("^welt (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$")
     if line:match("^@tage ") then
       -- Genau 10 Zahlen, Wochentag 1..7, Anfaenge streng steigend; sonst Zeile ignorieren.
@@ -299,6 +314,8 @@ local function load()
     elseif sname then
       local m = tonumber(smin)
       if #sname <= 20 and m <= 1439 then new_starts[sname] = {{ at = tonumber(sat), minute = m }} end
+    elseif bname then
+      if #bname <= 20 then new_bases[bname] = tonumber(bsecs) end
     elseif wf then
       new_world = {{ from = tonumber(wf), until_t = tonumber(wu), reason = wr, next = wn }}
     else
@@ -310,8 +327,14 @@ local function load()
       end
     end
   end
+  -- Zaehlbuch unter dem Stand, gegen den der Deckel gerechnet ist: Deckel verschieben (WR-06).
+  local new_shifts = {{}}
+  for name, base in pairs(new_bases) do
+    local behind = base - (used[name] or 0)
+    if behind > 0 then new_shifts[name] = behind end
+  end
   rules, world_rule, last, valid, generation = new, new_world, content, "ok", tonumber(gen)
-  days, starts = new_days, new_starts
+  days, starts, shifts = new_days, new_starts, new_shifts
 end
 
 -- Restzeit in Sekunden, Grund und Schluessel des naechsten Starts ("welt" oder
@@ -333,7 +356,7 @@ local function left(name)
     local w = r.until_t - t
     if not best or w < best then best, why, key = w, closed, name end
     if r.cap >= 0 then
-      local rest = r.cap - (used[name] or 0)
+      local rest = r.cap - (shifts[name] or 0) - (used[name] or 0)
       if rest < best then best, why, key = rest, "limit", name end
     end
   end
@@ -488,6 +511,8 @@ class TimeLine:
 
     ``next_at`` und ``next_minute`` (Epoch und lokale Minute der nächsten
     Fensteröffnung) ergeben die Zeile ``@start``; -1 und -1 heißt: keine.
+    ``base`` (Zählbuch-Stand, gegen den ``cap`` gerechnet ist) ergibt die Zeile
+    ``@base``; -1 heißt: keine (WR-06).
     """
 
     cap: int
@@ -497,6 +522,7 @@ class TimeLine:
     next_hint: str
     next_at: int = -1
     next_minute: int = -1
+    base: int = -1
 
 
 @dataclass(frozen=True)
@@ -546,6 +572,17 @@ def _start_line(key: str, line: TimeLine) -> str | None:
     return f"@start {key} {at} {minute}"
 
 
+def _base_line(key: str, line: TimeLine) -> str | None:
+    """Zeile ``@base`` oder None ohne Anker; nur zu einer Zeile mit Deckel (cap >= 0)."""
+    if not _is_int(line.base):
+        raise ValueError("Ungültiger Zählbuch-Anker in der Regeldatei: nur ganze Zahlen.")
+    if line.base == -1:
+        return None
+    if line.base < 0 or line.cap < 0 or line.base > line.cap:
+        raise ValueError("Ungültiger Zählbuch-Anker in der Regeldatei: nur zu einem Deckel und nie darüber.")
+    return f"@base {key} {line.base}"
+
+
 def _days_line(days: DayGrid) -> str:
     starts = days.starts
     if not _is_int(days.weekday) or not 1 <= days.weekday <= 7:
@@ -585,8 +622,9 @@ def render_time_file(
     """Regeldatei der Welt, sortiert und deterministisch.
 
     Reihenfolge: Kopf, ``@tage``, Welt-Zeile, ``@start welt``, je Spieler (sortiert)
-    seine Zeile und direkt danach ``@start <name>``, zuletzt ``end``. Ohne ``days``
-    und ohne nächste Starts sind die Bytes dieselben wie vor den ``@``-Zeilen.
+    seine Zeile und direkt danach ``@start <name>`` und ``@base <name>``, zuletzt
+    ``end``. Ohne ``days``, nächste Starts und Anker sind die Bytes dieselben wie
+    vor den ``@``-Zeilen.
     Jeder ungültige Eintrag wirft ValueError, nie wird still übersprungen: Ein
     Zeilenumbruch im Namen oder Token könnte sonst fremde Zeilen einschleusen.
     """
@@ -607,6 +645,9 @@ def render_time_file(
         start = _start_line(name, line)
         if start is not None:
             lines.append(start)
+        base = _base_line(name, line)
+        if base is not None:
+            lines.append(base)
     lines.append("end")
     return ("\n".join(lines) + "\n").encode("ascii")
 

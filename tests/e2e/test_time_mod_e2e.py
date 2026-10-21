@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta
 from datetime import time as clock_time
 from functools import partial
@@ -209,3 +210,16 @@ async def test_time_mod_enforces_rules(client: httpx.AsyncClient, app_env: Path)
     assert chats.count("Noch 5 Minuten.") == 1, chats
     assert not any("Noch 10 Minuten" in chat for chat in chats), chats
     assert len([chat for chat in chats if chat.startswith("Noch ")]) == 1, chats
+
+    # (S12, WR-06) Zählbuch hinter dem Anker @base (etwa nach einem Restore): Der Mod gewährt
+    # nie mehr als den Rest beim Ausstellen. Deckel 600 s über dem Stand, aber Anker 580 s
+    # darüber: Rest 20 s, also abgelehnt. Positivkontrolle: Anker auf dem Stand, Beitritt klappt.
+    await anyio.sleep(COOLDOWN_PAUSE)
+    leo_now = read_ledger(app_env, world_id).seconds["Leo"]
+    behind = replace(_window(leo_now + 600), base=leo_now + 580)
+    write_rules(app_env, world_id, render_time_file(6, int(time.time()), None, {"Leo": behind}))
+    _denied(join(HOST, port, "Leo", PASSWORDS["Leo"]), TEXT_LIMIT)
+    level = replace(_window(leo_now + 600), base=leo_now)
+    write_rules(app_env, world_id, render_time_file(7, int(time.time()), None, {"Leo": level}))
+    await anyio.sleep(COOLDOWN_PAUSE)
+    assert join(HOST, port, "Leo", PASSWORDS["Leo"])["result"] == "auth_accept"

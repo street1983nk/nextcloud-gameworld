@@ -30,7 +30,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from dataclasses import astuple, dataclass
+from dataclasses import astuple, dataclass, field
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -62,6 +62,20 @@ def _next_fields(start: NextStart | None) -> tuple[int, int]:
     return (-1, -1) if start is None else (start.at, start.minute)
 
 
+def _anchor(previous: tuple[int, int] | None, cap: int, seen: int) -> int:
+    """Zählbuch-Anker @base zum Deckel (WR-06); -1 ohne Deckel.
+
+    Bleibt der Deckel gleich, bleibt auch der alte Anker: Sonst wechselten die
+    Bytes in jedem Takt, in dem das Kind hier spielt (Pitfall 6). Der alte Anker
+    liegt nie über dem Stand des Mods, der Deckel gilt also unverändert.
+    """
+    if cap < 0:
+        return -1
+    if previous is not None and previous[0] == cap:
+        return previous[1]
+    return seen
+
+
 def parse_admins(raw: str | None) -> frozenset[str]:
     """Verwalter-Schnappschuss aus meta; fehlt er oder ist er kaputt, gibt es keine Freistellung (fail closed)."""
     if not raw:
@@ -83,6 +97,8 @@ class _Rendered:
     generation: int
     issued_at: int
     data: bytes
+    # Je Spielername (Deckel, Anker): Der Anker @base bleibt, solange der Deckel gleich ist (WR-06).
+    bases: dict[str, tuple[int, int]] = field(default_factory=dict[str, tuple[int, int]])
 
 
 class TimeEngine:
@@ -143,6 +159,8 @@ class TimeEngine:
         seen = self._store.ledger_seen(world_id)
         admins = parse_admins(self._store.get_meta(META_TIME_ADMINS))
         today = local_day(now, tz)
+        cached = self._cache.get(world_id)
+        previous = {} if cached is None else cached.bases
         players: dict[str, TimeLine] = {}
         for name in self._store.access_entries(world_id):
             nc_user = self._store.player_name_owner(name)
@@ -168,6 +186,7 @@ class TimeEngine:
                 next_hint=state.next_hint,
                 next_at=next_at,
                 next_minute=next_minute,
+                base=_anchor(previous.get(name), cap, seen.get(name, 0)),
             )
         world_line = self._world_line(world_id, now, tz)
         lines = [*players.values(), *([] if world_line is None else [world_line])]
@@ -229,7 +248,8 @@ class TimeEngine:
             return cached.data, False
         generation = self._store.bump_time_generation(world_id)
         data = render_time_file(generation, now, world_line, players, days=days)
-        self._cache[world_id] = _Rendered(key=key, generation=generation, issued_at=now, data=data)
+        bases = {name: (line.cap, line.base) for name, line in players.items() if line.base >= 0}
+        self._cache[world_id] = _Rendered(key=key, generation=generation, issued_at=now, data=data, bases=bases)
         return data, True
 
     @staticmethod
