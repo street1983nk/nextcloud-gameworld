@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 Phase: 04 (spielzeitlimits) , EXECUTING
 Plan: 8 of 8
 Status: Ready to execute (04-07 fertig, Plan 8 of 8, nächste Welle 04-08 = Abnahme, Owner-Checkpoint)
-Last activity: 2026-10-20
+Last activity: 2026-10-21 - Completed quick task 261021-481: Kindertexte ohne 0 Uhr und Mitternacht
 
 Progress: [██████████] 96%
 
@@ -168,6 +168,12 @@ Recent decisions affecting current work:
 - [Phase 1] Research nötig: Welt-Daten-Ablage (Named Volume vs. Container-FS + Archive-API), Luanti-Image-Wahl, Headless-Administration
 - [Phase 3] Erledigt: eigener Welt-Mod gameworld_access statt Whitelist-Mod (ct_whitelist auf ContentDB nicht mehr auffindbar)
 - [Phase 4] Research nötig: Spielzeit-Durchsetzungspfad Mod vs. Scheduler-Stopp, Umgehungs-Caveat bewerten
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261021-481 | Kindertexte ohne 0 Uhr und Mitternacht | 2026-10-21 | d328457 | [261021-481-kindertexte-ohne-0-uhr-und-mitternacht](./quick/261021-481-kindertexte-ohne-0-uhr-und-mitternacht/) |
 
 ## Deferred Items
 
