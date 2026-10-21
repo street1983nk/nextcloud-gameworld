@@ -91,6 +91,20 @@ Werkzeuge wie in Phase 3: docker-CLI, curl, jq, tar, grep und `uv`. Einziges Pyt
 
 Das Skript legt die Welt "Abnahme Spielzeit" und das Wegwerfkonto `gw-abnahme4` an, setzt und löscht Regeln für `gw-kind`, legt einen Ferientag an, startet die Welt einmal und die ExApp einmal neu und hält in K5 zwei Sitzungen bis zu 170 s. Ein trap räumt alles in jedem Fall auf: Welt, Regeln von `gw-kind`, Ferien, Zeitzone zurück auf `Europe/Berlin`, Konto `gw-abnahme4`, `gw-kind` nicht in `admin`. Spielpasswörter erscheinen nie in der Ausgabe. Am Ende ruft es `acceptance-phase3.sh` als Regression, das wiederum Phase 1 und 2 ruft. Laufzeit etwa 20 Minuten (davon etwa 8 für Phase 4), Exit 0 nur bei "N von N Prüfungen bestanden". Mit `GAMEWORLD_SKIP_REGRESSION=1` entfällt die Regression; der Lauf endet dann bewusst mit Exit 1.
 
+## Talk im Dev-Stack
+
+Für die Talk-Räume je Welt (Phase 4.1) braucht die Dev-Nextcloud die App Talk (spreed). Einmalig installieren (braucht Internet):
+
+```sh
+docker compose -f scripts/dev/compose.yaml exec -T -u www-data app php occ app:install spreed
+```
+
+Meldet occ "already installed", reicht `occ app:enable spreed`. Geprüft mit Talk 24.0.6 auf Nextcloud 34.0.3 (Capability `spreed` mit den Features `bots-v1`, `read-only-rooms` und `listable-rooms`).
+
+Gameworld läuft ohne Talk unverändert weiter: Welten anlegen, einladen und löschen gelingen auch dann, `GET /api/talk` meldet nur `available: false`. Wird Talk später installiert, legt der Abgleich alle 5 Minuten die fehlenden Räume an.
+
+Jeder Raum heißt "Gameworld: Weltname", ist eine Gruppenunterhaltung, nie öffentlich und nicht auffindbar. Mitglieder sind genau die eingeladenen Konten und die Verwalter; was jemand in Talk von Hand hinzufügt, entfernt der Abgleich wieder. Wer nach der Einladung einer Gruppe neu in diese Gruppe kommt, erscheint nach dem nächsten Abgleich (spätestens nach 5 Minuten) im Talk-Raum.
+
 ## Abbauen
 
 ```sh
