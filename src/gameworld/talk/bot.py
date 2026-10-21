@@ -68,12 +68,20 @@ async def register(nc: AsyncNextcloudApp) -> bool:
     if not await nc.talk.bots_available:
         return False
     await BOT.enabled_handler(True, nc)
+    _forget_rooms()
     return True
 
 
 async def unregister(nc: AsyncNextcloudApp) -> None:
     """Meldet den Bot beim Deaktivieren der ExApp ab."""
+    _forget_rooms()
     await BOT.enabled_handler(False, nc)
+
+
+def _forget_rooms() -> None:
+    """Nach Neu- oder Abmelden gelten Talk-ID und Freischaltungen nicht mehr."""
+    if isinstance(_bot, NcBot):
+        _bot.forget()
 
 
 async def _as_user(acting_uid: str) -> AsyncNextcloudApp:
@@ -104,9 +112,18 @@ class NcBot:
             self._bot_id = find_bot_id(await nc.talk.list_bots())
             if self._bot_id is None:
                 raise BotMissingError
-        # nc_py_api setzt den Token roh in den Pfad.
-        await nc.talk.enable_bot(quote(token, safe=""), self._bot_id)
+        try:
+            # nc_py_api setzt den Token roh in den Pfad.
+            await nc.talk.enable_bot(quote(token, safe=""), self._bot_id)
+        except Exception:
+            # Bot womöglich neu registriert (neue Talk-ID): beim nächsten Mal neu suchen.
+            self._bot_id = None
+            raise
         self._enabled.add(token)
+
+    def forget(self) -> None:
+        self._bot_id = None
+        self._enabled.clear()
 
     async def send(self, token: str, text: str, *, silent: bool) -> bool:
         try:

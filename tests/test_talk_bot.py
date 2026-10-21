@@ -331,3 +331,26 @@ async def test_webhook_with_wrong_secret_is_401(client: httpx.AsyncClient) -> No
     headers["AUTHORIZATION-APP-API"] = "OmZhbHNjaA=="  # ":falsch"
     response = await client.post("/talk/bot", headers=headers, json={"x": CHAT})
     assert response.status_code == 401
+
+
+async def test_failed_enable_looks_up_bot_id_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    nc, _acting = _fake_user_nc(monkeypatch, [FakeBotInfo(9, f"http://nc/ocs/v2.php{SUFFIX}")])
+    nc.talk.enable_bot.side_effect = [RuntimeError("404"), None]
+    sender = talk_bot.NcBot()
+    with pytest.raises(RuntimeError):
+        await sender.ensure_enabled("tok1", "admin")
+    await sender.ensure_enabled("tok1", "admin")
+    assert nc.talk.list_bots.await_count == 2
+
+
+async def test_register_forgets_enabled_rooms(monkeypatch: pytest.MonkeyPatch) -> None:
+    nc_user, _acting = _fake_user_nc(monkeypatch, [FakeBotInfo(9, f"http://nc/ocs/v2.php{SUFFIX}")])
+    sender = talk_bot.NcBot()
+    monkeypatch.setattr(talk_bot, "_bot", sender)
+    monkeypatch.setattr(talk_bot.BOT, "enabled_handler", AsyncMock())
+    await sender.ensure_enabled("tok1", "admin")
+    app: Any = MagicMock()
+    app.talk.bots_available = _value(True)
+    assert await talk_bot.register(app) is True
+    await sender.ensure_enabled("tok1", "admin")
+    assert nc_user.talk.enable_bot.await_count == 2
