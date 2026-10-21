@@ -219,7 +219,7 @@ Plans:
   4. Die Seiten hinter den Benachrichtigungen funktionieren im Handy-Browser und in der Nextcloud-App
   5. Zu jeder Welt gibt es einen Talk-Raum, dessen Mitglieder automatisch den Einladungen folgen (Einladen fügt hinzu, Ausladen entfernt, Gruppen-Einladungen inklusive) plus die Verwalter; niemand sonst kommt hinein
   6. Ein Gameworld-Bot meldet im Raum Weltstart und -stopp, Beitritte und das nahende Ende der Spielzeit; ohne installiertes Talk läuft Gameworld unverändert weiter und zeigt nur einen Hinweis
-**Plans:** 3/9 plans executed
+**Plans:** 4/9 plans executed
 
 Plans:
 
@@ -237,7 +237,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04.1-04-PLAN.md , Benachrichtigungen: Fremdversuch mit Drossel, Tagesrückblick, Deep Links, Verwalter-API, Hintergrund-Loop
+- [x] 04.1-04-PLAN.md , Benachrichtigungen: Fremdversuch mit Drossel, Tagesrückblick, Deep Links, Verwalter-API, Hintergrund-Loop
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
