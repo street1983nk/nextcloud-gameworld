@@ -16,6 +16,7 @@ import pytest
 from gameworld.access.directory import DirectoryUser
 from gameworld.access.roles import Profile
 from gameworld.access.secret import PlayerSecret
+from gameworld.talk.rooms import RoomMember
 
 APP_ID = "gameworld"
 APP_VERSION = "0.1.0"
@@ -102,7 +103,107 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
     monkeypatch.setattr(notify_service, "_notifier", FakeNotifier())
     monkeypatch.setattr(notify_loop, "LOOP_STATE", notify_loop.LoopState())
+    # Talk ohne Nextcloud; Verfügbarkeits-Cache und Dienst-Singleton frisch (04.1-05).
+    from gameworld.talk import rooms as talk_rooms
+    from gameworld.talk import service as talk_service
+
+    monkeypatch.setattr(talk_rooms, "_rooms", FakeTalkRooms())
+    monkeypatch.setattr(talk_service, "_talk_service", None)
+    monkeypatch.setattr(talk_service, "TALK_STATE", talk_service.TalkState())
     return tmp_path
+
+
+class FakeTalkRooms:
+    """Talk-Räume im Speicher; ``talk``/``bots`` simulieren die Capabilities, ``error`` eine Störung.
+
+    ``calls`` protokolliert jeden Aufruf als (Methode, handelndes Konto, Argumente).
+    """
+
+    def __init__(self) -> None:
+        self.talk = True
+        self.bots = True
+        self.rooms: dict[str, list[RoomMember]] = {}
+        self.read_only: dict[str, bool] = {}
+        self.calls: list[tuple[str, str, tuple[object, ...]]] = []
+        self.error: Exception | None = None
+        self._next_id = 1
+
+    def _record(self, method: str, acting_uid: str, *args: object) -> None:
+        self.calls.append((method, acting_uid, args))
+        if self.error is not None:
+            raise self.error
+
+    def _new_id(self) -> int:
+        self._next_id += 1
+        return self._next_id
+
+    def _members(self, token: str) -> list[RoomMember]:
+        from gameworld.talk.rooms import RoomGoneError
+
+        if token not in self.rooms:
+            raise RoomGoneError("weg")
+        return self.rooms[token]
+
+    def methods(self) -> list[str]:
+        return [call[0] for call in self.calls]
+
+    async def available(self, acting_uid: str) -> tuple[bool, bool]:
+        self._record("available", acting_uid)
+        return self.talk, self.talk and self.bots
+
+    async def create(self, acting_uid: str, name: str) -> str:
+        self._record("create", acting_uid, name)
+        token = f"tok{self._new_id()}"
+        self.rooms[token] = [RoomMember(self._new_id(), "users", acting_uid, 1)]
+        return token
+
+    async def participants(self, acting_uid: str, token: str) -> list[RoomMember]:
+        self._record("participants", acting_uid, token)
+        return list(self._members(token))
+
+    async def add_user(self, acting_uid: str, token: str, uid: str) -> None:
+        self._record("add_user", acting_uid, token, uid)
+        self._members(token).append(RoomMember(self._new_id(), "users", uid, 3))
+
+    async def remove_attendee(self, acting_uid: str, token: str, attendee_id: int) -> None:
+        self._record("remove_attendee", acting_uid, token, attendee_id)
+        members = self._members(token)
+        members[:] = [m for m in members if m.attendee_id != attendee_id]
+
+    def _retype(self, token: str, attendee_id: int, participant_type: int) -> None:
+        members = self._members(token)
+        members[:] = [
+            RoomMember(m.attendee_id, m.actor_type, m.actor_id, participant_type) if m.attendee_id == attendee_id else m
+            for m in members
+        ]
+
+    async def promote(self, acting_uid: str, token: str, attendee_id: int) -> None:
+        self._record("promote", acting_uid, token, attendee_id)
+        self._retype(token, attendee_id, 2)
+
+    async def demote(self, acting_uid: str, token: str, attendee_id: int) -> None:
+        self._record("demote", acting_uid, token, attendee_id)
+        self._retype(token, attendee_id, 3)
+
+    async def set_read_only(self, acting_uid: str, token: str, *, on: bool) -> None:
+        self._record("set_read_only", acting_uid, token, on)
+        self.read_only[token] = on
+
+    async def ensure_private(self, acting_uid: str, token: str) -> None:
+        self._record("ensure_private", acting_uid, token)
+
+    async def delete(self, acting_uid: str, token: str) -> None:
+        self._record("delete", acting_uid, token)
+        self.rooms.pop(token, None)
+
+
+@pytest.fixture
+def fake_talk(app_env: Path) -> FakeTalkRooms:
+    del app_env
+    from gameworld.talk import rooms as talk_rooms
+
+    assert isinstance(talk_rooms._rooms, FakeTalkRooms)  # pyright: ignore[reportPrivateUsage]
+    return talk_rooms._rooms  # pyright: ignore[reportPrivateUsage]
 
 
 class FakeNotifier:
@@ -242,6 +343,12 @@ async def client(app_env: Path) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=APP)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
         yield http
+    # Offene Talk-Hooks (verfolgte Tasks) vor dem Schließen der Schleife abarbeiten.
+    from gameworld.talk import service as talk_service
+
+    pending = talk_service._talk_service  # pyright: ignore[reportPrivateUsage]
+    if pending is not None:
+        await pending.drain()
 
 
 def _instance_id(storage: Path) -> str | None:
