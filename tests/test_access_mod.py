@@ -148,3 +148,85 @@ def test_paths_and_conf() -> None:
     assert STATE_FILE == "/var/lib/minetest/.minetest/worlds/world/gameworld_access_state.txt"
     assert f"name = {MOD_NAME}" in MOD_CONF
     assert access_mod.ACCESS_HEADER == "gameworld-access 1"
+
+
+def test_events_constants() -> None:
+    """Phase 4.1 Pattern 1: Ereignisdatei der Welt, einziger Weg von der Welt zur ExApp."""
+    assert access_mod.EVENTS_FILE_NAME == "gameworld_events.txt"
+    assert access_mod.EVENTS_FILE == "/var/lib/minetest/.minetest/worlds/world/gameworld_events.txt"
+    assert access_mod.EVENTS_HEADER == "gameworld-events 1"
+    assert access_mod.EVENTS_MAX_LINES == 200
+    assert frozenset({"deny", "join", "leave", "warn10"}) == access_mod.EVENT_KINDS
+    assert access_mod.DENY_PER_NAME_SECONDS == 60
+    assert access_mod.DENY_PER_MINUTE == 30
+    assert f'world .. "/{access_mod.EVENTS_FILE_NAME}"' in MOD_INIT_LUA
+
+
+def _prejoin_body() -> str:
+    start = MOD_INIT_LUA.index("core.register_on_prejoinplayer(function(name)")
+    end = MOD_INIT_LUA.index("\nend)", start)
+    return MOD_INIT_LUA[start:end]
+
+
+def test_deny_event_only_before_return_deny() -> None:
+    """D-10, D-29: Nur fremde Namen melden, nie Tippfehler, Sperre oder Wartezeit."""
+    assert MOD_INIT_LUA.count('event("deny"') == 1
+    body = _prejoin_body()
+    deny_event = body.index('event("deny", name)')
+    return_deny = body.index("return DENY")
+    assert deny_event < return_deny
+    # Zwischen Meldung und return DENY steht kein anderer Zweig.
+    between = body[deny_event:return_deny]
+    for other in ("return CASE_HINT", "return LOCKED", "return WAIT"):
+        assert other not in between
+    for other in ("return CASE_HINT", "return LOCKED", "return WAIT"):
+        assert body.index(other) < deny_event or body.index(other) > return_deny
+    # Die CASE_HINT-Zeile meldet nichts.
+    assert "return CASE_HINT .. variant end" in body
+    assert "if locked(name) then return LOCKED end" in body
+
+
+def test_join_and_leave_events() -> None:
+    assert "core.register_on_joinplayer(function(player)" in MOD_INIT_LUA
+    join = MOD_INIT_LUA.index("core.register_on_joinplayer(function(player)")
+    assert 'event("join", ' in MOD_INIT_LUA[join : MOD_INIT_LUA.index("end)", join)]
+    leave = MOD_INIT_LUA.index("core.register_on_leaveplayer(function(player)")
+    assert 'event("leave", ' in MOD_INIT_LUA[leave : MOD_INIT_LUA.index("end)", leave)]
+
+
+def test_events_global_export() -> None:
+    # Luanti-Konvention: Global mit Modnamen, damit gameworld_time warn10 meldet.
+    assert "gameworld_access = { event = event }" in MOD_INIT_LUA
+    assert MOD_INIT_LUA.rstrip().endswith("gameworld_access = { event = event }")
+
+
+def test_events_file_written_atomically_and_bounded() -> None:
+    for needle in (
+        "local EVENTS_MAX = 200",
+        "core.safe_file_write(events_path,",
+        "^gameworld%-events 1 (%d+)$",
+        "^(%d+) (%d+) (%l+%d*) ([%w_%-]+)$",
+        'local KINDS = { deny = true, join = true, leave = true, warn10 = true }',
+        'name:match("^[%w_%-]+$")',
+        "#name > 20",
+        "os.time()",
+    ):
+        assert needle in MOD_INIT_LUA, needle
+    # Beim Laden einmal schreiben: Fähigkeits-Merker für die ExApp (Pattern 3).
+    loaded = MOD_INIT_LUA[MOD_INIT_LUA.index("core.register_on_mods_loaded") :]
+    assert "write_events()" in loaded
+
+
+def test_deny_flood_is_throttled() -> None:
+    """T-04.1-01: je Name ein deny pro 60 s, höchstens 30 pro gleitender Minute."""
+    for needle in ("local DENY_NAME_SECONDS = 60", "local DENY_PER_MINUTE = 30", "local function deny_allowed(name)"):
+        assert needle in MOD_INIT_LUA, needle
+    body = _prejoin_body()
+    assert "if deny_allowed(name) then event(\"deny\", name) end" in body
+
+
+def test_events_contain_no_ip_or_password() -> None:
+    write = MOD_INIT_LUA[MOD_INIT_LUA.index("local function write_events()") :]
+    write = write[: write.index("\nend\n")]
+    for forbidden in ("get_player_ip", "_ip", "hash", "password", "allowed"):
+        assert forbidden not in write
