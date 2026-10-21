@@ -27,6 +27,25 @@ nie IP-Adressen und braucht weder ``secure.trusted_mods`` noch
 ``secure.http_mods``. Der Lua-Quelltext bleibt reines ASCII: Die Texte an die
 Kinder stehen hier als Python-Konstanten mit Umlauten und gehen als
 Lua-Dezimal-Escapes (UTF-8-Bytes) in den Mod.
+
+Seit Phase 4.1 schreibt der Mod zusätzlich die Ereignisdatei
+``gameworld_events.txt`` (uid 30000, per ``core.safe_file_write`` atomar), den
+einzigen Weg von der Welt zur ExApp (04.1-RESEARCH.md Pattern 1, kein neuer
+Port)::
+
+    gameworld-events 1 <letzte Sequenz>
+    <Sequenz> <Epoch> <Art> <Spielername>
+    end
+
+Arten: ``deny`` (fremder Name, nur im Zweig vor dem Ablehnungstext, nie bei
+Groß/Klein-Variante, Sperre oder Wartezeit; gedrosselt auf ein ``deny`` je Name
+und Minute und 30 je Minute), ``join``, ``leave`` und ``warn10`` (vom Zeit-Mod
+über die globale Tabelle ``gameworld_access.event``). Höchstens 200
+Ereigniszeilen, die ältesten fallen heraus; die Sequenz läuft über Neustarts
+weiter, weil der Mod die alte Datei beim Start einliest. Beim Laden schreibt er
+die Datei sofort einmal: Das zeigt der ExApp, dass der laufende Mod Ereignisse
+und Pause kann (Pattern 3). Die Datei enthält nur Sequenz, Epoch, Art und Name,
+nie IP-Adressen oder Passwörter.
 """
 
 from __future__ import annotations
@@ -45,6 +64,15 @@ STATE_FILE_NAME = "gameworld_access_state.txt"
 ACCESS_FILE = f"{DATA_DIR}/.minetest/worlds/world/{ACCESS_FILE_NAME}"
 STATE_FILE = f"{DATA_DIR}/.minetest/worlds/world/{STATE_FILE_NAME}"
 ACCESS_HEADER = "gameworld-access 1"
+# Ereignisdatei (Phase 4.1): schreibt nur der Mod, die ExApp liest sie im Takt.
+EVENTS_FILE_NAME = "gameworld_events.txt"
+EVENTS_FILE = f"{DATA_DIR}/.minetest/worlds/world/{EVENTS_FILE_NAME}"
+EVENTS_HEADER = "gameworld-events 1"
+EVENTS_MAX_LINES = 200
+EVENT_KINDS = frozenset({"deny", "join", "leave", "warn10"})
+# Drossel gegen deny-Flut (T-04.1-01), nur im Speicher des Mods.
+DENY_PER_NAME_SECONDS = 60
+DENY_PER_MINUTE = 30
 
 # Texte an die Kinder (Luanti zeigt sie beim abgelehnten Join oder beim Trennen).
 TEXT_DENY = "Du bist in diese Welt nicht eingeladen. Frag deine Eltern."
@@ -68,12 +96,15 @@ def _lua_string(text: str) -> str:
     return '"' + "".join(parts) + '"'
 
 
+_KINDS_LUA = ", ".join(f"{kind} = true" for kind in sorted(EVENT_KINDS))
+
 MOD_INIT_LUA = f"""\
 -- gameworld_access: Nur Eingeladene betreten diese Welt.
 -- Die Zugangsdatei schreibt nur Gameworld. Der Mod schreibt keine IP-Adressen.
 local world = core.get_worldpath()
 local access_path = world .. "/{ACCESS_FILE_NAME}"
 local state_path = world .. "/{STATE_FILE_NAME}"
+local events_path = world .. "/{EVENTS_FILE_NAME}"
 local DENY = {_lua_string(TEXT_DENY)}
 local KICK = {_lua_string(TEXT_KICK)}
 local LOCKED = {_lua_string(TEXT_LOCKED)}
@@ -86,11 +117,76 @@ local TICK_SECONDS = 5
 -- 0,5 s nach dem Verlassen bringt Luanti 5.17.0 zum Absturz (on_joinplayer der
 -- Spiele bekommt nil, 04-RESEARCH.md Pitfall 1). 2 s Abstand verhindern das.
 local COOLDOWN = 2
+local EVENTS_MAX = {EVENTS_MAX_LINES}
+local DENY_NAME_SECONDS = {DENY_PER_NAME_SECONDS}
+local DENY_PER_MINUTE = {DENY_PER_MINUTE}
+local KINDS = {{ {_KINDS_LUA} }}
 
 local allowed, last = {{}}, nil
 
 local function now()
   return core.get_us_time() / 1e6
+end
+
+-- Ereignisdatei: Ringpuffer mit fortlaufender Sequenz, neustartfest im Weltordner.
+-- Nur Sequenz, Epoch (os.time), Art und Name; keine IP-Adressen, keine Passwoerter.
+local seq, event_lines = 0, {{}}
+do
+  local f = io.open(events_path, "rb")
+  if f then
+    local content = f:read("*a") or ""
+    f:close()
+    local lines = content:split("\\n")
+    local head = (lines[1] or ""):match("^gameworld%-events 1 (%d+)$")
+    if head then
+      -- Kaputte Datei ohne Schlusszeile: keine Zeilen, aber die Sequenz laeuft weiter.
+      seq = tonumber(head)
+      if lines[#lines] == "end" then
+        for i = 2, #lines - 1 do
+          local s, _, kind, name = lines[i]:match("^(%d+) (%d+) (%l+%d*) ([%w_%-]+)$")
+          if s and KINDS[kind] and #name <= 20 and tonumber(s) <= seq then
+            event_lines[#event_lines + 1] = lines[i]
+          end
+        end
+      end
+    end
+  end
+end
+
+local function write_events()
+  while #event_lines > EVENTS_MAX do table.remove(event_lines, 1) end
+  local out = {{ "{EVENTS_HEADER} " .. seq }}
+  for _, line in ipairs(event_lines) do out[#out + 1] = line end
+  out[#out + 1] = "end"
+  core.safe_file_write(events_path, table.concat(out, "\\n") .. "\\n")
+end
+
+local function event(kind, name)
+  if not KINDS[kind] or type(name) ~= "string" then return end
+  if #name > 20 or not name:match("^[%w_%-]+$") then return end
+  seq = seq + 1
+  event_lines[#event_lines + 1] = seq .. " " .. os.time() .. " " .. kind .. " " .. name
+  write_events()
+end
+
+-- Drossel fuer deny: je Name eins pro DENY_NAME_SECONDS, insgesamt DENY_PER_MINUTE
+-- je gleitender Minute. Beide Tabellen bleiben klein (nur gemeldete Versuche).
+local deny_last, deny_recent = {{}}, {{}}
+
+local function deny_allowed(name)
+  local t = now()
+  local keep = {{}}
+  for _, at in ipairs(deny_recent) do
+    if t - at < 60 then keep[#keep + 1] = at end
+  end
+  deny_recent = keep
+  for other, at in pairs(deny_last) do
+    if t - at >= DENY_NAME_SECONDS then deny_last[other] = nil end
+  end
+  if deny_last[name] or #deny_recent >= DENY_PER_MINUTE then return false end
+  deny_last[name] = t
+  deny_recent[#deny_recent + 1] = t
+  return true
 end
 
 -- Fehlt die Datei oder ist sie nicht komplett (etwa mitten im Schreiben),
@@ -147,8 +243,14 @@ end)
 -- Zeitpunkt des Verlassens je Name (nur im Speicher, nur Eingeladene).
 local left_at = {{}}
 
+core.register_on_joinplayer(function(player)
+  event("join", player:get_player_name())
+end)
+
 core.register_on_leaveplayer(function(player)
-  left_at[player:get_player_name()] = core.get_us_time()
+  local name = player:get_player_name()
+  left_at[name] = core.get_us_time()
+  event("leave", name)
 end)
 
 local function too_soon(name)
@@ -167,6 +269,8 @@ core.register_on_prejoinplayer(function(name)
   if not hash then
     local variant = case_variant(name)
     if variant then return CASE_HINT .. variant end
+    -- Nur ein fremder Name wird gemeldet (D-10, D-29), gedrosselt.
+    if deny_allowed(name) then event("deny", name) end
     return DENY
   end
   -- Noch verbunden oder gerade erst gegangen: kurz warten lassen.
@@ -188,7 +292,14 @@ local function tick()
   core.after(TICK_SECONDS, tick)
 end
 
-core.register_on_mods_loaded(function() core.after(0, tick) end)
+-- Einmal beim Start schreiben: Merker fuer die ExApp, dass dieser Mod Ereignisse kann.
+core.register_on_mods_loaded(function()
+  write_events()
+  core.after(0, tick)
+end)
+
+-- Luanti-Konvention: Global mit Modnamen; gameworld_time meldet darueber warn10.
+gameworld_access = {{ event = event }}
 """
 
 MOD_CONF = f"""\

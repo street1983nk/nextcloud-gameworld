@@ -206,7 +206,7 @@ def test_events_file_written_atomically_and_bounded() -> None:
         "core.safe_file_write(events_path,",
         "^gameworld%-events 1 (%d+)$",
         "^(%d+) (%d+) (%l+%d*) ([%w_%-]+)$",
-        'local KINDS = { deny = true, join = true, leave = true, warn10 = true }',
+        "local KINDS = { deny = true, join = true, leave = true, warn10 = true }",
         'name:match("^[%w_%-]+$")',
         "#name > 20",
         "os.time()",
@@ -222,7 +222,7 @@ def test_deny_flood_is_throttled() -> None:
     for needle in ("local DENY_NAME_SECONDS = 60", "local DENY_PER_MINUTE = 30", "local function deny_allowed(name)"):
         assert needle in MOD_INIT_LUA, needle
     body = _prejoin_body()
-    assert "if deny_allowed(name) then event(\"deny\", name) end" in body
+    assert 'if deny_allowed(name) then event("deny", name) end' in body
 
 
 def test_events_contain_no_ip_or_password() -> None:
