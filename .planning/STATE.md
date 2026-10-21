@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.1-02-PLAN.md
-last_updated: "2026-10-21T22:34:46.698Z"
-last_activity: 2026-10-22 -- 04.1-02 complete
+stopped_at: Completed 04.1-03-PLAN.md
+last_updated: "2026-10-21T22:53:53.078Z"
+last_activity: 2026-10-22 -- 04.1-03 complete
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 36
-  completed_plans: 29
+  completed_plans: 30
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.1
-Plan: 3 of 9 (04.1-02 complete)
-Status: Executing
-Last activity: 2026-10-22 -- 04.1-02 complete (Schema 5, Ereignis-Parser, Takt-Erweiterung)
+Plan: 4 of 9 (04.1-03 complete)
+Status: Ready to execute
+Last activity: 2026-10-22 -- 04.1-03 complete (Pause: Zustand, Rendern, Verwalter-API, Neustart alter Mods, Live-Nachweis)
 
-Progress: [████████░░] 81%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -82,6 +82,7 @@ Progress: [████████░░] 81%
 | Phase 04 P08 | 2 Sitzungen | 2 tasks | 4 files |
 | Phase 04.1 P01 | 25 min | 2 tasks | 4 files |
 | Phase 04.1 P02 | 35 min | 2 tasks | 14 files |
+| Phase 04.1 P03 | 50 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,9 @@ Recent decisions affecting current work:
 - [Phase 04.1]: 04.1-02: Ereignisse nur im Takt in SQLite-Outbox (event_outbox, höchstens 1000 Zeilen), Versand erst im Event-Loop
 - [Phase 04.1]: 04.1-02: Start/Stopp aus beobachtetem Docker-Zustand im Takt (world_run_state), erste Beobachtung verankert nur
 - [Phase 04.1]: 04.1-02: pause_state als eigene Tabelle mit genau einer Zeile; play_daily zählt alle Konten außer Verwaltern
+- [Phase 04.1]: 04.1-03: until_clock der Pause-API im Format H:MM ohne führende Null, wie der Bot-Text
+- [Phase 04.1]: 04.1-03: apply_pause_sync nimmt decide(current, now); die laufende Pause wird unter derselben Sperre gelesen, die den neuen Zustand setzt
+- [Phase 04.1]: 04.1-03: Weiter ohne laufende Pause ist idempotent und legt keine Outbox-Zeile an
 
 ### Pending Todos
 
@@ -196,6 +200,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-21T22:34:46.680Z
-Stopped at: Completed 04.1-02-PLAN.md
+Last session: 2026-10-21T22:53:53.059Z
+Stopped at: Completed 04.1-03-PLAN.md
 Resume file: None
