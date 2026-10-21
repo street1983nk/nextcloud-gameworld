@@ -49,6 +49,7 @@ from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
 from gameworld.playtime.pause import clock_text
 from gameworld.playtime.plan import local_day
 from gameworld.playtime.service import TimeService
+from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import OutboxRow, WorldRow, WorldStore
 
@@ -166,7 +167,15 @@ async def handle_deny(context: NotifyContext, row: OutboxRow) -> None:
 
 
 HANDLERS: dict[str, Handler] = {"deny": handle_deny}
-MAINTENANCE: list[MaintenanceHook] = []
+
+
+async def talk_reconcile(service: WorldService, acting: str) -> None:
+    """Talk-Abgleich (04.1-05): Räume anlegen, Mitglieder, nur lesen, offene Löschungen."""
+    del acting
+    await get_talk_service(service.store).reconcile_all()
+
+
+MAINTENANCE: list[MaintenanceHook] = [talk_reconcile]
 
 
 def _due_admins(store: WorldStore, admins: tuple[str, ...], day: date, minute: int) -> list[str]:

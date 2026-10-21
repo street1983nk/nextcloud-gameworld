@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import asdict
 from typing import Annotated
 
@@ -28,6 +29,7 @@ from gameworld.provisioner.client import (
 )
 from gameworld.provisioner.luanti_conf import normalize_world_name
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, validate_preset_id
+from gameworld.talk.service import get_talk_service
 from gameworld.worlds.ports import NoFreePortError
 from gameworld.worlds.service import NOT_FOUND, DeleteOnlyError, WorldService, WorldView
 from gameworld.worlds.store import WorldStore
@@ -165,7 +167,9 @@ async def list_worlds(
 
 
 @router.post("/worlds", status_code=status.HTTP_201_CREATED)
-async def create_world(body: CreateWorldRequest, service: ServiceDep) -> WorldOut:
+async def create_world(
+    body: CreateWorldRequest, service: ServiceDep, uid: Annotated[str, Depends(require_verwalter)]
+) -> WorldOut:
     # Seit 03-05 ohne Weltschlüssel: Zugang nur über eingeladene, provisionierte Konten.
     # Ungültige Namen weist schon das Pydantic-Modell ab (AfterValidator mit
     # normalize_world_name, 422 mit Detail-Liste); der Dienst sieht nur noch
@@ -178,6 +182,8 @@ async def create_world(body: CreateWorldRequest, service: ServiceDep) -> WorldOu
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
     except ProvisionerError as exc:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from None
+    # Jede Welt bekommt einen Talk-Raum (D-16); der Request wartet nie auf Talk (D-20).
+    _talk_hook(lambda: get_talk_service(service.store).schedule_ensure(created.id, uid))
     return _out(created)
 
 
@@ -225,9 +231,22 @@ async def restart_world(world_id: WorldId, service: ServiceDep) -> WorldOut:
 
 
 @router.delete("/worlds/{world_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_world(world_id: WorldId, service: ServiceDep) -> Response:
+async def delete_world(
+    world_id: WorldId, service: ServiceDep, uid: Annotated[str, Depends(require_verwalter)]
+) -> Response:
+    del uid  # nur Verwalter (zweite Sperre); Talk handelt als Raum-Owner oder erster Verwalter
     try:
         await service.delete_world(world_id)
     except ProvisionerError as exc:
         raise _http_error(exc) from None
+    # Raum mitlöschen (D-19); scheitert Talk, bleibt delete_pending für den Abgleich.
+    _talk_hook(lambda: get_talk_service(service.store).schedule_delete(world_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _talk_hook(start: Callable[[], None]) -> None:
+    """Startet einen Talk-Hook; ein Fehler dabei erreicht die Welt-Route nie (D-20)."""
+    try:
+        start()
+    except Exception as exc:
+        LOG.warning("Talk-Hook nicht gestartet: %s", type(exc).__name__)

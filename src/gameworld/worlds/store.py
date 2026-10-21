@@ -270,6 +270,22 @@ class AttemptRow:
     count: int
 
 
+@dataclass(frozen=True)
+class TalkRoomRow:
+    """Talk-Raum einer Welt; state ok oder delete_pending (Welt weg, Raum noch nicht)."""
+
+    world_id: str
+    token: str
+    owner_uid: str
+    read_only: bool
+    created_at: str
+    state: str
+
+
+TALK_STATE_OK = "ok"
+TALK_STATE_DELETE_PENDING = "delete_pending"
+TALK_STATES = frozenset({TALK_STATE_OK, TALK_STATE_DELETE_PENDING})
+
 COLUMNS = tuple(field.name for field in fields(WorldRow))
 UPDATABLE = frozenset(COLUMNS) - {"id"}
 
@@ -961,3 +977,56 @@ class WorldStore:
                 "bot_presence",
             ):
                 connection.execute(f"DELETE FROM {table} WHERE world_id = ?", (world_id,))  # noqa: S608
+
+    # Talk-Räume (Phase 4.1, TALK-01)
+
+    def talk_room(self, world_id: str) -> TalkRoomRow | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT world_id, token, owner_uid, read_only, created_at, state FROM talk_rooms WHERE world_id = ?",
+                (world_id,),
+            ).fetchone()
+        return None if row is None else _talk_row(row)
+
+    def list_talk_rooms(self) -> list[TalkRoomRow]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT world_id, token, owner_uid, read_only, created_at, state FROM talk_rooms ORDER BY world_id"
+            ).fetchall()
+        return [_talk_row(row) for row in rows]
+
+    def insert_talk_room(self, world_id: str, token: str, owner_uid: str, created_at: str) -> bool:
+        """Merkt einen neuen Raum; False, wenn die Welt schon einen hat (kein zweiter Raum)."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO talk_rooms (world_id, token, owner_uid, read_only, created_at, state) "
+                "VALUES (?, ?, ?, 0, ?, ?)",
+                (world_id, token, owner_uid, created_at, TALK_STATE_OK),
+            )
+        return cursor.rowcount == 1
+
+    def set_talk_read_only(self, world_id: str, *, on: bool) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute("UPDATE talk_rooms SET read_only = ? WHERE world_id = ?", (int(on), world_id))
+        return cursor.rowcount == 1
+
+    def set_talk_state(self, world_id: str, state: str) -> None:
+        if state not in TALK_STATES:
+            raise ValueError("Unbekannter Raumzustand")
+        with self._connect() as connection:
+            connection.execute("UPDATE talk_rooms SET state = ? WHERE world_id = ?", (state, world_id))
+
+    def delete_talk_room(self, world_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM talk_rooms WHERE world_id = ?", (world_id,))
+
+
+def _talk_row(row: tuple[object, ...]) -> TalkRoomRow:
+    return TalkRoomRow(
+        world_id=str(row[0]),
+        token=str(row[1]),
+        owner_uid=str(row[2]),
+        read_only=bool(row[3]),
+        created_at=str(row[4]),
+        state=str(row[5]),
+    )

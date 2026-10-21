@@ -186,7 +186,11 @@ async def test_read_only_validates_world_id(client: httpx.AsyncClient, service: 
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [("GET", "/api/talk"), ("POST", f"/api/worlds/{W1}/talk/read-only"), ("DELETE", f"/api/worlds/{W1}/talk/read-only")],
+    [
+        ("GET", "/api/talk"),
+        ("POST", f"/api/worlds/{W1}/talk/read-only"),
+        ("DELETE", f"/api/worlds/{W1}/talk/read-only"),
+    ],
 )
 async def test_kid_is_forbidden(client: httpx.AsyncClient, service: WorldService, method: str, path: str) -> None:
     del service

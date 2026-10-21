@@ -10,8 +10,10 @@ Welten eines Kontos (A2).
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
 import unicodedata
+from collections.abc import Callable
 from typing import Annotated, Literal
 
 import anyio.to_thread
@@ -32,7 +34,10 @@ from gameworld.access.service import (
 )
 from gameworld.api.worlds import ServiceDep, WorldId
 from gameworld.provisioner.client import WorldNotFoundError
+from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import NOT_FOUND
+
+LOG = logging.getLogger(__name__)
 
 # Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-03-22).
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
@@ -198,24 +203,45 @@ async def list_players(world_id: WorldId, access: AccessDep, uid: VerwalterDep) 
 
 
 @router.post("/worlds/{world_id}/invites")
-async def invite(world_id: WorldId, body: InviteRequest, access: AccessDep, uid: VerwalterDep) -> PlayersOut:
+async def invite(
+    world_id: WorldId, body: InviteRequest, access: AccessDep, uid: VerwalterDep, service: ServiceDep
+) -> PlayersOut:
     try:
         if body.kind == KIND_GROUP:
             result = await access.invite_group(world_id, uid, body.target)
         else:
             result = await access.invite_user(world_id, uid, body.target)
+    except _ERRORS as exc:
+        raise _http_error(exc) from None
+    # Talk-Raum folgt world_access (D-16), best effort und nie blockierend (D-20).
+    _talk_hook(lambda: get_talk_service(service.store).schedule_sync(world_id))
+    try:
         return await _players(access, world_id, uid, result)
     except _ERRORS as exc:
         raise _http_error(exc) from None
 
 
 @router.post("/worlds/{world_id}/invites/remove")
-async def remove_invite(world_id: WorldId, body: InviteRequest, access: AccessDep, uid: VerwalterDep) -> PlayersOut:
+async def remove_invite(
+    world_id: WorldId, body: InviteRequest, access: AccessDep, uid: VerwalterDep, service: ServiceDep
+) -> PlayersOut:
     try:
         result = await access.revoke(world_id, uid, body.kind, body.target)
+    except _ERRORS as exc:
+        raise _http_error(exc) from None
+    _talk_hook(lambda: get_talk_service(service.store).schedule_sync(world_id))
+    try:
         return await _players(access, world_id, uid, result)
     except _ERRORS as exc:
         raise _http_error(exc) from None
+
+
+def _talk_hook(start: Callable[[], None]) -> None:
+    """Startet den Talk-Abgleich als verfolgten Task; ein Fehler dabei erreicht die Route nie (D-20)."""
+    try:
+        start()
+    except Exception as exc:
+        LOG.warning("Talk-Abgleich nicht gestartet: %s", type(exc).__name__)
 
 
 def _change_out(change: PlayerChange) -> PlayerChangeOut:

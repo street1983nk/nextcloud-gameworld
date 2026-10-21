@@ -87,7 +87,8 @@ async def test_sync_removes_outsiders_and_never_the_owner(
     await talk.sync_members(W1)
     assert set(_members(fake_talk, token)) == {"admin", "papa", "gw-kind"}
     removed = [c[2][1] for c in fake_talk.calls if c[0] == "remove_attendee"]
-    assert sorted(removed) == [901, 902, 903, 904, 905, 906]
+    assert len(removed) == 6
+    assert set(removed) == {901, 902, 903, 904, 905, 906}
     # Moderatoren erst zurückstufen, dann entfernen (Pitfall 5).
     order = [(c[0], c[2][1]) for c in fake_talk.calls if c[0] in {"demote", "remove_attendee"}]
     assert order.index(("demote", 904)) < order.index(("remove_attendee", 904))
@@ -271,9 +272,7 @@ async def test_reconcile_isolates_errors_and_logs_no_names(
     assert "papa" not in caplog.text
 
 
-async def test_set_read_only_stores_and_applies(
-    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms
-) -> None:
+async def test_set_read_only_stores_and_applies(talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms) -> None:
     await talk.ensure_room(W1, "admin")
     token = _token(store)
     assert await talk.set_read_only(W1, on=True) is True
