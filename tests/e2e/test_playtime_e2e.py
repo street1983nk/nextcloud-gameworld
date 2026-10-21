@@ -213,8 +213,12 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     await _no_error_worlds(client)
 
     # (3) Zwei Welten, ein Kontingent: Deckel in Welt B sinkt mit dem Verbrauch in Welt A (O-03).
+    # Entfernen und neu Setzen behält den heutigen Verbrauch (WR-04, Owner-Entscheid): rund 2 min
+    # sind schon verbraucht, das neue Limit von 5 min lässt also rund 3 min übrig.
+    used_before = _usage(app_env, "gw-kind")
     await _clear_rules(client, "gw-kind")
-    await _set_rules(client, "gw-kind", _every_day(limit=3))
+    assert _usage(app_env, "gw-kind") == used_before
+    await _set_rules(client, "gw-kind", _every_day(limit=5))
     world_b, _ = await create_running_world(client, "mtg_kreativ", MTG_READY)
     await _invite(client, world_b, "gw-kind")
     # Direkt nach der Einladung, noch vor jedem Takt: die Regeldatei der Welt B trägt das Kind.
@@ -227,7 +231,7 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     usage = _usage(app_env, "gw-kind")
     cap_b = _rules_cap(world_b, kind_name)
     assert cap_b is not None
-    assert abs(cap_b - (180 - usage)) <= 10, (cap_b, usage)
+    assert abs(cap_b - (300 - usage)) <= 10, (cap_b, usage)
     await _no_error_worlds(client)
 
     # (4) Zeitfenster: am Fensterende getrennt mit "Jetzt ist keine Spielzeit." (plus Tagesbezug).

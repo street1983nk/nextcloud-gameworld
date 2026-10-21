@@ -184,6 +184,7 @@ remove_test_holidays() {
 # Alles, was die Abnahme anlegt oder umstellt, wieder in den Ausgangszustand.
 reset_fixtures() {
 	http_code DELETE "${API_URL}/playtime/children/${KID}" /dev/null >/dev/null 2>&1 || true
+	reset_usage "${KID}"
 	remove_test_holidays
 	http_code POST "${API_URL}/playtime/time-zone" /dev/null '{"time_zone":"Europe/Berlin"}' >/dev/null 2>&1 || true
 	occ group:removeuser admin "${KID}" >/dev/null 2>&1 || true
@@ -304,6 +305,21 @@ con = sqlite3.connect("file:" + sys.argv[1].replace("\\", "/") + "?mode=ro", uri
 for row in con.execute(sys.argv[2]):
     print("|".join("" if v is None else str(v) for v in row))
 ' "${db_path}" "$1") 2>/dev/null | tr -d '\r'
+}
+
+# Verbrauch eines Kontos löschen (einzige schreibende SQL-Stelle der Abnahme). Seit WR-04
+# behält "Regeln entfernen" den heutigen Verbrauch (Owner-Entscheid); die Abnahme misst K5
+# aber ab null und darf an einem Tag mehrfach laufen.
+reset_usage() {
+	db_path=${DB_FILE}
+	command -v cygpath >/dev/null 2>&1 && db_path=$(cygpath -w "${DB_FILE}")
+	(cd "${WORK_DIR}" && uv run --project "${REPO_ROOT}" python -I -c '
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1], timeout=10)
+with con:
+    con.execute("DELETE FROM time_usage WHERE nc_user = ?", (sys.argv[2],))
+con.close()
+' "${db_path}" "$1") >/dev/null 2>&1 || true
 }
 
 # Nur Zeit-EINGABEN: ISO-Wochentag heute, morgen, lokale Minute, Datum, Epoch
@@ -558,6 +574,8 @@ printf '\n== K4 Welt-Zeitfenster ==\n'
 # K4 Zeitfenster pro Welt, Verwalter immer drin, Welt läuft weiter (SC 4)
 CODE=$(http_code DELETE "${API_URL}/playtime/children/${KID}" /dev/null)
 check "K4 Regeln von ${KID} gelöscht (Opt-in) HTTP 200 (ist ${CODE})" eq "${CODE}" 200
+# K5 misst den Verbrauch ab null (der heutige bleibt seit WR-04 beim Entfernen stehen).
+reset_usage "${KID}"
 WINDOW_BODY=$(jq -nc --argjson t "${TOMORROW_WD}" \
 	'{days: [range(1; 8) as $d | if $d == $t then {weekday: $d, open: true, window_start: 600, window_end: 720} else {weekday: $d, open: false} end]}')
 CODE=$(http_code POST "${API_URL}/playtime/worlds/${WORLD_ID}/window" "${WORK_DIR}/win.json" "${WINDOW_BODY}")
