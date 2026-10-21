@@ -123,6 +123,22 @@ def test_evaluate_child_before_window() -> None:
     state = evaluate_child(now, BERLIN, plan, None, [], 0)
     win_start, win_end = window_bounds(date(2026, 10, 26), BERLIN, rule)
     assert (state.start, state.until, state.rest_s, state.reason) == (win_start, win_end, 0, "fenster")
+    # WR-02: Ohne Limit trägt der Deckel vor dem Fenster schon "kein Limit".
+    assert state.cap_rest_s is None
+
+
+def test_evaluate_child_before_window_cap_rest_is_coming_window() -> None:
+    """WR-02: Vor dem Fenster ist rest_s 0 (gesperrt), cap_rest_s der Rest des kommenden Fensters."""
+    rule = DayRule(True, 60, 15 * 60, 19 * 60)
+    now = MO_26[0] + 10 * 3600
+    state = evaluate_child(now, BERLIN, _day(rule), None, [], 20 * 60)
+    assert (state.rest_s, state.reason, state.cap_rest_s) == (0, "fenster", 40 * 60)
+    used_up = evaluate_child(now, BERLIN, _day(rule), None, [], 60 * 60)
+    assert used_up.cap_rest_s == 0
+    after = evaluate_child(MO_26[0] + 20 * 3600, BERLIN, _day(rule), None, [], 0)
+    assert (after.rest_s, after.reason, after.cap_rest_s) == (0, "fenster", 0)
+    inside = evaluate_child(MO_26[0] + 16 * 3600, BERLIN, _day(rule), None, [], 45 * 60)
+    assert inside.cap_rest_s == inside.rest_s == 900
 
 
 def test_evaluate_child_in_window_with_limit() -> None:

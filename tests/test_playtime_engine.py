@@ -189,6 +189,36 @@ def test_render_generation_stable_without_change(engine: TimeEngine, store: Worl
     assert row.time_generation == _generation(third)
 
 
+def test_render_before_window_caps_coming_window(engine: TimeEngine, store: WorldStore) -> None:
+    """WR-02: Vor dem Fenster (12 Uhr, Fenster 15 bis 19 Uhr) trägt der Deckel schon das Fenster.
+
+    So öffnet der Mod ab ``from`` selbst; mit Deckel ``seen + 0`` sagte er dann
+    "Spielzeit vorbei", bis die ExApp neu schrieb.
+    """
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _player(store, "gw-leo", "Leo")
+    _plan(store, "gw-mia", _week(limit=60, ws=900, we=1140))
+    _plan(store, "gw-leo", _week(ws=900, we=1140))
+    _invite(store, "w1", "gw-mia")
+    _invite(store, "w1", "gw-leo")
+    store.set_ledger_seen("w1", {"Mia": 500})
+    store.add_usage("gw-mia", TODAY, 600)
+
+    data, _ = engine.render("w1")
+
+    mia = _line(data, "Mia")
+    leo = _line(data, "Leo")
+    assert mia is not None
+    assert leo is not None
+    start = int(datetime.combine(TODAY, time(15), tzinfo=ZONE).timestamp())
+    # Grund bleibt fenster, Grenzen sperren bis 15 Uhr; Deckel 500 + (3600 - 600).
+    assert mia[1:5] == ["3500", str(start), mia[3], "fenster"]
+    # Ohne Limit: kein Deckel (-1), auch vor dem Fenster.
+    assert leo[1] == "-1"
+    assert leo[4] == "fenster"
+
+
 def test_render_day_not_allowed(engine: TimeEngine, store: WorldStore) -> None:
     _world(store, "w1", 30015)
     _player(store, "gw-mia", "Mia")

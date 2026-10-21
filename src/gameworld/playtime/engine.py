@@ -155,7 +155,8 @@ class TimeEngine:
             normal, holiday = plans[nc_user]
             used = self._store.usage(nc_user, today)
             state = evaluate_child(now, tz, normal, holiday, holidays, used)
-            cap = -1 if state.rest_s is None else seen.get(name, 0) + state.rest_s
+            # cap_rest_s statt rest_s: Vor dem Fenster öffnet der Mod ab "from" selbst (WR-02).
+            cap = -1 if state.cap_rest_s is None else seen.get(name, 0) + state.cap_rest_s
             next_at, next_minute = _next_fields(state.next_start)
             players[name] = TimeLine(
                 cap=cap,

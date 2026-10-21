@@ -100,7 +100,14 @@ class NextStart:
 
 @dataclass(frozen=True)
 class ChildState:
-    """Auswertung für ein Kind: Fenster (Epoch), Rest in Sekunden, Grund, nächste Zeit."""
+    """Auswertung für ein Kind: Fenster (Epoch), Rest in Sekunden, Grund, nächste Zeit.
+
+    ``cap_rest_s`` ist der Rest für den Deckel der Regeldatei (None = kein Limit).
+    Er gleicht ``rest_s``, nur vor dem heutigen Fenster nicht: Dort trägt er schon
+    den Rest des kommenden Fensters, damit der Welt-Mod ab ``start`` selbst öffnet,
+    auch wenn die ExApp bis dahin nicht neu schreibt (WR-02). Vor ``start`` sperrt
+    der Mod ohnehin über die Fenstergrenzen.
+    """
 
     start: int
     until: int
@@ -109,6 +116,7 @@ class ChildState:
     next_hint: str
     day: date
     next_start: NextStart | None = None
+    cap_rest_s: int | None = 0
 
 
 @dataclass(frozen=True)
@@ -248,13 +256,19 @@ def evaluate_child(
     if not rule.allowed:
         return ChildState(start=0, until=0, rest_s=0, reason="tag", next_hint=hint, day=day, next_start=upcoming)
     window_start, window_end = window_bounds(day, tz, rule)
-    if now < window_start or now >= window_end:
+    # Rest des heutigen Fensters (None = kein Limit), unabhängig davon, ob es schon offen ist.
+    window_rest = None if rule.limit_minutes is None else max(rule.limit_minutes * 60 - used_today_s, 0)
+    cap_rest: int | None = 0
+    if now >= window_end:
         reason, rest = "fenster", 0
-    elif rule.limit_minutes is None:
-        reason, rest = "ok", None
+    elif now < window_start:
+        # Vor dem Fenster: gesperrt über die Grenzen, der Deckel trägt schon das kommende Fenster (WR-02).
+        reason, rest, cap_rest = "fenster", 0, window_rest
+    elif window_rest is None:
+        reason, rest, cap_rest = "ok", None, None
     else:
-        rest = rule.limit_minutes * 60 - used_today_s
-        reason, rest = ("limit", 0) if rest <= 0 else ("ok", rest)
+        reason, rest = ("limit", 0) if window_rest <= 0 else ("ok", window_rest)
+        cap_rest = rest
     return ChildState(
         start=window_start,
         until=window_end,
@@ -263,6 +277,7 @@ def evaluate_child(
         next_hint=hint,
         day=day,
         next_start=upcoming,
+        cap_rest_s=cap_rest,
     )
 
 
