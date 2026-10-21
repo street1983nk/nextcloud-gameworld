@@ -140,7 +140,7 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 
 - Spielzeit ist Opt-in: Ohne Regel gibt es keine Begrenzung. Jedes Kind startet mit "Keine Begrenzung".
 - Ein Kind hat ein einziges Tageskontingent über alle Welten. Wer eine Stunde am Tag darf, kann sie auf mehrere Welten verteilen, aber nicht in jeder Welt eine Stunde spielen. Gameworld gleicht den Verbrauch alle 15 Sekunden zwischen den Welten ab.
-- Eingestellt wird im Abschnitt "Spielzeit" unter der Weltenliste, mit "Bearbeiten" je Kind. Vier Voreinstellungen helfen beim Start: "Keine Begrenzung", "Nur am Wochenende" (Sa und So je 2 Stunden, 9 bis 19 Uhr), "Jeden Tag 1 Stunde" (bis 19 Uhr) und "Schultage kurz, Wochenende länger" (Mo bis Fr 1 Stunde, 15 bis 19 Uhr; Sa und So 2 Stunden, 9 bis 19 Uhr). Danach lässt sich jeder Tag in seiner Kachel ändern: Spielen erlaubt oder nicht, Tageslimit, Uhrzeit von und bis oder ganzer Tag.
+- Eingestellt wird im Abschnitt "Spielzeit" unter der Weltenliste, mit "Bearbeiten" je Kind. Vier Voreinstellungen helfen beim Start: "Keine Begrenzung", "Nur am Wochenende" (Sa und So je 2 Stunden, 9 bis 19 Uhr), "Jeden Tag 1 Stunde" (9 bis 19 Uhr) und "Schultage kurz, Wochenende länger" (Mo bis Fr 1 Stunde, 15 bis 19 Uhr; Sa und So 2 Stunden, 9 bis 19 Uhr). Danach lässt sich jeder Tag in seiner Kachel ändern: Spielen erlaubt oder nicht, Tageslimit, Uhrzeit von und bis oder ganzer Tag.
 - Der Verbrauch zählt online verbrachte Zeit. Auch wer nur verbunden ist und nichts tut (AFK), verbraucht Spielzeit.
 - Verwalter (Gruppe `admin`) haben nie Zeitregeln und kommen immer hinein. Wird jemand aus `admin` entfernt, bleibt er im Spiel frei, bis ein Verwalter das Dashboard öffnet; danach gelten seine Regeln nach höchstens etwa 60 Sekunden.
 
@@ -161,7 +161,7 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 ### Im Spiel
 
 - Kinder sehen auf ihrer Gameworld-Seite den Block "Deine Spielzeit heute" mit der Restzeit oder der nächsten Spielzeit.
-- Im Spiel warnt der Chat bei 10, 5 und 1 Minute Rest. Am Ende trennt die Welt das Kind mit einem Text wie "Deine Spielzeit für heute ist aufgebraucht. Nächste Spielzeit: Sa 09:00". Ein Beitritt außerhalb der erlaubten Zeit wird mit einem passenden Text abgelehnt.
+- Im Spiel warnt der Chat bei 10, 5 und 1 Minute Rest. Am Ende trennt die Welt das Kind mit einem Text wie "Deine Spielzeit für heute ist vorbei. Morgen ab 9 Uhr kannst du wieder spielen." Ein Beitritt außerhalb der erlaubten Zeit wird mit einem passenden Text abgelehnt, etwa "Heute ist kein Spieltag. Am Samstag ab 9 Uhr kannst du wieder spielen." oder "Diese Welt ist gerade zu. Heute ab 10 Uhr ist sie wieder offen." Eine Uhrzeit steht nur da, wenn die Eltern eine Startzeit gesetzt haben; bei "ganzer Tag" heißt es zum Beispiel "Morgen kannst du wieder spielen." Dieselben Sätze stehen auf der Gameworld-Seite des Kindes.
 - Wer die Welt verlässt, muss etwa 2 Sekunden warten, bevor er wieder beitreten kann ("Bitte einen Moment warten und dann nochmal beitreten."). Das schützt die Welt vor einem Absturz von Luanti 5.17.0 bei sofortigem Wiederbeitritt.
 - Welten, die vor diesem Update schon liefen, setzen Spielzeiten erst nach dem nächsten Neustart der Welt durch. Das Dashboard zeigt dann "Neustart nötig, damit Spielzeiten gelten."
 

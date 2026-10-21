@@ -7,8 +7,8 @@ Neustart), der Mod aus 04-01 setzt durch. Belegt Success Criterion 2
 Datum) samt Zeitzonen-Einstellung (O-02, O-08). Seriell, MTG kreativ.
 
 Die Erwartungen rechnet der Test selbst mit zoneinfo (lokaler Tag, Tagesgrenzen,
-Wochentag), unabhängig von ``playtime.plan``; nur die ASCII-Wochentagskürzel
-kommen als Vertrag aus ``WEEKDAY_TOKENS``.
+Wochentag), unabhängig von ``playtime.plan``; nur die Kindersätze kommen als
+Vertrag aus ``time_mod.kid_text`` (derselbe Satzbau wie im Welt-Mod).
 """
 
 from __future__ import annotations
@@ -22,8 +22,7 @@ import anyio
 import httpx
 import pytest
 
-from gameworld.playtime.plan import WEEKDAY_TOKENS
-from gameworld.provisioner.time_mod import RULES_FILE, TEXT_NEXT, TEXT_TAG
+from gameworld.provisioner.time_mod import RULES_FILE, TEXT_TAG, kid_text
 from tests.conftest import appapi_headers
 from tests.e2e.luanti_probe import join, session
 from tests.e2e.time_helpers import HOST, MTG_READY, create_running_world, delete_world, docker_api, started_at
@@ -158,11 +157,10 @@ async def test_holidays_e2e(client: httpx.AsyncClient) -> None:
 
     today = _local_today(BERLIN)
     tomorrow = today + timedelta(days=1)
-    tomorrow_token = WEEKDAY_TOKENS[tomorrow.isoweekday() - 1]
 
-    # (1) Wochenplan: nur morgen erlaubt; heute lehnt der Server mit Wochentag und Uhrzeit ab.
+    # (1) Wochenplan: nur morgen erlaubt; heute lehnt der Server ab: "Morgen ab 10 Uhr kannst du wieder spielen."
     await _set_rules(client, {"normal": _only_tomorrow(tomorrow.isoweekday())})
-    await _denied_with(port, kind_name, kind_pw, f"{TEXT_TAG}{TEXT_NEXT}{tomorrow_token} 10:00")
+    await _denied_with(port, kind_name, kind_pw, kid_text("tag", 1, tomorrow.isoweekday(), 600))
 
     # (2) Ferien heute: Ferienplan gilt ohne Zutun und ohne Neustart.
     await _set_rules(client, {"normal": _only_tomorrow(tomorrow.isoweekday()), "holiday": _every_day_free()})

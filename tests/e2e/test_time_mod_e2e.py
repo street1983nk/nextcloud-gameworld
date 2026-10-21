@@ -11,21 +11,25 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import datetime, timedelta
+from datetime import time as clock_time
 from functools import partial
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import anyio
 import anyio.to_thread
 import httpx
 import pytest
 
+from gameworld.playtime.plan import day_starts, local_day
 from gameworld.provisioner.time_mod import (
     LEDGER_HEADER,
     TEXT_LIMIT,
-    TEXT_NEXT,
     TEXT_WELT,
-    TEXT_WELT_NEXT,
+    DayGrid,
     TimeLine,
+    kid_text,
     render_time_file,
 )
 from tests.conftest import appapi_headers
@@ -45,8 +49,22 @@ pytestmark = [pytest.mark.docker, pytest.mark.usefixtures("docker_cleanup")]
 
 # Feste Testpasswörter für Wegwerfwelten, kein Geheimnis.
 PASSWORDS = {"Mia": "Sonne-Baum-42", "Papa": "Kaffee-Tasse-73", "Leo": "Tiger-Wolke-17"}
-LIMIT_TEXT = f"{TEXT_LIMIT}{TEXT_NEXT}Sa 10:00"
-WELT_TEXT = f"{TEXT_WELT}{TEXT_WELT_NEXT}Mi 10:00"
+# Tagesbezug wie die ExApp: Tagesgrenzen und nächste Starts als Epochs, der Mod bildet den Satz.
+ZONE = ZoneInfo("Europe/Berlin")
+_NOW = int(time.time())
+_TODAY = local_day(_NOW, ZONE)
+DAYS = DayGrid(weekday=_TODAY.isoweekday(), starts=day_starts(_NOW, ZONE))
+
+
+def _local_epoch(days_ahead: int, hour: int) -> int:
+    return int(datetime.combine(_TODAY + timedelta(days=days_ahead), clock_time(hour), tzinfo=ZONE).timestamp())
+
+
+# Mia: morgen ab 9 Uhr wieder; Welt: übermorgen ab 10 Uhr wieder offen.
+MIA_NEXT = (_local_epoch(1, 9), 540)
+WELT_NEXT = (_local_epoch(2, 10), 600)
+LIMIT_TEXT = kid_text("limit", 1, (_TODAY + timedelta(days=1)).isoweekday(), 540)
+WELT_TEXT = kid_text("welt", 2, (_TODAY + timedelta(days=2)).isoweekday(), 600)
 NOT_INVITED = "nicht eingeladen"
 COOLDOWN_PAUSE = 2.5
 JOIN_TIMEOUT = 30.0
@@ -65,20 +83,31 @@ def _denied(result: dict[str, object], text: str) -> None:
     assert text in str(result["reason"]), result
 
 
-def _window(cap: int, next_hint: str = "Sa-10:00") -> TimeLine:
+def _window(cap: int, next_hint: str = "Sa-10:00", upcoming: tuple[int, int] = (-1, -1)) -> TimeLine:
     now = int(time.time())
-    return TimeLine(cap=cap, start=now - 60, until=now + 3600, reason="ok", next_hint=next_hint)
+    return TimeLine(
+        cap=cap,
+        start=now - 60,
+        until=now + 3600,
+        reason="ok",
+        next_hint=next_hint,
+        next_at=upcoming[0],
+        next_minute=upcoming[1],
+    )
 
 
 FREI = TimeLine(cap=-1, start=-1, until=-1, reason="frei", next_hint="-")
-WORLD_CLOSED = TimeLine(cap=-1, start=0, until=0, reason="welt", next_hint="Mi-10:00")
+WORLD_CLOSED = TimeLine(
+    cap=-1, start=0, until=0, reason="welt", next_hint="Mi-10:00", next_at=WELT_NEXT[0], next_minute=WELT_NEXT[1]
+)
 
 
 async def test_time_mod_enforces_rules(client: httpx.AsyncClient, app_env: Path) -> None:
     world_id, port = await create_running_world(client, "mtg_kreativ", MTG_READY)
     write_access(app_env, world_id, 1, PASSWORDS)
-    mia = _window(75)
-    rules = render_time_file(1, int(time.time()), None, {"Mia": mia})
+    mia = _window(75, upcoming=MIA_NEXT)
+    rules = render_time_file(1, int(time.time()), None, {"Mia": mia}, days=DAYS)
+    assert LIMIT_TEXT.endswith("Morgen ab 9 Uhr kannst du wieder spielen.")
     write_rules(app_env, world_id, rules)
 
     # (S1) Deckel 75 s: Vorwarnung "Noch 1 Minute.", dann Trennen mit Kindertext ohne "Kicked: ".
@@ -93,6 +122,16 @@ async def test_time_mod_enforces_rules(client: httpx.AsyncClient, app_env: Path)
     # (S2) Sofortiger Rejoin (nach der 2-s-Wiederbeitritts-Sperre): derselbe Text.
     await anyio.sleep(COOLDOWN_PAUSE)
     _denied(join(HOST, port, "Mia", PASSWORDS["Mia"]), LIMIT_TEXT)
+
+    # (S2b) Altdatei ohne @-Zeilen (wie vor Quick 261021-481): nur der Grundsatz, keine Zeitangabe.
+    plain = render_time_file(1, int(time.time()), None, {"Mia": _window(75)})
+    assert b"@" not in plain
+    write_rules(app_env, world_id, plain)
+    await anyio.sleep(COOLDOWN_PAUSE)
+    fallback = join(HOST, port, "Mia", PASSWORDS["Mia"])
+    _denied(fallback, TEXT_LIMIT)
+    assert "spielen" not in str(fallback["reason"]), fallback
+    write_rules(app_env, world_id, rules)
 
     # (S3) Zählbuch im Welt-Volume.
     before = read_ledger(app_env, world_id).seconds["Mia"]
@@ -127,7 +166,7 @@ async def test_time_mod_enforces_rules(client: httpx.AsyncClient, app_env: Path)
         await anyio.sleep(12)
         assert not holding, holding
         leo_now = read_ledger(app_env, world_id).seconds["Leo"]
-        pushed_rules = render_time_file(2, int(time.time()), None, {"Mia": mia, "Leo": _window(leo_now)})
+        pushed_rules = render_time_file(2, int(time.time()), None, {"Mia": mia, "Leo": _window(leo_now)}, days=DAYS)
         write_rules(app_env, world_id, pushed_rules)
         pushed = time.monotonic()
     disconnected = time.monotonic() - pushed
@@ -137,7 +176,11 @@ async def test_time_mod_enforces_rules(client: httpx.AsyncClient, app_env: Path)
 
     # (S7, S11) Welt geschlossen: Kind abgelehnt, Verwalter mit frei (-1 -1 -1) kommt hinein,
     # ein nicht eingeladener Name bekommt den Zugangstext (Pitfall 5).
-    closed = render_time_file(3, int(time.time()), WORLD_CLOSED, {"Mia": mia, "Leo": _window(leo_now), "Papa": FREI})
+    closed = render_time_file(
+        3, int(time.time()), WORLD_CLOSED, {"Mia": mia, "Leo": _window(leo_now), "Papa": FREI}, days=DAYS
+    )
+    assert WELT_TEXT.startswith(TEXT_WELT)
+    assert WELT_TEXT.endswith("ab 10 Uhr ist sie wieder offen.")
     assert b"\nPapa -1 -1 -1 frei -\n" in closed
     write_rules(app_env, world_id, closed)
     _denied(join(HOST, port, "Mia", PASSWORDS["Mia"]), WELT_TEXT)

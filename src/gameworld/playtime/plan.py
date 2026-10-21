@@ -223,7 +223,7 @@ def _child_next_start(
 
 
 def next_hint(now: int, tz: ZoneInfo, normal: WeekPlan, holiday: WeekPlan | None, holidays: list[Holiday]) -> str:
-    """Nächste Spielzeit als Token wie ``Sa-10:00`` (Ferienwechsel eingeschlossen)."""
+    """Nächster Start als Token wie ``Sa-10:00`` (Ferienwechsel eingeschlossen)."""
     return _token(_child_next_start(now, tz, normal, holiday, holidays))
 
 

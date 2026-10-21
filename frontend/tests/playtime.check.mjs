@@ -37,7 +37,7 @@ for (const weekday of [6, 7]) {
 }
 assert.equal(PRESETS.taeglich.length, 7)
 for (const entry of PRESETS.taeglich) {
-	assert.deepEqual(entry, { weekday: entry.weekday, allowed: true, limit_minutes: 60, window_start: 0, window_end: 1140 })
+	assert.deepEqual(entry, { weekday: entry.weekday, allowed: true, limit_minutes: 60, window_start: 540, window_end: 1140 })
 }
 for (const weekday of [1, 2, 3, 4, 5]) {
 	assert.deepEqual(day(PRESETS.schultage, weekday), {
@@ -61,7 +61,7 @@ assert.ok(Object.isFrozen(PRESETS.wochenende[0]))
 // Zusammenfassungen
 assert.equal(summarize(null), 'Keine Begrenzung')
 assert.equal(summarize(PRESETS.wochenende), 'Sa und So, je 2 Std')
-assert.equal(summarize(PRESETS.taeglich), 'Jeden Tag 1 Std, bis 19 Uhr')
+assert.equal(summarize(PRESETS.taeglich), 'Jeden Tag 1 Std, 9 bis 19 Uhr')
 assert.equal(summarize(PRESETS.schultage), 'Mo bis Fr 1 Std, Sa und So 2 Std')
 assert.equal(summarize(HOLIDAY_PRESET), 'Jeden Tag 2 Std, 9 bis 20 Uhr')
 assert.equal(summarize(PRESETS.wochenende.map((entry) => ({ ...entry, allowed: false, limit_minutes: null, window_start: null, window_end: null }))), 'Kein Spieltag')
@@ -78,7 +78,7 @@ assert.equal(api[0].window_start, null)
 assert.equal(api[0].window_end, null)
 assert.equal(api[0].limit_minutes, 60)
 // Kacheln sind Kopien, Ändern berührt die Voreinstellung nicht
-assert.equal(PRESETS.taeglich[0].window_start, 0)
+assert.equal(PRESETS.taeglich[0].window_start, 540)
 
 // Prüfung im Browser: Ende nach Beginn
 const broken = fromApiDays(PRESETS.schultage)
@@ -138,44 +138,108 @@ const kid = (state, remaining, until, next = null) => ({
 })
 assert.equal(kidPlaytimeText(null), null)
 assert.equal(kidPlaytimeText({ limited: false, state: null, remaining_minutes: null, until_minute: null, next: null }), null)
-assert.equal(kidPlaytimeText(kid('ok', 45, 1140)), 'Noch 45 Minuten, bis 19 Uhr')
-assert.equal(kidPlaytimeText(kid('ok', 45, null)), 'Noch 45 Minuten')
-assert.equal(kidPlaytimeText(kid('ok', 1, 1170)), 'Noch 1 Minute, bis 19:30 Uhr')
-assert.equal(kidPlaytimeText(kid('ok', null, 1140)), 'Spielen bis 19 Uhr')
+assert.equal(kidPlaytimeText(kid('ok', 60, 1140)), 'Heute noch 60 Minuten, bis 19 Uhr.')
+assert.equal(kidPlaytimeText(kid('ok', 45, null)), 'Heute noch 45 Minuten.')
+assert.equal(kidPlaytimeText(kid('ok', 1, 1170)), 'Heute noch 1 Minute, bis 19:30 Uhr.')
+assert.equal(kidPlaytimeText(kid('ok', null, 1140)), 'Heute kannst du bis 19 Uhr spielen.')
 assert.equal(kidPlaytimeText(kid('ok', null, null)), null)
 assert.equal(
-	kidPlaytimeText(kid('aufgebraucht', 0, null, { weekday: 6, minute: 600, days_ahead: 3 })),
-	'Heute ist keine Spielzeit mehr. Nächste Spielzeit: Samstag 10 Uhr',
+	kidPlaytimeText(kid('aufgebraucht', 0, null, { weekday: 4, minute: 540, days_ahead: 1 })),
+	'Deine Spielzeit für heute ist vorbei. Morgen ab 9 Uhr kannst du wieder spielen.',
 )
 assert.equal(
-	kidPlaytimeText(kid('fenster', 0, null, { weekday: 3, minute: 900, days_ahead: 0 })),
-	'Gerade ist keine Spielzeit. Nächste Spielzeit: heute 15 Uhr',
+	kidPlaytimeText(kid('tag', 0, null, { weekday: 6, minute: 540, days_ahead: 3 })),
+	'Heute ist kein Spieltag. Am Samstag ab 9 Uhr kannst du wieder spielen.',
 )
 assert.equal(
 	kidPlaytimeText(kid('tag', 0, null, { weekday: 6, minute: 570, days_ahead: 3 })),
-	'Heute ist kein Spieltag. Nächste Spielzeit: Samstag 9:30 Uhr',
+	'Heute ist kein Spieltag. Am Samstag ab 9:30 Uhr kannst du wieder spielen.',
+)
+assert.equal(
+	kidPlaytimeText(kid('fenster', 0, null, { weekday: 3, minute: 900, days_ahead: 0 })),
+	'Jetzt ist noch keine Spielzeit. Heute ab 15 Uhr kannst du spielen.',
+)
+assert.equal(
+	kidPlaytimeText(kid('fenster', 0, null, { weekday: 4, minute: 900, days_ahead: 1 })),
+	'Jetzt ist keine Spielzeit. Morgen ab 15 Uhr kannst du wieder spielen.',
 )
 assert.equal(
 	kidPlaytimeText(kid('aufgebraucht', 0, null, { weekday: 3, minute: 0, days_ahead: 7 })),
-	'Heute ist keine Spielzeit mehr. Nächste Spielzeit: nächsten Mittwoch 0 Uhr',
+	'Deine Spielzeit für heute ist vorbei. Nächsten Mittwoch kannst du wieder spielen.',
 )
 assert.equal(kidPlaytimeText(kid('tag', 0, null, null)), 'Heute ist kein Spieltag.')
+assert.equal(kidPlaytimeText(kid('fenster', 0, null, null)), 'Jetzt ist keine Spielzeit.')
+// Unsinnige Angaben: nur der Grundsatz, nie ein halber Satz.
+assert.equal(kidPlaytimeText(kid('tag', 0, null, { weekday: 6, minute: 540, days_ahead: 8 })), 'Heute ist kein Spieltag.')
+assert.equal(kidPlaytimeText(kid('tag', 0, null, { weekday: 9, minute: 540, days_ahead: 3 })), 'Heute ist kein Spieltag.')
 
 // Welt-Fenster in der Kind-Ansicht (window_open, window_next aus /api/my/worlds)
 assert.equal(windowText({ window_open: null, window_next: null }), null)
 assert.equal(windowText({}), null)
 assert.equal(
-	windowText({ window_open: true, window_next: { weekday: 3, start: 600, end: 720 } }),
-	'Offen Mittwoch 10 bis 12 Uhr',
+	windowText({ window_open: true, window_next: { weekday: 3, start: 600, end: 720, days_ahead: 0 } }),
+	'Heute offen, 10 bis 12 Uhr',
 )
+assert.equal(
+	windowText({ window_open: true, window_next: { weekday: 3, start: 0, end: 1440, days_ahead: 0 } }),
+	'Heute offen, ganztags',
+)
+assert.equal(
+	windowText({ window_open: true, window_next: { weekday: 3, start: 600, end: 1440, days_ahead: 0 } }),
+	'Heute offen, ab 10 Uhr',
+)
+assert.equal(
+	windowText({ window_open: true, window_next: { weekday: 3, start: 0, end: 720, days_ahead: 0 } }),
+	'Heute offen, bis 12 Uhr',
+)
+assert.equal(
+	windowText({ window_open: false, window_next: { weekday: 3, start: 600, end: 720, days_ahead: 2 } }),
+	'Diese Welt ist gerade zu. Am Mittwoch ab 10 Uhr ist sie wieder offen.',
+)
+assert.equal(
+	windowText({ window_open: false, window_next: { weekday: 3, start: 600, end: 720, days_ahead: 0 } }),
+	'Diese Welt ist gerade zu. Heute ab 10 Uhr ist sie wieder offen.',
+)
+assert.equal(
+	windowText({ window_open: false, window_next: { weekday: 4, start: 0, end: 1440, days_ahead: 1 } }),
+	'Diese Welt ist gerade zu. Morgen ist sie wieder offen.',
+)
+assert.equal(
+	windowText({ window_open: false, window_next: { weekday: 3, start: 600, end: 720, days_ahead: 7 } }),
+	'Diese Welt ist gerade zu. Nächsten Mittwoch ab 10 Uhr ist sie wieder offen.',
+)
+// Ohne days_ahead (älteres Backend) kein Tagesbezug.
 assert.equal(
 	windowText({ window_open: false, window_next: { weekday: 3, start: 600, end: 720 } }),
-	'Gerade geschlossen. Offen Mittwoch 10 bis 12 Uhr',
+	'Diese Welt ist gerade zu.',
 )
-assert.equal(
-	windowText({ window_open: false, window_next: { weekday: 6, start: 0, end: 1440 } }),
-	'Gerade geschlossen. Offen Samstag ganztags',
-)
-assert.equal(windowText({ window_open: false, window_next: null }), 'Gerade geschlossen')
+assert.equal(windowText({ window_open: false, window_next: null }), 'Diese Welt ist gerade zu.')
+
+// Verbotsliste (Owner-Entscheid 21.10.2026): nie "0 Uhr", "00:00", "Mitternacht", "24 Uhr".
+// "0 Uhr" nur als eigene Zahl: "14:30 Uhr" ist erlaubt.
+const FORBIDDEN = /(?<!\d)0 Uhr|00:00|Mitternacht|24 Uhr/
+const MINUTES = [0, 540, 870, 1439]
+for (const state of ['aufgebraucht', 'fenster', 'tag']) {
+	for (let ahead = 0; ahead <= 7; ahead += 1) {
+		for (const minute of MINUTES) {
+			const text = kidPlaytimeText(kid(state, 0, null, { weekday: ((3 + ahead - 1) % 7) + 1, minute, days_ahead: ahead }))
+			assert.ok(!FORBIDDEN.test(text), text)
+		}
+	}
+}
+for (const until of [...MINUTES.filter((minute) => minute > 0), null]) {
+	for (const remaining of [1, 45, null]) {
+		const text = kidPlaytimeText(kid('ok', remaining, until))
+		assert.ok(text === null || !FORBIDDEN.test(text), text)
+	}
+}
+for (let ahead = 0; ahead <= 7; ahead += 1) {
+	for (const start of MINUTES) {
+		for (const open of [true, false]) {
+			const text = windowText({ window_open: open, window_next: { weekday: 3, start, end: 1440, days_ahead: ahead } })
+			assert.ok(!FORBIDDEN.test(text), text)
+		}
+	}
+}
 
 console.log('playtime.check: alle Prüfungen bestanden')

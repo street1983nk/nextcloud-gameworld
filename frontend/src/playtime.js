@@ -4,6 +4,11 @@
 // Rein, ohne Vue und ohne @nextcloud: läuft auch unter Node
 // (frontend/tests/playtime.check.mjs). Das Backend prüft jede Eingabe
 // unabhängig; die Prüfung hier ist nur Komfort.
+//
+// Kindertexte (Owner-Entscheid 21.10.2026): dieselben Sätze wie im Welt-Mod
+// (kid_text in src/gameworld/provisioner/time_mod.py), nie "0 Uhr",
+// "Mitternacht", ein Datum oder eine Kurzform; Tagesbezug "Heute", "Morgen",
+// "Am Samstag", "Nächsten Samstag", eine Uhrzeit nur bei echter Startzeit.
 
 const FULL_DAY = 1440
 // Vorgaben, wenn eine Kachel von "ganzer Tag" auf ein Zeitfenster wechselt.
@@ -64,7 +69,7 @@ function week(rule) {
 export const PRESETS = Object.freeze({
 	keine: null,
 	wochenende: week((weekday) => (weekday >= 6 ? apiDay(weekday, true, 120, 540, 1140) : apiDay(weekday, false))),
-	taeglich: week((weekday) => apiDay(weekday, true, 60, 0, 1140)),
+	taeglich: week((weekday) => apiDay(weekday, true, 60, 540, 1140)),
 	schultage: week((weekday) => (weekday >= 6
 		? apiDay(weekday, true, 120, 540, 1140)
 		: apiDay(weekday, true, 60, 900, 1140))),
@@ -318,23 +323,37 @@ function longName(weekday) {
 	return WEEKDAYS[weekday - 1]?.long ?? ''
 }
 
-// "heute 15 Uhr", "Samstag 10 Uhr", "nächsten Mittwoch 9 Uhr" (gleicher Wochentag in einer Woche)
-function nextText(next) {
-	const clock = formatClock(next.minute)
-	if (next.days_ahead === 0) {
-		return `heute ${clock}`
+// Tagesbezug wie kid_text im Welt-Mod: "Heute ab 15 Uhr", "Morgen", "Am Samstag ab 9:30 Uhr",
+// "Nächsten Mittwoch"; eine Uhrzeit nur bei Minute > 0. null bei fehlenden oder unsinnigen Angaben.
+function dayPhrase(next) {
+	const ahead = next?.days_ahead
+	const minute = next?.minute
+	if (!Number.isInteger(ahead) || ahead < 0 || ahead > 7 || !Number.isInteger(minute) || minute < 0 || minute >= FULL_DAY) {
+		return null
 	}
-	if (next.days_ahead === 7) {
-		return `nächsten ${longName(next.weekday)} ${clock}`
+	let day
+	if (ahead === 0) {
+		day = 'Heute'
+	} else if (ahead === 1) {
+		day = 'Morgen'
+	} else {
+		const name = longName(next.weekday)
+		if (!name) {
+			return null
+		}
+		day = ahead === 7 ? `Nächsten ${name}` : `Am ${name}`
 	}
-	return `${longName(next.weekday)} ${clock}`
+	return minute > 0 ? `${day} ab ${formatClock(minute)}` : day
 }
 
 const KID_BLOCKED = Object.freeze({
-	aufgebraucht: 'Heute ist keine Spielzeit mehr.',
-	fenster: 'Gerade ist keine Spielzeit.',
+	aufgebraucht: 'Deine Spielzeit für heute ist vorbei.',
+	fenster: 'Jetzt ist keine Spielzeit.',
 	tag: 'Heute ist kein Spieltag.',
 })
+// Vor dem Fenster, das heute noch öffnet.
+const KID_EARLY = 'Jetzt ist noch keine Spielzeit.'
+const WORLD_CLOSED = 'Diese Welt ist gerade zu.'
 
 // Kindertext aus /api/my/playtime; null heißt: kein Block (keine Regeln oder heute nichts zu sagen).
 export function kidPlaytimeText(playtime) {
@@ -343,17 +362,23 @@ export function kidPlaytimeText(playtime) {
 	}
 	const blocked = KID_BLOCKED[playtime.state]
 	if (blocked) {
-		return playtime.next ? `${blocked} Nächste Spielzeit: ${nextText(playtime.next)}` : blocked
+		const phrase = dayPhrase(playtime.next)
+		if (!phrase) {
+			return blocked
+		}
+		const today = playtime.next.days_ahead === 0
+		const base = playtime.state === 'fenster' && today ? KID_EARLY : blocked
+		return `${base} ${phrase}${today ? ' kannst du spielen.' : ' kannst du wieder spielen.'}`
 	}
 	const until = playtime.until_minute === null || playtime.until_minute === undefined
 		? null
 		: formatClock(playtime.until_minute)
 	const remaining = playtime.remaining_minutes
 	if (remaining === null || remaining === undefined) {
-		return until ? `Spielen bis ${until}` : null
+		return until ? `Heute kannst du bis ${until} spielen.` : null
 	}
-	const minutes = remaining === 1 ? 'Noch 1 Minute' : `Noch ${remaining} Minuten`
-	return until ? `${minutes}, bis ${until}` : minutes
+	const minutes = remaining === 1 ? 'Heute noch 1 Minute' : `Heute noch ${remaining} Minuten`
+	return until ? `${minutes}, bis ${until}.` : `${minutes}.`
 }
 
 // Hinweis "aufgebraucht", "fenster", "tag" als Warnung, sonst Info.
@@ -361,17 +386,16 @@ export function kidPlaytimeBlocked(playtime) {
 	return Boolean(KID_BLOCKED[playtime?.state])
 }
 
-// Chip einer Welt in der Kind-Ansicht: "Offen Mittwoch 10 bis 12 Uhr" bzw.
-// "Gerade geschlossen. Offen ..."; null ohne Zeitfenster.
+// Chip einer Welt in der Kind-Ansicht: "Heute offen, 10 bis 12 Uhr" bzw.
+// "Diese Welt ist gerade zu. Am Mittwoch ab 10 Uhr ist sie wieder offen."; null ohne Zeitfenster.
 export function windowText(world) {
 	if (world?.window_open === null || world?.window_open === undefined) {
 		return null
 	}
 	const slot = world.window_next
-	const prefix = world.window_open ? '' : 'Gerade geschlossen'
-	if (!slot) {
-		return world.window_open ? 'Offen' : prefix
+	if (world.window_open) {
+		return slot ? `Heute offen, ${rangeText(slot.start, slot.end)}` : 'Heute offen'
 	}
-	const open = `Offen ${longName(slot.weekday)} ${rangeText(slot.start, slot.end)}`
-	return world.window_open ? open : `${prefix}. ${open}`
+	const phrase = slot ? dayPhrase({ weekday: slot.weekday, minute: slot.start, days_ahead: slot.days_ahead }) : null
+	return phrase ? `${WORLD_CLOSED} ${phrase} ist sie wieder offen.` : WORLD_CLOSED
 }

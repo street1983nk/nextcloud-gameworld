@@ -25,8 +25,7 @@ import httpx
 import pytest
 
 from gameworld.api import worlds as worlds_api
-from gameworld.playtime.plan import WEEKDAY_TOKENS
-from gameworld.provisioner.time_mod import TEXT_WARN_1, TEXT_WELT, TEXT_WELT_NEXT
+from gameworld.provisioner.time_mod import TEXT_WARN_1, TEXT_WELT, kid_text
 from gameworld.worlds.store import WorldStore
 from tests.conftest import appapi_headers
 from tests.e2e.luanti_probe import join, session
@@ -117,10 +116,9 @@ async def test_world_window_e2e(client: httpx.AsyncClient, app_env: Path) -> Non
     today = datetime.now(BERLIN).date()
     tomorrow = today + timedelta(days=1)
     await _set_window(client, world_id, {tomorrow.isoweekday(): (600, 720)})
-    token = WEEKDAY_TOKENS[tomorrow.isoweekday() - 1]
     denied = join(HOST, port, kind_name, kind_pw)
     assert denied["result"] == "denied", denied
-    assert f"{TEXT_WELT}{TEXT_WELT_NEXT}{token} 10:00" in str(denied["reason"]), denied
+    assert kid_text("welt", 1, tomorrow.isoweekday(), 600) in str(denied["reason"]), denied
 
     accepted = join(HOST, port, admin_name, admin_pw)
     assert accepted["result"] == "auth_accept", accepted

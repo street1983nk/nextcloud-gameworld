@@ -150,7 +150,7 @@ class WorldWindowResult:
 
 @dataclass(frozen=True)
 class NextTime:
-    """Nächste Spielzeit für die Kind-Ansicht: ISO-Wochentag 1..7, lokale Minute 0..1439, Tage ab heute.
+    """Nächster Start für die Kind-Ansicht: ISO-Wochentag 1..7, lokale Minute 0..1439, Tage ab heute.
 
     ``days_ahead`` 0 heißt heute, 7 heißt derselbe Wochentag in einer Woche: Nur so
     kann die Anzeige "heute" sagen, ohne die Zeitzone des Haushalts zu kennen.

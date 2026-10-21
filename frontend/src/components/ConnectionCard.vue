@@ -79,7 +79,7 @@ const copied = ref(false)
 const copyError = ref('')
 
 const host = computed(() => props.world.host || props.fallbackHost)
-// "Offen Mittwoch 10 bis 12 Uhr" bzw. "Gerade geschlossen. ..."; null ohne Zeitfenster.
+// "Heute offen, 10 bis 12 Uhr" bzw. "Diese Welt ist gerade zu. ..."; null ohne Zeitfenster.
 const windowHint = computed(() => windowText(props.world))
 
 function chipVariant(status) {

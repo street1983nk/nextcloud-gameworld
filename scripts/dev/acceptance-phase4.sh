@@ -59,10 +59,12 @@ NAME_RE='^[A-Za-z0-9_-]{1,20}$'
 PASSWORD_RE='^[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}$'
 IP_RE='([0-9]{1,3}\.){3}[0-9]{1,3}'
 # Kindertexte aus provisioner/time_mod.py und access_mod.py (Teilstrings).
-TEXT_LIMIT="Spielzeit für heute ist aufgebraucht"
+TEXT_LIMIT="Spielzeit für heute ist vorbei"
 TEXT_TAG="Heute ist kein Spieltag"
-TEXT_WELT="Diese Welt ist gerade geschlossen"
-TEXT_NEXT="Nächste Spielzeit: "
+TEXT_WELT="Diese Welt ist gerade zu"
+# Kindertexte ohne "0 Uhr" (Owner-Entscheid 21.10.2026): ganzer Tag ohne Uhrzeit.
+TEXT_AGAIN_TOMORROW="Morgen kannst du wieder spielen."
+TEXT_OPEN_TOMORROW="Morgen ab 10 Uhr ist sie wieder offen."
 TEXT_DENY="nicht eingeladen"
 TEXT_WAIT="einen Moment warten"
 TEXT_WARN_1="Noch 1 Minute"
@@ -502,8 +504,10 @@ check "K2 Plan nur morgen (${TOMORROW_TOKEN}) erlaubt: HTTP 200 (ist ${CODE})" e
 probe "${WORK_DIR}/k2-deny.json" "${KID_NAME}" "${KID_PW}"
 printf '%s: %s\n' "${KID}" "$(probe_summary "${WORK_DIR}/k2-deny.json")"
 check "K2 ${KID} denied mit '${TEXT_TAG}'" denied_with "${WORK_DIR}/k2-deny.json" "${TEXT_TAG}"
-check "K2 Text nennt die nächste Spielzeit '${TEXT_NEXT}${TOMORROW_TOKEN} 00:00'" \
-	denied_with "${WORK_DIR}/k2-deny.json" "${TEXT_NEXT}${TOMORROW_TOKEN} 00:00"
+check "K2 Text nennt die nächste Spielzeit '${TEXT_AGAIN_TOMORROW}'" \
+	denied_with "${WORK_DIR}/k2-deny.json" "${TEXT_AGAIN_TOMORROW}"
+check "K2 Text ohne '0 Uhr' und '00:00'" \
+	eq "$(jq -r '(.reason // "") | test("(^|[^0-9])0 Uhr|00:00|Mitternacht")' "${WORK_DIR}/k2-deny.json" 2>/dev/null)" false
 CODE=$(set_plan "$(week "${TODAY_WD}" null null null)")
 check "K2 Plan heute erlaubt: HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 check "K2 Positivkontrolle: ${KID} auth_accept" \
@@ -561,7 +565,7 @@ check "K4 Welt-Fenster nur ${TOMORROW_TOKEN} 10 bis 12 Uhr: HTTP 200 (ist ${CODE
 probe "${WORK_DIR}/k4-kid.json" "${KID_NAME}" "${KID_PW}"
 printf '%s: %s\n' "${KID}" "$(probe_summary "${WORK_DIR}/k4-kid.json")"
 check "K4 ${KID} denied mit '${TEXT_WELT}'" denied_with "${WORK_DIR}/k4-kid.json" "${TEXT_WELT}"
-check "K4 Text nennt die Öffnung '${TOMORROW_TOKEN} 10:00'" denied_with "${WORK_DIR}/k4-kid.json" "${TOMORROW_TOKEN} 10:00"
+check "K4 Text nennt die Öffnung '${TEXT_OPEN_TOMORROW}'" denied_with "${WORK_DIR}/k4-kid.json" "${TEXT_OPEN_TOMORROW}"
 check "K4 Verwalter admin trotz geschlossener Welt auth_accept" \
 	probe_expect "${WORK_DIR}/k4-admin.json" '.result == "auth_accept"' 10 "${ADMIN_NAME}" "${ADMIN_PW}"
 probe "${WORK_DIR}/k4-fremd.json" Fremder

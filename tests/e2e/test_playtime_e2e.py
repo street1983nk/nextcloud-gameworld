@@ -24,7 +24,7 @@ import httpx
 import pytest
 
 from gameworld.api import worlds as worlds_api
-from gameworld.provisioner.time_mod import RULES_FILE, TEXT_FENSTER, TEXT_LIMIT
+from gameworld.provisioner.time_mod import RULES_FILE, TEXT_FENSTER, TEXT_LIMIT, kid_text
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldStore
 from tests.conftest import appapi_headers
@@ -63,6 +63,11 @@ def _day(weekday: int, *, allowed: bool = True, limit: int | None = None, ws: in
     if we is not None:
         day["window_end"] = we
     return day
+
+
+def _tomorrow_weekday() -> int:
+    """ISO-Wochentag von morgen in Berlin (für den erwarteten Kindersatz)."""
+    return (datetime.now(BERLIN).date() + timedelta(days=1)).isoweekday()
 
 
 def _every_day(*, limit: int | None = None, ws: int | None = None, we: int | None = None) -> dict[str, object]:
@@ -182,6 +187,8 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert kind_result["result"] == "kicked", kind_result
     assert 105 <= float(str(kind_result["after_s"])) <= 135, kind_result
     assert any("Noch 1 Minute." in chat for chat in _chats(kind_result)), kind_result
+    # Ganzer Tag ohne Startzeit: "Morgen kannst du wieder spielen.", ohne Uhrzeit.
+    assert kid_text("limit", 1, _tomorrow_weekday(), 0) in str(kind_result["reason"]), kind_result
     assert TEXT_LIMIT in str(kind_result["reason"]), kind_result
     assert ctrl_result["result"] == "held", ctrl_result
     assert 105 <= _usage(app_env, "gw-kind") <= 135
@@ -223,7 +230,7 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert abs(cap_b - (180 - usage)) <= 10, (cap_b, usage)
     await _no_error_worlds(client)
 
-    # (4) Zeitfenster: am Fensterende getrennt mit "Gerade ist keine Spielzeit.".
+    # (4) Zeitfenster: am Fensterende getrennt mit "Jetzt ist keine Spielzeit." (plus Tagesbezug).
     await _midnight_guard()
     await _clear_rules(client, "gw-kind")
     now_minute = datetime.now(BERLIN).hour * 60 + datetime.now(BERLIN).minute
@@ -233,6 +240,8 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert window["result"] == "kicked", window
     assert float(str(window["after_s"])) < 200, window
     assert TEXT_FENSTER in str(window["reason"]), window
+    # Fenster ab 0 Uhr heißt: keine echte Startzeit, also ohne Uhrzeit.
+    assert kid_text("fenster", 1, _tomorrow_weekday(), 0) in str(window["reason"]), window
     await _no_error_worlds(client)
 
     # (5) Opt-in: ohne Regeln bleibt das Kind verbunden.
