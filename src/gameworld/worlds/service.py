@@ -23,6 +23,7 @@ from time import monotonic
 import anyio.to_thread
 
 from gameworld.config import Settings
+from gameworld.events.parse import new_events, parse_events
 from gameworld.playtime.engine import TimeEngine
 from gameworld.playtime.plan import WindowDay, window_days
 from gameworld.provisioner.access_mod import render_access_file
@@ -131,6 +132,8 @@ class WorldView:
     access_restart_needed: bool
     # Läuft die Welt ohne geladenen Zeit-Mod (kein Zählbuch)? Dann braucht sie einen Neustart.
     time_restart_needed: bool
+    # Läuft die Welt mit altem Zugangs-Mod ohne Ereignisdatei? Dann kommen keine Hinweise, Neustart nötig.
+    events_restart_needed: bool
     # Welt-Zeitfenster (ZEIT-05): sieben Wochentage oder None (immer offen).
     time_window: list[WindowDay] | None = None
 
@@ -145,6 +148,7 @@ def _view(
     invited_players: list[str],
     access_restart_needed: bool = False,
     time_restart_needed: bool = False,
+    events_restart_needed: bool = False,
     time_window: list[WindowDay] | None = None,
 ) -> WorldView:
     preset = PRESETS.get(row.preset)
@@ -155,6 +159,7 @@ def _view(
         players = None
         access_restart_needed = False
         time_restart_needed = False
+        events_restart_needed = False
     return WorldView(
         id=row.id,
         name=row.name,
@@ -175,6 +180,7 @@ def _view(
         invited_players=invited_players,
         access_restart_needed=access_restart_needed,
         time_restart_needed=time_restart_needed,
+        events_restart_needed=events_restart_needed,
         time_window=time_window,
     )
 
@@ -372,28 +378,82 @@ class WorldService:
             self._time.forget(world_id)
             raise
 
+    def _collect_events(self, world_id: str, now: int) -> None:
+        """Neue Zeilen der Ereignisdatei in die SQLite-Outbox legen (kein Netzaufruf).
+
+        Cursor und Outbox-Zeilen landen in einer Transaktion (store.take_events);
+        Erstkontakt mit alter Datei und Rücksprung verankern nur (new_events).
+        Fehlt die Datei (alter Mod) oder der Container, passiert nichts. Eine
+        unvollständige Datei wird mit Größe gemeldet, nie mit Inhalt.
+        """
+        try:
+            events_file = self._provisioner.read_events(world_id)
+        except WorldNotFoundError:
+            return
+        if events_file is None:
+            return
+        parsed = parse_events(events_file.content)
+        if parsed is None:
+            if events_file.content:
+                LOG.warning(
+                    "Welt %s: Ereignisdatei unvollständig (%d Bytes), in diesem Takt übergangen",
+                    world_id,
+                    len(events_file.content),
+                )
+            return
+        last_seq, events = parsed
+        cursor = self._store.event_cursor(world_id)
+        fresh, new_cursor = new_events(cursor, last_seq, events, now=now)
+        if not fresh and new_cursor == cursor:
+            return
+        self._store.take_events(world_id, new_cursor, [(event.kind, event.name, event.at, "") for event in fresh])
+
+    def _track_run_state(self, rows: list[WorldRow], managed: dict[str, ContainerInfo], now: int) -> None:
+        """Start und Stopp aus dem beobachteten Docker-Zustand (Pitfall 10), nie aus Requests.
+
+        Erste Beobachtung einer Welt verankert nur. Ein Neustart zwischen zwei
+        Takten erscheint nicht (gewollt ruhig). Welten im Löschen zählen nicht.
+        """
+        for row in rows:
+            if row.desired_state == "deleted":
+                continue
+            info = managed.get(row.id)
+            running = info is not None and info.status == RUNNING
+            before = self._store.run_state(row.id)
+            if before is running:
+                continue
+            if before is not None:
+                self._store.add_outbox(row.id, "start" if running else "stop", "", now)
+            self._store.set_run_state(row.id, running=running)
+
     def tick_time(self) -> None:
         """15-s-Zeittakt: Zählbuch aller laufenden Welten verbuchen, geänderte Regeldateien schreiben.
 
         Nimmt nur try_mutation() (nie blockierend, Pitfall 6): Läuft gerade eine
         Elternaktion, wird der Takt übersprungen. Erst werden alle Welten verbucht,
         dann gerendert: So sieht Welt B den Verbrauch aus Welt A (ein Kontingent über
-        alle Welten, O-03). Ein Fehler einer Welt betrifft nur diese Welt.
+        alle Welten, O-03). Ein Fehler einer Welt betrifft nur diese Welt. Daneben
+        landen Start/Stopp-Übergänge und neue Ereignisse in der SQLite-Outbox;
+        versendet wird erst im Event-Loop (Phase 4.1), der Takt ruft kein Netz.
         """
         with self.try_mutation() as acquired:
             if not acquired:
                 return
             managed = self._provisioner.list_managed()
-            running = [
-                row
-                for row in self._store.list_worlds()
-                if (info := managed.get(row.id)) is not None and info.status == RUNNING
-            ]
+            rows = self._store.list_worlds()
+            running = [row for row in rows if (info := managed.get(row.id)) is not None and info.status == RUNNING]
+            now = self._time.now()
+            self._track_run_state(rows, managed, now)
             for row in running:
                 try:
                     self._book_ledger(row.id)
                 except ProvisionerError as exc:
                     LOG.warning("Welt %s: Zählbuch im Takt nicht verbucht: %s", row.id, exc)
+                try:
+                    self._collect_events(row.id, now)
+                except (ProvisionerError, ValueError) as exc:
+                    # Nur Welt-ID und Fehlertyp, nie Dateiinhalt oder Spielernamen (T-04.1-08).
+                    LOG.warning("Welt %s: Ereignisse im Takt nicht gelesen (%s)", row.id, type(exc).__name__)
             for row in running:
                 try:
                     data, changed = self._time.render(row.id)
@@ -566,6 +626,29 @@ class WorldService:
             return False
         return written is None or written < started
 
+    def _events_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
+        """Läuft die Welt noch mit altem Zugangs-Mod ohne Ereignisdatei (Pattern 3)?
+
+        Nur bei status running: Der neue Mod schreibt die Ereignisdatei bei
+        mods_loaded. Fehlt sie oder ist sie älter als der Start des Containers,
+        kommen aus dieser Welt keine Hinweise, bis sie neu startet. Gleiche Regel
+        und Isolierung wie _time_restart_needed; ein Lesefehler ergibt False.
+        """
+        if container is None or status.code != RUNNING:
+            return False
+        try:
+            events_file = self._provisioner.read_events(row.id)
+        except ProvisionerError as exc:
+            LOG.warning("Ereignisdatei von Welt %s nicht lesbar: %s", row.id, exc)
+            return False
+        if events_file is None:
+            return True
+        written = parse_docker_time(events_file.mtime)
+        started = parse_docker_time(container.started_at)
+        if started is None:
+            return False
+        return written is None or written < started
+
     def _memory(self, row: WorldRow, container: ContainerInfo | None) -> MemoryUsage | None:
         """RAM nur für laufende Container; ein Fehler betrifft nur diese Welt."""
         if container is None or container.status != "running":
@@ -598,6 +681,7 @@ class WorldService:
             invited_players=self._invited(row),
             access_restart_needed=self._access_restart_needed(row, container, status),
             time_restart_needed=self._time_restart_needed(row, container, status),
+            events_restart_needed=self._events_restart_needed(row, container, status),
             time_window=self._time_window(row),
         )
 
@@ -870,6 +954,7 @@ class WorldService:
                 self._store.delete_world(row.id)
                 self._store.delete_access_data(row.id)
                 self._store.delete_time_data(row.id)
+                self._store.delete_notify_data(row.id)
             case ReconcileAction.ADOPT_RUNNING:
                 self._store.update_world(row.id, desired_state="running")
             case ReconcileAction.NONE:
@@ -903,6 +988,8 @@ class WorldService:
             # Erst nach erfolgreichem Aufräumen: kein Volume ohne Eintrag (T-01-21).
             self._store.delete_world(world_id)
             # Kein PRAGMA foreign_keys: Einladungen, Zugang, Welt-Fenster und
-            # gesehene Zählbuchstände der Welt explizit löschen.
+            # gesehene Zählbuchstände der Welt explizit löschen, dazu Cursor,
+            # Outbox, Laufzustand und Tagesspielzeit (Schema 5).
             self._store.delete_access_data(world_id)
             self._store.delete_time_data(world_id)
+            self._store.delete_notify_data(world_id)

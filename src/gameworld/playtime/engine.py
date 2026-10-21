@@ -125,25 +125,34 @@ class TimeEngine:
     def book(self, world_id: str, ledger: Ledger | None) -> None:
         """Verbucht die Zuwächse des Zählbuchs; verankert den gesehenen Stand neu.
 
-        Nur Kinder mit Regeln werden verbucht (Opt-in, O-10); für alle anderen
-        Namen wird der Stand nur verankert (Schutz gegen Doppelzählung). Ein
-        fehlendes Zählbuch (None) ändert nichts.
+        Nur Kinder mit Regeln werden auf ihr Kontingent verbucht (Opt-in, O-10);
+        für alle anderen Namen wird der Stand nur verankert (Schutz gegen
+        Doppelzählung). Die Tagesspielzeit je Welt (``play_daily``, Rückblick)
+        zählt dagegen jedes Konto mit Spielerzeile, auch ohne Regeln, nur nie
+        Verwalter aus dem Schnappschuss (Pitfall 3). Ein fehlendes Zählbuch (None)
+        ändert nichts.
         """
         if ledger is None:
             return
         seen = self._store.ledger_seen(world_id)
         delta, new_seen = increments(seen, ledger.seconds)
         usage: dict[str, int] = {}
+        play: dict[str, int] = {}
         tz = self._zone()
         day = attribution_day(ledger.written_at, tz)
         if delta:
             plans = self._store.child_plans()
+            admins = parse_admins(self._store.get_meta(META_TIME_ADMINS))
             for name, seconds in delta.items():
                 nc_user = self._store.player_name_owner(name)
-                if nc_user is not None and nc_user in plans:
+                if nc_user is None:
+                    continue
+                if nc_user in plans:
                     usage[nc_user] = usage.get(nc_user, 0) + seconds
-        # Verbrauch und neuer Stand in einer Transaktion: nie doppelt verbucht (WR-05).
-        self._store.book_usage(world_id, day, usage, new_seen)
+                if nc_user not in admins:
+                    play[nc_user] = play.get(nc_user, 0) + seconds
+        # Verbrauch, Tagesspielzeit und neuer Stand in einer Transaktion: nie doppelt verbucht (WR-05).
+        self._store.book_usage(world_id, day, usage, new_seen, play=play)
 
     def render(self, world_id: str) -> tuple[bytes, bool]:
         """Regeldatei der Welt aus der Datenbank; (Bytes, geändert).
@@ -264,4 +273,10 @@ class TimeEngine:
         if self._last_prune is not None and now - self._last_prune < _PRUNE_INTERVAL_SECONDS:
             return
         self._last_prune = now
-        self._store.prune_usage(local_day(now, tz) - timedelta(days=_RETENTION_DAYS))
+        cut = local_day(now, tz) - timedelta(days=_RETENTION_DAYS)
+        self._store.prune_usage(cut)
+        # Tagesdaten aus Schema 5 mit derselben Aufbewahrung (T-04.1-10).
+        self._store.prune_play_daily(cut)
+        self._store.prune_join_attempts(cut)
+        self._store.prune_daily_flags(cut)
+        self._store.prune_review_sent(cut)

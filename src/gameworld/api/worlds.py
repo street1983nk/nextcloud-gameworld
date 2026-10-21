@@ -110,6 +110,8 @@ class WorldOut(BaseModel):
     access_restart_needed: bool
     # Läuft die Welt noch ohne geladenen Zeit-Mod? Dann braucht sie einen Neustart.
     time_restart_needed: bool
+    # Läuft die Welt noch mit altem Zugangs-Mod (keine Ereignisdatei)? Dann kommen keine Hinweise.
+    events_restart_needed: bool
     # Welt-Zeitfenster (ZEIT-05): sieben Wochentage oder null (immer offen).
     time_window: list[WindowDayOut] | None
 
