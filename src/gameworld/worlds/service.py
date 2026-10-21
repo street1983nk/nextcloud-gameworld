@@ -25,6 +25,13 @@ import anyio.to_thread
 from gameworld.config import Settings
 from gameworld.events.parse import new_events, parse_events
 from gameworld.playtime.engine import TimeEngine
+from gameworld.playtime.pause import (
+    OUTBOX_PAUSE_START,
+    PauseDecision,
+    PauseResult,
+    PauseWorldResult,
+    is_active,
+)
 from gameworld.playtime.plan import WindowDay, window_days
 from gameworld.provisioner.access_mod import render_access_file
 from gameworld.provisioner.archive import build_access_tar, build_time_tar, build_world_files, build_world_payload
@@ -461,6 +468,70 @@ class WorldService:
                         self._write_time(row.id, data)
                 except ProvisionerError as exc:
                     LOG.warning("Welt %s: Regeldatei im Takt nicht geschrieben: %s", row.id, exc)
+
+    def apply_pause_sync(self, decide: PauseDecision, outbox_kind: str) -> PauseResult:
+        """Pause setzen oder beenden und sofort an alle Welten ausrollen (ELTERN-01, D-01, D-25).
+
+        Alles unter mutation() in einem Worker-Thread (nie im Event-Loop):
+        ``decide`` bekommt die laufende Pause (oder None) und jetzt und liefert den
+        neuen Zustand (None = keine Pause). Danach bekommt jede Welt die Regeldatei
+        (push_time, Ergebnis ``applied``). Läuft eine Welt beim Setzen noch mit
+        altem Mod (keine Ereignisdatei aus diesem Lauf), wird sie ohne Vorwarnung
+        neu gestartet (stop plus _launch, nie _restart_world_sync: _LOCK ist nicht
+        reentrant). Je Welt entsteht eine Outbox-Zeile für den Bot (04.1-06), bei
+        ``pause_start`` mit dem Ende als Zusatz. Beenden ohne laufende Pause
+        ändert nichts und legt keine Zeile an. Fehler bleiben je Welt isoliert.
+        """
+        with self._mutating():
+            now = self._time.now()
+            current = self._store.get_pause()
+            if not is_active(current, now):
+                current = None
+            state = decide(current, now)
+            if state is None:
+                self._store.clear_pause()
+            else:
+                self._store.set_pause(state)
+            try:
+                managed = self._provisioner.list_managed()
+            except ProvisionerError as exc:
+                # Ohne Docker-Liste kein Neustart; push_time meldet je Welt selbst.
+                LOG.warning("Pause: Docker-Liste nicht abrufbar (%s)", type(exc).__name__)
+                managed = {}
+            detail = str(state.bis) if state is not None and outbox_kind == OUTBOX_PAUSE_START else ""
+            announce = state is not None or current is not None
+            results: list[PauseWorldResult] = []
+            for row in self._store.list_worlds():
+                if row.desired_state == "deleted":
+                    continue
+                results.append(self._pause_world(row, managed.get(row.id), restart=state is not None))
+                if announce:
+                    self._store.add_outbox(row.id, outbox_kind, "", now, detail)
+            return PauseResult(state=state, worlds=results)
+
+    def _pause_world(self, row: WorldRow, container: ContainerInfo | None, *, restart: bool) -> PauseWorldResult:
+        """Regeldatei mit dem neuen Pause-Stand in eine Welt; alte Mods laufender Welten neu starten (D-25)."""
+        if (
+            restart
+            and not delete_only(row)
+            and container is not None
+            and container.status == RUNNING
+            and self._events_restart_needed(row, container, WorldStatus(RUNNING, ""))
+        ):
+            try:
+                try:
+                    self._provisioner.stop(row.id)
+                except WorldNotFoundError:
+                    LOG.info("Welt %s: Container fehlt, der Neustart für die Pause erzeugt ihn neu", row.id)
+                self._launch(row)
+            except ProvisionerError as exc:
+                # Nur Welt-ID und Fehlertyp (T-04.1-08); die Welt zeigt den Fehler wie beim Neustart.
+                LOG.warning("Welt %s: Neustart für die Pause gescheitert (%s)", row.id, type(exc).__name__)
+                self._fail(row.id, exc)
+                return PauseWorldResult(world_id=row.id, name=row.name, applied=False, restarted=False)
+            self._store.update_world(row.id, op_state="ready", last_error=None)
+            return PauseWorldResult(world_id=row.id, name=row.name, applied=True, restarted=True)
+        return PauseWorldResult(world_id=row.id, name=row.name, applied=self.push_time(row.id), restarted=False)
 
     @contextlib.contextmanager
     def _payload(self, row: WorldRow) -> Iterator[WorldPayload]:

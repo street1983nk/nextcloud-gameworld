@@ -25,12 +25,18 @@ alles Schreiben läuft in einem Worker-Thread unter ``worlds.mutation()``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+import anyio.to_thread
+
 from gameworld.playtime.plan import Holiday, WeekPlan, day_starts, local_day, plan_for
+
+if TYPE_CHECKING:
+    from gameworld.worlds.service import WorldService
 
 # Vorlauf zwischen Auslösen und Trennen: so lange gilt die Chat-Vorwarnung (D-04).
 PAUSE_LEAD_SECONDS = 30
@@ -119,3 +125,74 @@ def clock_text(epoch: int, tz: ZoneInfo) -> str:
     """Uhrzeit H:MM in der Haushalts-Zeitzone (für Seite und Bot, nie für Kindertexte)."""
     local = datetime.fromtimestamp(epoch, tz)
     return f"{local.hour}:{local.minute:02d}"
+
+
+@dataclass(frozen=True)
+class PauseWorldResult:
+    """Ergebnis je Welt: Regeldatei angekommen (``applied``) und ob neu gestartet wurde (D-25)."""
+
+    world_id: str
+    name: str
+    applied: bool
+    restarted: bool
+
+
+@dataclass(frozen=True)
+class PauseResult:
+    """Neuer Zustand (None = keine Pause) und das Ergebnis je Welt."""
+
+    state: PauseState | None
+    worlds: list[PauseWorldResult]
+
+
+# Entscheidet unter der Sperre aus (laufender Pause oder None, jetzt) den neuen Zustand.
+PauseDecision = Callable[[PauseState | None, int], PauseState | None]
+
+
+class PauseService:
+    """Pause starten, beenden, für heute Schluss und lesen (Verwalter-API)."""
+
+    def __init__(self, worlds: WorldService) -> None:
+        self._worlds = worlds
+
+    def zone(self) -> ZoneInfo:
+        """Haushalts-Zeitzone für die Uhrzeit des Endes (Seite und Bot)."""
+        return self._worlds.time.zone()
+
+    async def get(self) -> PauseResult:
+        """Aktuelle Pause oder None; eine abgelaufene Pause zählt nicht mehr."""
+        return await anyio.to_thread.run_sync(self._get_sync)
+
+    async def start(self, acting_uid: str, minutes: int) -> PauseResult:
+        if minutes not in PAUSE_MINUTES:
+            raise ValueError(MSG_BAD_MINUTES)
+
+        def decide(current: PauseState | None, now: int) -> PauseState:
+            ab, bis = start_window(now, minutes, current)
+            return PauseState(started_by=acting_uid, ab=ab, bis=bis, art=ART_PAUSE)
+
+        return await anyio.to_thread.run_sync(self._worlds.apply_pause_sync, decide, OUTBOX_PAUSE_START)
+
+    async def schluss(self, acting_uid: str) -> PauseResult:
+        zone = self._worlds.time.zone()
+
+        def decide(current: PauseState | None, now: int) -> PauseState:
+            ab, bis = schluss_window(now, zone, current)
+            return PauseState(started_by=acting_uid, ab=ab, bis=bis, art=ART_SCHLUSS)
+
+        return await anyio.to_thread.run_sync(self._worlds.apply_pause_sync, decide, OUTBOX_PAUSE_SCHLUSS)
+
+    async def end(self, acting_uid: str) -> PauseResult:
+        """Beendet die Pause sofort; ohne laufende Pause ändert sich nichts (idempotent)."""
+        del acting_uid  # Wer beendet, wird nicht gespeichert (es gibt danach keinen Zustand).
+
+        def decide(current: PauseState | None, now: int) -> None:
+            del current, now
+
+        return await anyio.to_thread.run_sync(self._worlds.apply_pause_sync, decide, OUTBOX_PAUSE_END)
+
+    def _get_sync(self) -> PauseResult:
+        state = self._worlds.store.get_pause()
+        if not is_active(state, self._worlds.time.now()):
+            state = None
+        return PauseResult(state=state, worlds=[])

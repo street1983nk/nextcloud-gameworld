@@ -206,6 +206,8 @@ async def test_end_pause_removes_line_and_is_idempotent(
     again = await client.post("/api/pause/end", headers=appapi_headers())
     assert again.status_code == 200
     assert again.json()["active"] is False
+    # Ohne laufende Pause keine neue Bot-Meldung "Die Pause ist vorbei".
+    assert [kind for _world, kind, _detail in _outbox(store)].count("pause_end") == 2
 
 
 async def test_schluss_until_next_local_day_keeps_usage(
