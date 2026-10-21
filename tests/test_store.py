@@ -1,4 +1,4 @@
-"""Schema-Migration der Welt-Datenbank (Schema 1 auf 2 auf 3 auf 4) und Zugangsdaten."""
+"""Schema-Migration der Welt-Datenbank (Schema 1 bis 5) und Zugangsdaten."""
 
 import pathlib
 import sqlite3
@@ -7,7 +7,17 @@ from datetime import date
 import pytest
 
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
-from gameworld.worlds.store import TIME_TABLES, InviteRow, PlayerRow, WorldRow, WorldStore
+from gameworld.worlds.store import (
+    NOTIFY_TABLES,
+    OUTBOX_MAX,
+    SCHEMA_VERSION,
+    TIME_TABLES,
+    InviteRow,
+    OutboxRow,
+    PlayerRow,
+    WorldRow,
+    WorldStore,
+)
 
 # Phase-1-DDL wörtlich, damit die Migration gegen eine echte Altdatei läuft.
 SCHEMA_1 = """
@@ -71,7 +81,7 @@ def test_schema_1_is_migrated_to_3(tmp_path: pathlib.Path) -> None:
     db = _schema_1(tmp_path)
     store = WorldStore(db)
     store.migrate()
-    assert _schema_version(db) == "4"
+    assert _schema_version(db) == SCHEMA_VERSION
     world = store.get_world("w1")
     assert world is not None
     assert world.name == "Alte Welt"
@@ -83,15 +93,15 @@ def test_migrate_twice_is_noop(tmp_path: pathlib.Path) -> None:
     store = WorldStore(db)
     store.migrate()
     store.migrate()
-    assert _schema_version(db) == "4"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert [row.id for row in store.list_worlds()] == ["w1"]
 
 
-def test_fresh_file_gets_schema_4(tmp_path: pathlib.Path) -> None:
+def test_fresh_file_gets_current_schema(tmp_path: pathlib.Path) -> None:
     db = tmp_path / "neu" / "gameworld.sqlite3"
     store = WorldStore(db)
     store.migrate()
-    assert _schema_version(db) == "4"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert TIME_TABLES.issubset(_tables(db))
     store.insert_world(_row("w2", 30002, "anderes_preset"))
     world = store.get_world("w2")
@@ -148,7 +158,7 @@ def test_schema_2_is_migrated_to_3(tmp_path: pathlib.Path) -> None:
     store = WorldStore(db)
     store.migrate()
     store.migrate()
-    assert _schema_version(db) == "4"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert {"players", "invites", "world_access"} <= set(_tables(db))
     world = store.get_world("w1")
     assert world is not None
@@ -264,7 +274,7 @@ def test_schema_3_is_migrated_to_4_keeps_data(tmp_path: pathlib.Path) -> None:
     db = _schema_3_file(tmp_path)
     store = WorldStore(db)
     store.migrate()
-    assert _schema_version(db) == "4"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert TIME_TABLES.issubset(_tables(db))
     world = store.get_world("w1")
     assert world is not None
@@ -281,7 +291,7 @@ def test_schema_3_to_4_is_idempotent(tmp_path: pathlib.Path) -> None:
     store = WorldStore(db)
     store.migrate()
     store.migrate()
-    assert _schema_version(db) == "4"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert [row.id for row in store.list_worlds()] == ["w1"]
     assert store.get_world("w1") is not None
 
@@ -393,3 +403,198 @@ def _plan_row_count(db: pathlib.Path) -> int:
         return int(connection.execute("SELECT COUNT(*) FROM time_plans").fetchone()[0])
     finally:
         connection.close()
+
+
+# Schema 5 (Phase 4.1): Benachrichtigung, Pause, Rückblick, Talk.
+
+
+def _schema_4_file(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Echte Schema-4-Datei: heutiges Schema ohne die Tabellen aus Schema 5, mit Daten."""
+    db = _schema_3_file(tmp_path)
+    store = WorldStore(db)
+    store.migrate()
+    store.set_child_plan("gw-kind", _week(), None, "admin", "t")
+    store.add_usage("gw-kind", date(2026, 10, 21), 600)
+    store.set_ledger_seen("w1", {"Mia": 600})
+    connection = sqlite3.connect(db)
+    try:
+        for table in NOTIFY_TABLES:
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
+        connection.commit()
+    finally:
+        connection.close()
+    return db
+
+
+def test_schema_4_is_migrated_to_5_keeps_data(tmp_path: pathlib.Path) -> None:
+    db = _schema_4_file(tmp_path)
+    assert _schema_version(db) == "4"
+    assert not NOTIFY_TABLES & set(_tables(db))
+    store = WorldStore(db)
+    store.migrate()
+    assert SCHEMA_VERSION == "5"
+    assert _schema_version(db) == "5"
+    assert NOTIFY_TABLES.issubset(_tables(db))
+    assert TIME_TABLES.issubset(_tables(db))
+    world = store.get_world("w1")
+    assert world is not None
+    assert world.access_generation == 2
+    assert store.get_player("gw-kind") == PlayerRow("gw-kind", "Mia", 1)
+    assert store.world_access("w1") == {"gw-kind": "#1#AA==#BB=="}
+    assert set(store.child_plans()) == {"gw-kind"}
+    assert store.usage("gw-kind", date(2026, 10, 21)) == 600
+    assert store.ledger_seen("w1") == {"Mia": 600}
+
+
+def test_schema_4_to_5_is_idempotent(tmp_path: pathlib.Path) -> None:
+    db = _schema_4_file(tmp_path)
+    store = WorldStore(db)
+    store.migrate()
+    store.take_events("w1", 3, [("join", "Mia", 100, "")])
+    store.migrate()
+    assert _schema_version(db) == "5"
+    assert store.event_cursor("w1") == 3
+    assert len(store.outbox_batch()) == 1
+
+
+def test_take_events_writes_cursor_and_outbox(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    assert store.event_cursor("w1") is None
+    store.take_events("w1", 0, [])
+    assert store.event_cursor("w1") == 0
+    assert store.outbox_batch() == []
+    store.take_events("w1", 2, [("join", "Mia", 100, ""), ("leave", "Mia", 200, "")])
+    store.add_outbox("w2", "start", "", 150)
+    assert store.event_cursor("w1") == 2
+    batch = store.outbox_batch()
+    assert [(row.world_id, row.kind, row.name, row.at, row.detail) for row in batch] == [
+        ("w1", "join", "Mia", 100, ""),
+        ("w1", "leave", "Mia", 200, ""),
+        ("w2", "start", "", 150, ""),
+    ]
+    assert all(isinstance(row, OutboxRow) for row in batch)
+    assert [row.id for row in store.outbox_batch(limit=2)] == [batch[0].id, batch[1].id]
+    store.delete_outbox([batch[0].id, batch[2].id])
+    assert [row.id for row in store.outbox_batch()] == [batch[1].id]
+    store.delete_outbox([])
+    assert len(store.outbox_batch()) == 1
+
+
+def test_outbox_is_capped_oldest_first(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    store.take_events("w1", 1, [("deny", "a", 1, "")])
+    rows = [("deny", f"n{index}", index, "") for index in range(OUTBOX_MAX + 5)]
+    store.take_events("w1", OUTBOX_MAX + 6, rows)
+    batch = store.outbox_batch(limit=OUTBOX_MAX + 100)
+    assert len(batch) == OUTBOX_MAX
+    assert batch[0].name == "n5"
+    assert batch[-1].name == f"n{OUTBOX_MAX + 4}"
+    store.add_outbox("w1", "stop", "", 9)
+    batch = store.outbox_batch(limit=OUTBOX_MAX + 100)
+    assert len(batch) == OUTBOX_MAX
+    assert batch[0].name == "n6"
+
+
+def test_run_state_roundtrip(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    assert store.run_state("w1") is None
+    store.set_run_state("w1", running=True)
+    assert store.run_state("w1") is True
+    store.set_run_state("w1", running=False)
+    assert store.run_state("w1") is False
+
+
+def test_book_usage_writes_play_daily_in_same_call(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    day = date(2026, 10, 21)
+    store.book_usage("w1", day, {"gw-kind": 30}, {"Mia": 30}, play={"gw-kind": 30, "gw-frei": 15})
+    store.book_usage("w1", day, {}, {"Mia": 45}, play={"gw-kind": 15})
+    store.book_usage("w2", day, {}, {}, play={"gw-kind": 5})
+    store.book_usage("w2", day, {}, {})
+    assert store.play_seconds(day) == {("gw-kind", "w1"): 45, ("gw-frei", "w1"): 15, ("gw-kind", "w2"): 5}
+    assert store.play_seconds(date(2026, 10, 20)) == {}
+    assert store.usage("gw-kind", day) == 30
+
+
+def _insert_attempt_flag_review(db: pathlib.Path, world_id: str, day: date) -> None:
+    connection = sqlite3.connect(db)
+    try:
+        connection.execute(
+            "INSERT INTO join_attempts (day, world_id, name_fold, player_name, first_at, last_at, count) "
+            "VALUES (?, ?, 'fremd', 'Fremd', 1, 1, 1)",
+            (day.isoformat(), world_id),
+        )
+        connection.execute("INSERT OR IGNORE INTO daily_flags (day, flag) VALUES (?, 'x')", (day.isoformat(),))
+        connection.execute("INSERT OR IGNORE INTO review_sent (nc_user, day) VALUES ('admin', ?)", (day.isoformat(),))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _days(db: pathlib.Path, table: str) -> list[str]:
+    connection = sqlite3.connect(db)
+    try:
+        return sorted(str(row[0]) for row in connection.execute(f"SELECT day FROM {table}"))  # noqa: S608
+    finally:
+        connection.close()
+
+
+def test_prune_notify_tables(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    db = tmp_path / "gameworld.sqlite3"
+    old, new = date(2026, 10, 10), date(2026, 10, 20)
+    for day in (old, new):
+        store.book_usage("w1", day, {}, {}, play={"gw-kind": 10})
+        _insert_attempt_flag_review(db, "w1", day)
+    cut = date(2026, 10, 15)
+    store.prune_play_daily(cut)
+    store.prune_join_attempts(cut)
+    store.prune_daily_flags(cut)
+    store.prune_review_sent(cut)
+    assert store.play_seconds(old) == {}
+    assert store.play_seconds(new) == {("gw-kind", "w1"): 10}
+    for table in ("join_attempts", "daily_flags", "review_sent"):
+        assert _days(db, table) == [new.isoformat()], table
+
+
+def _world_ids(db: pathlib.Path, table: str) -> list[str]:
+    connection = sqlite3.connect(db)
+    try:
+        return sorted(str(row[0]) for row in connection.execute(f"SELECT world_id FROM {table}"))  # noqa: S608
+    finally:
+        connection.close()
+
+
+def test_delete_notify_data_only_touches_one_world(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    day = date(2026, 10, 21)
+    db = tmp_path / "gameworld.sqlite3"
+    for world_id in ("w1", "w2"):
+        store.take_events(world_id, 1, [("join", "Mia", 1, "")])
+        store.set_run_state(world_id, running=True)
+        store.book_usage(world_id, day, {}, {}, play={"gw-kind": 10})
+        _insert_attempt_flag_review(db, world_id, day)
+        connection = sqlite3.connect(db)
+        try:
+            connection.execute(
+                "INSERT INTO bot_presence (world_id, nc_user, last_kind, last_at) VALUES (?, 'gw-kind', 'join', 1)",
+                (world_id,),
+            )
+            connection.execute(
+                "INSERT INTO talk_rooms (world_id, token, owner_uid, created_at) VALUES (?, 'tok', 'admin', 't')",
+                (world_id,),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+    store.delete_notify_data("w1")
+    assert store.event_cursor("w1") is None
+    assert store.event_cursor("w2") == 1
+    assert [row.world_id for row in store.outbox_batch()] == ["w2"]
+    assert store.run_state("w1") is None
+    assert store.run_state("w2") is True
+    assert store.play_seconds(day) == {("gw-kind", "w2"): 10}
+    assert _world_ids(db, "join_attempts") == ["w2"]
+    assert _world_ids(db, "bot_presence") == ["w2"]
+    assert _world_ids(db, "talk_rooms") == ["w1", "w2"]
