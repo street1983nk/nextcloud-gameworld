@@ -304,13 +304,16 @@ def test_set_child_plan_writes_7_or_14_rows(tmp_path: pathlib.Path) -> None:
     assert holiday.days[7] == DayRule(True, 120, 540, 1200)
 
 
-def test_clear_child_removes_rules_and_usage(tmp_path: pathlib.Path) -> None:
+def test_clear_child_removes_rules_and_old_usage_keeps_today(tmp_path: pathlib.Path) -> None:
+    """WR-04: Regeln weg, alter Verbrauch weg, der heutige bleibt (kein frisches Kontingent)."""
     store = _store3(tmp_path)
     store.set_child_plan("gw-kind", _week(), None, "admin", "t")
     store.add_usage("gw-kind", date(2026, 10, 20), 300)
-    store.clear_child("gw-kind")
+    store.add_usage("gw-kind", date(2026, 10, 21), 1800)
+    store.clear_child("gw-kind", keep_from=date(2026, 10, 21))
     assert store.child_plans() == {}
     assert store.usage("gw-kind", date(2026, 10, 20)) == 0
+    assert store.usage("gw-kind", date(2026, 10, 21)) == 1800
 
 
 def test_child_plans_only_children_with_rules(tmp_path: pathlib.Path) -> None:

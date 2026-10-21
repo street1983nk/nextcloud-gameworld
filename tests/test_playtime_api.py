@@ -161,13 +161,16 @@ async def test_post_unknown_account_is_404(client: httpx.AsyncClient, service: W
     assert "Spieler" in response.json()["detail"]
 
 
-async def test_delete_clears_rules_and_usage(
+async def test_delete_clears_rules_keeps_today_usage(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
+    """WR-04 (Owner-Entscheid): Entfernen und erneutes Setzen am selben Tag gibt kein frisches Kontingent."""
     del service
     posted = await client.post("/api/playtime/children/gw-kind", json=_plan_body(), headers=appapi_headers())
     assert posted.status_code == 200
-    store.add_usage("gw-kind", date.today(), 300)
+    today = _today()
+    store.add_usage("gw-kind", today, 300)
+    store.add_usage("gw-kind", today - timedelta(days=2), 900)
 
     response = await client.delete("/api/playtime/children/gw-kind", headers=appapi_headers())
     assert response.status_code == 200, response.text
@@ -177,7 +180,13 @@ async def test_delete_clears_rules_and_usage(
     assert data["normal"] is None
     assert data["state"] is None
     assert "gw-kind" not in store.child_plans()
-    assert store.usage("gw-kind", date.today()) == 0
+    assert store.usage("gw-kind", today) == 300
+    # Ältere Tage braucht niemand mehr (Datensparsamkeit).
+    assert store.usage("gw-kind", today - timedelta(days=2)) == 0
+
+    again = await client.post("/api/playtime/children/gw-kind", json=_plan_body(), headers=appapi_headers())
+    assert again.status_code == 200
+    assert again.json()["used_today_s"] == 300
 
 
 @pytest.mark.parametrize(

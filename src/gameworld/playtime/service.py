@@ -345,7 +345,7 @@ class TimeService:
         return await self._result(acting_uid, nc_user, applied)
 
     async def clear_child(self, acting_uid: str, nc_user: str) -> ChildResult:
-        """Entfernt Regeln und Verbrauch eines Kindes (zurück auf keine Begrenzung, O-10)."""
+        """Entfernt die Regeln eines Kindes (zurück auf keine Begrenzung, O-10); der heutige Verbrauch bleibt."""
         await self._require_player(nc_user)
         await self.refresh_admins(acting_uid, force=True)
         applied = await anyio.to_thread.run_sync(self._clear_sync, nc_user)
@@ -472,7 +472,9 @@ class TimeService:
 
     def _clear_sync(self, nc_user: str) -> bool:
         with self._worlds.mutation():
-            self._store.clear_child(nc_user)
+            # Heutigen Verbrauch behalten: erneutes Setzen gibt kein frisches Kontingent (WR-04).
+            today = local_day(self._worlds.time.now(), self._zone())
+            self._store.clear_child(nc_user, keep_from=today)
             return all(self._worlds.push_time(world_id) for world_id in self._store.player_worlds(nc_user))
 
     def _add_holiday_sync(self, holiday: Holiday) -> HolidayResult:

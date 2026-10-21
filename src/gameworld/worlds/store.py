@@ -438,12 +438,17 @@ class WorldStore:
                 rows,
             )
 
-    def clear_child(self, nc_user: str) -> None:
-        """Entfernt Regeln und Verbrauch eines Kindes (zurück auf keine Begrenzung, O-10)."""
+    def clear_child(self, nc_user: str, keep_from: date) -> None:
+        """Entfernt Regeln eines Kindes (zurück auf keine Begrenzung, O-10) und alten Verbrauch.
+
+        Der Verbrauch ab ``keep_from`` (heute, lokal) bleibt stehen: Setzen Eltern
+        am selben Tag wieder Regeln, gibt es kein frisches Kontingent (WR-04,
+        Owner-Entscheid). Ältere Tage braucht niemand mehr (Datensparsamkeit).
+        """
         with self._connect() as connection:
             connection.execute("DELETE FROM time_children WHERE nc_user = ?", (nc_user,))
             connection.execute("DELETE FROM time_plans WHERE nc_user = ?", (nc_user,))
-            connection.execute("DELETE FROM time_usage WHERE nc_user = ?", (nc_user,))
+            connection.execute("DELETE FROM time_usage WHERE nc_user = ? AND day < ?", (nc_user, keep_from.isoformat()))
 
     def child_plans(self) -> dict[str, tuple[WeekPlan, WeekPlan | None]]:
         """Nur Kinder mit Zeile in ``time_children``: je Kind Normalplan und Ferienplan (oder None)."""
