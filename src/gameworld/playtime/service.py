@@ -45,9 +45,9 @@ from gameworld.access.service import MSG_NO_PLAYER, PlayerNotFoundError
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
 from gameworld.playtime.plan import (
     DEFAULT_TIME_ZONE,
-    WEEKDAY_TOKENS,
     ChildState,
     Holiday,
+    NextStart,
     WeekPlan,
     WindowDay,
     evaluate_world,
@@ -209,20 +209,17 @@ class PlaytimeUnavailableError(RuntimeError):
     """Die Zeitregeln ließen sich nicht lesen (503, nie Daten anderer)."""
 
 
-def parse_hint(token: str, now: int, tz: ZoneInfo) -> NextTime | None:
-    """Token wie ``Sa-10:00`` (plan.next_hint) in Wochentag, Minute und Tage ab heute; ``-`` ergibt None."""
-    day, _, clock = token.partition("-")
-    hours, _, minutes = clock.partition(":")
-    if day not in WEEKDAY_TOKENS or not hours.isdigit() or not minutes.isdigit():
+def next_time(start: NextStart | None, now: int, tz: ZoneInfo) -> NextTime | None:
+    """Nächster Start (plan.NextStart) in Wochentag, Minute und Tage ab heute; None ergibt None.
+
+    Die Tage kommen aus dem absoluten Epoch des Starts, nicht aus dem Token
+    ``Sa-10:00``: Liegt der Start eine Woche später am selben Wochentag, aber zu
+    einer späteren Uhrzeit als jetzt, heißt das 7 und nicht "heute" (WR-01).
+    """
+    if start is None:
         return None
-    weekday = WEEKDAY_TOKENS.index(day) + 1
-    minute = int(hours) * 60 + int(minutes)
-    local = datetime.fromtimestamp(now, tz)
-    days_ahead = (weekday - local.isoweekday()) % 7
-    # Der Hinweis zeigt immer in die Zukunft: gleicher Wochentag, schon vorbei = in einer Woche.
-    if days_ahead == 0 and minute <= local.hour * 60 + local.minute:
-        days_ahead = 7
-    return NextTime(weekday=weekday, minute=minute, days_ahead=days_ahead)
+    days_ahead = (local_day(start.at, tz) - local_day(now, tz)).days
+    return NextTime(weekday=start.weekday, minute=start.minute, days_ahead=days_ahead)
 
 
 def _until_minute(until: int, day: date, tz: ZoneInfo) -> int | None:
@@ -251,8 +248,8 @@ def kid_playtime(state: ChildState, now: int, tz: ZoneInfo) -> MyPlaytime:
     else:
         blocked = None
     if blocked is not None:
-        next_time = parse_hint(state.next_hint, now, tz)
-        return MyPlaytime(limited=True, state=blocked, remaining_minutes=0, until_minute=None, next=next_time)
+        upcoming = next_time(state.next_start, now, tz)
+        return MyPlaytime(limited=True, state=blocked, remaining_minutes=0, until_minute=None, next=upcoming)
     remaining = None if state.rest_s is None else min(state.rest_s, state.until - now) // 60
     return MyPlaytime(
         limited=True,
@@ -272,7 +269,7 @@ def world_window_status(now: int, tz: ZoneInfo, windows: dict[int, tuple[int, in
         today = local_day(now, tz).isoweekday()
         start, end = windows[today]
         return MyWorldWindow(open=True, next=WindowSlot(weekday=today, start=start, end=end, days_ahead=0))
-    upcoming = parse_hint(state.next_hint, now, tz)
+    upcoming = next_time(state.next_start, now, tz)
     slot = None if upcoming is None else windows.get(upcoming.weekday)
     if upcoming is None or slot is None:
         return MyWorldWindow(open=False, next=None)

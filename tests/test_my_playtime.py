@@ -270,6 +270,28 @@ async def test_same_weekday_next_week_is_not_today(
     assert data["next"] == {"weekday": 3, "minute": 0, "days_ahead": 7}
 
 
+async def test_holiday_today_next_start_same_weekday_later_clock_is_next_week(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, clock: Clock
+) -> None:
+    """WR-01: Ferien nur heute (alles gesperrt), Normalplan Mi 17 bis 18 Uhr, jetzt 10 Uhr.
+
+    Der nächste Start ist Mittwoch in einer Woche um 17 Uhr; die alte Rechnung aus
+    dem Token ``Mi-17:00`` sagte "heute" (days_ahead 0), weil 17 Uhr nach 10 Uhr liegt.
+    """
+    del service
+    normal = {
+        weekday: DayRule(weekday == 3, None, 1020 if weekday == 3 else None, 1080 if weekday == 3 else None)
+        for weekday in range(1, 8)
+    }
+    blocked = {weekday: DayRule(False, None, None, None) for weekday in range(1, 8)}
+    store.set_child_plan("gw-kind", WeekPlan(normal), WeekPlan(blocked), "admin", "2026-10-21T08:00:00+00:00")
+    store.add_holiday(WED, WED, "Ein Ferientag")
+    clock.now = _at(10)
+    data = (await _mine(client)).json()
+    assert data["state"] == "tag"
+    assert data["next"] == {"weekday": 3, "minute": 1020, "days_ahead": 7}
+
+
 async def test_preset_daily_used_up_at_noon(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, clock: Clock
 ) -> None:
