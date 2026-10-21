@@ -342,7 +342,7 @@ class WorldService:
         """
         data, _changed = self._time.render(world_id)
         try:
-            self._provisioner.write_world_files(world_id, build_time_tar(data))
+            self._write_time(world_id, data)
         except WorldNotFoundError:
             LOG.info("Welt %s: kein Container, die Regeldatei kommt beim nächsten Start", world_id)
             return False
@@ -350,6 +350,18 @@ class WorldService:
             LOG.warning("Welt %s: Regeldatei nicht geschrieben, sie kommt beim nächsten Start: %s", world_id, exc)
             return False
         return True
+
+    def _write_time(self, world_id: str, data: bytes) -> None:
+        """Schreibt die Regeldatei; scheitert es, wird der gerenderte Stand verworfen (CR-01).
+
+        Ohne den Verwurf hielte der Render-Cache den nie angekommenen Stand für
+        geschrieben, und der 15-s-Takt (nur bei ``geändert``) holte ihn nie nach.
+        """
+        try:
+            self._provisioner.write_world_files(world_id, build_time_tar(data))
+        except BaseException:
+            self._time.forget(world_id)
+            raise
 
     def tick_time(self) -> None:
         """15-s-Zeittakt: Zählbuch aller laufenden Welten verbuchen, geänderte Regeldateien schreiben.
@@ -377,7 +389,7 @@ class WorldService:
                 try:
                     data, changed = self._time.render(row.id)
                     if changed:
-                        self._provisioner.write_world_files(row.id, build_time_tar(data))
+                        self._write_time(row.id, data)
                 except ProvisionerError as exc:
                     LOG.warning("Welt %s: Regeldatei im Takt nicht geschrieben: %s", row.id, exc)
 
@@ -603,7 +615,12 @@ class WorldService:
             try:
                 # Im selben try: Fehlt der Container schon beim Schreiben, greift die Neuerzeugung.
                 world_files = build_world_files(self._access_file(row), self._time_file(row))
-                self._provisioner.write_world_files(row.id, world_files)
+                try:
+                    self._provisioner.write_world_files(row.id, world_files)
+                except BaseException:
+                    # Regeldatei nicht angekommen: Der nächste Takt schreibt sie erneut (CR-01).
+                    self._time.forget(row.id)
+                    raise
                 self._provisioner.start_world(row.id)
                 return
             except WorldNotFoundError:

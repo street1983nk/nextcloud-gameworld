@@ -1476,6 +1476,58 @@ async def test_tick_time_isolates_read_error(
     assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == healthy.id)
 
 
+async def test_failed_push_time_is_retried_by_next_tick(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CR-01: Scheitert das Schreiben einmal, schreibt der nächste Takt die Regeldatei sicher nach."""
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia")
+    store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
+    real = fake.write_world_files
+
+    def broken(world_id: str, archive: bytes) -> None:
+        raise ProvisionerError("Docker ist gerade nicht erreichbar.")
+
+    monkeypatch.setattr(fake, "write_world_files", broken)
+    with service.mutation():
+        assert service.push_time(created.id) is False
+    monkeypatch.setattr(fake, "write_world_files", real)
+    fake.written.clear()
+
+    service.tick_time()
+
+    assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == created.id)
+
+
+async def test_failed_tick_write_is_retried_by_next_tick(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CR-01: Auch ein im Takt gescheitertes Schreiben holt der folgende Takt nach."""
+    created = await service.create_world("Welt")
+    _invite_players(store, created.id, "Mia")
+    store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
+    real = fake.write_world_files
+    calls: list[str] = []
+
+    def broken(world_id: str, archive: bytes) -> None:
+        calls.append(world_id)
+        raise ProvisionerError("Docker ist gerade nicht erreichbar.")
+
+    monkeypatch.setattr(fake, "write_world_files", broken)
+    service.tick_time()
+    assert calls == [created.id]
+    monkeypatch.setattr(fake, "write_world_files", real)
+    fake.written.clear()
+
+    service.tick_time()
+
+    assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == created.id)
+    fake.written.clear()
+    service.tick_time()
+    # Nach dem erfolgreichen Schreiben bleibt es beim alten Verhalten: nichts Neues zu schreiben.
+    assert fake.written == []
+
+
 async def test_time_restart_needed_missing_ledger(service: WorldService, fake: FakeProvisioner) -> None:
     world_id = await _running_world(service, fake, "Welt")
     view = await _view_of(service, world_id)

@@ -176,6 +176,15 @@ class TimeEngine:
         self._maybe_prune(now, tz)
         return rendered
 
+    def forget(self, world_id: str) -> None:
+        """Verwirft den gerenderten Stand der Welt (CR-01).
+
+        Nach einem gescheiterten Schreiben der Regeldatei: Der nächste ``render``
+        liefert ``geändert`` True (mit neuer Generation), damit der Takt die Datei
+        erneut schreibt, statt den nie angekommenen Stand für geschrieben zu halten.
+        """
+        self._cache.pop(world_id, None)
+
     def child_state(self, nc_user: str) -> ChildState | None:
         """Auswertung für ein Kind (API und Kind-Ansicht); None heißt: keine Regeln (Opt-in)."""
         plans = self._store.child_plans()
