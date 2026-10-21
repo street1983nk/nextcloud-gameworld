@@ -219,13 +219,13 @@ Plans:
   4. Die Seiten hinter den Benachrichtigungen funktionieren im Handy-Browser und in der Nextcloud-App
   5. Zu jeder Welt gibt es einen Talk-Raum, dessen Mitglieder automatisch den Einladungen folgen (Einladen fügt hinzu, Ausladen entfernt, Gruppen-Einladungen inklusive) plus die Verwalter; niemand sonst kommt hinein
   6. Ein Gameworld-Bot meldet im Raum Weltstart und -stopp, Beitritte und das nahende Ende der Spielzeit; ohne installiertes Talk läuft Gameworld unverändert weiter und zeigt nur einen Hinweis
-**Plans:** 9 plans
+**Plans:** 1/9 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 04.1-01-PLAN.md , Welt-Mods: Ereignisdatei (deny, join, leave, warn10) in gameworld_access, Pause und Schluss-Texte im Zeit-Mod, additive @pause-Zeile
+- [x] 04.1-01-PLAN.md , Welt-Mods: Ereignisdatei (deny, join, leave, warn10) in gameworld_access, Pause und Schluss-Texte im Zeit-Mod, additive @pause-Zeile
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

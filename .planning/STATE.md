@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 04.1 context gathered
-last_updated: "2026-10-21T22:08:00.143Z"
-last_activity: 2026-10-21 -- Phase 04.1 planning complete
+stopped_at: Completed 04.1-01-PLAN.md
+last_updated: "2026-10-21T22:21:42.476Z"
+last_activity: 2026-10-22 -- 04.1-01 complete
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 36
-  completed_plans: 27
+  completed_plans: 28
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.1
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-10-21 -- Phase 04.1 planning complete
+Plan: 2 of 9 (04.1-01 complete)
+Status: Executing
+Last activity: 2026-10-22 -- 04.1-01 complete (Ereignisdatei und Pause in den Welt-Mods)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
@@ -80,6 +80,7 @@ Progress: [██████████] 100%
 | Phase 04 P06 | 35 min | 2 tasks | 10 files |
 | Phase 04 P07 | 25 min | 2 tasks | 11 files |
 | Phase 04 P08 | 2 Sitzungen | 2 tasks | 4 files |
+| Phase 04.1 P01 | 25 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -162,6 +163,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-06: Eltern-UI mit reiner Logik in playtime.js (Node-Prüfskript); Kind-Chip höchstens 30 Zeichen, sonst entfällt das Zeitfenster; 'Keine Begrenzung' = DELETE; Welt-Fenster 'ganzer Tag' = 0 bis 1440, alle Tage zu sperrt Speichern; Spielzeitdaten lädt ParentView höchstens alle 30 s
 - [Phase 04]: 04-07: Kind-API /api/my/playtime liefert Struktur (limited, state, remaining_minutes, until_minute, next mit days_ahead), der Browser formuliert; Rest unter 60 s = aufgebraucht/fenster (MIN_LEFT), Minuten nie über das Fensterende; /api/my/worlds je Welt window_open und window_next, kein Wochenplan
 - [Phase 04]: 04-08: K5 der Phasenabnahme misst das Limit nach Vorlauf-Sitzung und Verankerung (Erstkontakt bis etwa 20 s einmalig je Kind und Welt ungezählt, dokumentiert)
+- [Phase 04.1]: 04.1-01: pause_text schluss -1 ergibt nur 'Für heute ist Schluss.', Owner-Bestätigung in 04.1-09 Schritt 8
+- [Phase 04.1]: 04.1-01: Ereignisdatei gameworld_events.txt beim Mod-Laden = Fähigkeits-Merker für Pause und Ereignisse
 
 ### Pending Todos
 
@@ -189,6 +192,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-21T21:21:22.205Z
+Last session: 2026-10-21T22:21:28.673Z
 Stopped at: Phase 04.1 context gathered
-Resume file: .planning/phases/04.1-eltern-handy-pause-hinweise-rueckblick/04.1-CONTEXT.md
+Resume file: None
