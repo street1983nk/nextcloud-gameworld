@@ -25,7 +25,7 @@ Lokale Umgebung für Gameworld: eine eigene Nextcloud 34 im Compose-Projekt `gam
    sh scripts/dev/register-exapp.sh
    ```
 
-   Das Skript baut bei Bedarf das Frontend nach `js/gameworld-main.js`, startet das Backend auf Port 10040 mit einem neuen Secret pro Lauf (`.dev/exapp.secret`, gitignored), registriert den Daemon `manual_install` und die ExApp und aktiviert sie. Den Einrichtungsassistenten (firstrunwizard) schaltet es in der Dev-Nextcloud ab, weil er Browser-Prüfungen blockiert. Ein Backend, das zu den Quellen passt, läuft weiter; ein veraltetes wird neu gestartet. Das Log steht in `.dev/exapp.log`.
+   Das Skript baut bei Bedarf das Frontend nach `js/gameworld-main.js`, startet das Backend auf Port 10040 mit einem neuen Secret pro Lauf (`.dev/exapp.secret`, gitignored), registriert den Daemon `manual_install` und die ExApp und aktiviert sie. Den Einrichtungsassistenten (firstrunwizard) schaltet es in der Dev-Nextcloud ab, weil er Browser-Prüfungen blockiert. Ein Backend, das zu den Quellen passt, läuft weiter; ein veraltetes wird neu gestartet. Das Log steht in `.dev/exapp.log`; bei jedem Neustart wandert das Log des vorigen Backends nach `.dev/logs/` (die neuesten 20 bleiben), damit nach einem ungeplanten Ende der Grund nachlesbar ist.
 
 3. Im Browser öffnen: <http://localhost:8091/index.php/apps/app_api/embedded/gameworld/gameworld>
 

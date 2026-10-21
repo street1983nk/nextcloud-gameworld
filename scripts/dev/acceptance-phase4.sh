@@ -53,6 +53,9 @@ RULES_FILE="${WORLD_DIR}/gameworld_time.txt"
 LEDGER_FILE="${WORLD_DIR}/gameworld_time_used.txt"
 PROBE_HOST=127.0.0.1
 NAME_WORLD="Abnahme Spielzeit"
+# Weltnamen aller Abnahmen (Phase 1 bis 4); nur diese räumt der Vorlauf als Reste weg.
+ACCEPTANCE_WORLDS='["Abnahme Spielzeit","Abnahme Zugang","Abnahme A","Abnahme B","Abnahme Proxy",
+"Abnahme Kreativ","Abnahme Abenteuer","Abnahme Status","Abnahme Tot","Abnahme R1","Abnahme R2"]'
 HOLIDAY_LABEL="Abnahme Ferien"
 SESSION_TIMEOUT=30
 NAME_RE='^[A-Za-z0-9_-]{1,20}$'
@@ -119,6 +122,27 @@ occ() {
 
 heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
+}
+
+# So meldet AppAPI eine ExApp, auf deren Port niemand lauscht (Nextcloud antwortet dann 500).
+CONNECT_ERROR="Failed to connect to host.docker.internal port ${BACKEND_PORT}"
+
+# Zeilen des Nextcloud-Logs mit festem Text $1 (Logdatei aus der Konfiguration).
+nc_log_lines() {
+	nc_log=$(occ config:system:get logfile 2>/dev/null | tr -d '\r' || true)
+	if [ -z "${nc_log}" ]; then
+		nc_log="$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r')/nextcloud.log"
+	fi
+	# MSYS_NO_PATHCONV: Git-Bash schriebe den Container-Pfad sonst in einen Windows-Pfad um;
+	# die Compose-Datei bekommt ihren Windows-Pfad deshalb selbst (cygpath).
+	compose_file=${COMPOSE_FILE}
+	command -v cygpath >/dev/null 2>&1 && compose_file=$(cygpath -m "${COMPOSE_FILE}")
+	MSYS_NO_PATHCONV=1 docker compose -f "${compose_file}" exec -T app grep -F -- "$1" "${nc_log}" 2>/dev/null || true
+}
+
+# Anzahl der Log-Einträge in Datei $2 mit Zeitstempel ab $1 (UTC, JJJJ-MM-TTTHH:MM:SS).
+entries_since() {
+	grep -o '"time":"[0-9T:-]*' "$2" 2>/dev/null | cut -c9- | awk -v s="$1" '$0 >= s' | wc -l | tr -d ' '
 }
 
 # Beendet gezielt den ExApp-Host-Prozess (PID-Datei, sonst nur der Prozess auf
@@ -414,10 +438,16 @@ if [ "$3" -ge 1430 ]; then
 	sleep "${pause}"
 fi
 
-# Reste eines abgebrochenen früheren Laufs entfernen.
+# Ab hier zählen AppAPI-Verbindungsfehler zur ExApp (Prüfung am Ende), UTC wie im Nextcloud-Log.
+RUN_START=$(date -u +%Y-%m-%dT%H:%M:%S)
+
+# Reste eines abgebrochenen früheren Laufs entfernen, auch Welten der Phasen 1 bis 3:
+# Fiel die ExApp dort aus, löscht deren Aufräumen nur Container und Volume, die Zeile
+# bleibt, und der nächste Start des Backends legt die Welt neu an.
 reset_fixtures
 http_code GET "${API_URL}/worlds" "${WORK_DIR}/pre.json" >/dev/null
-for old_id in $(jq -r --arg a "${NAME_WORLD}" '.worlds[]? | select(.name == $a) | .id' "${WORK_DIR}/pre.json" 2>/dev/null || true); do
+for old_id in $(jq -r --argjson names "${ACCEPTANCE_WORLDS}" \
+	'.worlds[]? | select(.name as $n | $names | index($n)) | .id' "${WORK_DIR}/pre.json" 2>/dev/null || true); do
 	printf 'entferne Rest eines früheren Laufs: %s\n' "${old_id}"
 	remember_world "${old_id}"
 	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
@@ -787,6 +817,27 @@ fi
 for expected in "84 von 84 Prüfungen bestanden" "104 von 104 Prüfungen bestanden" "75 von 75 Prüfungen bestanden"; do
 	check "Regression: Log enthält '${expected}'" grep -q -F -- "${expected}" "${WORK_DIR}/phase3.log"
 done
+
+printf '\n== ExApp über den ganzen Lauf erreichbar ==\n'
+# Die geplanten Neustarts (Phase 4 K6, Phase 3 K5, Phase 2 K4a/K4b) machen keine
+# API-Aufrufe, solange das Backend fehlt. Ein Eintrag hier heißt: Das Backend war
+# ungeplant weg, und jede 500 der Abnahme in dieser Zeit ist eine Folge davon.
+nc_log_lines "${CONNECT_ERROR}" >"${WORK_DIR}/nc-connect.log"
+CONNECT_ERRORS=$(entries_since "${RUN_START}" "${WORK_DIR}/nc-connect.log")
+if [ "${CONNECT_ERRORS}" = 0 ]; then
+	pass "keine AppAPI-Verbindungsfehler zur ExApp seit Laufbeginn (ist 0)"
+else
+	fail "AppAPI erreichte die ExApp ${CONNECT_ERRORS}-mal nicht (Backend ungeplant weg; Logs der Backends in .dev/logs)"
+fi
+# Probedatei: ein Eintrag jetzt, einer vor Laufbeginn, einer mit anderem Text; zählen darf nur der erste.
+for stamp_text in "$(date -u +%Y-%m-%dT%H:%M:%S)|${CONNECT_ERROR}" "2000-01-01T00:00:00|${CONNECT_ERROR}" \
+	"$(date -u +%Y-%m-%dT%H:%M:%S)|Could not resolve host"; do
+	printf '{"time":"%s+00:00","app":"app_api","message":"Error during request to ExApp gameworld: cURL error 7: %s"}\n' \
+		"${stamp_text%%|*}" "${stamp_text#*|}"
+done >"${WORK_DIR}/nc-probe.log"
+grep -F -- "${CONNECT_ERROR}" "${WORK_DIR}/nc-probe.log" >"${WORK_DIR}/nc-probe-hits.log" || true
+check "Positivkontrolle: dieselbe Zählung findet in einer Probedatei genau den einen Eintrag seit Laufbeginn" \
+	eq "$(entries_since "${RUN_START}" "${WORK_DIR}/nc-probe-hits.log")" 1
 
 printf '\n%s von %s Prüfungen bestanden\n' "${PASSED}" "${TOTAL}"
 if [ "${FAILED}" -gt 0 ]; then

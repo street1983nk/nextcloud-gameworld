@@ -35,6 +35,11 @@ INFO_XML="${REPO_ROOT}/appinfo/info.xml"
 HOST_FROM_CONTAINER=host.docker.internal
 RUN_DIR="${REPO_ROOT}/.dev"
 LOG_FILE="${RUN_DIR}/exapp.log"
+# Logs früherer Backends: Jeder Start legt das alte exapp.log hier ab, statt es zu
+# überschreiben. Sonst ist nach einem ungeplanten Ende (Abnahme mit mehreren
+# Neustarts) genau das Log weg, das den Grund zeigt. Die neuesten LOG_KEEP bleiben.
+LOG_DIR="${RUN_DIR}/logs"
+LOG_KEEP=20
 PID_FILE="${RUN_DIR}/exapp.pid"
 SECRET_FILE="${RUN_DIR}/exapp.secret"
 VERSION_FILE="${RUN_DIR}/exapp.version"
@@ -154,6 +159,18 @@ stale_reason() {
 }
 
 # Baut das Frontend, wenn das Bundle fehlt oder älter als frontend/src ist.
+keep_previous_log() {
+	[ -s "${LOG_FILE}" ] || return 0
+	mkdir -p "${LOG_DIR}"
+	kept="${LOG_DIR}/exapp-$(date +%Y%m%d-%H%M%S)-$$.log"
+	mv "${LOG_FILE}" "${kept}"
+	printf 'Log des vorigen Backends liegt in %s\n' "${kept}"
+	# Dateinamen ohne Leerzeichen (Datum, Uhrzeit, PID), daher ist ls hier sicher.
+	ls -1t "${LOG_DIR}"/exapp-*.log 2>/dev/null | tail -n +$((LOG_KEEP + 1)) | while read -r old; do
+		rm -f "${old}"
+	done
+}
+
 build_frontend() {
 	if [ ! -f "${REPO_ROOT}/frontend/package.json" ]; then
 		printf 'frontend/package.json fehlt, das Bundle %s kann nicht gebaut werden\n' "${BUNDLE}" >&2
@@ -272,6 +289,7 @@ if [ "${REUSE_BACKEND}" -eq 0 ]; then
 		printf '%s\n' "${BACKEND_SECRET}" >"${SECRET_FILE}"
 	)
 	printf '%s\n' "${BACKEND_VERSION}" >"${VERSION_FILE}"
+	keep_previous_log
 	printf 'starte das Backend auf %s:%s, Log in %s\n' "${BACKEND_HOST}" "${BACKEND_PORT}" "${LOG_FILE}"
 	(
 		# cwd = Repo-Root: set_handlers mountet js/ und img/ relativ dazu.
@@ -284,6 +302,10 @@ if [ "${REUSE_BACKEND}" -eq 0 ]; then
 		APP_PERSISTENT_STORAGE="${RUN_DIR}/storage"
 		export APP_ID APP_SECRET APP_PORT APP_HOST APP_VERSION APP_PERSISTENT_STORAGE
 		export NEXTCLOUD_URL GAMEWORLD_DOCKER_URL GAMEWORLD_PORT_RANGE
+		# Ein harter Absturz (Fatal Python error, Zugriffsverletzung) schreibt so
+		# noch einen Traceback ins Log, statt den Prozess stumm verschwinden zu lassen.
+		PYTHONFAULTHANDLER=1
+		export PYTHONFAULTHANDLER
 		exec uv run python -m gameworld.main
 	) >"${LOG_FILE}" 2>&1 &
 	printf '%s\n' "$!" >"${PID_FILE}"
