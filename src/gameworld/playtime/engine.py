@@ -23,6 +23,11 @@ sondern absolute Epochs (Quick 261021-481): je Zeile den nächsten Start
 rechnet "Heute", "Morgen" oder "Am Samstag" gegen die eigene Uhr; so bleibt der
 Text auch nach Mitternacht richtig, wenn die Regeldatei noch nicht neu ist. Die
 Epochs ändern sich nicht mit der Uhr, ``@tage`` nur einmal je Tag.
+
+Eine laufende Pause des Haushalts (``pause_state``, ELTERN-01) schreibt ``render``
+als ``@pause`` in jede Welt, bei "Für heute Schluss" dazu ``@morgen`` je Kind der
+Welt mit Plan. Pause und Morgen-Minuten stehen im Cache-Schlüssel; nach Ablauf
+fällt die Pause heraus (neue Generation) und die Zeile in ``pause_state`` wird gelöscht.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from gameworld.playtime.ledger import attribution_day, increments
+from gameworld.playtime.pause import ART_SCHLUSS, morgen_minutes
 from gameworld.playtime.plan import (
     ChildState,
     NextStart,
@@ -44,7 +50,7 @@ from gameworld.playtime.plan import (
     load_zone,
     local_day,
 )
-from gameworld.provisioner.time_mod import DayGrid, Ledger, TimeLine, render_time_file
+from gameworld.provisioner.time_mod import DayGrid, Ledger, PauseLine, TimeLine, render_time_file
 from gameworld.worlds.store import WorldStore
 
 # Verbrauch höchstens einmal pro Stunde aufräumen (A8/Pitfall 9).
@@ -122,6 +128,21 @@ class TimeEngine:
     def _zone(self) -> ZoneInfo:
         return load_zone(self._store.get_meta("time_zone") or "")
 
+    def zone(self) -> ZoneInfo:
+        """Haushalts-Zeitzone (meta time_zone, Vorgabe Europe/Berlin), etwa für "Für heute Schluss"."""
+        return self._zone()
+
+    def _active_pause(self, now: int) -> PauseLine | None:
+        """Laufende Pause als Zeile ``@pause``; eine abgelaufene wird aus pause_state gelöscht."""
+        state = self._store.get_pause()
+        if state is None:
+            return None
+        if now >= state.bis:
+            # Nur löschen, was bis jetzt abgelaufen ist: eine eben neu gesetzte Pause bleibt.
+            self._store.clear_pause(ended_by=now)
+            return None
+        return PauseLine(ab=state.ab, bis=state.bis, art=state.art)
+
     def book(self, world_id: str, ledger: Ledger | None) -> None:
         """Verbucht die Zuwächse des Zählbuchs; verankert den gesehenen Stand neu.
 
@@ -171,6 +192,8 @@ class TimeEngine:
         cached = self._cache.get(world_id)
         previous = {} if cached is None else cached.bases
         players: dict[str, TimeLine] = {}
+        # Kinder dieser Welt mit Plan (Konto auf Spielername) für die Zeilen @morgen.
+        names_by_user: dict[str, str] = {}
         for name in self._store.access_entries(world_id):
             nc_user = self._store.player_name_owner(name)
             if nc_user is None:
@@ -181,6 +204,7 @@ class TimeEngine:
                 continue
             if nc_user not in plans:
                 continue
+            names_by_user[nc_user] = name
             normal, holiday = plans[nc_user]
             used = self._store.usage(nc_user, today)
             state = evaluate_child(now, tz, normal, holiday, holidays, used)
@@ -203,7 +227,11 @@ class TimeEngine:
         if any(line.next_at >= 0 for line in lines):
             # Tagesgrenzen nur, wenn eine Zeile einen nächsten Start trägt (sonst Bytes wie bisher).
             days = DayGrid(weekday=today.isoweekday(), starts=day_starts(now, tz))
-        rendered = self._render_cached(world_id, world_line, players, now, days)
+        pause = self._active_pause(now)
+        morgen = None
+        if pause is not None and pause.art == ART_SCHLUSS:
+            morgen = morgen_minutes(now, tz, plans, holidays, names_by_user)
+        rendered = self._render_cached(world_id, world_line, players, now, days, pause, morgen)
         self._maybe_prune(now, tz)
         return rendered
 
@@ -250,13 +278,20 @@ class TimeEngine:
         players: dict[str, TimeLine],
         now: int,
         days: DayGrid | None,
+        pause: PauseLine | None = None,
+        morgen: dict[str, int] | None = None,
     ) -> tuple[bytes, bool]:
-        key = self._body_key(world_line, players, days)
+        # Pause und Morgen-Minuten gehören in den Schlüssel, sonst schreibt der Takt die Pause nie.
+        key = (
+            *self._body_key(world_line, players, days),
+            pause,
+            None if morgen is None else tuple(sorted(morgen.items())),
+        )
         cached = self._cache.get(world_id)
         if cached is not None and cached.key == key:
             return cached.data, False
         generation = self._store.bump_time_generation(world_id)
-        data = render_time_file(generation, now, world_line, players, days=days)
+        data = render_time_file(generation, now, world_line, players, days=days, pause=pause, morgen=morgen)
         bases = {name: (line.cap, line.base) for name, line in players.items() if line.base >= 0}
         self._cache[world_id] = _Rendered(key=key, generation=generation, issued_at=now, data=data, bases=bases)
         return data, True

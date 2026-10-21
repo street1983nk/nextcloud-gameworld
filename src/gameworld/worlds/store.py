@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from dataclasses import astuple, dataclass, fields
 from datetime import date
 
+from gameworld.playtime.pause import PauseState
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
@@ -720,6 +721,32 @@ class WorldStore:
         with self._connect() as connection:
             connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
             connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
+
+    # Pause des Haushalts (Schema 5, genau eine Zeile, ELTERN-01)
+
+    def get_pause(self) -> PauseState | None:
+        """Gespeicherte Pause oder None; ob sie noch gilt, entscheidet der Aufrufer (pause.is_active)."""
+        with self._connect() as connection:
+            row = connection.execute("SELECT started_by, ab, bis, art FROM pause_state WHERE id = 1").fetchone()
+        return None if row is None else PauseState(str(row[0]), int(row[1]), int(row[2]), str(row[3]))
+
+    def set_pause(self, state: PauseState) -> None:
+        """Pause setzen; eine vorhandene Zeile wird überschrieben."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO pause_state (id, started_by, ab, bis, art) VALUES (1, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET started_by = excluded.started_by, ab = excluded.ab, "
+                "bis = excluded.bis, art = excluded.art",
+                (state.started_by, state.ab, state.bis, state.art),
+            )
+
+    def clear_pause(self, *, ended_by: int | None = None) -> None:
+        """Pause löschen; mit ``ended_by`` nur, wenn sie bis dahin abgelaufen ist (bis <= ended_by)."""
+        with self._connect() as connection:
+            if ended_by is None:
+                connection.execute("DELETE FROM pause_state")
+            else:
+                connection.execute("DELETE FROM pause_state WHERE bis <= ?", (ended_by,))
 
     # Ereignisse, Laufzustand, Tagesspielzeit je Welt und Drosseln (Schema 5)
 
