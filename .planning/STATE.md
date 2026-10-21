@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.1-01-PLAN.md
-last_updated: "2026-10-21T22:21:42.476Z"
-last_activity: 2026-10-22 -- 04.1-01 complete
+stopped_at: Completed 04.1-02-PLAN.md
+last_updated: "2026-10-21T22:34:46.698Z"
+last_activity: 2026-10-22 -- 04.1-02 complete
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 36
-  completed_plans: 28
+  completed_plans: 29
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.1
-Plan: 2 of 9 (04.1-01 complete)
+Plan: 3 of 9 (04.1-02 complete)
 Status: Executing
-Last activity: 2026-10-22 -- 04.1-01 complete (Ereignisdatei und Pause in den Welt-Mods)
+Last activity: 2026-10-22 -- 04.1-02 complete (Schema 5, Ereignis-Parser, Takt-Erweiterung)
 
-Progress: [████████░░] 78%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -81,6 +81,7 @@ Progress: [████████░░] 78%
 | Phase 04 P07 | 25 min | 2 tasks | 11 files |
 | Phase 04 P08 | 2 Sitzungen | 2 tasks | 4 files |
 | Phase 04.1 P01 | 25 min | 2 tasks | 4 files |
+| Phase 04.1 P02 | 35 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -165,6 +166,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-08: K5 der Phasenabnahme misst das Limit nach Vorlauf-Sitzung und Verankerung (Erstkontakt bis etwa 20 s einmalig je Kind und Welt ungezählt, dokumentiert)
 - [Phase 04.1]: 04.1-01: pause_text schluss -1 ergibt nur 'Für heute ist Schluss.', Owner-Bestätigung in 04.1-09 Schritt 8
 - [Phase 04.1]: 04.1-01: Ereignisdatei gameworld_events.txt beim Mod-Laden = Fähigkeits-Merker für Pause und Ereignisse
+- [Phase 04.1]: 04.1-02: Ereignisse nur im Takt in SQLite-Outbox (event_outbox, höchstens 1000 Zeilen), Versand erst im Event-Loop
+- [Phase 04.1]: 04.1-02: Start/Stopp aus beobachtetem Docker-Zustand im Takt (world_run_state), erste Beobachtung verankert nur
+- [Phase 04.1]: 04.1-02: pause_state als eigene Tabelle mit genau einer Zeile; play_daily zählt alle Konten außer Verwaltern
 
 ### Pending Todos
 
@@ -192,6 +196,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-21T22:21:28.673Z
-Stopped at: Phase 04.1 context gathered
+Last session: 2026-10-21T22:34:46.680Z
+Stopped at: Completed 04.1-02-PLAN.md
 Resume file: None
