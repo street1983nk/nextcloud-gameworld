@@ -32,6 +32,7 @@ EXPECTED_ROUTES = [
     ("^/img/.*", "GET", "USER"),
     ("^/api/me$", "GET", "USER"),
     ("^/api/my/.*", "GET", "USER"),
+    ("^/talk/bot$", "POST", "USER"),
     ("^/api/.*", "GET,POST,DELETE", "ADMIN"),
 ]
 
@@ -53,6 +54,14 @@ def test_user_routes_are_anchored_or_static() -> None:
     for url, _verb, level in _routes():
         if level == "USER" and url.startswith("^/api/"):
             assert url.endswith("$") or url == "^/api/my/.*", url
+
+
+def test_talk_bot_route_is_anchored_post_before_admin() -> None:
+    """Webhook des Gameworld-Bots (04.1-06): nur POST, fest verankert, vor dem ADMIN-Auffangmuster."""
+    routes = _routes()
+    urls = [url for url, _verb, _level in routes]
+    assert ("^/talk/bot$", "POST", "USER") in routes
+    assert urls.index("^/talk/bot$") < urls.index("^/api/.*")
 
 
 def test_admin_catch_all_is_last() -> None:

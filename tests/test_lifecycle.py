@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,8 +12,21 @@ import pytest
 from gameworld.lifecycle import api_base, enabled_handler
 
 
+class Ready:
+    """Mehrfach awaitbarer Wert (wie die awaitbaren Properties von nc_py_api)."""
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def __await__(self) -> Generator[None, None, object]:
+        return self.value
+        yield  # pragma: no cover - macht __await__ zum Generator
+
+
 def fake_nc() -> Any:
     nc = MagicMock()
+    # Ohne Talk-Bots: der Bot wird nicht registriert (04.1-06).
+    nc.talk.bots_available = Ready(False)
     nc.ui.resources.set_initial_state = AsyncMock()
     nc.ui.resources.set_script = AsyncMock()
     nc.ui.resources.delete_script = AsyncMock()

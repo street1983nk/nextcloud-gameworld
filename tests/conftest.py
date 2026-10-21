@@ -110,7 +110,44 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setattr(talk_rooms, "_rooms", FakeTalkRooms())
     monkeypatch.setattr(talk_service, "_talk_service", None)
     monkeypatch.setattr(talk_service, "TALK_STATE", talk_service.TalkState())
+    # Gameworld-Bot ohne Talk (04.1-06).
+    from gameworld.talk import bot as talk_bot
+
+    monkeypatch.setattr(talk_bot, "_bot", FakeBot())
     return tmp_path
+
+
+class FakeBot:
+    """Bot ohne Talk: sammelt (token, text, silent); ``result`` simuliert Erfolg, ``error`` eine Störung."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str, bool]] = []
+        self.enabled: list[tuple[str, str]] = []
+        self.registered = 0
+        self.result = True
+        self.error: Exception | None = None
+
+    async def register(self) -> bool:
+        self.registered += 1
+        return True
+
+    async def ensure_enabled(self, token: str, acting_uid: str) -> None:
+        if self.error is not None:
+            raise self.error
+        self.enabled.append((token, acting_uid))
+
+    async def send(self, token: str, text: str, *, silent: bool) -> bool:
+        self.sent.append((token, text, silent))
+        return self.result
+
+
+@pytest.fixture
+def fake_bot(app_env: Path) -> FakeBot:
+    del app_env
+    from gameworld.talk import bot as talk_bot
+
+    assert isinstance(talk_bot._bot, FakeBot)  # pyright: ignore[reportPrivateUsage]
+    return talk_bot._bot  # pyright: ignore[reportPrivateUsage]
 
 
 class FakeTalkRooms:
