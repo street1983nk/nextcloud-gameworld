@@ -286,7 +286,16 @@ class WorldService:
             return
         if status_file is None:
             return
-        self._time.book(world_id, parse_ledger(status_file.content))
+        ledger = parse_ledger(status_file.content)
+        if ledger is None and status_file.content:
+            # Vorhanden, aber ohne Kopf oder Schlusszeile: nie still übergehen (WR-03).
+            # Meist halb geschrieben (der nächste Takt heilt es), dauerhaft heißt: zu groß oder kaputt.
+            LOG.warning(
+                "Welt %s: Zählbuch unvollständig (%d Bytes), in diesem Takt nicht verbucht",
+                world_id,
+                len(status_file.content),
+            )
+        self._time.book(world_id, ledger)
 
     def mutation(self) -> contextlib.AbstractContextManager[None]:
         """Dieselbe Sperre wie Welt-Mutationen, mit Cache-Verwurf (für den Zugangsdienst).

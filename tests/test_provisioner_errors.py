@@ -444,6 +444,54 @@ def test_broken_status_archive_is_provisioner_error(prov: DockerProvisioner, fak
     assert container.paths == [PLAYERS_FILE]
 
 
+def _big_ledger(names: int) -> bytes:
+    lines = ["gameworld-time-used 1 1792800000 3", *(f"Spieler_{index:012d} 999999999" for index in range(names))]
+    return ("\n".join([*lines, "end"]) + "\n").encode("ascii")
+
+
+def test_read_time_ledger_with_many_names_is_complete(prov: DockerProvisioner, fake: FakeClient) -> None:
+    """WR-03: 500 Namen (rund 15 KiB) kommen vollständig an, die Schlusszeile fehlt nicht."""
+    from gameworld.provisioner.time_mod import LEDGER_FILE, parse_ledger
+
+    content = _big_ledger(500)
+    assert len(content) > 4096 * 3
+    container = ArchiveContainer(_tar(content))
+    fake.containers.list = _listing(container)
+    ledger_file = prov.read_time_ledger(WORLD)
+    assert ledger_file is not None
+    assert ledger_file.content == content
+    assert container.paths == [LEDGER_FILE]
+    ledger = parse_ledger(ledger_file.content)
+    assert ledger is not None
+    assert len(ledger.seconds) == 500
+
+
+def test_read_time_ledger_over_cap_logs_warning(
+    prov: DockerProvisioner, fake: FakeClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """WR-03: Über der Kappung nie still: eine Warnung (ohne Inhalt) im Log."""
+    from gameworld.provisioner.client import LEDGER_FILE_MAX
+
+    content = _big_ledger(LEDGER_FILE_MAX // 31 + 500)
+    fake.containers.list = _listing(ArchiveContainer(_tar(content)))
+    with caplog.at_level("WARNING"):
+        ledger_file = prov.read_time_ledger(WORLD)
+    assert ledger_file is not None
+    assert len(ledger_file.content) == LEDGER_FILE_MAX
+    assert "gekappt" in caplog.text
+    assert "Spieler_" not in caplog.text
+
+
+def test_read_status_file_cap_stays_silent(
+    prov: DockerProvisioner, fake: FakeClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Die Status-Datei bleibt bei 4096 Bytes und ohne Logzeile je Abfrage."""
+    fake.containers.list = _listing(ArchiveContainer(_tar(b"x" * 10_240)))
+    with caplog.at_level("WARNING"):
+        prov.read_status_file(WORLD)
+    assert "gekappt" not in caplog.text
+
+
 def test_read_access_state(prov: DockerProvisioner, fake: FakeClient) -> None:
     """03-05: Die State-Datei des Zugangs-Mods kommt über denselben gekappten Leser."""
     from gameworld.provisioner.access_mod import STATE_FILE

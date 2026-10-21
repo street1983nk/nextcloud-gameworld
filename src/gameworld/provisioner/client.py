@@ -41,6 +41,11 @@ WORLD_PATH = f"{DATA_DIR}/.minetest/worlds/world"
 STATUS_FILE_MAX = 4096
 # Höchstens so viele Bytes Tar-Strom (Kopfblöcke, auch PAX, plus gekappter Inhalt).
 STATUS_ARCHIVE_MAX = 64 * 1024
+# Das Zählbuch wächst mit jedem je eingeladenen Namen (bis 32 Bytes je Zeile) und
+# verliert nie einen: 4 KiB reichten nur für rund 125 Namen, danach fehlte die
+# Schlusszeile und die Verbuchung stand still (WR-03). 256 KiB tragen rund 8000.
+LEDGER_FILE_MAX = 256 * 1024
+LEDGER_ARCHIVE_MAX = LEDGER_FILE_MAX + STATUS_ARCHIVE_MAX
 # Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
 # Leseversuch heilt (Pitfall 4). Timeouts werden nie wiederholt; Achtung:
 # ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
@@ -128,34 +133,34 @@ def memory_from_stats(stats: dict[str, Any]) -> tuple[int, int] | None:
     return max(usage - inactive, 0), limit
 
 
-def _read_capped(stream: Iterator[bytes]) -> bytes:
-    """Liest höchstens STATUS_ARCHIVE_MAX Bytes und gibt den Rest des Stroms auf."""
+def _read_capped(stream: Iterator[bytes], limit: int = STATUS_ARCHIVE_MAX) -> bytes:
+    """Liest höchstens ``limit`` Bytes und gibt den Rest des Stroms auf."""
     raw = bytearray()
     try:
         for chunk in stream:
             raw += chunk
-            if len(raw) >= STATUS_ARCHIVE_MAX:
+            if len(raw) >= limit:
                 break
     finally:
         close = getattr(stream, "close", None)
         if callable(close):
             close()
-    return bytes(raw[:STATUS_ARCHIVE_MAX])
+    return bytes(raw[:limit])
 
 
-def _first_member_content(raw: bytes) -> bytes:
-    """Inhalt des ersten Tar-Eintrags, höchstens STATUS_FILE_MAX Bytes.
+def _first_member_content(raw: bytes, limit: int = STATUS_FILE_MAX) -> tuple[bytes, bool]:
+    """Inhalt des ersten Tar-Eintrags, höchstens ``limit`` Bytes, und ob er gekappt ist.
 
     Strom-Modus ("r|"), damit ein gekapptes Archiv beim Öffnen nicht scheitert.
     """
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r|") as tar:
         member = tar.next()
         if member is None or not member.isfile():
-            return b""
+            return b"", False
         extracted = tar.extractfile(member)
         if extracted is None:
-            return b""
-        return extracted.read(STATUS_FILE_MAX)
+            return b"", False
+        return extracted.read(limit), member.size > limit
 
 
 def _explanation(exc: docker.errors.APIError) -> str:
@@ -447,23 +452,46 @@ class DockerProvisioner:
 
         Der Mod schreibt es beim Start, im Takt bei verbundenen Spielern und beim
         Verlassen. Über get_archive, deshalb auch bei gestoppter Welt lesbar; kein
-        exec. Gleiche Kappung und Fehlerabbildung wie bei der Status-Datei.
+        exec. Gleiche Fehlerabbildung wie bei der Status-Datei, aber eine eigene,
+        größere Kappung (LEDGER_FILE_MAX, WR-03); wird sie trotzdem erreicht, steht
+        eine Warnung im Log statt eines stillen Stillstands der Verbuchung.
         """
-        return self._read(lambda: self._read_world_file(world_id, LEDGER_FILE, "Das Spielzeit-Zählbuch der Welt"))
+        return self._read(
+            lambda: self._read_world_file(
+                world_id,
+                LEDGER_FILE,
+                "Das Spielzeit-Zählbuch der Welt",
+                file_max=LEDGER_FILE_MAX,
+                archive_max=LEDGER_ARCHIVE_MAX,
+                warn_truncated=True,
+            )
+        )
 
-    def _read_world_file(self, world_id: str, path: str, label: str) -> StatusFile | None:
+    def _read_world_file(
+        self,
+        world_id: str,
+        path: str,
+        label: str,
+        *,
+        file_max: int = STATUS_FILE_MAX,
+        archive_max: int = STATUS_ARCHIVE_MAX,
+        warn_truncated: bool = False,
+    ) -> StatusFile | None:
         container = self._owned(world_id)
         try:
             stream, stat = container.get_archive(path)
         except docker.errors.NotFound:
             return None
         try:
-            content = _first_member_content(_read_capped(stream))
+            content, truncated = _first_member_content(_read_capped(stream, archive_max), file_max)
         except (tarfile.TarError, EOFError) as exc:
             # Gekappter oder abgebrochener Strom, Datei mitten im Umbenennen: Der
             # Inhalt stammt aus von Lua beschreibbarer Datei. Als ProvisionerError
             # bleibt der Fehler an dieser einen Welt (WR-04), ohne zweiten Versuch.
             raise ProvisionerError(f"{label} ist nicht lesbar.") from exc
+        if truncated and warn_truncated:
+            # Nur Größe und Grenze ins Log, nie den Inhalt.
+            LOG.warning("Welt %s: %s ist größer als %d Bytes und wurde gekappt", world_id, label, file_max)
         return StatusFile(mtime=str((stat or {}).get("mtime") or ""), content=content)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:

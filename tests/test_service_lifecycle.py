@@ -1476,6 +1476,18 @@ async def test_tick_time_isolates_read_error(
     assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == healthy.id)
 
 
+async def test_incomplete_ledger_is_logged_not_silent(
+    service: WorldService, fake: FakeProvisioner, caplog: pytest.LogCaptureFixture
+) -> None:
+    """WR-03: Ein vorhandenes Zählbuch ohne Schlusszeile wird nicht still übergangen."""
+    created = await service.create_world("Welt")
+    fake.ledgers[created.id] = StatusFile(FRESH, b"gameworld-time-used 1 1 0\nMia 40\n")
+    with caplog.at_level("WARNING"):
+        service.tick_time()
+    assert "Zählbuch unvollständig" in caplog.text
+    assert "Mia" not in caplog.text
+
+
 async def test_failed_push_time_is_retried_by_next_tick(
     service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
