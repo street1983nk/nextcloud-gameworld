@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.1-03-PLAN.md
-last_updated: "2026-10-21T23:06:00.240Z"
-last_activity: 2026-10-21
+stopped_at: Completed 04.1-05-PLAN.md
+last_updated: "2026-10-21T23:20:56.664Z"
+last_activity: 2026-10-22
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 36
-  completed_plans: 31
+  completed_plans: 32
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.1
-Plan: 5 of 9 (04.1-04 complete)
+Plan: 6 of 9 (04.1-05 complete)
 Status: Ready to execute
 Last activity: 2026-10-22
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -84,6 +84,7 @@ Progress: [█████████░] 86%
 | Phase 04.1 P02 | 35 min | 2 tasks | 14 files |
 | Phase 04.1 P03 | 50 min | 3 tasks | 10 files |
 | Phase 04.1 P04 | 45min | 2 tasks | 16 files |
+| Phase 04.1 P05 | 50 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -174,6 +175,9 @@ Recent decisions affecting current work:
 - [Phase 04.1]: 04.1-03: until_clock der Pause-API im Format H:MM ohne führende Null, wie der Bot-Text
 - [Phase 04.1]: 04.1-03: apply_pause_sync nimmt decide(current, now); die laufende Pause wird unter derselben Sperre gelesen, die den neuen Zustand setzt
 - [Phase 04.1]: 04.1-03: Weiter ohne laufende Pause ist idempotent und legt keine Outbox-Zeile an
+- [Phase 04.1]: 04.1-05: Talk handelt als Owner (falls noch Verwalter), sonst als Verwalter des Schnappschusses der Reihe nach; leerer Schnappschuss heißt kein Talk-Aufruf
+- [Phase 04.1]: 04.1-05: In Talk gelöschter Raum (404 auch für den Owner) wird im nächsten Abgleich neu angelegt; Zeilen ohne Welt räumt der Abgleich ab
+- [Phase 04.1]: 04.1-05: Nur lesen ohne Raum antwortet 409; applied false heißt gemerkt, der Abgleich erzwingt es
 
 ### Pending Todos
 
@@ -201,6 +205,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-21T23:05:55.322Z
-Stopped at: Completed 04.1-04-PLAN.md
+Last session: 2026-10-22
+Stopped at: Completed 04.1-05-PLAN.md
 Resume file: None

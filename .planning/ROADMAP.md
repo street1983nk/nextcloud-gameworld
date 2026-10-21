@@ -219,7 +219,7 @@ Plans:
   4. Die Seiten hinter den Benachrichtigungen funktionieren im Handy-Browser und in der Nextcloud-App
   5. Zu jeder Welt gibt es einen Talk-Raum, dessen Mitglieder automatisch den Einladungen folgen (Einladen fügt hinzu, Ausladen entfernt, Gruppen-Einladungen inklusive) plus die Verwalter; niemand sonst kommt hinein
   6. Ein Gameworld-Bot meldet im Raum Weltstart und -stopp, Beitritte und das nahende Ende der Spielzeit; ohne installiertes Talk läuft Gameworld unverändert weiter und zeigt nur einen Hinweis
-**Plans:** 4/9 plans executed
+**Plans:** 5/9 plans executed
 
 Plans:
 
@@ -241,7 +241,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04.1-05-PLAN.md , Talk-Raum pro Welt: Talk im Dev-Stack, OCS-Raumzugriff, Mitglieder-Abgleich, Hooks, Nur lesen, Mitlöschen
+- [x] 04.1-05-PLAN.md , Talk-Raum pro Welt: Talk im Dev-Stack, OCS-Raumzugriff, Mitglieder-Abgleich, Hooks, Nur lesen, Mitlöschen
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
