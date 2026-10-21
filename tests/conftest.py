@@ -96,7 +96,34 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setattr(roles, "_role_service", roles.RoleService(fake_lookup))
     monkeypatch.setattr(directory, "_directory", FakeDirectory())
     monkeypatch.setattr(secret, "_player_secret", StaticSecret())
+    # Benachrichtigungen ohne Nextcloud; Zustand des Benachrichtigungs-Loops frisch (04.1-04).
+    from gameworld.notify import loop as notify_loop
+    from gameworld.notify import service as notify_service
+
+    monkeypatch.setattr(notify_service, "_notifier", FakeNotifier())
+    monkeypatch.setattr(notify_loop, "LOOP_STATE", notify_loop.LoopState())
     return tmp_path
+
+
+class FakeNotifier:
+    """Sammelt Benachrichtigungen statt sie über AppAPI zu senden; ``result`` simuliert Erfolg."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str, dict[str, dict[str, str]], str]] = []
+        self.result = True
+
+    async def notify(self, uid: str, subject: str, message: str, params: dict[str, dict[str, str]], link: str) -> bool:
+        self.calls.append((uid, subject, message, params, link))
+        return self.result
+
+
+@pytest.fixture
+def fake_notifier(app_env: Path) -> FakeNotifier:
+    del app_env
+    from gameworld.notify import service as notify_service
+
+    assert isinstance(notify_service._notifier, FakeNotifier)  # pyright: ignore[reportPrivateUsage]
+    return notify_service._notifier  # pyright: ignore[reportPrivateUsage]
 
 
 # Geheimnis der Tests; das echte liegt nur in Nextcloud (appconfig_ex).
