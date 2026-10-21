@@ -500,6 +500,25 @@ class WorldStore:
             ).fetchall()
         return {str(row[0]): int(row[1]) for row in rows}
 
+    def book_usage(self, world_id: str, day: date, usage: dict[str, int], seen: dict[str, int]) -> None:
+        """Verbucht Sekunden je Kind und verankert den gesehenen Zählbuch-Stand in EINER Transaktion.
+
+        Scheitert ein Schritt (Datenbank gesperrt, Prozessabbruch), bleibt beides
+        beim alten Stand: Der nächste Takt verbucht denselben Zuwachs genau einmal,
+        nie doppelt (WR-05).
+        """
+        with self._connect() as connection:
+            connection.executemany(
+                "INSERT INTO time_usage (nc_user, day, seconds) VALUES (?, ?, ?) "
+                "ON CONFLICT(nc_user, day) DO UPDATE SET seconds = seconds + excluded.seconds",
+                [(nc_user, day.isoformat(), seconds) for nc_user, seconds in sorted(usage.items())],
+            )
+            connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
+            connection.executemany(
+                "INSERT INTO time_ledger_seen (world_id, player_name, seconds) VALUES (?, ?, ?)",
+                [(world_id, name, seconds) for name, seconds in sorted(seen.items())],
+            )
+
     def set_ledger_seen(self, world_id: str, seen: dict[str, int]) -> None:
         """Ersetzt den gesehenen Zählbuch-Stand einer Welt atomar."""
         with self._connect() as connection:

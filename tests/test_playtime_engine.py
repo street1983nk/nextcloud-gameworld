@@ -113,6 +113,34 @@ def test_book_first_contact_only_anchors(engine: TimeEngine, store: WorldStore) 
     assert store.ledger_seen("w1") == {"Mia": 100}
 
 
+def test_book_is_atomic_no_double_count_after_failure(engine: TimeEngine, store: WorldStore, app_env: Path) -> None:
+    """WR-05: Scheitert das Verankern, bleibt auch der Verbrauch alt; der nächste Takt zählt genau einmal."""
+    import sqlite3
+
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _week(limit=60))
+    store.set_ledger_seen("w1", {"Mia": 40})
+    db = sqlite3.connect(app_env / "gameworld.sqlite3")
+    with db:
+        db.execute(
+            "CREATE TRIGGER fail_seen BEFORE INSERT ON time_ledger_seen BEGIN SELECT RAISE(ABORT, 'gesperrt'); END"
+        )
+    ledger = Ledger(written_at=FIXED, generation=1, seconds={"Mia": 100})
+
+    with pytest.raises(sqlite3.IntegrityError):
+        engine.book("w1", ledger)
+    assert store.usage("gw-mia", TODAY) == 0
+    assert store.ledger_seen("w1") == {"Mia": 40}
+
+    with db:
+        db.execute("DROP TRIGGER fail_seen")
+    db.close()
+    engine.book("w1", ledger)
+    assert store.usage("gw-mia", TODAY) == 60
+    assert store.ledger_seen("w1") == {"Mia": 100}
+
+
 def test_book_none_changes_nothing(engine: TimeEngine, store: WorldStore) -> None:
     _world(store, "w1", 30015)
     _player(store, "gw-mia", "Mia")

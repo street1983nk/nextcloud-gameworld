@@ -117,15 +117,17 @@ class TimeEngine:
             return
         seen = self._store.ledger_seen(world_id)
         delta, new_seen = increments(seen, ledger.seconds)
+        usage: dict[str, int] = {}
+        tz = self._zone()
+        day = attribution_day(ledger.written_at, tz)
         if delta:
             plans = self._store.child_plans()
-            tz = self._zone()
-            day = attribution_day(ledger.written_at, tz)
             for name, seconds in delta.items():
                 nc_user = self._store.player_name_owner(name)
                 if nc_user is not None and nc_user in plans:
-                    self._store.add_usage(nc_user, day, seconds)
-        self._store.set_ledger_seen(world_id, new_seen)
+                    usage[nc_user] = usage.get(nc_user, 0) + seconds
+        # Verbrauch und neuer Stand in einer Transaktion: nie doppelt verbucht (WR-05).
+        self._store.book_usage(world_id, day, usage, new_seen)
 
     def render(self, world_id: str) -> tuple[bytes, bool]:
         """Regeldatei der Welt aus der Datenbank; (Bytes, geändert).
