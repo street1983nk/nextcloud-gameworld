@@ -24,6 +24,7 @@ from typing import Any
 import anyio.to_thread
 
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
+from gameworld.talk.bot import get_bot
 from gameworld.talk.rooms import (
     ACTOR_USERS,
     MODERATOR_TYPES,
@@ -129,7 +130,7 @@ class TalkService:
 
     async def ensure_room(self, world_id: str, acting_uid: str) -> None:
         """Legt den Raum an, falls die Welt noch keinen hat, und gleicht die Mitglieder ab."""
-        talk, _bots = await self.is_available(acting_uid)
+        talk, bots = await self.is_available(acting_uid)
         if not talk:
             return
         async with self._lock(world_id):
@@ -145,6 +146,18 @@ class TalkService:
                 if not inserted:
                     await self._rooms.delete(acting_uid, token)
             await self._sync_locked(world_id)
+            if bots:
+                await self._enable_bot(world_id, acting_uid)
+
+    async def _enable_bot(self, world_id: str, acting_uid: str) -> None:
+        """Gameworld-Bot im Raum freischalten (TALK-02); ein Fehler stört den Raum nicht."""
+        row = await anyio.to_thread.run_sync(self.store.talk_room, world_id)
+        if row is None or row.state != TALK_STATE_OK:
+            return
+        try:
+            await get_bot().ensure_enabled(row.token, acting_uid)
+        except Exception as exc:
+            LOG.warning("Bot für Welt %s nicht freigeschaltet: %s", world_id, type(exc).__name__)
 
     # Mitglieder abgleichen
 
@@ -262,9 +275,15 @@ class TalkService:
         admins = await self._admins()
         if not admins:
             return
-        talk, _bots = await self.is_available(admins[0])
+        talk, bots = await self.is_available(admins[0])
         if not talk:
             return
+        if bots:
+            # Einmal je Prozess; holt die Registrierung nach, wenn Talk später kam (Pitfall 8).
+            try:
+                await get_bot().register()
+            except Exception as exc:
+                LOG.warning("Talk-Bot nicht registriert: %s", type(exc).__name__)
         worlds = await anyio.to_thread.run_sync(self.store.list_worlds)
         rows = await anyio.to_thread.run_sync(self.store.list_talk_rooms)
         world_ids = {world.id for world in worlds}
@@ -276,11 +295,11 @@ class TalkService:
                 with_room.add(row.world_id)
         for world in worlds:
             if world.id in with_room:
-                await self._isolated("Abgleich", world.id, self._reconcile_room(world.id, admins))
+                await self._isolated("Abgleich", world.id, self._reconcile_room(world.id, admins, bots=bots))
             else:
                 await self._isolated("Anlegen", world.id, self.ensure_room(world.id, admins[0]))
 
-    async def _reconcile_room(self, world_id: str, admins: list[str]) -> None:
+    async def _reconcile_room(self, world_id: str, admins: list[str], *, bots: bool) -> None:
         async with self._lock(world_id):
             await self._sync_locked(world_id)
             row = await anyio.to_thread.run_sync(self.store.talk_room, world_id)
@@ -289,6 +308,8 @@ class TalkService:
             acting = self._candidates(row, admins)[0]
             await self._rooms.ensure_private(acting, row.token)
             await self._rooms.set_read_only(acting, row.token, on=row.read_only)
+            if bots:
+                await self._enable_bot(world_id, acting)
 
     @staticmethod
     async def _isolated(what: str, world_id: str, work: Coroutine[Any, Any, None]) -> None:

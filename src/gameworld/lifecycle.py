@@ -7,6 +7,8 @@ import os
 
 from nc_py_api import AsyncNextcloudApp
 
+from gameworld.talk import bot as talk_bot
+
 APP_ID = "gameworld"
 MENU_NAME = "gameworld"
 SCRIPT_PATH = "js/gameworld-main"
@@ -46,4 +48,14 @@ async def enabled_handler(enabled: bool, nc: AsyncNextcloudApp) -> str:
         LOG.exception("Registrierung im Nextcloud-Menü fehlgeschlagen")
         action = "aktivieren" if enabled else "deaktivieren"
         return f"Gameworld konnte das Menü nicht {action}. Details stehen im Log der ExApp."
+    # Talk-Bot in eigenem try (Pitfall 8): ohne Talk darf das Aktivieren nicht
+    # scheitern, der 5-min-Abgleich holt die Registrierung nach. Ins Log nur der
+    # Typname, nie eine Meldung mit möglichem Geheimnis (T-04.1-32).
+    try:
+        if enabled:
+            await talk_bot.register(nc)
+        else:
+            await talk_bot.unregister(nc)
+    except Exception as exc:
+        LOG.warning("Talk-Bot nicht %s: %s", "registriert" if enabled else "abgemeldet", type(exc).__name__)
     return ""

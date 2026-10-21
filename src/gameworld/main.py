@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
-from gameworld.api import alerts, invites, me, pause, playtime, setup_check, talk, worlds
+from gameworld.api import alerts, invites, me, pause, playtime, setup_check, talk, talk_bot, worlds
 from gameworld.lifecycle import enabled_handler
 from gameworld.notify.loop import notify_forever
 from gameworld.playtime.ticker import time_forever
@@ -87,6 +87,7 @@ APP.include_router(playtime.router)
 APP.include_router(pause.router)
 APP.include_router(alerts.router)
 APP.include_router(talk.router)
+APP.include_router(talk_bot.router)
 
 
 if __name__ == "__main__":

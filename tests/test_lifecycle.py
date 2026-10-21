@@ -19,8 +19,8 @@ class Ready:
         self.value = value
 
     def __await__(self) -> Generator[None, None, object]:
+        yield from ()
         return self.value
-        yield  # pragma: no cover - macht __await__ zum Generator
 
 
 def fake_nc() -> Any:
