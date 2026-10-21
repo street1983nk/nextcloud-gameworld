@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
 	HOLIDAY_PRESET,
 	LIMIT_OPTIONS,
+	NOT_APPLIED_TEXT,
 	NO_LIMIT_OPTION,
 	PRESETS,
 	formatClock,
@@ -10,6 +11,7 @@ import {
 	fromApiDays,
 	fromWindowDays,
 	kidPlaytimeText,
+	notAppliedText,
 	summarize,
 	toApiDays,
 	toWindowDays,
@@ -240,6 +242,18 @@ for (let ahead = 0; ahead <= 7; ahead += 1) {
 			assert.ok(!FORBIDDEN.test(text), text)
 		}
 	}
+}
+
+// WR-08: applied false heißt "gespeichert, aber noch nicht in der Welt"; sonst kein Hinweis.
+assert.equal(notAppliedText({ applied: false }), NOT_APPLIED_TEXT)
+assert.equal(notAppliedText({ applied: true }), '')
+assert.equal(notAppliedText({ applied: null }), '')
+assert.equal(notAppliedText({}), '')
+assert.equal(notAppliedText(null), '')
+assert.match(NOT_APPLIED_TEXT, /^Gespeichert, aber noch nicht in jeder Welt angekommen\./)
+assert.match(NOT_APPLIED_TEXT, /übernimmt die Änderung beim nächsten Start\.$/)
+for (const forbidden of ['–', '—', 'uebernimmt', 'Aenderung', 'naechsten']) {
+	assert.ok(!NOT_APPLIED_TEXT.includes(forbidden), forbidden)
 }
 
 console.log('playtime.check: alle Prüfungen bestanden')

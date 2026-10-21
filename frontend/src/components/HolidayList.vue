@@ -53,6 +53,9 @@
 		<NcNoteCard v-if="error" type="error">
 			{{ error }}
 		</NcNoteCard>
+		<NcNoteCard v-if="pending" type="warning">
+			{{ pending }}
+		</NcNoteCard>
 
 		<NcDialog
 			v-if="pendingRemove"
@@ -74,6 +77,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { addHoliday, errorText, removeHoliday } from '../api.js'
+import { notAppliedText } from '../playtime.js'
 
 defineProps({
 	// holidays aus GET /api/playtime: { id, label, start_date, end_date, active }.
@@ -87,6 +91,8 @@ const endDate = ref(null)
 const busy = ref(false)
 const error = ref('')
 const pendingRemove = ref(null)
+// Gespeichert, aber noch nicht in jeder Welt (applied false, WR-08).
+const pending = ref('')
 
 // Datum aus dem Picker (lokale Mitternacht) als JJJJ-MM-TT.
 function isoDate(date) {
@@ -138,8 +144,10 @@ async function add() {
 	}
 	busy.value = true
 	error.value = ''
+	pending.value = ''
 	try {
-		await addHoliday(label.value.trim(), isoDate(startDate.value), isoDate(endDate.value))
+		const result = await addHoliday(label.value.trim(), isoDate(startDate.value), isoDate(endDate.value))
+		pending.value = notAppliedText(result)
 		label.value = ''
 		startDate.value = null
 		endDate.value = null
@@ -154,8 +162,10 @@ async function add() {
 async function remove(entry) {
 	busy.value = true
 	error.value = ''
+	pending.value = ''
 	try {
-		await removeHoliday(entry.id)
+		const result = await removeHoliday(entry.id)
+		pending.value = notAppliedText(result)
 		emit('changed')
 	} catch (err) {
 		error.value = errorText(err)

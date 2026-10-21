@@ -399,3 +399,14 @@ export function windowText(world) {
 	const phrase = slot ? dayPhrase({ weekday: slot.weekday, minute: slot.start, days_ahead: slot.days_ahead }) : null
 	return phrase ? `${WORLD_CLOSED} ${phrase} ist sie wieder offen.` : WORLD_CLOSED
 }
+
+// Antwort mit applied false (WR-08): gespeichert, aber mindestens eine Welt trägt den neuen
+// Stand noch nicht. Laufende Welten holt der 15-s-Takt nach, gestoppte der nächste Start.
+export const NOT_APPLIED_TEXT = 'Gespeichert, aber noch nicht in jeder Welt angekommen. '
+	+ 'Gameworld versucht es alle 15 Sekunden erneut, bis die Welt erreichbar ist. '
+	+ 'Eine gestoppte Welt übernimmt die Änderung beim nächsten Start.'
+
+// Hinweistext zur API-Antwort; leer, wenn alle Welten den neuen Stand schon tragen.
+export function notAppliedText(result) {
+	return result?.applied === false ? NOT_APPLIED_TEXT : ''
+}

@@ -43,18 +43,26 @@
 			<NcNoteCard v-if="error" type="error">
 				{{ error }}
 			</NcNoteCard>
+			<NcNoteCard v-if="pending" type="warning">
+				{{ pending }}
+			</NcNoteCard>
 		</div>
 
 		<template #actions>
-			<NcButton variant="tertiary" :disabled="saving" @click="close">
-				Abbrechen
+			<NcButton v-if="pending" variant="primary" @click="close">
+				Schließen
 			</NcButton>
-			<NcButton variant="primary" :disabled="saving || invalid" @click="save">
-				<template v-if="saving" #icon>
-					<NcLoadingIcon :size="20" />
-				</template>
-				Speichern
-			</NcButton>
+			<template v-else>
+				<NcButton variant="tertiary" :disabled="saving" @click="close">
+					Abbrechen
+				</NcButton>
+				<NcButton variant="primary" :disabled="saving || invalid" @click="save">
+					<template v-if="saving" #icon>
+						<NcLoadingIcon :size="20" />
+					</template>
+					Speichern
+				</NcButton>
+			</template>
 		</template>
 	</NcDialog>
 </template>
@@ -72,6 +80,7 @@ import {
 	HOLIDAY_PRESET,
 	PRESETS,
 	fromApiDays,
+	notAppliedText,
 	toApiDays,
 	validateDays,
 } from '../playtime.js'
@@ -98,6 +107,8 @@ const ownHoliday = ref(Boolean(props.child.holiday))
 const holiday = ref(fromApiDays(props.child.holiday ?? HOLIDAY_PRESET))
 const saving = ref(false)
 const error = ref('')
+// Gespeichert, aber noch nicht in jeder Welt (applied false, WR-08): Der Dialog bleibt mit Hinweis offen.
+const pending = ref('')
 
 const invalid = computed(() => limited.value && (
 	Object.keys(validateDays(normal.value)).length > 0
@@ -123,17 +134,21 @@ async function save() {
 	saving.value = true
 	error.value = ''
 	try {
+		let result
 		if (limited.value) {
-			await saveChildPlan(
+			result = await saveChildPlan(
 				props.child.nc_user,
 				toApiDays(normal.value),
 				ownHoliday.value ? toApiDays(holiday.value) : null,
 			)
 		} else {
-			await clearChildPlan(props.child.nc_user)
+			result = await clearChildPlan(props.child.nc_user)
 		}
 		emit('saved')
-		emit('close')
+		pending.value = notAppliedText(result)
+		if (!pending.value) {
+			emit('close')
+		}
 	} catch (err) {
 		error.value = errorText(err)
 	} finally {
