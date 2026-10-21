@@ -20,8 +20,27 @@ Format der Regeldatei (ASCII, Zeilen sortiert, deterministisch)::
 erlaubten Fensters (Container laufen in UTC, lokale Zeit rechnet nur die
 ExApp). ``grund`` ist ok, tag, fenster, limit oder frei (Verwalter: Welt-Fenster
 und eigene Grenzen gelten nicht, Zeile ``-1 -1 -1 frei -``); die Welt-Zeile
-kennt ok und welt. ``naechste`` ist ein Token wie ``Sa-10:00`` für den
-Kindertext, ``-`` heißt: kein Zusatz.
+kennt ok und welt. ``naechste`` ist ein Token wie ``Sa-10:00``, ``-`` heißt:
+keine nächste Spielzeit. Der neue Mod zeigt das Token nicht mehr an; es bleibt
+nur für Mods in laufenden Containern stehen, die vor dem Update gestartet sind.
+
+Seit Quick 261021-481 (Owner-Entscheid 21.10.2026: Kindertexte ohne "0 Uhr" und
+"Mitternacht") kommen zwei Zeilentypen dazu, beide mit ``@`` am Anfang::
+
+    @tage <wd0> <d0> <d1> ... <d8>               (direkt nach dem Kopf)
+    @start <Spielername|welt> <Epoch> <Minute>   (direkt nach der Zeile davon)
+
+``@tage`` nennt den ISO-Wochentag (1..7) des lokalen Tages ``d0`` (heute beim
+Schreiben) und die neun Epoch-Anfänge der lokalen Tage heute bis heute+8 (aus
+zoneinfo, also auch an 23-h- und 25-h-Tagen richtig). ``@start`` nennt den
+Epoch der nächsten Fensteröffnung und ihre lokale Minute 0..1439; der Mod zeigt
+eine Uhrzeit nur bei Minute > 0 (eine echte Startzeit der Eltern). Den
+Tagesbezug ("Heute", "Morgen", "Am Samstag", "Nächsten Samstag") bildet der Mod
+selbst gegen die eigene Uhr: So stimmt er auch nach Mitternacht, bevor die
+ExApp neu schreibt. Kompatibilität: Alte Mods lesen nur Zeilen, die mit
+``[%w_%-]`` beginnen, und überspringen ``@``-Zeilen (``@`` kommt in
+Spielernamen nie vor, kein Fail-open); der neue Mod liest Dateien ohne
+``@``-Zeilen und zeigt dann den Grundsatz ohne Zeitangabe.
 
 Format des Zählbuchs (schreibt nur der Mod)::
 
@@ -39,6 +58,7 @@ bleibt reines ASCII, die Kindertexte gehen als Lua-Dezimal-Escapes hinein.
 
 from __future__ import annotations
 
+import itertools
 import re
 from dataclasses import dataclass
 
@@ -70,28 +90,99 @@ _LEDGER_HEAD = re.compile(r"gameworld-time-used 1 ([0-9]+) ([0-9]+)")
 _LEDGER_LINE = re.compile(r"(\S+) ([0-9]+)")
 
 # Texte an die Kinder (beim abgelehnten Join, beim Trennen, als Chat-Vorwarnung).
-TEXT_LIMIT = "Deine Spielzeit für heute ist aufgebraucht."
-TEXT_FENSTER = "Gerade ist keine Spielzeit."
+# Owner-Entscheid 21.10.2026: nie "0 Uhr", "Mitternacht", ein Datum oder eine
+# Kurzform wie "Mi 00:00"; Tagesbezug und Uhrzeit setzt kid_text (Python) bzw.
+# text() im Lua aus den Bausteinen zusammen.
+TEXT_LIMIT = "Deine Spielzeit für heute ist vorbei."
+TEXT_FENSTER = "Jetzt ist keine Spielzeit."
+TEXT_FENSTER_EARLY = "Jetzt ist noch keine Spielzeit."
 TEXT_TAG = "Heute ist kein Spieltag."
-TEXT_WELT = "Diese Welt ist gerade geschlossen."
-TEXT_NEXT = " Nächste Spielzeit: "
-TEXT_WELT_NEXT = " Sie öffnet "
+TEXT_WELT = "Diese Welt ist gerade zu."
 TEXT_START = "Gameworld startet gleich. Bitte gleich nochmal versuchen."
-TEXT_WARN_10 = "Noch 10 Minuten Spielzeit. Denk ans Speichern und Verabschieden."
+TEXT_WARN_10 = "Noch 10 Minuten Spielzeit. Komm langsam zum Ende und verabschiede dich."
 TEXT_WARN_5 = "Noch 5 Minuten."
 TEXT_WARN_1 = "Noch 1 Minute."
+TEXT_PLAY = " kannst du spielen."
+TEXT_PLAY_AGAIN = " kannst du wieder spielen."
+TEXT_OPEN_AGAIN = " ist sie wieder offen."
+DAY_TODAY = "Heute"
+DAY_TOMORROW = "Morgen"
+DAY_ON = "Am "
+DAY_NEXT = "Nächsten "
+CLOCK_FROM = " ab "
+CLOCK_UNIT = " Uhr"
+WEEKDAY_NAMES = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
 TEXTS = (
     TEXT_LIMIT,
     TEXT_FENSTER,
+    TEXT_FENSTER_EARLY,
     TEXT_TAG,
     TEXT_WELT,
-    TEXT_NEXT,
-    TEXT_WELT_NEXT,
     TEXT_START,
     TEXT_WARN_10,
     TEXT_WARN_5,
     TEXT_WARN_1,
+    TEXT_PLAY,
+    TEXT_PLAY_AGAIN,
+    TEXT_OPEN_AGAIN,
+    DAY_TODAY,
+    DAY_TOMORROW,
+    DAY_ON,
+    DAY_NEXT,
+    CLOCK_FROM,
+    CLOCK_UNIT,
 )
+# Neun Tagesanfänge (heute bis heute+8) in der Zeile @tage; mehr als 7 Tage voraus zeigt niemand.
+DAY_COUNT = 9
+MAX_DAYS_AHEAD = 7
+_DAY_MINUTES = 1440
+# Wochentage als Lua-Liste (Dezimal-Escapes, die Lua-Quelle bleibt ASCII).
+_WEEKDAYS_LUA = ", ".join(_lua_string(name) for name in WEEKDAY_NAMES)
+_BASE = {"limit": TEXT_LIMIT, "tag": TEXT_TAG, "fenster": TEXT_FENSTER, "welt": TEXT_WELT, "start": TEXT_START}
+
+
+def _clock(minute: int) -> str:
+    hours, minutes = divmod(minute, 60)
+    return str(hours) if minutes == 0 else f"{hours}:{minutes:02d}"
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def kid_text(reason: str, days_ahead: int | None = None, weekday: int | None = None, minute: int | None = None) -> str:
+    """Kindertext zu Grund und nächstem Start; spiegelt text() im Lua-Mod exakt.
+
+    ``days_ahead`` 0..7 (0 = heute), ``weekday`` ISO 1..7, ``minute`` 0..1439
+    lokal. Fehlt eine Angabe oder liegt sie außerhalb, steht nur der Grundsatz da.
+    Eine Uhrzeit erscheint nur bei ``minute`` > 0 (echte Startzeit der Eltern).
+    """
+    base = _BASE.get(reason, TEXT_FENSTER)
+    if reason == "start" or days_ahead is None or weekday is None or minute is None:
+        return base
+    if not all(_is_int(value) for value in (days_ahead, weekday, minute)):
+        return base
+    if not (0 <= days_ahead <= MAX_DAYS_AHEAD and 1 <= weekday <= 7 and 0 <= minute < _DAY_MINUTES):
+        return base
+    if reason == "fenster" and days_ahead == 0:
+        base = TEXT_FENSTER_EARLY
+    if days_ahead == 0:
+        day = DAY_TODAY
+    elif days_ahead == 1:
+        day = DAY_TOMORROW
+    elif days_ahead < MAX_DAYS_AHEAD:
+        day = DAY_ON + WEEKDAY_NAMES[weekday - 1]
+    else:
+        day = DAY_NEXT + WEEKDAY_NAMES[weekday - 1]
+    if minute > 0:
+        day += CLOCK_FROM + _clock(minute) + CLOCK_UNIT
+    if reason == "welt":
+        tail = TEXT_OPEN_AGAIN
+    elif days_ahead == 0:
+        tail = TEXT_PLAY
+    else:
+        tail = TEXT_PLAY_AGAIN
+    return f"{base} {day}{tail}"
 
 
 MOD_INIT_LUA = f"""\
@@ -118,12 +209,24 @@ local TEXT = {{
   welt = {_lua_string(TEXT_WELT)},
   start = {_lua_string(TEXT_START)},
 }}
-local NEXT = {_lua_string(TEXT_NEXT)}
-local WELT_NEXT = {_lua_string(TEXT_WELT_NEXT)}
+local FENSTER_EARLY = {_lua_string(TEXT_FENSTER_EARLY)}
+local PLAY = {_lua_string(TEXT_PLAY)}
+local PLAY_AGAIN = {_lua_string(TEXT_PLAY_AGAIN)}
+local OPEN_AGAIN = {_lua_string(TEXT_OPEN_AGAIN)}
+local DAY_TODAY = {_lua_string(DAY_TODAY)}
+local DAY_TOMORROW = {_lua_string(DAY_TOMORROW)}
+local DAY_ON = {_lua_string(DAY_ON)}
+local DAY_NEXT = {_lua_string(DAY_NEXT)}
+local CLOCK_FROM = {_lua_string(CLOCK_FROM)}
+local CLOCK_UNIT = {_lua_string(CLOCK_UNIT)}
+local WEEKDAYS = {{ {_WEEKDAYS_LUA} }}
 
 -- valid: nil = noch nie geladen, "missing" = keine Datei (keine Regeln),
 -- "broken" = beim Start nur eine ungueltige Datei (alle zu), "ok" = Regeln da.
 local rules, world_rule, last, valid, generation = {{}}, nil, nil, nil, 0
+-- days: Wochentag von Tag 0 und 9 Tagesanfaenge (Zeile @tage); starts: je Schluessel
+-- (Spielername oder "welt") Epoch und lokale Minute der naechsten Oeffnung (@start).
+local days, starts = nil, {{}}
 local used = {{}}    -- Sekunden je Name, monoton ueber alle Neustarts
 local since = {{}}   -- get_us_time, bis zu dem die Zeit gutgeschrieben ist
 local warned = {{}}  -- je Name die schon gesendeten Vorwarnungen dieser Sitzung
@@ -173,10 +276,30 @@ local function load()
     if valid == nil then valid = "broken" end
     return
   end
-  local new, new_world = {{}}, nil
+  local new, new_world, new_days, new_starts = {{}}, nil, nil, {{}}
   for i = 2, #lines - 1 do
-    local wf, wu, wr, wn = lines[i]:match("^welt (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$")
-    if wf then
+    local line = lines[i]
+    local sname, sat, smin = line:match("^@start ([%w_%-]+) (%d+) (%d+)$")
+    local wf, wu, wr, wn = line:match("^welt (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$")
+    if line:match("^@tage ") then
+      -- Genau 10 Zahlen, Wochentag 1..7, Anfaenge streng steigend; sonst Zeile ignorieren.
+      local nums = {{}}
+      if line:match("^@tage [%d ]+$") then
+        for num in line:gmatch("%d+") do nums[#nums + 1] = tonumber(num) end
+      end
+      local good = #nums == 10 and nums[1] >= 1 and nums[1] <= 7
+      for k = 3, #nums do
+        if nums[k] <= nums[k - 1] then good = false end
+      end
+      if good then
+        local bounds = {{}}
+        for k = 2, 10 do bounds[k - 2] = nums[k] end
+        new_days = {{ wd = nums[1], s = bounds }}
+      end
+    elseif sname then
+      local m = tonumber(smin)
+      if #sname <= 20 and m <= 1439 then new_starts[sname] = {{ at = tonumber(sat), minute = m }} end
+    elseif wf then
       new_world = {{ from = tonumber(wf), until_t = tonumber(wu), reason = wr, next = wn }}
     else
       local name, cap, from, until_t, reason, nxt =
@@ -188,40 +311,87 @@ local function load()
     end
   end
   rules, world_rule, last, valid, generation = new, new_world, content, "ok", tonumber(gen)
+  days, starts = new_days, new_starts
 end
 
--- Restzeit in Sekunden, Grund und Token der naechsten Spielzeit; nil = unbegrenzt.
+-- Restzeit in Sekunden, Grund und Schluessel des naechsten Starts ("welt" oder
+-- der Spielername, siehe starts); nil = unbegrenzt.
 local function left(name)
-  if valid == "broken" then return 0, "start", "-" end
+  if valid == "broken" then return 0, "start", nil end
   local t = now()
   local r = rules[name]
   if r and r.reason == "frei" then return nil end
-  local best, why, nxt = nil, nil, "-"
+  local best, why, key = nil, nil, nil
   if world_rule then
-    if t < world_rule.from or t >= world_rule.until_t then return 0, "welt", world_rule.next end
-    best, why, nxt = world_rule.until_t - t, "welt", world_rule.next
+    if t < world_rule.from or t >= world_rule.until_t then return 0, "welt", "welt" end
+    best, why, key = world_rule.until_t - t, "welt", "welt"
   end
   if r then
-    if r.reason == "tag" then return 0, "tag", r.next end
+    if r.reason == "tag" then return 0, "tag", name end
     local closed = r.reason == "limit" and "limit" or "fenster"
-    if t < r.from or t >= r.until_t then return 0, closed, r.next end
+    if t < r.from or t >= r.until_t then return 0, closed, name end
     local w = r.until_t - t
-    if not best or w < best then best, why, nxt = w, closed, r.next end
+    if not best or w < best then best, why, key = w, closed, name end
     if r.cap >= 0 then
       local rest = r.cap - (used[name] or 0)
-      if rest < best then best, why, nxt = rest, "limit", r.next end
+      if rest < best then best, why, key = rest, "limit", name end
     end
   end
-  return best, why, nxt
+  return best, why, key
 end
 
-local function text(why, nxt)
-  local s = TEXT[why] or TEXT.fenster
-  if why ~= "start" and nxt and nxt ~= "-" then
-    local hint = (nxt:gsub("%-", " "))
-    if why == "welt" then s = s .. WELT_NEXT .. hint else s = s .. NEXT .. hint end
+-- Index 0..7 des lokalen Tages, in dem Epoch t liegt (Tag k = [s[k], s[k+1])), sonst nil.
+local function day_index(t)
+  if not days then return nil end
+  for k = 0, 7 do
+    if t >= days.s[k] and t < days.s[k + 1] then return k end
   end
-  return s
+  return nil
+end
+
+-- Tagesbezug mit Uhrzeit, z. B. "Morgen ab 9 Uhr", und Tage ab heute; nil, wenn etwas fehlt.
+local function day_phrase(key)
+  local st = key and starts[key]
+  if not st then return nil end
+  local i, j = day_index(now()), day_index(st.at)
+  if not i or not j or j - i < 0 or j - i > 7 then return nil end
+  local ahead = j - i
+  local wd = ((days.wd - 1 + j) % 7) + 1
+  local s
+  if ahead == 0 then
+    s = DAY_TODAY
+  elseif ahead == 1 then
+    s = DAY_TOMORROW
+  elseif ahead < 7 then
+    s = DAY_ON .. WEEKDAYS[wd]
+  else
+    s = DAY_NEXT .. WEEKDAYS[wd]
+  end
+  if st.minute > 0 then
+    local h = math.floor(st.minute / 60)
+    local m = st.minute % 60
+    local clock = m == 0 and tostring(h) or string.format("%d:%02d", h, m)
+    s = s .. CLOCK_FROM .. clock .. CLOCK_UNIT
+  end
+  return s, ahead
+end
+
+-- Satz fuer das Kind; spiegelt kid_text in time_mod.py exakt.
+local function text(why, key)
+  local s = TEXT[why] or TEXT.fenster
+  if why == "start" then return s end
+  local phrase, ahead = day_phrase(key)
+  if not phrase then return s end
+  if why == "fenster" and ahead == 0 then s = FENSTER_EARLY end
+  local tail
+  if why == "welt" then
+    tail = OPEN_AGAIN
+  elseif ahead == 0 then
+    tail = PLAY
+  else
+    tail = PLAY_AGAIN
+  end
+  return s .. " " .. phrase .. tail
 end
 
 -- Nur die kleinste gerade unterschrittene Schwelle senden, alle groesseren
@@ -255,8 +425,8 @@ end
 
 core.register_on_prejoinplayer(function(name)
   load()
-  local l, why, nxt = left(name)
-  if l and l < MIN_LEFT then return text(why, nxt) end
+  local l, why, key = left(name)
+  if l and l < MIN_LEFT then return text(why, key) end
 end)
 
 core.register_on_joinplayer(function(player)
@@ -278,10 +448,10 @@ local function tick()
   for _, player in ipairs(players) do
     local name = player:get_player_name()
     if since[name] then credit(name, now_us) else since[name] = now_us end
-    local l, why, nxt = left(name)
+    local l, why, key = left(name)
     if l then
       if l <= 0 then
-        core.disconnect_player(name, text(why, nxt))
+        core.disconnect_player(name, text(why, key))
       else
         warn(name, l)
       end
@@ -314,13 +484,27 @@ depends = {ACCESS_MOD_NAME}
 
 @dataclass(frozen=True)
 class TimeLine:
-    """Eine Zeile der Regeldatei; ``cap`` -1 = kein Tageslimit, ``frei``-Zeilen -1 -1 -1."""
+    """Eine Zeile der Regeldatei; ``cap`` -1 = kein Tageslimit, ``frei``-Zeilen -1 -1 -1.
+
+    ``next_at`` und ``next_minute`` (Epoch und lokale Minute der nächsten
+    Fensteröffnung) ergeben die Zeile ``@start``; -1 und -1 heißt: keine.
+    """
 
     cap: int
     start: int
     until: int
     reason: str
     next_hint: str
+    next_at: int = -1
+    next_minute: int = -1
+
+
+@dataclass(frozen=True)
+class DayGrid:
+    """Zeile ``@tage``: ISO-Wochentag von heute und neun Epoch-Tagesanfänge (heute bis heute+8)."""
+
+    weekday: int
+    starts: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -330,10 +514,6 @@ class Ledger:
     written_at: int
     generation: int
     seconds: dict[str, int]
-
-
-def _is_int(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _check_numbers(line: TimeLine, *, frei: bool) -> None:
@@ -350,6 +530,31 @@ def _check_numbers(line: TimeLine, *, frei: bool) -> None:
 def _check_hint(line: TimeLine) -> None:
     if not (isinstance(line.next_hint, str) and TOKEN.fullmatch(line.next_hint)):
         raise ValueError("Ungültige nächste Spielzeit in der Regeldatei.")
+
+
+def _start_line(key: str, line: TimeLine) -> str | None:
+    """Zeile ``@start`` oder None, wenn die Zeile keinen nächsten Start trägt."""
+    at, minute = line.next_at, line.next_minute
+    if not (_is_int(at) and _is_int(minute)):
+        raise ValueError("Ungültiger nächster Start in der Regeldatei: nur ganze Zahlen.")
+    if (at, minute) == (-1, -1):
+        return None
+    if line.reason == "frei":
+        raise ValueError("Ungültiger nächster Start in der Regeldatei: frei-Zeilen haben keinen.")
+    if at < 0 or not 0 <= minute < _DAY_MINUTES:
+        raise ValueError("Ungültiger nächster Start in der Regeldatei: Epoch und Minute 0 bis 1439 gehören zusammen.")
+    return f"@start {key} {at} {minute}"
+
+
+def _days_line(days: DayGrid) -> str:
+    starts = days.starts
+    if not _is_int(days.weekday) or not 1 <= days.weekday <= 7:
+        raise ValueError("Ungültige Tagesgrenzen in der Regeldatei: Wochentag 1 bis 7.")
+    if not isinstance(starts, tuple) or len(starts) != DAY_COUNT or not all(_is_int(value) for value in starts):
+        raise ValueError("Ungültige Tagesgrenzen in der Regeldatei: genau neun ganze Zahlen.")
+    if starts[0] < 0 or any(later <= earlier for earlier, later in itertools.pairwise(starts)):
+        raise ValueError("Ungültige Tagesgrenzen in der Regeldatei: nie negativ, streng steigend.")
+    return "@tage " + " ".join(str(value) for value in (days.weekday, *starts))
 
 
 def _player_line(name: str, line: TimeLine) -> str:
@@ -370,9 +575,18 @@ def _world_line(line: TimeLine) -> str:
     return f"welt {line.start} {line.until} {line.reason} {line.next_hint}"
 
 
-def render_time_file(generation: int, issued_at: int, world: TimeLine | None, players: dict[str, TimeLine]) -> bytes:
+def render_time_file(
+    generation: int,
+    issued_at: int,
+    world: TimeLine | None,
+    players: dict[str, TimeLine],
+    days: DayGrid | None = None,
+) -> bytes:
     """Regeldatei der Welt, sortiert und deterministisch.
 
+    Reihenfolge: Kopf, ``@tage``, Welt-Zeile, ``@start welt``, je Spieler (sortiert)
+    seine Zeile und direkt danach ``@start <name>``, zuletzt ``end``. Ohne ``days``
+    und ohne nächste Starts sind die Bytes dieselben wie vor den ``@``-Zeilen.
     Jeder ungültige Eintrag wirft ValueError, nie wird still übersprungen: Ein
     Zeilenumbruch im Namen oder Token könnte sonst fremde Zeilen einschleusen.
     """
@@ -381,9 +595,18 @@ def render_time_file(generation: int, issued_at: int, world: TimeLine | None, pl
     if not _is_int(issued_at) or issued_at < 0:
         raise ValueError("Der Zeitpunkt der Regeldatei darf nicht negativ sein.")
     lines = [f"{TIME_HEADER} {generation} {issued_at}"]
+    if days is not None:
+        lines.append(_days_line(days))
     if world is not None:
         lines.append(_world_line(world))
-    lines.extend(_player_line(name, line) for name, line in sorted(players.items()))
+        start = _start_line("welt", world)
+        if start is not None:
+            lines.append(start)
+    for name, line in sorted(players.items()):
+        lines.append(_player_line(name, line))
+        start = _start_line(name, line)
+        if start is not None:
+            lines.append(start)
     lines.append("end")
     return ("\n".join(lines) + "\n").encode("ascii")
 

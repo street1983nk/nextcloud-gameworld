@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from gameworld.provisioner import time_mod
@@ -15,8 +17,10 @@ from gameworld.provisioner.time_mod import (
     MOD_NAME,
     RULES_FILE,
     RULES_FILE_NAME,
+    DayGrid,
     Ledger,
     TimeLine,
+    kid_text,
     parse_ledger,
     render_time_file,
 )
@@ -166,20 +170,141 @@ def test_parse_ledger_skips_invalid_lines() -> None:
 
 
 def test_texts() -> None:
-    assert time_mod.TEXT_LIMIT == "Deine Spielzeit für heute ist aufgebraucht."
-    assert time_mod.TEXT_FENSTER == "Gerade ist keine Spielzeit."
+    assert time_mod.TEXT_LIMIT == "Deine Spielzeit für heute ist vorbei."
+    assert time_mod.TEXT_FENSTER == "Jetzt ist keine Spielzeit."
+    assert time_mod.TEXT_FENSTER_EARLY == "Jetzt ist noch keine Spielzeit."
     assert time_mod.TEXT_TAG == "Heute ist kein Spieltag."
-    assert time_mod.TEXT_WELT == "Diese Welt ist gerade geschlossen."
-    assert time_mod.TEXT_NEXT == " Nächste Spielzeit: "
-    assert time_mod.TEXT_WELT_NEXT == " Sie öffnet "
+    assert time_mod.TEXT_WELT == "Diese Welt ist gerade zu."
     assert time_mod.TEXT_START == "Gameworld startet gleich. Bitte gleich nochmal versuchen."
-    assert time_mod.TEXT_WARN_10 == "Noch 10 Minuten Spielzeit. Denk ans Speichern und Verabschieden."
+    assert time_mod.TEXT_WARN_10 == "Noch 10 Minuten Spielzeit. Komm langsam zum Ende und verabschiede dich."
     assert time_mod.TEXT_WARN_5 == "Noch 5 Minuten."
     assert time_mod.TEXT_WARN_1 == "Noch 1 Minute."
-    for text in time_mod.TEXTS:
-        assert _lua_string(text) in MOD_INIT_LUA
+    assert not hasattr(time_mod, "TEXT_NEXT")
+    assert not hasattr(time_mod, "TEXT_WELT_NEXT")
+    assert time_mod.WEEKDAY_NAMES == ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+    for text in (*time_mod.TEXTS, *time_mod.WEEKDAY_NAMES):
+        assert _lua_string(text) in MOD_INIT_LUA, text
         assert chr(0x2013) not in text
         assert chr(0x2014) not in text
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (("limit", 1, 6, 540), "Deine Spielzeit für heute ist vorbei. Morgen ab 9 Uhr kannst du wieder spielen."),
+        (("tag", 3, 6, 540), "Heute ist kein Spieltag. Am Samstag ab 9 Uhr kannst du wieder spielen."),
+        (("fenster", 0, 3, 900), "Jetzt ist noch keine Spielzeit. Heute ab 15 Uhr kannst du spielen."),
+        (("fenster", 1, 4, 900), "Jetzt ist keine Spielzeit. Morgen ab 15 Uhr kannst du wieder spielen."),
+        (("welt", 2, 3, 600), "Diese Welt ist gerade zu. Am Mittwoch ab 10 Uhr ist sie wieder offen."),
+        (("welt", 0, 3, 600), "Diese Welt ist gerade zu. Heute ab 10 Uhr ist sie wieder offen."),
+        (("welt", 1, 4, 0), "Diese Welt ist gerade zu. Morgen ist sie wieder offen."),
+        (("limit", 1, 4, 0), "Deine Spielzeit für heute ist vorbei. Morgen kannst du wieder spielen."),
+        (("limit", None, None, None), "Deine Spielzeit für heute ist vorbei."),
+        (("tag", None, None, None), "Heute ist kein Spieltag."),
+        (("fenster", None, None, None), "Jetzt ist keine Spielzeit."),
+        (("welt", None, None, None), "Diese Welt ist gerade zu."),
+        (("limit", 8, 6, 540), "Deine Spielzeit für heute ist vorbei."),
+        (("limit", -1, 6, 540), "Deine Spielzeit für heute ist vorbei."),
+        (("limit", 1, 8, 540), "Deine Spielzeit für heute ist vorbei."),
+        (("limit", 1, 6, 1440), "Deine Spielzeit für heute ist vorbei."),
+        (("start", 1, 6, 540), "Gameworld startet gleich. Bitte gleich nochmal versuchen."),
+    ],
+)
+def test_kid_text(args: tuple[str, int | None, int | None, int | None], expected: str) -> None:
+    assert kid_text(*args) == expected
+
+
+def test_kid_text_next_week_with_minutes() -> None:
+    assert kid_text("tag", 7, 6, 870).endswith("Nächsten Samstag ab 14:30 Uhr kannst du wieder spielen.")
+
+
+def test_kid_text_never_says_midnight() -> None:
+    forbidden = re.compile(r"(?<!\d)0 Uhr|00:00|Mitternacht|24 Uhr|\d+\.\d+\.")
+    for reason in ("limit", "tag", "fenster", "welt"):
+        for days_ahead in range(8):
+            for weekday in range(1, 8):
+                for minute in (0, 540, 870, 1439):
+                    text = kid_text(reason, days_ahead, weekday, minute)
+                    # "0 Uhr" nur als eigene Zahl: "14:30 Uhr" ist erlaubt, "0 Uhr" nie.
+                    assert not forbidden.search(text), text
+
+
+DAYS = DayGrid(weekday=3, starts=tuple(1792792800 + 86400 * k for k in range(9)))
+
+
+def test_rules_file_without_days_is_unchanged() -> None:
+    plain = render_time_file(4, ISSUED, WORLD, {"Mia": OK, "Papa": FREI})
+    assert plain == render_time_file(4, ISSUED, WORLD, {"Mia": OK, "Papa": FREI}, days=None)
+    assert b"@" not in plain
+
+
+def test_rules_file_with_days_and_starts() -> None:
+    mia = TimeLine(
+        cap=3600,
+        start=1792800000,
+        until=1792836000,
+        reason="limit",
+        next_hint="Do-09:00",
+        next_at=1792911600,
+        next_minute=540,
+    )
+    world = TimeLine(cap=-1, start=0, until=0, reason="welt", next_hint="Mi-10:00", next_at=1792836000, next_minute=600)
+    data = render_time_file(4, ISSUED, world, {"Mia": mia, "Papa": FREI, "Leo": OK}, days=DAYS)
+    starts = " ".join(str(value) for value in DAYS.starts)
+    assert data.decode("ascii").split("\n") == [
+        "gameworld-time 1 4 1792792800",
+        f"@tage 3 {starts}",
+        "welt 0 0 welt Mi-10:00",
+        "@start welt 1792836000 600",
+        "Leo 3600 1792800000 1792836000 ok Sa-10:00",
+        "Mia 3600 1792800000 1792836000 limit Do-09:00",
+        "@start Mia 1792911600 540",
+        "Papa -1 -1 -1 frei -",
+        "end",
+        "",
+    ]
+
+
+@pytest.mark.parametrize(
+    "days",
+    [
+        DayGrid(weekday=3, starts=DAYS.starts[:8]),
+        DayGrid(weekday=3, starts=(*DAYS.starts, DAYS.starts[-1] + 86400)),
+        DayGrid(weekday=3, starts=(DAYS.starts[1], DAYS.starts[0], *DAYS.starts[2:])),
+        DayGrid(weekday=3, starts=(DAYS.starts[0], DAYS.starts[0], *DAYS.starts[2:])),
+        DayGrid(weekday=3, starts=(-5, *DAYS.starts[1:])),
+        DayGrid(weekday=0, starts=DAYS.starts),
+        DayGrid(weekday=8, starts=DAYS.starts),
+        DayGrid(weekday=True, starts=DAYS.starts),
+    ],
+)
+def test_invalid_days_raise(days: DayGrid) -> None:
+    with pytest.raises(ValueError, match="Tagesgrenzen"):
+        render_time_file(1, ISSUED, None, {}, days=days)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        TimeLine(cap=60, start=0, until=0, reason="limit", next_hint="-", next_at=1792911600),
+        TimeLine(cap=60, start=0, until=0, reason="limit", next_hint="-", next_minute=540),
+        TimeLine(cap=60, start=0, until=0, reason="limit", next_hint="-", next_at=1792911600, next_minute=1440),
+        TimeLine(cap=60, start=0, until=0, reason="limit", next_hint="-", next_at=-2, next_minute=540),
+        TimeLine(cap=60, start=0, until=0, reason="limit", next_hint="-", next_at=1792911600, next_minute=-2),
+        TimeLine(cap=60, start=0, until=0, reason="limit", next_hint="-", next_at=True, next_minute=540),
+        TimeLine(cap=-1, start=-1, until=-1, reason="frei", next_hint="-", next_at=1792911600, next_minute=540),
+    ],
+)
+def test_invalid_next_start_raises(line: TimeLine) -> None:
+    with pytest.raises(ValueError, match="nächster Start"):
+        render_time_file(1, ISSUED, None, {"Mia": line}, days=DAYS)
+
+
+def test_lua_parses_day_and_start_lines() -> None:
+    for needle in ("^@tage ", "^@start ([%w_%-]+) (%d+) (%d+)$", "math.floor", "%d:%02d"):
+        assert needle in MOD_INIT_LUA, needle
+    # Alte Mods lesen nur Zeilen ab [%w_%-]; das Muster bleibt, @-Zeilen passen nie darauf.
+    assert "^([%w_%-]+) (%-?%d+) (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$" in MOD_INIT_LUA
 
 
 def test_lua_contains_enforcement_points() -> None:
