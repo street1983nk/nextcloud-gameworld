@@ -55,6 +55,8 @@
 - **Kuratierte Mod-Auswahl für Eltern** , Kuratierung ist Pflegeaufwand, erst nach Produktvalidierung
 - **Minecraft Java via Crafty oder itzg-Image (MVP 2)** , eigener Rechts-Research-Task zuerst (EULA/Guidelines)
 - **Vereins-/Schul-Mandantenmodell (Teckids, CoderDojo, Schulen)** , Welt-Besitzer (jede Lehrkraft sieht nur eigene Welten), Ressourcen-Budgets pro Verwalter, Schuljahres-Archivierung via Backup; Einstieg in v1 über ROLLE-03 + ZEIT-05
+- **Bonuszeit heute** (Eltern geben +15/+30/+60 Minuten nur für heute frei, wie "Für heute ändern" bei Family Link) , Owner 21.10.2026 "find ich toll"
+- **Mehr Zeit anfragen** (Kind bittet im Spiel per Chatbefehl oder in der Kind-Ansicht um mehr Zeit; Mod schreibt die Bitte ins Welt-Volume, ExApp liest sie im 15-s-Takt; Eltern bekommen eine Push-Benachrichtigung in der Nextcloud-Handy-App mit Link auf eine mobile Freigabeseite: +15, +30, Ablehnen; höchstens eine offene Bitte, wenige pro Tag) , Owner 21.10.2026; ExApp-Benachrichtigungen können nur Text und Link, keine Knöpfe
 - **Nextcloud-Talk-Bot für Eltern** (ExApp registriert per AppAPI einen Talk-Bot: "Leo ist der Welt beigetreten", "Spielzeit in 5 Minuten zu Ende"; später optional Familien-Chat zur Welt nur für Eingeladene) , Owner-Entscheid 21.10.2026 nach Discord-Recherche, bleibt komplett auf dem eigenen Server
 - **Discord-Webhook, nur ausgehend und optional** (Eltern schalten ein; "Welt läuft", "Mia spielt gerade"; verschickt die ExApp, kein Mod in der Welt, kein secure.http_mods) , nur auf Nachfrage aus der Community, eher für ältere Kinder ab 13 und Freundesgruppen (MVP 2), keine eigene App
 
