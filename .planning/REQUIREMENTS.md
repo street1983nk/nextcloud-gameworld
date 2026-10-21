@@ -34,6 +34,12 @@
 - [x] **ZEIT-04**: Elternteil kann Ferienzeiträume anlegen (von/bis-Datum), in denen eigene Regeln gelten (z. B. täglich statt nur Wochenende); die Umschaltung passiert automatisch am Datum, ohne dass Eltern daran denken müssen (Owner-Anforderung 20.10.2026)
 - [x] **ZEIT-05**: Verwalter kann ein Zeitfenster pro Welt festlegen (z. B. "Mittwoch 10 bis 12 Uhr" als Unterrichtsstunde); außerhalb ist die Welt nicht betretbar, Durchsetzung serverseitig wie beim Wochenplan (Owner-Entscheid 20.10.2026 für Schulen/Vereine)
 
+### Eltern-Handy
+
+- [ ] **ELTERN-01**: Verwalter kann vom Handy eine Pause auslösen ("Essen ist fertig"): alle Kinder werden sanft getrennt, Beitritt bis zum Ende der Pause gesperrt, Pausenzeit zählt nicht; danach "weiter" oder "für heute Schluss" (Owner-Entscheid 21.10.2026)
+- [ ] **ELTERN-02**: Verwalter bekommen eine Push-Benachrichtigung, wenn ein nicht eingeladener Spielername eine Welt betreten will (gedrosselt) (Owner-Entscheid 21.10.2026)
+- [ ] **ELTERN-03**: Verwalter bekommen abends einen Tagesrückblick mit der Spielzeit je Kind, höchstens eine Benachrichtigung pro Tag, abschaltbar (Owner-Entscheid 21.10.2026)
+
 ### Backup
 
 - [ ] **BACKUP-01**: Elternteil kann pro Welt manuell ein Backup nach Nextcloud Files auslösen; der Snapshot ist konsistent (Welt wird sauber gestoppt oder eingefroren)
@@ -96,13 +102,16 @@
 | ZEIT-03 | Phase 4 | Complete |
 | ZEIT-04 | Phase 4 | Complete |
 | ZEIT-05 | Phase 4 | Complete |
+| ELTERN-01 | Phase 4.1 | Pending |
+| ELTERN-02 | Phase 4.1 | Pending |
+| ELTERN-03 | Phase 4.1 | Pending |
 | ROLLE-03 | Phase 6 | Pending |
 | BACKUP-01 | Phase 5 | Pending |
 | BACKUP-02 | Phase 5 | Pending |
 | PLATT-01 | Phase 6 | Pending |
 | PLATT-02 | Phase 2 | Complete |
 
-**Coverage:** 21/21 v1-Requirements gemappt (Stand 2026-10-20; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026 auf Owner-Wunsch ergänzt)
+**Coverage:** 24/24 v1-Requirements gemappt (Stand 2026-10-21; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026, ELTERN-01..03 am 21.10.2026 auf Owner-Wunsch ergänzt)
 
 ---
 *Requirements for: Gameworld v1 (MVP 1, Luanti, Familien)*

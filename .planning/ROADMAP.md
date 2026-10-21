@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: One-Click-Welten** - Welt-Verwaltung im UI mit Presets, Status, Reconciler und Update-/Reboot-Überlebensfähigkeit (completed 2026-10-19)
 - [x] **Phase 3: Zugang und Rollen** - Einladungen über Nextcloud-Konten, serverseitige Whitelist, Eltern verwalten, Kinder spielen (completed 2026-10-20)
 - [ ] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt
+- [ ] **Phase 4.1: Eltern-Handy (INSERTED)** - Pause, Hinweis bei fremdem Beitrittsversuch, Tagesrückblick per Push über die Nextcloud-App
 - [ ] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip
 - [ ] **Phase 6: Store-Release** - Härtung, Setup-Check, Cleanup und Veröffentlichung im Nextcloud App Store
 
@@ -204,6 +205,21 @@ Plans:
 
 **UI hint**: yes
 **Research flag**: yes (Implementierungspfad Mod vs. Scheduler-Stopp; Umgehungs-Caveat des Playtime-Limit-Mods bewerten)
+
+### Phase 04.1: Eltern-Handy: Pause, Hinweise, Rückblick (INSERTED)
+
+**Goal:** Eltern steuern und sehen das Wichtigste vom Handy aus: Push-Benachrichtigung über die Nextcloud-App, ein Tipp öffnet eine handyfreundliche Gameworld-Seite
+**Requirements**: ELTERN-01, ELTERN-02, ELTERN-03
+**Depends on:** Phase 4
+**Success Criteria** (what must be TRUE):
+  1. Ein Elternteil löst vom Handy die Pause aus; alle Kinder werden sanft mit dem Pausentext getrennt, kommen bis zum Ende der Pause nicht hinein, und die Pausenzeit zählt nicht aufs Kontingent; danach "weiter" oder "für heute Schluss"
+  2. Versucht ein nicht eingeladener Spielername eine Welt zu betreten, bekommen die Verwalter eine Benachrichtigung (gedrosselt, kein Spam bei wiederholten Versuchen)
+  3. Abends kommt höchstens eine Benachrichtigung mit der Spielzeit je Kind des Tages; abschaltbar
+  4. Die Seiten hinter den Benachrichtigungen funktionieren im Handy-Browser und in der Nextcloud-App
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 04.1 to break down)
 
 ### Phase 5: Backup und Restore
 

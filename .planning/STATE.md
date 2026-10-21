@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 04-07-PLAN.md (Kind-Ansicht Restzeit und Welt-Fenster); Plan 8 of 8, nächste Welle 04-08 (Abnahme, Owner-Checkpoint)
-last_updated: "2026-10-20T18:16:29.509Z"
+last_updated: "2026-10-21T01:10:37.892Z"
 last_activity: 2026-10-20
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 3
   total_plans: 27
   completed_plans: 26
-  percent: 50
+  percent: 43
 ---
 
 # Project State
@@ -80,6 +80,10 @@ Progress: [██████████] 96%
 | Phase 04 P07 | 25 min | 2 tasks | 11 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 4.1 inserted after Phase 4: Eltern-Handy (Pause, fremder Beitrittsversuch, Tagesrückblick) per Push in v1, Owner-Entscheid 21.10.2026
 
 ### Decisions
 
