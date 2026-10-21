@@ -432,3 +432,145 @@ def test_paths_and_conf() -> None:
     assert time_mod.TIME_HEADER == "gameworld-time 1"
     assert time_mod.LEDGER_HEADER == "gameworld-time-used 1"
     assert {"ok", "tag", "fenster", "limit", "frei"} == set(time_mod.REASONS)
+
+
+# Phase 4.1: Pause (D-03 bis D-05) und "Für heute Schluss" (D-26).
+
+
+def test_pause_texts() -> None:
+    assert time_mod.TEXT_PAUSE == "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen."
+    assert time_mod.TEXT_PAUSE_SOON == "In 30 Sekunden ist Pause."
+    assert time_mod.TEXT_SCHLUSS == "Für heute ist Schluss."
+    for text in (time_mod.TEXT_PAUSE, time_mod.TEXT_PAUSE_SOON, time_mod.TEXT_SCHLUSS):
+        assert text in time_mod.TEXTS
+        assert _lua_string(text) in MOD_INIT_LUA
+
+
+@pytest.mark.parametrize(
+    ("art", "minute", "expected"),
+    [
+        ("pause", None, "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen."),
+        ("pause", 540, "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen."),
+        ("schluss", None, "Für heute ist Schluss. Morgen kannst du wieder spielen."),
+        ("schluss", 0, "Für heute ist Schluss. Morgen kannst du wieder spielen."),
+        ("schluss", 540, "Für heute ist Schluss. Morgen ab 9 Uhr kannst du wieder spielen."),
+        ("schluss", 570, "Für heute ist Schluss. Morgen ab 9:30 Uhr kannst du wieder spielen."),
+        ("schluss", -1, "Für heute ist Schluss."),
+    ],
+)
+def test_pause_text(art: str, minute: int | None, expected: str) -> None:
+    assert time_mod.pause_text(art, minute) == expected
+
+
+def test_pause_text_never_says_midnight_or_date() -> None:
+    forbidden = re.compile(r"(?<![0-9])0(:00)? Uhr|Mitternacht|\d+\.\d+|\u2013|\u2014")
+    for art in ("pause", "schluss"):
+        for minute in (None, -1, *range(1440)):
+            text = time_mod.pause_text(art, minute)
+            assert not forbidden.search(text), text
+
+
+PAUSE = time_mod.PauseLine(ab=1000, bis=2800, art="pause")
+SCHLUSS = time_mod.PauseLine(ab=1000, bis=2800, art="schluss")
+
+
+def test_rules_file_without_pause_is_unchanged() -> None:
+    plain = render_time_file(4, ISSUED, WORLD, {"Mia": OK, "Papa": FREI}, days=DAYS)
+    assert plain == render_time_file(4, ISSUED, WORLD, {"Mia": OK, "Papa": FREI}, days=DAYS, pause=None, morgen=None)
+    assert b"@pause" not in plain
+    assert b"@morgen" not in plain
+
+
+def test_pause_line_after_days() -> None:
+    lines = render_time_file(4, ISSUED, WORLD, {"Mia": OK}, days=DAYS, pause=PAUSE).decode("ascii").split("\n")
+    assert lines[1].startswith("@tage ")
+    assert lines[2] == "@pause 1000 2800 pause"
+    assert lines[3] == "welt 0 0 welt Mi-10:00"
+
+
+def test_pause_line_after_header_without_days() -> None:
+    lines = render_time_file(4, ISSUED, None, {"Mia": OK}, pause=PAUSE).decode("ascii").split("\n")
+    assert lines[:2] == ["gameworld-time 1 4 1792792800", "@pause 1000 2800 pause"]
+
+
+def test_morgen_lines_only_with_schluss() -> None:
+    morgen = {"Tom": -1, "Lena": 540}
+    lines = render_time_file(4, ISSUED, None, {}, days=DAYS, pause=SCHLUSS, morgen=morgen).decode("ascii").split("\n")
+    assert lines[2:5] == ["@pause 1000 2800 schluss", "@morgen Lena 540", "@morgen Tom -1"]
+    with_pause = render_time_file(4, ISSUED, None, {}, pause=PAUSE, morgen=morgen)
+    assert b"@morgen" not in with_pause
+    without = render_time_file(4, ISSUED, None, {}, morgen=morgen)
+    assert b"@morgen" not in without
+
+
+@pytest.mark.parametrize(
+    "pause",
+    [
+        time_mod.PauseLine(ab=1000, bis=2800, art="weg"),
+        time_mod.PauseLine(ab=1000, bis=2800, art="Pause"),
+        time_mod.PauseLine(ab=-1, bis=2800, art="pause"),
+        time_mod.PauseLine(ab=1000, bis=1000, art="pause"),
+        time_mod.PauseLine(ab=1000, bis=999, art="pause"),
+        time_mod.PauseLine(ab=True, bis=2800, art="pause"),
+        time_mod.PauseLine(ab=1000.0, bis=2800, art="pause"),  # pyright: ignore[reportArgumentType]
+        time_mod.PauseLine(ab=1000, bis=2800, art="pause\nend"),
+    ],
+)
+def test_invalid_pause_raises(pause: time_mod.PauseLine) -> None:
+    with pytest.raises(ValueError, match="Pause"):
+        render_time_file(1, ISSUED, None, {}, pause=pause)
+
+
+@pytest.mark.parametrize(
+    "morgen",
+    [{"Mia Leo": 540}, {"Mia\nend": 540}, {"a" * 21: 540}, {"Mia": 1440}, {"Mia": -2}, {"Mia": True}],
+)
+def test_invalid_morgen_raises(morgen: dict[str, int]) -> None:
+    with pytest.raises(ValueError, match="Morgen"):
+        render_time_file(1, ISSUED, None, {}, pause=SCHLUSS, morgen=morgen)
+
+
+def _lua_function(header: str) -> str:
+    start = MOD_INIT_LUA.index(header)
+    return MOD_INIT_LUA[start : MOD_INIT_LUA.index("\nend", start)]
+
+
+def test_lua_parses_pause_and_morgen_lines() -> None:
+    for needle in (
+        "^@pause (%d+) (%d+) (%a+)$",
+        "^@morgen ([%w_%-]+) (%-?%d+)$",
+        'part == "pause" or part == "schluss"',
+        "local PAUSE_LEAD = 30",
+    ):
+        assert needle in MOD_INIT_LUA, needle
+
+
+def test_lua_paused_spares_only_frei() -> None:
+    body = _lua_function("local function paused(name)")
+    assert 'r.reason == "frei"' in body
+    # Kein "if not r then return false": auch Namen ohne Regelzeile pausieren (T-04.1-03).
+    assert "not r then" not in body
+    assert "pause.ab - PAUSE_LEAD" in body
+    assert "pause.bis" in body
+
+
+def test_lua_pause_checked_before_left() -> None:
+    prejoin = MOD_INIT_LUA[MOD_INIT_LUA.index("core.register_on_prejoinplayer") :]
+    assert prejoin.index("if paused(name) then return pause_text(name) end") < prejoin.index("left(name)")
+    tick = MOD_INIT_LUA[MOD_INIT_LUA.index("local function tick()") :]
+    assert tick.index("paused(name)") < tick.index("left(name)")
+    assert "core.disconnect_player(name, pause_text(name))" in tick
+    assert "core.chat_send_player(name, PAUSE_SOON)" in tick
+
+
+def test_lua_pause_text_mirrors_python() -> None:
+    body = _lua_function("local function pause_text(name)")
+    for needle in ('pause.art ~= "schluss"', "m == -1", "m > 0", "DAY_TOMORROW", "PLAY_AGAIN", "CLOCK_FROM"):
+        assert needle in body, needle
+
+
+def test_lua_warn10_event() -> None:
+    body = _lua_function("local function warn(name, l)")
+    assert 'gameworld_access.event("warn10", name)' in body
+    assert "hit == 600" in body
+    assert "gameworld_access and gameworld_access.event" in body
