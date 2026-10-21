@@ -54,6 +54,22 @@ auch wenn die ExApp bis zum Fensterende nicht neu schreibt. Im Normalfall ist
 der Mod-Stand mindestens ``base`` und nichts ändert sich. ``base`` wechselt nur
 mit dem Deckel, nicht in jedem Takt (Pitfall 6). Alte Mods überspringen die Zeile.
 
+Seit Phase 4.1 (Pause vom Handy, D-03 bis D-05, D-26) kommen zwei weitere
+``@``-Zeilen dazu::
+
+    @pause <ab> <bis> <art>          (direkt nach @tage bzw. nach dem Kopf)
+    @morgen <Spielername> <Minute>   (nur bei art schluss, direkt danach, sortiert)
+
+``ab`` ist der Epoch des Trennens (Auslösung + 30 s), ``bis`` das Ende, ``art``
+ist ``pause`` oder ``schluss``. Ab ``ab`` - 30 s lässt der Mod niemanden außer
+``frei`` hinein, auch Namen ohne Regelzeile nicht; Verbundene bekommen einmal
+"In 30 Sekunden ist Pause." und werden ab ``ab`` mit dem Pausentext getrennt.
+``@morgen`` nennt die lokale Startminute des nächsten Tages für den Schluss-Text
+(-1 = morgen kein Spieltag). Getrennte Kinder verbrauchen nichts (D-05), das
+Zählbuch bleibt unverändert. Alte Mods überspringen beide Zeilen still; ob der
+laufende Mod sie kann, zeigt der ExApp die Ereignisdatei des Zugangs-Mods
+(gleicher Neustart, kein Fail-open, 04.1-RESEARCH.md Pitfall 1 und Pattern 3).
+
 Format des Zählbuchs (schreibt nur der Mod)::
 
     gameworld-time-used 1 <os.time beim Schreiben> <geladene Generation>
@@ -124,6 +140,10 @@ DAY_NEXT = "Nächsten "
 CLOCK_FROM = " ab "
 CLOCK_UNIT = " Uhr"
 WEEKDAY_NAMES = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+# Owner-Entscheid D-03, D-04 und D-26 vom 21.10.2026 (Pause vom Handy, Phase 4.1).
+TEXT_PAUSE = "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen."
+TEXT_PAUSE_SOON = "In 30 Sekunden ist Pause."
+TEXT_SCHLUSS = "Für heute ist Schluss."
 TEXTS = (
     TEXT_LIMIT,
     TEXT_FENSTER,
@@ -143,7 +163,15 @@ TEXTS = (
     DAY_NEXT,
     CLOCK_FROM,
     CLOCK_UNIT,
+    TEXT_PAUSE,
+    TEXT_PAUSE_SOON,
+    TEXT_SCHLUSS,
 )
+PAUSE_ARTS = frozenset({"pause", "schluss"})
+# Vorlauf der Pause: so lange vor dem Trennen gilt die Beitrittssperre und kommt die Vorwarnung.
+PAUSE_LEAD_SECONDS = 30
+# @morgen -1: morgen ist laut Plan kein Spieltag.
+NO_TOMORROW = -1
 # Neun Tagesanfänge (heute bis heute+8) in der Zeile @tage; mehr als 7 Tage voraus zeigt niemand.
 DAY_COUNT = 9
 MAX_DAYS_AHEAD = 7
@@ -210,6 +238,24 @@ def kid_text(
     return f"{base} {day}{tail}"
 
 
+def pause_text(art: str, morgen_minute: int | None) -> str:
+    """Kindertext beim Trennen und Ablehnen in der Pause; spiegelt pause_text() im Lua-Mod.
+
+    ``pause``: TEXT_PAUSE. ``schluss``: "Für heute ist Schluss. Morgen kannst du
+    wieder spielen.", mit Uhrzeit nur bei Minute > 0 (echte Startzeit, nie "0 Uhr").
+    Minute -1 (morgen laut Plan kein Spieltag) ergibt nur TEXT_SCHLUSS, damit der
+    Text nichts Falsches verspricht.
+    """
+    if art != "schluss":
+        return TEXT_PAUSE
+    if morgen_minute == NO_TOMORROW:
+        return TEXT_SCHLUSS
+    day = DAY_TOMORROW
+    if morgen_minute is not None and _is_int(morgen_minute) and 0 < morgen_minute < _DAY_MINUTES:
+        day += CLOCK_FROM + _clock(morgen_minute) + CLOCK_UNIT
+    return f"{TEXT_SCHLUSS} {day}{TEXT_PLAY_AGAIN}"
+
+
 MOD_INIT_LUA = f"""\
 -- gameworld_time: Spielzeiten und Zeitfenster von Gameworld durchsetzen.
 -- Die Regeldatei schreibt nur Gameworld. Der Mod zaehlt die Online-Zeit je
@@ -245,6 +291,10 @@ local DAY_NEXT = {_lua_string(DAY_NEXT)}
 local CLOCK_FROM = {_lua_string(CLOCK_FROM)}
 local CLOCK_UNIT = {_lua_string(CLOCK_UNIT)}
 local WEEKDAYS = {{ {_WEEKDAYS_LUA} }}
+local PAUSE_TEXT = {_lua_string(TEXT_PAUSE)}
+local PAUSE_SOON = {_lua_string(TEXT_PAUSE_SOON)}
+local SCHLUSS = {_lua_string(TEXT_SCHLUSS)}
+local PAUSE_LEAD = {PAUSE_LEAD_SECONDS}
 
 -- valid: nil = noch nie geladen, "missing" = keine Datei (keine Regeln),
 -- "broken" = beim Start nur eine ungueltige Datei (alle zu), "ok" = Regeln da.
@@ -257,6 +307,10 @@ local shifts = {{}}
 local used = {{}}    -- Sekunden je Name, monoton ueber alle Neustarts
 local since = {{}}   -- get_us_time, bis zu dem die Zeit gutgeschrieben ist
 local warned = {{}}  -- je Name die schon gesendeten Vorwarnungen dieser Sitzung
+-- pause: nil oder {{ ab, bis, art }} aus @pause; morgen: je Name die Startminute
+-- des naechsten Tages (@morgen, -1 = kein Spieltag); pause_warned: je Name das ab
+-- der Pause, fuer die "In 30 Sekunden ist Pause." schon gesendet ist.
+local pause, morgen, pause_warned = nil, {{}}, {{}}
 
 local function now()
   return os.time()
@@ -304,10 +358,13 @@ local function load()
     return
   end
   local new, new_world, new_days, new_starts, new_bases = {{}}, nil, nil, {{}}, {{}}
+  local new_pause, new_morgen = nil, {{}}
   for i = 2, #lines - 1 do
     local line = lines[i]
     local sname, sat, smin = line:match("^@start ([%w_%-]+) (%d+) (%d+)$")
     local bname, bsecs = line:match("^@base ([%w_%-]+) (%d+)$")
+    local pab, pbis, part = line:match("^@pause (%d+) (%d+) (%a+)$")
+    local mname, mmin = line:match("^@morgen ([%w_%-]+) (%-?%d+)$")
     local wf, wu, wr, wn = line:match("^welt (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$")
     if line:match("^@tage ") then
       -- Genau 10 Zahlen, Wochentag 1..7, Anfaenge streng steigend; sonst Zeile ignorieren.
@@ -329,6 +386,15 @@ local function load()
       if #sname <= 20 and m <= 1439 then new_starts[sname] = {{ at = tonumber(sat), minute = m }} end
     elseif bname then
       if #bname <= 20 then new_bases[bname] = tonumber(bsecs) end
+    elseif pab then
+      -- Nur bekannte Arten und ein echtes Zeitfenster; sonst Zeile ignorieren.
+      local ab, bis = tonumber(pab), tonumber(pbis)
+      if (part == "pause" or part == "schluss") and bis > ab then
+        new_pause = {{ ab = ab, bis = bis, art = part }}
+      end
+    elseif mname then
+      local m = tonumber(mmin)
+      if #mname <= 20 and m >= -1 and m <= 1439 then new_morgen[mname] = m end
     elseif wf then
       new_world = {{ from = tonumber(wf), until_t = tonumber(wu), reason = wr, next = wn }}
     else
@@ -348,6 +414,7 @@ local function load()
   end
   rules, world_rule, last, valid, generation = new, new_world, content, "ok", tonumber(gen)
   days, starts, shifts = new_days, new_starts, new_shifts
+  pause, morgen = new_pause, new_morgen
 end
 
 -- Restzeit in Sekunden, Grund und Schluessel des naechsten Starts ("welt" oder
@@ -385,6 +452,13 @@ local function day_index(t)
   return nil
 end
 
+-- Uhrzeit wie _clock in time_mod.py: "9" oder "9:30".
+local function clock(minute)
+  local h = math.floor(minute / 60)
+  local m = minute % 60
+  return m == 0 and tostring(h) or string.format("%d:%02d", h, m)
+end
+
 -- Tagesbezug mit Uhrzeit, z. B. "Morgen ab 9 Uhr", und Tage ab heute; nil, wenn etwas fehlt.
 local function day_phrase(key)
   local st = key and starts[key]
@@ -404,10 +478,7 @@ local function day_phrase(key)
     s = DAY_NEXT .. WEEKDAYS[wd]
   end
   if st.minute > 0 then
-    local h = math.floor(st.minute / 60)
-    local m = st.minute % 60
-    local clock = m == 0 and tostring(h) or string.format("%d:%02d", h, m)
-    s = s .. CLOCK_FROM .. clock .. CLOCK_UNIT
+    s = s .. CLOCK_FROM .. clock(st.minute) .. CLOCK_UNIT
   end
   return s, ahead
 end
@@ -434,6 +505,26 @@ local function text(why, key)
   return s .. " " .. phrase .. tail
 end
 
+-- Pausentext fuer das Kind; spiegelt pause_text in time_mod.py exakt.
+local function pause_text(name)
+  if pause.art ~= "schluss" then return PAUSE_TEXT end
+  local m = morgen[name]
+  if m == -1 then return SCHLUSS end
+  local s = SCHLUSS .. " " .. DAY_TOMORROW
+  if m and m > 0 then s = s .. CLOCK_FROM .. clock(m) .. CLOCK_UNIT end
+  return s .. PLAY_AGAIN
+end
+
+-- Pause gilt fuer alle ausser "frei", auch fuer Namen ohne Regelzeile (D-05).
+-- Ab PAUSE_LEAD Sekunden vor dem Trennen kommt niemand mehr hinein.
+local function paused(name)
+  if not pause then return false end
+  local r = rules[name]
+  if r and r.reason == "frei" then return false end
+  local t = now()
+  return t >= pause.ab - PAUSE_LEAD and t < pause.bis
+end
+
 -- Nur die kleinste gerade unterschrittene Schwelle senden, alle groesseren
 -- gelten dann als gesendet (Beitritt mit 4 min Rest: nur "Noch 5 Minuten.").
 local function warn(name, l)
@@ -448,6 +539,10 @@ local function warn(name, l)
   end
   if hit and not marks[hit] then
     core.chat_send_player(name, WARN_TEXT[hit])
+    -- 10-Minuten-Warnung als Ereignis fuer die ExApp (Talk-Bot, TALK-02).
+    if hit == 600 and gameworld_access and gameworld_access.event then
+      gameworld_access.event("warn10", name)
+    end
     for _, w in ipairs(WARN) do
       if w >= hit then marks[w] = true end
     end
@@ -465,6 +560,7 @@ end
 
 core.register_on_prejoinplayer(function(name)
   load()
+  if paused(name) then return pause_text(name) end
   local l, why, key = left(name)
   if l and l < MIN_LEFT then return text(why, key) end
 end)
@@ -478,6 +574,7 @@ core.register_on_leaveplayer(function(player)
   credit(name, core.get_us_time())
   since[name] = nil
   warned[name] = nil
+  pause_warned[name] = nil
   write_ledger()
 end)
 
@@ -488,12 +585,22 @@ local function tick()
   for _, player in ipairs(players) do
     local name = player:get_player_name()
     if since[name] then credit(name, now_us) else since[name] = now_us end
-    local l, why, key = left(name)
-    if l then
-      if l <= 0 then
-        core.disconnect_player(name, text(why, key))
-      else
-        warn(name, l)
+    local p = paused(name)
+    if p and now() >= pause.ab then
+      -- Trennen zaehlt nichts mehr: getrennte Kinder verbrauchen keine Zeit (D-05).
+      core.disconnect_player(name, pause_text(name))
+    else
+      if p and pause_warned[name] ~= pause.ab then
+        pause_warned[name] = pause.ab
+        core.chat_send_player(name, PAUSE_SOON)
+      end
+      local l, why, key = left(name)
+      if l then
+        if l <= 0 then
+          core.disconnect_player(name, text(why, key))
+        else
+          warn(name, l)
+        end
       end
     end
   end
@@ -548,6 +655,15 @@ class DayGrid:
 
     weekday: int
     starts: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class PauseLine:
+    """Zeile ``@pause``: Epoch des Trennens (``ab``), Ende (``bis``), Art pause oder schluss."""
+
+    ab: int
+    bis: int
+    art: str
 
 
 @dataclass(frozen=True)
@@ -611,6 +727,27 @@ def _days_line(days: DayGrid) -> str:
     return "@tage " + " ".join(str(value) for value in (days.weekday, *starts))
 
 
+def _pause_line(pause: PauseLine) -> str:
+    if not isinstance(pause.art, str) or pause.art not in PAUSE_ARTS:
+        raise ValueError("Ungültige Pause in der Regeldatei: Art pause oder schluss.")
+    if not (_is_int(pause.ab) and _is_int(pause.bis)):
+        raise ValueError("Ungültige Pause in der Regeldatei: nur ganze Zahlen.")
+    if pause.ab < 0 or pause.bis <= pause.ab:
+        raise ValueError("Ungültige Pause in der Regeldatei: nie negativ, Ende nach dem Beginn.")
+    return f"@pause {pause.ab} {pause.bis} {pause.art}"
+
+
+def _morgen_lines(morgen: dict[str, int]) -> list[str]:
+    lines: list[str] = []
+    for name, minute in sorted(morgen.items()):
+        if not (isinstance(name, str) and PLAYER_NAME.fullmatch(name)):
+            raise ValueError("Ungültiger Spielername in einer Morgen-Zeile der Regeldatei.")
+        if not _is_int(minute) or not NO_TOMORROW <= minute < _DAY_MINUTES:
+            raise ValueError("Ungültige Minute in einer Morgen-Zeile der Regeldatei: -1 bis 1439.")
+        lines.append(f"@morgen {name} {minute}")
+    return lines
+
+
 def _player_line(name: str, line: TimeLine) -> str:
     if not PLAYER_NAME.fullmatch(name) or name.lower() in RESERVED_NAMES:
         raise ValueError("Ungültiger Spielername in der Regeldatei.")
@@ -635,13 +772,18 @@ def render_time_file(
     world: TimeLine | None,
     players: dict[str, TimeLine],
     days: DayGrid | None = None,
+    *,
+    pause: PauseLine | None = None,
+    morgen: dict[str, int] | None = None,
 ) -> bytes:
     """Regeldatei der Welt, sortiert und deterministisch.
 
-    Reihenfolge: Kopf, ``@tage``, Welt-Zeile, ``@start welt``, je Spieler (sortiert)
-    seine Zeile und direkt danach ``@start <name>`` und ``@base <name>``, zuletzt
-    ``end``. Ohne ``days``, nächste Starts und Anker sind die Bytes dieselben wie
-    vor den ``@``-Zeilen.
+    Reihenfolge: Kopf, ``@tage``, ``@pause``, ``@morgen`` (sortiert, nur bei Art
+    schluss), Welt-Zeile, ``@start welt``, je Spieler (sortiert) seine Zeile und
+    direkt danach ``@start <name>`` und ``@base <name>``, zuletzt ``end``. Ohne
+    ``days``, ``pause``, nächste Starts und Anker sind die Bytes dieselben wie vor
+    den ``@``-Zeilen; alte Mods überspringen ``@pause`` und ``@morgen`` still
+    (Pitfall 1: ob der Mod die Pause kann, zeigt die Ereignisdatei).
     Jeder ungültige Eintrag wirft ValueError, nie wird still übersprungen: Ein
     Zeilenumbruch im Namen oder Token könnte sonst fremde Zeilen einschleusen.
     """
@@ -652,6 +794,12 @@ def render_time_file(
     lines = [f"{TIME_HEADER} {generation} {issued_at}"]
     if days is not None:
         lines.append(_days_line(days))
+    # Morgen-Zeilen immer prüfen, schreiben nur zur Schluss-Pause.
+    morgen_lines = _morgen_lines(morgen) if morgen is not None else []
+    if pause is not None:
+        lines.append(_pause_line(pause))
+        if pause.art == "schluss":
+            lines.extend(morgen_lines)
     if world is not None:
         lines.append(_world_line(world))
         start = _start_line("welt", world)
