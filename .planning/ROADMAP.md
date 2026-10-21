@@ -219,10 +219,45 @@ Plans:
   4. Die Seiten hinter den Benachrichtigungen funktionieren im Handy-Browser und in der Nextcloud-App
   5. Zu jeder Welt gibt es einen Talk-Raum, dessen Mitglieder automatisch den Einladungen folgen (Einladen fügt hinzu, Ausladen entfernt, Gruppen-Einladungen inklusive) plus die Verwalter; niemand sonst kommt hinein
   6. Ein Gameworld-Bot meldet im Raum Weltstart und -stopp, Beitritte und das nahende Ende der Spielzeit; ohne installiertes Talk läuft Gameworld unverändert weiter und zeigt nur einen Hinweis
-**Plans:** 0 plans
+**Plans:** 9 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 04.1 to break down)
+
+**Wave 1**
+
+- [ ] 04.1-01-PLAN.md , Welt-Mods: Ereignisdatei (deny, join, leave, warn10) in gameworld_access, Pause und Schluss-Texte im Zeit-Mod, additive @pause-Zeile
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04.1-02-PLAN.md , Schema 5, Ereignis-Parser, read_events, Takt sammelt Ereignisse, Start/Stopp und Tagesspielzeit je Welt, Fähigkeits-Merker
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04.1-03-PLAN.md , Pause Ende zu Ende: Zustand, Rendern, Verwalter-API, Neustart alter Mods, Live-Nachweis per Prober
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04.1-04-PLAN.md , Benachrichtigungen: Fremdversuch mit Drossel, Tagesrückblick, Deep Links, Verwalter-API, Hintergrund-Loop
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04.1-05-PLAN.md , Talk-Raum pro Welt: Talk im Dev-Stack, OCS-Raumzugriff, Mitglieder-Abgleich, Hooks, Nur lesen, Mitlöschen
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 04.1-06-PLAN.md , Gameworld-Bot: Registrierung, Webhook-Route, Meldungen aus der Outbox, Live-Smoke gegen Dev-Talk
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 04.1-07-PLAN.md , Handy-Seiten pause, versuch, rueckblick mit Pfad-Router ohne vue-router
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 04.1-08-PLAN.md , Verwaltung: Pause-Karte, Rückblick-Einstellung, Talk-Status je Welt, Lösch-Dialog, Neustart-Hinweis
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 04.1-09-PLAN.md , Phasenabnahme: acceptance-phase4_1.sh K1 bis K6 mit Regression plus gemeinsame Playwright-Abnahme (390 px, Benachrichtigungsliste, Talk)
 
 ### Phase 04.2: Browser-Spike (luanti-wasm) (INSERTED)
 
