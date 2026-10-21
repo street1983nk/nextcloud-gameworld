@@ -59,6 +59,7 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Luanti-first, Minecraft als MVP 2 | Kein EULA-Risiko, freies Ökosystem, gleiche Produktmechanik | Pending |
+| Minecraft erst nach Bedarfsumfrage | Machbarkeit (.planning/research/MINECRAFT-V2.md): nur Java/Paper, jedes Kind braucht Microsoft-Konto, 15 bis 21 Tage; erst nach v1-Store-Release in Reddit, Foren und GitHub Bedarf abfragen, dann entscheiden (Owner 21.10.2026) | Pending |
 | Scope: Familien zuerst, Vereine später | Differenzierung "privat, Daten zuhause"; einfacheres Rollenmodell im MVP (Owner 19.10.2026) | Pending |
 | Container-Provisionierung: Entscheid nach Research | AppAPI-Docker-Socket vs. Host-Daemon vs. Engine-Panel-API wird in der Projekt-Research konkret geprüft, Empfehlung geht an Owner (Owner 19.10.2026) | Pending |
 | ExApp in Python (AppAPI) | Vorhandenes Skillset aus Findling/Connector, Store-Prozess bekannt | Pending |
