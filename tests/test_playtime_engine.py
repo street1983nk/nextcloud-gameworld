@@ -561,3 +561,65 @@ def test_render_with_day_grid_stays_stable(engine: TimeEngine, store: WorldStore
     assert b"@tage" in first
     assert (changed1, changed2) == (True, False)
     assert second == first
+
+
+# 04.1-02: Tagesspielzeit je Konto und Welt (play_daily, Pitfall 3)
+
+
+def test_book_counts_play_daily_for_all_accounts_except_admins(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _player(store, "gw-leo", "Leo")
+    _player(store, "papa", "Papa")
+    _plan(store, "gw-mia", _week(limit=60))
+    store.set_meta(META_TIME_ADMINS, '["papa"]')
+    store.set_ledger_seen("w1", {"Mia": 40, "Leo": 0, "Papa": 0, "Fremd": 0})
+
+    engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Mia": 55, "leo": 7, "Papa": 9, "Fremd": 3}))
+
+    assert store.play_seconds(TODAY) == {("gw-mia", "w1"): 15, ("gw-leo", "w1"): 7}
+    # time_usage bleibt wie bisher nur für Kinder mit Regeln.
+    assert store.usage("gw-mia", TODAY) == 15
+    assert store.usage("gw-leo", TODAY) == 0
+    assert store.usage("papa", TODAY) == 0
+
+
+def test_book_play_daily_adds_up_per_world(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _world(store, "w2", 30016)
+    _player(store, "gw-leo", "Leo")
+    for world_id in ("w1", "w2"):
+        store.set_ledger_seen(world_id, {"Leo": 0})
+    engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Leo": 20}))
+    engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Leo": 50}))
+    engine.book("w2", Ledger(written_at=FIXED, generation=1, seconds={"Leo": 5}))
+    assert store.play_seconds(TODAY) == {("gw-leo", "w1"): 50, ("gw-leo", "w2"): 5}
+
+
+def test_render_prunes_notify_tables_after_seven_days(engine: TimeEngine, store: WorldStore, app_env: Path) -> None:
+    import sqlite3
+
+    _world(store, "w1", 30015)
+    old, kept = TODAY - timedelta(days=8), TODAY - timedelta(days=7)
+    db = sqlite3.connect(app_env / "gameworld.sqlite3")
+    with db:
+        for day in (old, kept):
+            iso = day.isoformat()
+            db.execute(
+                "INSERT INTO play_daily (day, nc_user, world_id, seconds) VALUES (?, 'gw-leo', 'w1', 60)", (iso,)
+            )
+            db.execute(
+                "INSERT INTO join_attempts (day, world_id, name_fold, player_name, first_at, last_at, count) "
+                "VALUES (?, 'w1', 'fremd', 'Fremd', 1, 1, 1)",
+                (iso,),
+            )
+            db.execute("INSERT INTO daily_flags (day, flag) VALUES (?, 'x')", (iso,))
+            db.execute("INSERT INTO review_sent (nc_user, day) VALUES ('papa', ?)", (iso,))
+
+    engine.render("w1")
+
+    with db:
+        for table in ("play_daily", "join_attempts", "daily_flags", "review_sent"):
+            days = [str(row[0]) for row in db.execute(f"SELECT day FROM {table}")]  # noqa: S608
+            assert days == [kept.isoformat()], table
+    db.close()

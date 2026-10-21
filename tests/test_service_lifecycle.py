@@ -82,6 +82,10 @@ class FakeProvisioner:
     ledgers: dict[str, StatusFile] = field(default_factory=dict)
     ledger_error: ProvisionerError | None = None
     ledger_reads: list[str] = field(default_factory=list)
+    # Ereignisdateien des Zugangs-Mods pro Welt (fehlt: None) und ein optionaler Lesefehler.
+    events: dict[str, StatusFile] = field(default_factory=dict)
+    events_error: ProvisionerError | None = None
+    event_reads: list[str] = field(default_factory=list)
 
     def ensure_image(self) -> None:
         return None
@@ -170,6 +174,13 @@ class FakeProvisioner:
         if self.ledger_error is not None:
             raise self.ledger_error
         return self.ledgers.get(world_id)
+
+    def read_events(self, world_id: str) -> StatusFile | None:
+        self._known(world_id)
+        self.event_reads.append(world_id)
+        if self.events_error is not None:
+            raise self.events_error
+        return self.events.get(world_id)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:
         _, status = self._known(world_id)
@@ -1563,3 +1574,186 @@ async def test_time_restart_needed_read_error_is_false(service: WorldService, fa
     world_id = await _running_world(service, fake, "Welt")
     fake.ledger_error = ProvisionerError("Das Spielzeit-Zählbuch der Welt ist nicht lesbar.")
     assert (await _view_of(service, world_id)).time_restart_needed is False
+
+
+# 04.1-02: Ereignisse, Start/Stopp und Fähigkeits-Merker im Takt (kein Netz, nur SQLite)
+
+
+def _events_file(mtime: str, seq: int, *lines: tuple[int, int, str, str]) -> StatusFile:
+    body = [f"gameworld-events 1 {seq}", *(f"{s} {at} {kind} {name}" for s, at, kind, name in lines), "end", ""]
+    return StatusFile(mtime, "\n".join(body).encode("ascii"))
+
+
+def _outbox(store: WorldStore) -> list[tuple[str, str, str]]:
+    return [(row.world_id, row.kind, row.name) for row in store.outbox_batch(limit=1000)]
+
+
+async def test_tick_old_event_file_anchors_then_reports_new_lines(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    old = int(time.time()) - 1000
+    lines = [(1, old, "join", "Mia"), (2, old + 5, "leave", "Mia"), (3, old + 9, "deny", "Fremd")]
+    fake.events[created.id] = _events_file(FRESH, 3, *lines)
+
+    service.tick_time()
+
+    assert created.id in fake.event_reads
+    assert _outbox(store) == []
+    assert store.event_cursor(created.id) == 3
+
+    now = int(time.time())
+    fake.events[created.id] = _events_file(FRESH, 5, *lines, (4, now, "join", "Leo"), (5, now, "warn10", "Leo"))
+    service.tick_time()
+
+    assert _outbox(store) == [(created.id, "join", "Leo"), (created.id, "warn10", "Leo")]
+    assert store.event_cursor(created.id) == 5
+
+
+async def test_tick_fresh_event_file_reports_first_events(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    fake.events[created.id] = _events_file(FRESH, 1, (1, int(time.time()) - 10, "join", "lena"))
+
+    service.tick_time()
+
+    assert _outbox(store) == [(created.id, "join", "lena")]
+    assert store.event_cursor(created.id) == 1
+    # Derselbe Stand im nächsten Takt: nichts doppelt.
+    service.tick_time()
+    assert len(_outbox(store)) == 1
+
+
+async def test_tick_event_errors_are_isolated_per_world(
+    service: WorldService,
+    fake: FakeProvisioner,
+    store: WorldStore,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    broken = await service.create_world("Kaputt")
+    garbled = await service.create_world("Halb")
+    healthy = await service.create_world("Heil")
+    now = int(time.time())
+    fake.events[garbled.id] = StatusFile(FRESH, f"gameworld-events 1 1\n1 {now} join Geheimname\n".encode())
+    fake.events[healthy.id] = _events_file(FRESH, 1, (1, now, "join", "Mia"))
+    real = fake.read_events
+
+    def flaky(world_id: str) -> StatusFile | None:
+        if world_id == broken.id:
+            raise ProvisionerError("Die Ereignisdatei der Welt ist nicht lesbar.")
+        return real(world_id)
+
+    monkeypatch.setattr(fake, "read_events", flaky)
+    with caplog.at_level("WARNING"):
+        service.tick_time()
+
+    assert _outbox(store) == [(healthy.id, "join", "Mia")]
+    assert store.event_cursor(broken.id) is None
+    assert store.event_cursor(garbled.id) is None
+    assert broken.id in caplog.text
+    assert garbled.id in caplog.text
+    assert "Geheimname" not in caplog.text
+
+
+async def test_tick_reports_start_and_stop_from_docker_state(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    service.tick_time()
+    # Erste Beobachtung verankert nur.
+    assert _outbox(store) == []
+    assert store.run_state(created.id) is True
+
+    port, _ = fake.containers[created.id]
+    fake.containers[created.id] = (port, "exited")
+    service.tick_time()
+    assert _outbox(store) == [(created.id, "stop", "")]
+    assert store.run_state(created.id) is False
+
+    fake.containers[created.id] = (port, "running")
+    service.tick_time()
+    assert _outbox(store) == [(created.id, "stop", ""), (created.id, "start", "")]
+
+    # Neustart zwischen zwei Takten: gewollt ruhig, keine Meldung.
+    await service.restart_world(created.id)
+    service.tick_time()
+    assert len(_outbox(store)) == 2
+
+
+async def test_events_restart_needed_missing_file(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    view = await _view_of(service, world_id)
+    assert view.status == "running"
+    assert view.events_restart_needed is True
+
+
+async def test_events_restart_needed_fresh_file(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.events[world_id] = _events_file(FRESH, 0)
+    assert (await _view_of(service, world_id)).events_restart_needed is False
+
+
+async def test_events_restart_needed_stale_file(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.events[world_id] = _events_file(STALE, 0)
+    assert (await _view_of(service, world_id)).events_restart_needed is True
+
+
+async def test_events_restart_needed_read_error_is_false(
+    service: WorldService, fake: FakeProvisioner, caplog: pytest.LogCaptureFixture
+) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.events_error = ProvisionerError("Die Ereignisdatei der Welt ist nicht lesbar.")
+    with caplog.at_level("WARNING"):
+        assert (await _view_of(service, world_id)).events_restart_needed is False
+    assert world_id in caplog.text
+
+
+async def test_events_restart_needed_false_when_stopped(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    await service.stop_world(world_id)
+    assert (await _view_of(service, world_id)).events_restart_needed is False
+
+
+async def test_delete_removes_notify_data(service: WorldService, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    other = await service.create_world("Andere")
+    for world_id in (created.id, other.id):
+        store.take_events(world_id, 2, [("join", "Mia", 1, "")])
+        store.set_run_state(world_id, running=True)
+
+    await service.delete_world(created.id)
+
+    assert store.event_cursor(created.id) is None
+    assert store.run_state(created.id) is None
+    assert [row.world_id for row in store.outbox_batch()] == [other.id]
+    assert store.event_cursor(other.id) == 2
+
+
+async def test_retry_delete_removes_notify_data(service: WorldService, store: WorldStore) -> None:
+    from gameworld.worlds.reconciler import ReconcileAction
+
+    created = await service.create_world("Welt")
+    store.take_events(created.id, 2, [("join", "Mia", 1, "")])
+    store.set_run_state(created.id, running=True)
+    store.update_world(created.id, desired_state="deleted")
+    row = store.get_world(created.id)
+    assert row is not None
+
+    service._apply(row, ReconcileAction.RETRY_DELETE)  # pyright: ignore[reportPrivateUsage]
+
+    assert store.get_world(created.id) is None
+    assert store.event_cursor(created.id) is None
+    assert store.run_state(created.id) is None
+    assert store.outbox_batch() == []
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_world_carries_events_restart_needed(client: httpx.AsyncClient) -> None:
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    assert created.status_code == 201
+    assert isinstance(created.json()["events_restart_needed"], bool)
+    listing = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
+    assert "events_restart_needed" in listing
