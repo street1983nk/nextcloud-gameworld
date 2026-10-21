@@ -22,12 +22,14 @@ from gameworld.talk.rooms import (
     get_talk_rooms,
 )
 
+ROOM_TOKEN = "abc123"  # noqa: S105 (Raum-Token, kein Geheimnis)
+
 
 def fake_nc() -> Any:
     nc = MagicMock()
     nc.set_user = AsyncMock()
     nc.ocs = AsyncMock(return_value=[])
-    nc.talk.create_conversation = AsyncMock(return_value=SimpleNamespace(token="abc123"))
+    nc.talk.create_conversation = AsyncMock(return_value=SimpleNamespace(token=ROOM_TOKEN))
     nc.talk.list_participants = AsyncMock(return_value=[])
     nc.talk.get_conversation_by_token = AsyncMock(
         return_value=SimpleNamespace(conversation_type=ConversationType.GROUP, listable=0)
@@ -43,8 +45,8 @@ def nc(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 async def test_create_makes_group_room_and_hides_it(nc: Any) -> None:
-    token = await NcTalkRooms().create("mama", "Gameworld: Insel")
-    assert token == "abc123"
+    room = await NcTalkRooms().create("mama", "Gameworld: Insel")
+    assert room == ROOM_TOKEN
     nc.set_user.assert_awaited_with("mama")
     nc.talk.create_conversation.assert_awaited_once_with(ConversationType.GROUP, room_name="Gameworld: Insel")
     nc.ocs.assert_awaited_once_with("PUT", f"{BASE}/abc123/listable", params={"scope": 0})
@@ -130,22 +132,18 @@ async def test_delete_of_missing_room_is_success(nc: Any) -> None:
 
 
 @pytest.mark.parametrize("status", [401, 403, 500])
-async def test_denied_or_broken_becomes_unavailable(
-    nc: Any, status: int, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_denied_or_broken_becomes_unavailable(nc: Any, status: int, caplog: pytest.LogCaptureFixture) -> None:
     nc.ocs = AsyncMock(side_effect=NextcloudException(status, info="request: POST /secret/lena"))
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(TalkUnavailableError, match="Talk antwortet gerade nicht"):
-            await NcTalkRooms().add_user("mama", "tok", "lena")
+    with caplog.at_level(logging.WARNING), pytest.raises(TalkUnavailableError, match="Talk antwortet gerade nicht"):
+        await NcTalkRooms().add_user("mama", "tok", "lena")
     assert str(status) in caplog.text
     assert "lena" not in caplog.text
 
 
 async def test_network_error_becomes_unavailable(nc: Any, caplog: pytest.LogCaptureFixture) -> None:
     nc.talk.list_participants = AsyncMock(side_effect=OSError("kaputt bei lena"))
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(TalkUnavailableError):
-            await NcTalkRooms().participants("mama", "tok")
+    with caplog.at_level(logging.WARNING), pytest.raises(TalkUnavailableError):
+        await NcTalkRooms().participants("mama", "tok")
     assert "OSError" in caplog.text
     assert "lena" not in caplog.text
 
