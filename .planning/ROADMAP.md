@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Zugang und Rollen** - Einladungen über Nextcloud-Konten, serverseitige Whitelist, Eltern verwalten, Kinder spielen (completed 2026-10-20)
 - [x] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt (completed 2026-10-21)
 - [ ] **Phase 4.1: Eltern-Handy und Talk (INSERTED)** - Pause, Hinweis bei fremdem Beitrittsversuch, Tagesrückblick per Push über die Nextcloud-App; Talk-Raum pro Welt mit Gameworld-Bot
+- [ ] **Phase 4.2: Browser-Spike (INSERTED)** - Go/No-Go: Spielen im Browser ohne Luanti-Installation (luanti-wasm, eigener Proxy); Bau nur wenn sinnvoll, Mehrwert und sicher
 - [ ] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip
 - [ ] **Phase 6: Store-Release** - Härtung, Setup-Check, Cleanup und Veröffentlichung im Nextcloud App Store
 
@@ -222,6 +223,21 @@ Plans:
 
 Plans:
 - [ ] TBD (run /gsd-plan-phase 04.1 to break down)
+
+### Phase 04.2: Browser-Spike (luanti-wasm) (INSERTED)
+
+**Goal:** Klären, ob Kinder ohne Luanti-Installation direkt im Browser in ihre Welt kommen können; Ergebnis ist ein Go/No-Go-Bericht, kein Produktbau
+**Requirements**: keine (Spike; ein Bau bei "Go" wird als eigene Phase mit eigenen Requirements geplant)
+**Depends on:** Phase 4
+**Success Criteria** (what must be TRUE):
+  1. Ein Prototyp verbindet luanti-wasm über einen eigenen WebSocket-zu-UDP-Proxy der ExApp mit einer Gameworld-Welt; kein externer Proxy (z. B. von dustlabs) ist beteiligt
+  2. Der Proxy lässt nur Verbindungen zu Welten zu, für die das angemeldete Nextcloud-Konto eingeladen ist; Whitelist, Spielzeit und Prejoin-Sperren greifen unverändert
+  3. Bewertet und belegt sind: Versionspassung Client/Server (wasm-Build vs. 5.17.0), COOP/COEP unter Nextcloud/AppAPI, Leistung auf einem Kinder-Laptop und einem Tablet, Download-Größe, Lizenz und Pflegezustand von luanti-wasm
+  4. Der Bericht entscheidet anhand der drei Owner-Kriterien sinnvoll, echter Mehrwert und sicher; gebaut wird nur, wenn alle drei erfüllt sind (Owner-Entscheid 21.10.2026)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 04.2 to break down)
 
 ### Phase 5: Backup und Restore
 

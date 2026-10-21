@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready_to_plan
-stopped_at: Phase 4 complete (8/8) — ready to discuss Phase 04.1
+stopped_at: Phase 4 complete (8/8) , ready to discuss Phase 04.1
 last_updated: 2026-10-21T20:46:00.912Z
 last_activity: 2026-10-21
 progress:
@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 04.1 — eltern handy pause hinweise rueckblick
+**Current focus:** Phase 04.1 , eltern handy pause hinweise rueckblick
 
 ## Current Position
 
@@ -86,6 +86,7 @@ Progress: [██████████] 100%
 ### Roadmap Evolution
 
 - Phase 4.1 inserted after Phase 4: Eltern-Handy (Pause, fremder Beitrittsversuch, Tagesrückblick) per Push in v1, Owner-Entscheid 21.10.2026
+- Phase 4.2 inserted after Phase 4: Browser-Spike (luanti-wasm), Go/No-Go-Bericht, Bau nur wenn sinnvoll, Mehrwert und sicher, Owner-Entscheid 21.10.2026
 
 ### Decisions
 
