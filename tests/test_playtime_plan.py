@@ -6,6 +6,7 @@ Zeitrechnung gegen Umstellungstage (23 h und 25 h), Ferienwechsel und Tagesende
 festgeschrieben.
 """
 
+import itertools
 from datetime import date
 from zoneinfo import ZoneInfo
 
@@ -16,9 +17,11 @@ from gameworld.playtime.plan import (
     ChildState,
     DayRule,
     Holiday,
+    NextStart,
     WeekPlan,
     WorldState,
     day_bounds,
+    day_starts,
     evaluate_child,
     evaluate_world,
     load_zone,
@@ -243,3 +246,54 @@ def test_week_plan_needs_seven_days() -> None:
 def test_holiday_validation() -> None:
     with pytest.raises(ValueError, match="endet nicht vor"):
         Holiday(date(2026, 10, 26), date(2026, 10, 24), "falsch")
+
+
+# Nächster Start als Epoch und Tagesanfänge für die Zeile @tage (Quick 261021-481)
+
+
+def test_next_start_carries_epoch_weekday_and_minute() -> None:
+    plan = _day(DayRule(True, 60, 540, 1140))
+    state = evaluate_child(SA_24[0] + 12 * 3600, BERLIN, plan, None, [], 3600)
+    assert state.reason == "limit"
+    # Sonntag 25.10. 09:00 lokal: Die Uhr ist um 3 Uhr schon zurückgestellt, also Tagesanfang + 10 h.
+    assert state.next_start == NextStart(at=SO_25[0] + 10 * 3600, weekday=7, minute=540)
+    assert state.next_hint == "So-09:00"
+    assert state.next_start is not None
+    assert state.next_start.token() == state.next_hint
+
+
+def test_next_start_without_window_has_minute_zero() -> None:
+    plan = _day(DayRule(True, 60, None, None))
+    state = evaluate_child(SA_24[0] + 12 * 3600, BERLIN, plan, None, [], 3600)
+    assert state.next_start == NextStart(at=SO_25[0], weekday=7, minute=0)
+    assert state.next_hint == "So-00:00"
+
+
+def test_next_start_none_without_any_allowed_day() -> None:
+    plan = _day(DayRule(False, None, None, None))
+    state = evaluate_child(SA_24[0] + 12 * 3600, BERLIN, plan, None, [], 0)
+    assert state.next_start is None
+    assert state.next_hint == "-"
+
+
+def test_world_next_start() -> None:
+    state = evaluate_world(SA_24[0] + 12 * 3600, BERLIN, {1: (600, 720)})
+    assert state is not None
+    assert state.next_start == NextStart(at=MO_26[0] + 10 * 3600, weekday=1, minute=600)
+    assert state.next_hint == "Mo-10:00"
+
+
+def test_day_starts_autumn_change() -> None:
+    starts = day_starts(SA_24[0] + 12 * 3600, BERLIN)
+    assert len(starts) == 9
+    assert starts[:3] == (SA_24[0], SO_25[0], MO_26[0])
+    # Sonntag 25.10. hat 25 h, die übrigen Tage 24 h.
+    assert starts[2] - starts[1] == 25 * 3600
+    assert all(later - earlier == 24 * 3600 for earlier, later in itertools.pairwise(starts[2:]))
+
+
+def test_day_starts_spring_change() -> None:
+    starts = day_starts(SO_29_03[0] + 12 * 3600, BERLIN)
+    assert starts[:2] == SO_29_03
+    assert starts[1] - starts[0] == 23 * 3600
+    assert all(later > earlier for earlier, later in itertools.pairwise(starts))

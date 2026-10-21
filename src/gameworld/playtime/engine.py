@@ -16,6 +16,13 @@ Verwalter-Konto aus dem Schnappschuss ``time_admins`` die Zeile ``frei`` (O-11/A
 dazu die Welt-Zeile aus dem Welt-Fenster. Der Regelteil wird je Welt zwischengespeichert; nur bei
 einer Änderung zählt die Generation hoch und der Kopf bekommt einen neuen
 Zeitpunkt, damit die Bytes nicht in jedem Takt wechseln (Pitfall 6).
+
+Für den Kindertext schreibt ``render`` keinen fertigen Tagesbezug ("morgen"),
+sondern absolute Epochs (Quick 261021-481): je Zeile den nächsten Start
+(``@start``) und einmal die Tagesanfänge heute bis heute+8 (``@tage``). Der Mod
+rechnet "Heute", "Morgen" oder "Am Samstag" gegen die eigene Uhr; so bleibt der
+Text auch nach Mitternacht richtig, wenn die Regeldatei noch nicht neu ist. Die
+Epochs ändern sich nicht mit der Uhr, ``@tage`` nur einmal je Tag.
 """
 
 from __future__ import annotations
@@ -28,8 +35,16 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from gameworld.playtime.ledger import attribution_day, increments
-from gameworld.playtime.plan import ChildState, evaluate_child, evaluate_world, load_zone, local_day
-from gameworld.provisioner.time_mod import Ledger, TimeLine, render_time_file
+from gameworld.playtime.plan import (
+    ChildState,
+    NextStart,
+    day_starts,
+    evaluate_child,
+    evaluate_world,
+    load_zone,
+    local_day,
+)
+from gameworld.provisioner.time_mod import DayGrid, Ledger, TimeLine, render_time_file
 from gameworld.worlds.store import WorldStore
 
 # Verbrauch höchstens einmal pro Stunde aufräumen (A8/Pitfall 9).
@@ -40,6 +55,11 @@ _RETENTION_DAYS = 7
 META_TIME_ADMINS = "time_admins"
 # Verwalter sind freigestellt (O-11/A4): Welt-Fenster und eigene Grenzen gelten nicht.
 _FREI = TimeLine(cap=-1, start=-1, until=-1, reason="frei", next_hint="-")
+
+
+def _next_fields(start: NextStart | None) -> tuple[int, int]:
+    """Felder next_at und next_minute einer TimeLine; -1 -1 heißt: kein nächster Start."""
+    return (-1, -1) if start is None else (start.at, start.minute)
 
 
 def parse_admins(raw: str | None) -> frozenset[str]:
@@ -136,11 +156,23 @@ class TimeEngine:
             used = self._store.usage(nc_user, today)
             state = evaluate_child(now, tz, normal, holiday, holidays, used)
             cap = -1 if state.rest_s is None else seen.get(name, 0) + state.rest_s
+            next_at, next_minute = _next_fields(state.next_start)
             players[name] = TimeLine(
-                cap=cap, start=state.start, until=state.until, reason=state.reason, next_hint=state.next_hint
+                cap=cap,
+                start=state.start,
+                until=state.until,
+                reason=state.reason,
+                next_hint=state.next_hint,
+                next_at=next_at,
+                next_minute=next_minute,
             )
         world_line = self._world_line(world_id, now, tz)
-        rendered = self._render_cached(world_id, world_line, players, now)
+        lines = [*players.values(), *([] if world_line is None else [world_line])]
+        days = None
+        if any(line.next_at >= 0 for line in lines):
+            # Tagesgrenzen nur, wenn eine Zeile einen nächsten Start trägt (sonst Bytes wie bisher).
+            days = DayGrid(weekday=today.isoweekday(), starts=day_starts(now, tz))
+        rendered = self._render_cached(world_id, world_line, players, now, days)
         self._maybe_prune(now, tz)
         return rendered
 
@@ -160,24 +192,41 @@ class TimeEngine:
         state = evaluate_world(now, tz, self._store.world_window(world_id))
         if state is None:
             return None
-        return TimeLine(cap=0, start=state.start, until=state.until, reason=state.reason, next_hint=state.next_hint)
+        next_at, next_minute = _next_fields(state.next_start)
+        return TimeLine(
+            cap=0,
+            start=state.start,
+            until=state.until,
+            reason=state.reason,
+            next_hint=state.next_hint,
+            next_at=next_at,
+            next_minute=next_minute,
+        )
 
     def _render_cached(
-        self, world_id: str, world_line: TimeLine | None, players: dict[str, TimeLine], now: int
+        self,
+        world_id: str,
+        world_line: TimeLine | None,
+        players: dict[str, TimeLine],
+        now: int,
+        days: DayGrid | None,
     ) -> tuple[bytes, bool]:
-        key = self._body_key(world_line, players)
+        key = self._body_key(world_line, players, days)
         cached = self._cache.get(world_id)
         if cached is not None and cached.key == key:
             return cached.data, False
         generation = self._store.bump_time_generation(world_id)
-        data = render_time_file(generation, now, world_line, players)
+        data = render_time_file(generation, now, world_line, players, days=days)
         self._cache[world_id] = _Rendered(key=key, generation=generation, issued_at=now, data=data)
         return data, True
 
     @staticmethod
-    def _body_key(world_line: TimeLine | None, players: dict[str, TimeLine]) -> tuple[object, ...]:
+    def _body_key(
+        world_line: TimeLine | None, players: dict[str, TimeLine], days: DayGrid | None
+    ) -> tuple[object, ...]:
         world = None if world_line is None else astuple(world_line)
-        return (world, tuple(sorted((name, astuple(line)) for name, line in players.items())))
+        grid = None if days is None else astuple(days)
+        return (world, tuple(sorted((name, astuple(line)) for name, line in players.items())), grid)
 
     def _maybe_prune(self, now: int, tz: ZoneInfo) -> None:
         if self._last_prune is not None and now - self._last_prune < _PRUNE_INTERVAL_SECONDS:

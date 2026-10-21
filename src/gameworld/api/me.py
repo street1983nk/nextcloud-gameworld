@@ -46,11 +46,13 @@ class MeOut(BaseModel):
 
 
 class WindowOut(BaseModel):
-    """Ein Öffnungsfenster einer Welt: ISO-Wochentag und Minuten (Ende 1440 = Mitternacht)."""
+    """Ein Öffnungsfenster einer Welt: ISO-Wochentag, Minuten (Ende 1440 = Tagesende) und Tage ab heute."""
 
     weekday: int = Field(ge=1, le=7)
     start: int = Field(ge=0, le=1439)
     end: int = Field(ge=1, le=1440)
+    # 0 = heute (auch beim offenen Fenster), 7 = gleicher Wochentag in einer Woche.
+    days_ahead: int = Field(ge=0, le=7)
 
 
 class MyWorldOut(BaseModel):
@@ -111,7 +113,9 @@ def _playtime_out(result: MyPlaytime) -> MyPlaytimeOut:
 
 def _window_out(window: MyWorldWindow | None) -> WindowOut | None:
     slot = None if window is None else window.next
-    return None if slot is None else WindowOut(weekday=slot.weekday, start=slot.start, end=slot.end)
+    if slot is None:
+        return None
+    return WindowOut(weekday=slot.weekday, start=slot.start, end=slot.end, days_ahead=slot.days_ahead)
 
 
 @router.get("/me")

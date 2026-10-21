@@ -182,11 +182,16 @@ UNLIMITED = MyPlaytime(limited=False, state=None, remaining_minutes=None, until_
 
 @dataclass(frozen=True)
 class WindowSlot:
-    """Ein Öffnungsfenster einer Welt: Wochentag und Minuten (Ende 1440 = Mitternacht)."""
+    """Ein Öffnungsfenster einer Welt: Wochentag, Minuten (Ende 1440 = Tagesende) und Tage ab heute.
+
+    ``days_ahead`` 0 heißt heute (auch beim offenen Fenster), 7 derselbe Wochentag
+    in einer Woche; damit sagt die Kind-Ansicht "Heute", "Morgen" oder "Am Samstag".
+    """
 
     weekday: int
     start: int
     end: int
+    days_ahead: int
 
 
 @dataclass(frozen=True)
@@ -266,12 +271,15 @@ def world_window_status(now: int, tz: ZoneInfo, windows: dict[int, tuple[int, in
     if state.reason == "ok":
         today = local_day(now, tz).isoweekday()
         start, end = windows[today]
-        return MyWorldWindow(open=True, next=WindowSlot(weekday=today, start=start, end=end))
+        return MyWorldWindow(open=True, next=WindowSlot(weekday=today, start=start, end=end, days_ahead=0))
     upcoming = parse_hint(state.next_hint, now, tz)
     slot = None if upcoming is None else windows.get(upcoming.weekday)
     if upcoming is None or slot is None:
         return MyWorldWindow(open=False, next=None)
-    return MyWorldWindow(open=False, next=WindowSlot(weekday=upcoming.weekday, start=slot[0], end=slot[1]))
+    return MyWorldWindow(
+        open=False,
+        next=WindowSlot(weekday=upcoming.weekday, start=slot[0], end=slot[1], days_ahead=upcoming.days_ahead),
+    )
 
 
 @dataclass(frozen=True)

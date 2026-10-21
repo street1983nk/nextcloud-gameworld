@@ -24,6 +24,8 @@ DEFAULT_TIME_ZONE = "Europe/Berlin"
 # ISO-Wochentag 1..7 (Mo = 1) auf das ASCII-Token für den Kindertext.
 WEEKDAY_TOKENS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 _FULL_DAY_MINUTES = 1440
+# Tagesanfänge für die Zeile @tage der Regeldatei: heute bis heute+8 (time_mod.DAY_COUNT).
+_DAY_STARTS = 9
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,22 @@ class Holiday:
 
 
 @dataclass(frozen=True)
+class NextStart:
+    """Nächste Fensteröffnung: Epoch, ISO-Wochentag 1..7 und lokale Minute 0..1439.
+
+    Minute 0 heißt: ganzer Tag ohne Startzeit; der Kindertext zeigt dann keine Uhrzeit.
+    """
+
+    at: int
+    weekday: int
+    minute: int
+
+    def token(self) -> str:
+        """Bisheriges Token wie ``Sa-10:00`` (6-Feld-Zeile der Regeldatei, für alte Mods)."""
+        return f"{WEEKDAY_TOKENS[self.weekday - 1]}-{self.minute // 60:02d}:{self.minute % 60:02d}"
+
+
+@dataclass(frozen=True)
 class ChildState:
     """Auswertung für ein Kind: Fenster (Epoch), Rest in Sekunden, Grund, nächste Zeit."""
 
@@ -90,6 +108,7 @@ class ChildState:
     reason: str
     next_hint: str
     day: date
+    next_start: NextStart | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +119,7 @@ class WorldState:
     until: int
     reason: str
     next_hint: str
+    next_start: NextStart | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +163,12 @@ def day_bounds(day: date, tz: ZoneInfo) -> tuple[int, int]:
     return start, end
 
 
+def day_starts(now_epoch: int, tz: ZoneInfo) -> tuple[int, ...]:
+    """Neun Epoch-Tagesanfänge ab dem lokalen Tag von ``now`` (über day_bounds, nie feste Tageslänge)."""
+    today = local_day(now_epoch, tz)
+    return tuple(day_bounds(today + timedelta(days=offset), tz)[0] for offset in range(_DAY_STARTS))
+
+
 def _minute_time(minutes: int) -> time:
     return time(minutes // 60, minutes % 60)
 
@@ -171,8 +197,8 @@ def plan_for(day: date, normal: WeekPlan, holiday: WeekPlan | None, holidays: li
     return normal
 
 
-def _next_start(now: int, tz: ZoneInfo, rule_for: Callable[[date], DayRule | None]) -> str:
-    """Token der nächsten erlaubten Fensteröffnung ab jetzt, bis 7 Tage voraus, sonst ``-``."""
+def _next_start(now: int, tz: ZoneInfo, rule_for: Callable[[date], DayRule | None]) -> NextStart | None:
+    """Nächste erlaubte Fensteröffnung ab jetzt, bis 7 Tage voraus, sonst None."""
     today = local_day(now, tz)
     for offset in range(8):
         day = today + timedelta(days=offset)
@@ -182,13 +208,23 @@ def _next_start(now: int, tz: ZoneInfo, rule_for: Callable[[date], DayRule | Non
         window_start, _ = window_bounds(day, tz, rule)
         if window_start > now:
             minutes = rule.window_start if rule.window_start is not None else 0
-            return f"{WEEKDAY_TOKENS[day.isoweekday() - 1]}-{minutes // 60:02d}:{minutes % 60:02d}"
-    return "-"
+            return NextStart(at=window_start, weekday=day.isoweekday(), minute=minutes)
+    return None
+
+
+def _token(start: NextStart | None) -> str:
+    return "-" if start is None else start.token()
+
+
+def _child_next_start(
+    now: int, tz: ZoneInfo, normal: WeekPlan, holiday: WeekPlan | None, holidays: list[Holiday]
+) -> NextStart | None:
+    return _next_start(now, tz, lambda day: plan_for(day, normal, holiday, holidays).days[day.isoweekday()])
 
 
 def next_hint(now: int, tz: ZoneInfo, normal: WeekPlan, holiday: WeekPlan | None, holidays: list[Holiday]) -> str:
     """Nächste Spielzeit als Token wie ``Sa-10:00`` (Ferienwechsel eingeschlossen)."""
-    return _next_start(now, tz, lambda day: plan_for(day, normal, holiday, holidays).days[day.isoweekday()])
+    return _token(_child_next_start(now, tz, normal, holiday, holidays))
 
 
 def evaluate_child(
@@ -207,18 +243,27 @@ def evaluate_child(
     """
     day = local_day(now, tz)
     rule = plan_for(day, normal, holiday, holidays).days[day.isoweekday()]
-    hint = next_hint(now, tz, normal, holiday, holidays)
+    upcoming = _child_next_start(now, tz, normal, holiday, holidays)
+    hint = _token(upcoming)
     if not rule.allowed:
-        return ChildState(start=0, until=0, rest_s=0, reason="tag", next_hint=hint, day=day)
+        return ChildState(start=0, until=0, rest_s=0, reason="tag", next_hint=hint, day=day, next_start=upcoming)
     window_start, window_end = window_bounds(day, tz, rule)
     if now < window_start or now >= window_end:
-        return ChildState(start=window_start, until=window_end, rest_s=0, reason="fenster", next_hint=hint, day=day)
-    if rule.limit_minutes is None:
-        return ChildState(start=window_start, until=window_end, rest_s=None, reason="ok", next_hint=hint, day=day)
-    rest = rule.limit_minutes * 60 - used_today_s
-    if rest <= 0:
-        return ChildState(start=window_start, until=window_end, rest_s=0, reason="limit", next_hint=hint, day=day)
-    return ChildState(start=window_start, until=window_end, rest_s=rest, reason="ok", next_hint=hint, day=day)
+        reason, rest = "fenster", 0
+    elif rule.limit_minutes is None:
+        reason, rest = "ok", None
+    else:
+        rest = rule.limit_minutes * 60 - used_today_s
+        reason, rest = ("limit", 0) if rest <= 0 else ("ok", rest)
+    return ChildState(
+        start=window_start,
+        until=window_end,
+        rest_s=rest,
+        reason=reason,
+        next_hint=hint,
+        day=day,
+        next_start=upcoming,
+    )
 
 
 def _world_rule(windows: dict[int, tuple[int, int]], day: date) -> DayRule | None:
@@ -238,11 +283,11 @@ def evaluate_world(now: int, tz: ZoneInfo, windows: dict[int, tuple[int, int]] |
     if windows is None:
         return None
     day = local_day(now, tz)
-    hint = _next_start(now, tz, lambda current: _world_rule(windows, current))
+    upcoming = _next_start(now, tz, lambda current: _world_rule(windows, current))
+    hint = _token(upcoming)
     rule = _world_rule(windows, day)
     if rule is None:
-        return WorldState(start=0, until=0, reason="welt", next_hint=hint)
+        return WorldState(start=0, until=0, reason="welt", next_hint=hint, next_start=upcoming)
     window_start, window_end = window_bounds(day, tz, rule)
-    if window_start <= now < window_end:
-        return WorldState(start=window_start, until=window_end, reason="ok", next_hint=hint)
-    return WorldState(start=window_start, until=window_end, reason="welt", next_hint=hint)
+    reason = "ok" if window_start <= now < window_end else "welt"
+    return WorldState(start=window_start, until=window_end, reason=reason, next_hint=hint, next_start=upcoming)

@@ -303,7 +303,7 @@ async def test_world_window_open_now(
     store.replace_world_window(W1, {3: (900, 1020), 5: (600, 720)})
     worlds = {w["id"]: w for w in (await _mine(client)).json()["worlds"]}
     assert worlds[W1]["window_open"] is True
-    assert worlds[W1]["window_next"] == {"weekday": 3, "start": 900, "end": 1020}
+    assert worlds[W1]["window_next"] == {"weekday": 3, "start": 900, "end": 1020, "days_ahead": 0}
     # Welt ohne Fenster: immer offen, kein Hinweis.
     assert worlds[W2]["window_open"] is None
     assert worlds[W2]["window_next"] is None
@@ -318,7 +318,7 @@ async def test_world_window_closed_shows_next(
     response = await _mine(client)
     [world] = response.json()["worlds"]
     assert world["window_open"] is False
-    assert world["window_next"] == {"weekday": 6, "start": 600, "end": 720}
+    assert world["window_next"] == {"weekday": 6, "start": 600, "end": 720, "days_ahead": 3}
     # Kein vollständiger Wochenplan in der Antwort (nur das nächste Fenster).
     assert "time_window" not in response.text
     assert '"weekday": 3' not in json.dumps(response.json())
@@ -332,7 +332,19 @@ async def test_world_window_later_today(
     store.replace_world_window(W1, {3: (1020, 1140)})
     [world] = (await _mine(client)).json()["worlds"]
     assert world["window_open"] is False
-    assert world["window_next"] == {"weekday": 3, "start": 1020, "end": 1140}
+    assert world["window_next"] == {"weekday": 3, "start": 1020, "end": 1140, "days_ahead": 0}
+
+
+async def test_world_window_same_weekday_next_week(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nur mittwochs 10 bis 12 Uhr, jetzt Mittwoch 15 Uhr: nächstes Fenster in 7 Tagen."""
+    _fixed_clock(service, store, monkeypatch)
+    await _invite(client, W1, "user", "gw-kind")
+    store.replace_world_window(W1, {3: (600, 720)})
+    [world] = (await _mine(client)).json()["worlds"]
+    assert world["window_open"] is False
+    assert world["window_next"] == {"weekday": 3, "start": 600, "end": 720, "days_ahead": 7}
 
 
 async def test_world_window_read_error_is_503(

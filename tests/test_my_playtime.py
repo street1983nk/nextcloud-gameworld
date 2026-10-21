@@ -268,3 +268,15 @@ async def test_same_weekday_next_week_is_not_today(
     data = (await _mine(client)).json()
     assert data["state"] == "aufgebraucht"
     assert data["next"] == {"weekday": 3, "minute": 0, "days_ahead": 7}
+
+
+async def test_preset_daily_used_up_at_noon(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, clock: Clock
+) -> None:
+    """Voreinstellung "Jeden Tag 1 Stunde" (9 bis 19 Uhr), mittags aufgebraucht: morgen ab 9 Uhr."""
+    del service
+    _rules(store, "gw-kind", _daily(60, 540, 1140), used_s=60 * 60)
+    clock.now = _at(12)
+    data = (await _mine(client)).json()
+    assert data["state"] == "aufgebraucht"
+    assert data["next"] == {"weekday": 4, "minute": 540, "days_ahead": 1}

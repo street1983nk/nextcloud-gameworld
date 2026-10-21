@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from gameworld.playtime.engine import META_TIME_ADMINS, TimeEngine, parse_admins
-from gameworld.playtime.plan import DayRule, WeekPlan, day_bounds, load_zone, local_day
+from gameworld.playtime.plan import DayRule, WeekPlan, day_bounds, day_starts, load_zone, local_day
 from gameworld.provisioner.time_mod import LEDGER_HEADER, Ledger
 from gameworld.worlds.store import PlayerRow, WorldRow, WorldStore
 
@@ -348,6 +348,13 @@ def test_world_line_before_window_on_open_day(store: WorldStore) -> None:
     wednesday = local_day(WED_0900, ZONE)
     assert wednesday.isoweekday() == 3
     assert _line(data, "welt") == ["welt", str(_epoch(wednesday, 10)), str(_epoch(wednesday, 12)), "welt", "Mi-10:00"]
+    starts = " ".join(str(value) for value in day_starts(WED_0900, ZONE))
+    assert _lines(data)[1:5] == [
+        f"@tage 3 {starts}",
+        f"welt {_epoch(wednesday, 10)} {_epoch(wednesday, 12)} welt Mi-10:00",
+        f"@start welt {_epoch(wednesday, 10)} 600",
+        "end",
+    ]
 
 
 def test_world_line_on_closed_day_points_to_next_open_day(store: WorldStore) -> None:
@@ -358,6 +365,10 @@ def test_world_line_on_closed_day_points_to_next_open_day(store: WorldStore) -> 
     data, _ = engine.render("w1")
 
     assert _line(data, "welt") == ["welt", "0", "0", "welt", "Mi-10:00"]
+    # Nächster Mittwoch 28.10. 10:00 (nach der Umstellung, Winterzeit).
+    next_wed = local_day(THU_1200, ZONE) + timedelta(days=6)
+    assert _line(data, "@start") == ["@start", "welt", str(_epoch(next_wed, 10)), "600"]
+    assert _lines(data)[1].startswith("@tage 4 ")
 
 
 def test_world_without_window_has_no_world_line(engine: TimeEngine, store: WorldStore) -> None:
@@ -379,6 +390,8 @@ def test_invited_admin_gets_frei_line_without_window(engine: TimeEngine, store: 
     assert _line(data, "Chef") == ["Chef", "-1", "-1", "-1", "frei", "-"]
     # Kind ohne Regeln und ohne Verwaltung: keine Zeile (Opt-in, T-04-27).
     assert _line(data, "Leo") is None
+    # Nur frei-Zeilen: kein @tage und kein @start, Bytes wie vor den @-Zeilen.
+    assert b"@" not in data
 
 
 def test_frei_beats_old_rules_and_child_never_frei(engine: TimeEngine, store: WorldStore) -> None:
@@ -416,3 +429,38 @@ def test_missing_or_broken_admin_snapshot_gives_no_frei(engine: TimeEngine, stor
 def test_parse_admins_reads_sorted_json_list() -> None:
     assert parse_admins('["admin", "lehrerin"]') == frozenset({"admin", "lehrerin"})
     assert parse_admins(None) == frozenset()
+
+
+# Nächster Start und Tagesgrenzen in der Regeldatei (Quick 261021-481)
+
+
+def test_render_used_up_child_gets_day_grid_and_start(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _week(limit=60, ws=540, we=1140))
+    _invite(store, "w1", "gw-mia")
+    store.add_usage("gw-mia", TODAY, 3600)
+
+    data, _ = engine.render("w1")
+
+    starts = day_starts(FIXED, ZONE)
+    assert _lines(data)[1] == "@tage 6 " + " ".join(str(value) for value in starts)
+    mia = _line(data, "Mia")
+    assert mia is not None
+    assert mia[4:] == ["limit", "So-09:00"]
+    # Sonntag 9 Uhr lokal nach der Umstellung um 3 Uhr: Tagesanfang Sonntag + 10 h (25-h-Tag).
+    assert _lines(data)[_lines(data).index(" ".join(mia)) + 1] == f"@start Mia {starts[1] + 10 * 3600} 540"
+
+
+def test_render_with_day_grid_stays_stable(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _week(limit=60, ws=540, we=1140))
+    _invite(store, "w1", "gw-mia")
+
+    first, changed1 = engine.render("w1")
+    second, changed2 = engine.render("w1")
+
+    assert b"@tage" in first
+    assert (changed1, changed2) == (True, False)
+    assert second == first
