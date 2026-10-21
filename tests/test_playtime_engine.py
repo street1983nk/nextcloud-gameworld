@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from gameworld.playtime.engine import META_TIME_ADMINS, TimeEngine, parse_admins
+from gameworld.playtime.pause import ART_PAUSE, ART_SCHLUSS, PauseState
 from gameworld.playtime.plan import DayRule, WeekPlan, day_bounds, day_starts, load_zone, local_day
 from gameworld.provisioner.time_mod import LEDGER_HEADER, Ledger
 from gameworld.worlds.store import PlayerRow, WorldRow, WorldStore
@@ -623,3 +624,93 @@ def test_render_prunes_notify_tables_after_seven_days(engine: TimeEngine, store:
             days = [str(row[0]) for row in db.execute(f"SELECT day FROM {table}")]  # noqa: S608
             assert days == [kept.isoformat()], table
     db.close()
+
+
+# Pause in der Regeldatei (04.1-03)
+
+
+def _pause_lines(data: bytes) -> list[str]:
+    return [line for line in _lines(data) if line.startswith("@pause")]
+
+
+def _morgen_lines(data: bytes) -> list[str]:
+    return [line for line in _lines(data) if line.startswith("@morgen")]
+
+
+def test_render_active_pause_writes_pause_line_without_morgen(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _week(limit=60))
+    _invite(store, "w1", "gw-mia")
+    store.set_pause(PauseState(started_by="admin", ab=FIXED + 30, bis=FIXED + 930, art=ART_PAUSE))
+
+    data, _ = engine.render("w1")
+
+    assert _pause_lines(data) == [f"@pause {FIXED + 30} {FIXED + 930} pause"]
+    assert _morgen_lines(data) == []
+
+
+def test_render_schluss_writes_morgen_only_for_world_players_with_plan(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _world(store, "w2", 30016)
+    _player(store, "gw-mia", "Mia")
+    _player(store, "gw-leo", "Leo")
+    _player(store, "gw-ida", "Ida")
+    _plan(store, "gw-mia", _week(ws=540, we=1140))
+    _plan(store, "gw-ida", _week(limit=60))
+    _invite(store, "w1", "gw-mia")
+    _invite(store, "w1", "gw-leo")
+    _invite(store, "w2", "gw-ida")
+    midnight = day_starts(FIXED, ZONE)[1]
+    store.set_pause(PauseState(started_by="admin", ab=FIXED + 30, bis=midnight, art=ART_SCHLUSS))
+
+    data, _ = engine.render("w1")
+
+    assert _pause_lines(data) == [f"@pause {FIXED + 30} {midnight} schluss"]
+    # Leo ohne Plan fehlt, Ida spielt in einer anderen Welt.
+    assert _morgen_lines(data) == ["@morgen Mia 540"]
+
+
+def test_render_expired_pause_same_bytes_as_without_and_clears_state(store: WorldStore) -> None:
+    clock = [float(FIXED)]
+    engine = TimeEngine(store, clock=lambda: clock[0])
+    _world(store, "w1", 30015)
+    _player(store, "gw-mia", "Mia")
+    _plan(store, "gw-mia", _week(limit=60))
+    _invite(store, "w1", "gw-mia")
+    without, _ = engine.render("w1")
+    store.set_pause(PauseState(started_by="admin", ab=FIXED + 30, bis=FIXED + 930, art=ART_PAUSE))
+
+    paused, changed = engine.render("w1")
+    assert changed is True
+    assert _pause_lines(paused)
+
+    clock[0] = float(FIXED + 930)
+    after, changed_after = engine.render("w1")
+
+    assert changed_after is True
+    assert _generation(after) > _generation(paused)
+    assert _pause_lines(after) == []
+    # Bis auf Kopf (Generation, Zeitpunkt) dieselben Bytes wie ohne Pause.
+    assert _lines(after)[1:] == _lines(without)[1:]
+    assert store.get_pause() is None
+
+
+def test_render_pause_change_changes_cache_key(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-leo", "Leo")
+    _invite(store, "w1", "gw-leo")
+    engine.render("w1")
+    assert engine.render("w1")[1] is False
+
+    store.set_pause(PauseState(started_by="admin", ab=FIXED + 30, bis=FIXED + 930, art=ART_PAUSE))
+    assert engine.render("w1")[1] is True
+    assert engine.render("w1")[1] is False
+
+    store.set_pause(PauseState(started_by="admin", ab=FIXED + 30, bis=FIXED + 1830, art=ART_PAUSE))
+    assert engine.render("w1")[1] is True
+
+    store.clear_pause()
+    data, changed = engine.render("w1")
+    assert changed is True
+    assert _pause_lines(data) == []
