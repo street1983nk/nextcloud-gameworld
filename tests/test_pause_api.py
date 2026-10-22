@@ -227,6 +227,56 @@ async def test_schluss_until_next_local_day_keeps_usage(
     assert sorted(kind for _world, kind, _detail in _outbox(store)) == ["pause_schluss", "pause_schluss"]
 
 
+async def test_second_shorter_pause_never_shortens_or_announces(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake: FakeProvisioner
+) -> None:
+    """WR-01: Zweiter Elternteil tippt "15 Minuten" in eine laufende 60-min-Pause."""
+    del service
+    first = (await client.post("/api/pause", json={"minutes": 60}, headers=appapi_headers())).json()
+    store.delete_outbox([row.id for row in store.outbox_batch(limit=1000)])
+    second = await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())
+    assert second.status_code == 200, second.text
+    data = second.json()
+    assert (data["active"], data["art"], data["ab"], data["bis"]) == (True, "pause", first["ab"], first["bis"])
+    assert f"@pause {first['ab']} {first['bis']} pause" in _rules_of(fake, W1)
+    # Nichts geändert, also auch keine Bot-Meldung "Pause bis ..." mit falscher Uhrzeit.
+    assert _outbox(store) == []
+
+
+async def test_pause_button_during_schluss_keeps_schluss(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake: FakeProvisioner
+) -> None:
+    """WR-01: "Für heute Schluss" wird nie zur kurzen Pause herabgestuft."""
+    del service
+    schluss = (await client.post("/api/pause/schluss", headers=appapi_headers())).json()
+    store.delete_outbox([row.id for row in store.outbox_batch(limit=1000)])
+    for minutes in (15, 30, 60):
+        response = await client.post("/api/pause", json={"minutes": minutes}, headers=appapi_headers())
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert (data["art"], data["ab"], data["bis"]) == ("schluss", schluss["ab"], schluss["bis"])
+    stored = store.get_pause()
+    assert stored is not None
+    assert stored.art == "schluss"
+    assert f"@pause {schluss['ab']} {schluss['bis']} schluss" in _rules_of(fake, W1)
+    assert _outbox(store) == []
+
+
+async def test_longer_second_pause_extends_and_announces(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    """Positivkontrolle: Eine längere Dauer verlängert und meldet das neue Ende."""
+    del service
+    first = (await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())).json()
+    store.delete_outbox([row.id for row in store.outbox_batch(limit=1000)])
+    data = (await client.post("/api/pause", json={"minutes": 60}, headers=appapi_headers())).json()
+    assert data["ab"] == first["ab"]
+    assert data["bis"] > first["bis"]
+    assert sorted(_outbox(store)) == sorted(
+        [(W1, "pause_start", str(data["bis"])), (W2, "pause_start", str(data["bis"]))]
+    )
+
+
 async def test_schluss_during_pause_keeps_ab(client: httpx.AsyncClient, service: WorldService) -> None:
     del service
     started = (await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())).json()

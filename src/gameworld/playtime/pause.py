@@ -10,7 +10,8 @@ Regeln (04.1-CONTEXT):
   Pausentext; darum liegt ``ab`` immer 30 s nach dem Auslösen.
 - D-05: Die Pause wirkt serverseitig über die Zeile ``@pause`` der Regeldatei.
   Getrennte Kinder verbrauchen nichts; Verwalter (``frei``) sind ausgenommen.
-- D-06: Erneutes Auslösen während einer Pause behält ``ab`` und setzt ``bis`` neu.
+- D-06: Erneutes Auslösen während einer Pause behält ``ab`` und verlängert ``bis``
+  höchstens, nie kürzer (WR-01); ein laufendes "Für heute Schluss" bleibt.
 - D-25: Welten mit altem Welt-Mod (ohne Ereignisdatei) werden beim Auslösen neu
   gestartet, damit die Pause sicher greift (``WorldService.apply_pause_sync``).
 - D-29: Zeitfenster laufen während der Pause weiter, nichts wird verlängert.
@@ -75,11 +76,16 @@ def start_window(now: int, minutes: int, current: PauseState | None) -> tuple[in
     """(ab, bis) einer Pause: ab = jetzt + 30 s, bis = ab + Dauer (D-02, D-04).
 
     Läuft schon eine Pause (``current`` aktiv), bleibt deren ``ab`` (kein neuer
-    Vorlauf), nur ``bis`` wird ab dort neu gerechnet (D-06).
+    Vorlauf) und ``bis`` wird nie verkürzt (WR-01): Ein zweiter Elternteil, dessen
+    Seite die laufende Pause noch nicht zeigt, kann sie so weder beenden noch in
+    die Vergangenheit legen. Das neue Ende ist das spätere von altem Ende und
+    jetzt plus Dauer.
     """
     if minutes not in PAUSE_MINUTES:
         raise ValueError(MSG_BAD_MINUTES)
-    ab = current.ab if current is not None and is_active(current, now) else now + PAUSE_LEAD_SECONDS
+    if current is not None and is_active(current, now):
+        return current.ab, max(current.bis, now + minutes * 60)
+    ab = now + PAUSE_LEAD_SECONDS
     return ab, ab + minutes * 60
 
 
@@ -164,10 +170,14 @@ class PauseService:
         return await anyio.to_thread.run_sync(self._get_sync)
 
     async def start(self, acting_uid: str, minutes: int) -> PauseResult:
+        """Pause starten oder verlängern; ein laufendes "Für heute Schluss" bleibt unverändert (WR-01)."""
         if minutes not in PAUSE_MINUTES:
             raise ValueError(MSG_BAD_MINUTES)
 
         def decide(current: PauseState | None, now: int) -> PauseState:
+            if current is not None and current.art == ART_SCHLUSS:
+                # Nie herabstufen: Die Elternentscheidung "Schluss" gilt bis morgen.
+                return current
             ab, bis = start_window(now, minutes, current)
             return PauseState(started_by=acting_uid, ab=ab, bis=bis, art=ART_PAUSE)
 

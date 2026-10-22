@@ -49,7 +49,21 @@ def test_start_window_fresh() -> None:
 
 def test_start_window_keeps_ab_of_running_pause() -> None:
     current = PauseState(started_by="admin", ab=1030, bis=1930, art=ART_PAUSE)
-    assert start_window(1200, 60, current) == (1030, 1030 + 3600)
+    # Längere Dauer: neues Ende ab jetzt gerechnet, ab bleibt (kein zweiter Vorlauf).
+    assert start_window(1200, 60, current) == (1030, 1200 + 3600)
+
+
+def test_start_window_never_shortens_running_pause() -> None:
+    # Review-Szenario WR-01: A startet 60 min, B tippt 20 min später "15 Minuten".
+    current = PauseState(started_by="mama", ab=1030, bis=1030 + 3600, art=ART_PAUSE)
+    ab, bis = start_window(1030 + 1200, 15, current)
+    assert (ab, bis) == (1030, 1030 + 3600)
+    assert is_active(PauseState("papa", ab, bis, ART_PAUSE), 1030 + 1200)
+
+
+def test_start_window_after_expiry_starts_fresh() -> None:
+    expired = PauseState(started_by="mama", ab=1030, bis=1930, art=ART_PAUSE)
+    assert start_window(2000, 15, expired) == (2030, 2930)
 
 
 def test_start_window_rejects_other_minutes() -> None:

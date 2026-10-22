@@ -499,7 +499,9 @@ class WorldService:
                 LOG.warning("Pause: Docker-Liste nicht abrufbar (%s)", type(exc).__name__)
                 managed = {}
             detail = str(state.bis) if state is not None and outbox_kind == OUTBOX_PAUSE_START else ""
-            announce = state is not None or current is not None
+            # Nur eine echte Änderung meldet der Bot (WR-01): Ein Pause-Knopf während
+            # "Für heute Schluss" oder ohne späteres Ende ändert nichts und meldet nichts.
+            announce = (state is not None or current is not None) and state != current
             results: list[PauseWorldResult] = []
             for row in self._store.list_worlds():
                 if row.desired_state == "deleted":
