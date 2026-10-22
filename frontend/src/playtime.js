@@ -410,6 +410,53 @@ export function pauseUntilText(untilClock) {
 	return typeof untilClock === 'string' && untilClock !== '' ? `Pause bis ${untilClock} Uhr` : 'Pause läuft'
 }
 
+// Rückblick-Einstellung (04.1-08): Vorgabe 20 Uhr, Auswahl 0:15 bis 23:45 im 15-Minuten-Raster.
+// Minute 0 fehlt (Text-Regel: nie "0 Uhr"); vor 0:15 hat ein Abendrückblick keinen Nutzen.
+export const REVIEW_DEFAULT_MINUTE = 1200
+
+export function reviewTimeOptions() {
+	return Array.from({ length: 95 }, (_, index) => {
+		const value = 15 * (index + 1)
+		return { value, label: formatClock(value) }
+	})
+}
+
+// Auswahl für den gespeicherten Wert: Ein Wert außerhalb des Rasters (1..1439) erscheint als
+// zusätzliche Option; 0 wird nie angezeigt, sondern auf 0:15 gesetzt und als ungespeichert markiert.
+export function reviewSelectOptions(stored) {
+	const options = reviewTimeOptions()
+	if (stored === null || stored === undefined) {
+		return { options, selected: REVIEW_DEFAULT_MINUTE, dirty: false }
+	}
+	if (!Number.isInteger(stored) || stored <= 0 || stored >= FULL_DAY) {
+		return { options, selected: options[0].value, dirty: true }
+	}
+	if (!options.some((option) => option.value === stored)) {
+		options.push({ value: stored, label: formatClock(stored) })
+		options.sort((a, b) => a.value - b.value)
+	}
+	return { options, selected: stored, dirty: false }
+}
+
+// Talk-Hinweise (D-20, D-27); leer, wenn nichts zu sagen ist.
+export const TALK_MISSING_TEXT = 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.'
+
+export function talkHint(status) {
+	if (!status) {
+		return ''
+	}
+	if (status.available === false) {
+		return TALK_MISSING_TEXT
+	}
+	if (status.owner_not_admin) {
+		const owner = status.owner_display
+			? `${status.owner_display}, der kein Verwalter mehr ist`
+			: 'einem früheren Verwalter'
+		return `Der Talk-Raum gehört noch ${owner}. Den Besitz kannst du in Talk in den Raum-Einstellungen übertragen.`
+	}
+	return ''
+}
+
 // Antwort mit applied false (WR-08): gespeichert, aber mindestens eine Welt trägt den neuen
 // Stand noch nicht. Laufende Welten holt der 15-s-Takt nach, gestoppte der nächste Start.
 export const NOT_APPLIED_TEXT = 'Gespeichert, aber noch nicht in jeder Welt angekommen. '

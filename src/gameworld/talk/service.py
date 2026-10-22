@@ -64,6 +64,10 @@ class TalkWorldStatus:
     has_room: bool
     read_only: bool
     owner_not_admin: bool
+    # Raum-Token für den Link in Talk; None ohne fertigen Raum.
+    token: str | None = None
+    # Nextcloud-Konto des Raum-Owners, nur wenn er kein Verwalter mehr ist (D-27).
+    owner_display: str | None = None
 
 
 @dataclass(frozen=True)
@@ -329,13 +333,16 @@ class TalkService:
         for world in worlds:
             row = rows.get(world.id)
             has_room = row is not None and row.state == TALK_STATE_OK
+            owner_not_admin = row is not None and has_room and row.owner_uid not in admins
             items.append(
                 TalkWorldStatus(
                     world_id=world.id,
                     world_name=world.name,
                     has_room=has_room,
                     read_only=row is not None and row.read_only,
-                    owner_not_admin=row is not None and has_room and row.owner_uid not in admins,
+                    owner_not_admin=owner_not_admin,
+                    token=row.token if row is not None and has_room else None,
+                    owner_display=row.owner_uid if row is not None and owner_not_admin else None,
                 )
             )
         return TalkStatus(available=talk, bots=bots, worlds=items)

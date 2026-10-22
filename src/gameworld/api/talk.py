@@ -32,6 +32,10 @@ class TalkWorldOut(BaseModel):
     read_only: bool
     # Raum-Owner ist kein Verwalter mehr (D-27): er bleibt im Raum, die Weltseite zeigt einen Hinweis.
     owner_not_admin: bool
+    # Raum-Token für den Link "Talk-Raum öffnen" (nur Verwaltern sichtbar, T-04.1-42); None ohne Raum.
+    token: str | None
+    # Konto des früheren Verwalters, nur bei owner_not_admin; die Oberfläche gibt es nur als Text aus.
+    owner_display: str | None
 
 
 class TalkStatusOut(BaseModel):
@@ -60,6 +64,8 @@ async def get_talk(service: ServiceDep, uid: VerwalterDep) -> TalkStatusOut:
                 has_room=item.has_room,
                 read_only=item.read_only,
                 owner_not_admin=item.owner_not_admin,
+                token=item.token,
+                owner_display=item.owner_display,
             )
             for item in result.worlds
         ],
