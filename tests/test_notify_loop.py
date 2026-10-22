@@ -300,7 +300,12 @@ async def test_notify_forever_survives_errors(service: WorldService, monkeypatch
 
     monkeypatch.setattr(loop, "run_once", failing)
     task = asyncio.create_task(loop.notify_forever(service, interval_seconds=0.01))
-    await asyncio.sleep(0.1)
+    # Auf das Ereignis warten statt auf eine feste Zeit: Die erste Wartung (Prüfung des
+    # Schnappschusses vor dem ersten Versand) dauert auf langsamen Rechnern länger.
+    for _ in range(500):
+        if len(calls) >= 2:
+            break
+        await asyncio.sleep(0.01)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
