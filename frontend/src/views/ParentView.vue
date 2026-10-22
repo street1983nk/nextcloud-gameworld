@@ -6,6 +6,19 @@
 			Jede Welt ist privat: Nur eingeladene Nextcloud-Konten können beitreten. Gameworld kündigt keine Welt im Internet an.
 		</p>
 
+		<!-- Pause für alle Kinder (ELTERN-01, D-06): Einstieg zur Pause-Seite und Stand der laufenden Pause. -->
+		<section class="gameworld__pause" :class="{ 'gameworld__pause--active': pause?.active }">
+			<div class="gameworld__pause-text">
+				<h3>Pause für alle Kinder</h3>
+				<p v-if="pause?.active" class="gameworld__pause-state" aria-live="polite">
+					{{ pauseText }}
+				</p>
+			</div>
+			<NcButton :variant="pause?.active ? 'secondary' : 'primary'" @click="navigate('pause')">
+				{{ pause?.active ? 'Pause verwalten' : 'Pause' }}
+			</NcButton>
+		</section>
+
 		<SetupCheck @update:ok="onSetupOk" @checked="refresh" />
 
 		<NcNoteCard v-if="presetsError" type="error">
@@ -55,6 +68,11 @@
 			{{ listError }}
 		</NcNoteCard>
 
+		<!-- Ohne Talk einmal oberhalb der Liste (D-20); die Welten laufen ohne Talk-Räume weiter. -->
+		<NcNoteCard v-if="talk && talk.available === false" type="info">
+			{{ talkHint(talk) }}
+		</NcNoteCard>
+
 		<NcLoadingIcon v-if="loading" :size="32" />
 		<p v-else-if="worlds.length === 0" class="gameworld__empty">
 			Noch keine Welt. Wähle eine Spielart, gib einen Namen ein und klicke auf Welt erstellen.
@@ -84,6 +102,11 @@
 							:text="windowSummary(world.time_window)"
 							variant="secondary"
 							no-close />
+						<TalkRoomStatus
+							v-if="!world.delete_only"
+							:world="world"
+							:status="talkFor(world)"
+							@changed="loadTalk" />
 					</td>
 					<td>{{ world.preset_title }}</td>
 					<td>{{ world.port }}</td>
@@ -101,6 +124,9 @@
 						</NcNoteCard>
 						<NcNoteCard v-else-if="world.time_restart_needed" type="warning" class="gameworld__restart">
 							Neustart nötig, damit Spielzeiten gelten.
+						</NcNoteCard>
+						<NcNoteCard v-else-if="world.events_restart_needed" type="warning" class="gameworld__restart">
+							Neustart nötig, damit Pause und Hinweise gelten.
 						</NcNoteCard>
 					</td>
 					<td class="gameworld__invited">
@@ -204,6 +230,7 @@
 
 		<JoinHostSettings />
 		<TimeZoneSetting :time-zone="playtime?.time_zone ?? ''" @changed="onTimeZoneChanged" />
+		<ReviewSetting />
 	</div>
 </template>
 
@@ -224,15 +251,20 @@ import InviteDialog from '../components/InviteDialog.vue'
 import JoinHostSettings from '../components/JoinHostSettings.vue'
 import PlayerManager from '../components/PlayerManager.vue'
 import PlaytimeSection from '../components/PlaytimeSection.vue'
+import ReviewSetting from '../components/ReviewSetting.vue'
 import SetupCheck from '../components/SetupCheck.vue'
+import TalkRoomStatus from '../components/TalkRoomStatus.vue'
 import TimeZoneSetting from '../components/TimeZoneSetting.vue'
 import WorldWindowDialog from '../components/WorldWindowDialog.vue'
-import { windowSummary } from '../playtime.js'
+import { pauseUntilText, talkHint, windowSummary } from '../playtime.js'
+import { navigate } from '../route.js'
 import {
 	createWorld,
 	deleteWorld,
 	errorText,
+	getPause,
 	getPlaytime,
+	getTalkStatus,
 	listMyWorlds,
 	listPresets,
 	listWorlds,
@@ -287,6 +319,14 @@ const playtime = ref(null)
 const playtimeLoading = ref(true)
 const playtimeError = ref('')
 let playtimeLoadedAt = 0
+// GET /api/pause und GET /api/talk; im Takt der Spielzeit (höchstens alle 30 s). Fehler bleiben still:
+// die Karte zeigt dann nur den Einstieg, die Talk-Zeilen bleiben leer.
+const pause = ref(null)
+const talk = ref(null)
+
+const pauseText = computed(() => (pause.value?.art === 'schluss'
+	? 'Für heute ist Schluss.'
+	: pauseUntilText(pause.value?.until_clock)))
 
 const selectedDescription = computed(() => presets.value.find((preset) => preset.id === selectedPreset.value)?.description ?? '')
 
@@ -295,9 +335,16 @@ const canCreate = computed(() => setupOk.value
 	&& selectedPreset.value !== ''
 	&& name.value.trim() !== '')
 
-const deleteMessage = computed(() => pendingDelete.value
-	? `Welt »${pendingDelete.value.name}« endgültig löschen? Die Spielwelt und alle gebauten Dinge werden entfernt.`
-	: '')
+// Mit Talk geht auch der Raum der Welt samt Verlauf verloren (D-19).
+const deleteMessage = computed(() => {
+	if (!pendingDelete.value) {
+		return ''
+	}
+	const base = `Welt »${pendingDelete.value.name}« endgültig löschen? Die Spielwelt und alle gebauten Dinge werden entfernt.`
+	return talk.value?.available
+		? `${base} Der Talk-Raum der Welt und sein Verlauf werden ebenfalls gelöscht.`
+		: base
+})
 
 const deleteButtons = [
 	{ label: 'Abbrechen', variant: 'tertiary' },
@@ -447,10 +494,49 @@ async function loadPlaytime() {
 	}
 }
 
-// Im Takt der Weltenliste, aber höchstens alle 30 s.
+// Nur die Antwort des zuletzt gestarteten Abrufs zählt.
+let pauseSeq = 0
+let talkSeq = 0
+
+async function loadPause() {
+	const seq = ++pauseSeq
+	try {
+		const result = await getPause()
+		if (seq === pauseSeq) {
+			pause.value = result
+		}
+	} catch {
+		// Still: der Knopf zur Pause-Seite bleibt, dort steht ein Fehler.
+	}
+}
+
+async function loadTalk() {
+	const seq = ++talkSeq
+	try {
+		const result = await getTalkStatus()
+		if (seq === talkSeq) {
+			talk.value = result
+		}
+	} catch {
+		// Still: Gameworld funktioniert ohne Talk-Stand weiter (D-20).
+	}
+}
+
+// Eintrag einer Welt aus GET /api/talk plus available; null, solange nichts geladen ist.
+function talkFor(world) {
+	if (!talk.value) {
+		return null
+	}
+	const entry = (talk.value.worlds ?? []).find((item) => item.world_id === world.id)
+	return { has_room: false, read_only: false, owner_not_admin: false, token: null, owner_display: null, ...entry, available: talk.value.available }
+}
+
+// Im Takt der Weltenliste, aber höchstens alle 30 s (Spielzeit, Pause, Talk gemeinsam).
 function maybeLoadPlaytime() {
 	if (Date.now() - playtimeLoadedAt >= PLAYTIME_POLL_MS) {
 		loadPlaytime()
+		loadPause()
+		loadTalk()
 	}
 }
 
@@ -533,7 +619,7 @@ async function submit() {
 
 onMounted(async () => {
 	document.addEventListener('visibilitychange', onTabChange)
-	await Promise.all([loadPresets(), refresh(), loadPlaytime()])
+	await Promise.all([loadPresets(), refresh(), loadPlaytime(), loadPause(), loadTalk()])
 	schedule()
 })
 
@@ -554,6 +640,31 @@ onUnmounted(() => {
 .gameworld__hint {
 	margin-bottom: 16px;
 	color: var(--color-text-maxcontrast);
+}
+
+.gameworld__pause {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 16px;
+	padding: 12px 16px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+}
+
+.gameworld__pause--active {
+	border-color: var(--color-warning);
+}
+
+.gameworld__pause h3 {
+	margin: 0;
+}
+
+.gameworld__pause-state {
+	margin: 4px 0 0;
+	font-weight: bold;
 }
 
 .gameworld__form {
