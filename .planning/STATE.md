@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 04.1-09-PLAN.md
+status: complete
+stopped_at: Phase 04.1 abgeschlossen (verifiziert, UI-Abnahme 22.10.2026)
 last_updated: "2026-10-22T05:28:58.260Z"
 last_activity: 2026-10-22
 progress:
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 04.1 , eltern handy pause hinweise rueckblick
+**Current focus:** Phase 04.2 , Browser-Spike luanti-wasm (nächste Phase)
 
 ## Current Position
 
 Phase: 04.1
 Plan: 9 of 9 (04.1-09 complete)
-Status: Phase complete , ready for verification
+Status: Phase 04.1 abgeschlossen (Verifier 6/6, Abnahme 133/133, UI-Abnahme gemeinsam am 22.10.2026)
 Last activity: 2026-10-22
 
 Progress: [██████████] 100%

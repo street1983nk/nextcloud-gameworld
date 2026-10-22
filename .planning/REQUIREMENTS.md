@@ -37,14 +37,14 @@
 
 ### Eltern-Handy
 
-- [ ] **ELTERN-01**: Verwalter kann vom Handy eine Pause auslösen ("Essen ist fertig"): alle Kinder werden sanft getrennt, Beitritt bis zum Ende der Pause gesperrt, Pausenzeit zählt nicht; danach "weiter" oder "für heute Schluss" (Owner-Entscheid 21.10.2026)
-- [ ] **ELTERN-02**: Verwalter bekommen eine Push-Benachrichtigung, wenn ein nicht eingeladener Spielername eine Welt betreten will (gedrosselt) (Owner-Entscheid 21.10.2026)
-- [ ] **ELTERN-03**: Verwalter bekommen abends einen Tagesrückblick mit der Spielzeit je Kind, höchstens eine Benachrichtigung pro Tag, abschaltbar (Owner-Entscheid 21.10.2026)
+- [x] **ELTERN-01**: Verwalter kann vom Handy eine Pause auslösen ("Essen ist fertig"): alle Kinder werden sanft getrennt, Beitritt bis zum Ende der Pause gesperrt, Pausenzeit zählt nicht; danach "weiter" oder "für heute Schluss" (Owner-Entscheid 21.10.2026)
+- [x] **ELTERN-02**: Verwalter bekommen eine Push-Benachrichtigung, wenn ein nicht eingeladener Spielername eine Welt betreten will (gedrosselt) (Owner-Entscheid 21.10.2026)
+- [x] **ELTERN-03**: Verwalter bekommen abends einen Tagesrückblick mit der Spielzeit je Kind, höchstens eine Benachrichtigung pro Tag, abschaltbar (Owner-Entscheid 21.10.2026)
 
 ### Talk
 
-- [ ] **TALK-01**: Zu jeder Welt legt Gameworld einen Nextcloud-Talk-Raum an; Mitglieder folgen automatisch den Einladungen (inkl. Gruppen) plus Verwalter, Ausladen entfernt aus dem Raum, Löschen der Welt räumt den Raum ab; ohne Talk-App läuft Gameworld unverändert (Owner-Entscheid 21.10.2026)
-- [ ] **TALK-02**: Ein Gameworld-Talk-Bot meldet im Raum der Welt Start/Stopp, Beitritte und das nahende Ende der Spielzeit (Owner-Entscheid 21.10.2026)
+- [x] **TALK-01**: Zu jeder Welt legt Gameworld einen Nextcloud-Talk-Raum an; Mitglieder folgen automatisch den Einladungen (inkl. Gruppen) plus Verwalter, Ausladen entfernt aus dem Raum, Löschen der Welt räumt den Raum ab; ohne Talk-App läuft Gameworld unverändert (Owner-Entscheid 21.10.2026)
+- [x] **TALK-02**: Ein Gameworld-Talk-Bot meldet im Raum der Welt Start/Stopp, Beitritte und das nahende Ende der Spielzeit (Owner-Entscheid 21.10.2026)
 
 ### Backup
 
@@ -110,11 +110,11 @@
 | ZEIT-03 | Phase 4 | Complete |
 | ZEIT-04 | Phase 4 | Complete |
 | ZEIT-05 | Phase 4 | Complete |
-| ELTERN-01 | Phase 4.1 | Pending |
-| ELTERN-02 | Phase 4.1 | Pending |
-| ELTERN-03 | Phase 4.1 | Pending |
-| TALK-01 | Phase 4.1 | Pending |
-| TALK-02 | Phase 4.1 | Pending |
+| ELTERN-01 | Phase 4.1 | Complete |
+| ELTERN-02 | Phase 4.1 | Complete |
+| ELTERN-03 | Phase 4.1 | Complete |
+| TALK-01 | Phase 4.1 | Complete |
+| TALK-02 | Phase 4.1 | Complete |
 | ROLLE-03 | Phase 6 | Pending |
 | ROLLE-04 | Phase 6 | Pending |
 | BACKUP-01 | Phase 5 | Pending |
