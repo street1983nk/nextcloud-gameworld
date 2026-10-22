@@ -330,7 +330,8 @@ class TimeService:
         Antwort steht; ungeprüft wird nie ein Konto eingefügt. Die Antwort ersetzt
         den Schnappschuss (ohne Warten auf die Welt-Sperre). Lehnt Nextcloud jedes
         Konto ausdrücklich ab (401/403), ist niemand mehr bestätigt: Der
-        Schnappschuss wird leer (fail closed, keine Empfänger, keine Freistellung).
+        Schnappschuss wird leer (fail closed, keine Empfänger, keine Freistellung),
+        aber nur, wenn Nextcloud die ExApp selbst annimmt (Directory.app_accepted).
         Bei einer Störung bleibt der letzte Stand, es gilt aber kein Konto als
         bestätigt. Belegte Sperre: None, der nächste Lauf versucht es erneut.
         """
@@ -353,7 +354,12 @@ class TimeService:
                 ADMINS_STATE.last = monotonic()
                 return uid
             return None
-        if tried and rejected == tried:
+        # Lehnt Nextcloud gerade die ExApp selbst ab (Start, Neuregistrierung), bekommt
+        # jedes Konto 401: das ist eine Störung, keine Ablehnung der Konten. Ohne diese
+        # Gegenprobe leerte jeder Neustart den Schnappschuss, Hinweise blieben stumm.
+        if tried and rejected == tried and not await self._directory.app_accepted():
+            LOG.warning("Verwalter-Schnappschuss nicht bestätigt, Nextcloud nimmt Gameworld gerade nicht an")
+        elif tried and rejected == tried:
             LOG.warning("Kein Konto des Verwalter-Schnappschusses ist noch Admin, der Schnappschuss wird geleert")
             await anyio.to_thread.run_sync(self._store_admins_background_sync, "[]")
         else:

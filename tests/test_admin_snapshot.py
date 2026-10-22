@@ -182,6 +182,46 @@ async def test_all_accounts_rejected_empties_snapshot_and_skips_hooks(
     assert fake_notifier.calls == []
 
 
+async def test_rejection_while_app_not_accepted_keeps_snapshot(
+    service: WorldService,
+    store: WorldStore,
+    fake_directory: FakeDirectory,
+    fake_notifier: FakeNotifier,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Start/Neuregistrierung: Nextcloud lehnt die ExApp selbst ab, jedes Konto bekommt 401.
+    fake_directory.error = DirectoryRejectedError("401")
+    fake_directory.app_ok = False
+    seen: list[str] = []
+
+    async def hook(world_service: WorldService, acting_uid: str) -> None:
+        del world_service
+        seen.append(acting_uid)
+
+    monkeypatch.setattr(loop, "MAINTENANCE", [hook])
+    await maintain_once(service, fake_directory)
+    assert _snapshot(store) == ["anna", "papa"]
+    assert seen == []
+    assert loop.LOOP_STATE.acting is None
+    # Sobald Nextcloud die ExApp wieder annimmt, bestätigt der nächste Lauf und Hinweise gehen raus.
+    fake_directory.error = None
+    fake_directory.app_ok = True
+    fake_directory.groups["admin"] = ["papa"]
+    assert await verify_once(service, fake_directory) == "papa"
+    store.add_outbox(W1, "deny", "Fremder", _epoch(18, 5))
+    await run_once(service, fake_notifier, fake_directory, _epoch(18, 6))
+    assert [call[0] for call in fake_notifier.calls] == ["papa"]
+
+
+async def test_rejection_with_app_accepted_still_empties_snapshot(
+    service: WorldService, store: WorldStore, fake_directory: FakeDirectory
+) -> None:
+    # Gegenprobe gelingt: 401/403 betrifft die Konten selbst (gelöscht, kein Admin mehr), fail closed.
+    fake_directory.error = DirectoryRejectedError("401")
+    assert await verify_once(service, fake_directory) is None
+    assert _snapshot(store) == []
+
+
 async def test_outage_keeps_snapshot_but_confirms_nobody(
     service: WorldService, store: WorldStore, fake_directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -297,6 +337,23 @@ async def test_nc_directory_rejection_is_its_own_error(monkeypatch: pytest.Monke
     app = _fake_nc(monkeypatch, NextcloudException(status, "nein"))
     with pytest.raises(DirectoryRejectedError):
         await NcDirectory().group_members("anna", "admin")
+    assert_closed(app, times=1)
+
+
+async def test_nc_directory_app_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = MagicMock()
+    app.appconfig_ex.get_value = AsyncMock(return_value=None)
+    install_fake_nc(monkeypatch, app)
+    assert await NcDirectory().app_accepted() is True
+    assert_closed(app, times=1)
+
+
+@pytest.mark.parametrize("error", [NextcloudException(401, "nein"), NextcloudException(500), OSError("weg")])
+async def test_nc_directory_app_not_accepted(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
+    app = MagicMock()
+    app.appconfig_ex.get_value = AsyncMock(side_effect=error)
+    install_fake_nc(monkeypatch, app)
+    assert await NcDirectory().app_accepted() is False
     assert_closed(app, times=1)
 
 

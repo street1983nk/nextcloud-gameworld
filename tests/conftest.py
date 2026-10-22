@@ -339,6 +339,8 @@ class FakeDirectory:
         # Wie Nextcloud (am Dev-Stack belegt): Gruppen löst nur ein Admin auf, alle
         # anderen bekommen 403 (DirectoryRejectedError). Aus, damit ältere Tests bleiben.
         self.strict = False
+        # Gegenprobe app_accepted: False wie beim Start, wenn Nextcloud die ExApp noch ablehnt.
+        self.app_ok = True
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
         self.calls.append((acting_uid, uid))
@@ -363,6 +365,9 @@ class FakeDirectory:
 
     async def group_exists(self, acting_uid: str, gid: str) -> bool:
         return await self.group_members(acting_uid, gid) is not None
+
+    async def app_accepted(self) -> bool:
+        return self.app_ok
 
 
 class StaticSecret(PlayerSecret):

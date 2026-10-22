@@ -13,9 +13,12 @@ from urllib.parse import quote
 
 from nc_py_api import NextcloudException
 
-from gameworld.nc import nc_as
+from gameworld.nc import nc_app, nc_as
 
 LOG = logging.getLogger(__name__)
+
+# Schlüssel der Gegenprobe; gelesen wird nur, ob es ihn gibt, ist egal.
+PROBE_KEY = "gameworld_probe"
 
 # 998 ist der OCS-Code "nicht gefunden" der Provisioning-API.
 _NOT_FOUND_CODES = frozenset({404, 998})
@@ -57,6 +60,10 @@ class Directory(Protocol):
 
     async def group_exists(self, acting_uid: str, gid: str) -> bool:
         """Gibt es die Gruppe? Gleiche Prüfung wie group_members."""
+        ...
+
+    async def app_accepted(self) -> bool:
+        """Nimmt Nextcloud die ExApp selbst gerade an (Anfrage ohne Konto)? False bei jedem Fehler."""
         ...
 
 
@@ -105,6 +112,21 @@ class NcDirectory:
 
     async def group_exists(self, acting_uid: str, gid: str) -> bool:
         return await self.group_members(acting_uid, gid) is not None
+
+    async def app_accepted(self) -> bool:
+        """Gegenprobe zu einer Ablehnung: eine App-Anfrage ohne Konto (appconfig_ex).
+
+        Am Dev-Stack belegt: Solange Nextcloud die ExApp nicht annimmt (Start,
+        Neuregistrierung), antwortet es auf jede Anfrage mit 401, auch auf diese.
+        Gelingt sie, war ein 401/403 der Gruppenabfrage eine Ablehnung des Kontos.
+        """
+        try:
+            async with nc_app() as nc:
+                await nc.appconfig_ex.get_value(PROBE_KEY)
+        except Exception as exc:
+            LOG.warning("Nextcloud nimmt Gameworld gerade nicht an: %s", type(exc).__name__)
+            return False
+        return True
 
 
 _directory: Directory | None = None
