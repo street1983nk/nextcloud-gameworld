@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.1-06-PLAN.md
-last_updated: "2026-10-22T00:04:02.682Z"
+stopped_at: Completed 04.1-07-PLAN.md
+last_updated: "2026-10-22T00:11:22.452Z"
 last_activity: 2026-10-22
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 36
-  completed_plans: 33
+  completed_plans: 34
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.1
-Plan: 7 of 9 (04.1-06 complete)
+Plan: 8 of 9 (04.1-07 complete)
 Status: Ready to execute
 Last activity: 2026-10-22
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -86,6 +86,7 @@ Progress: [█████████░] 92%
 | Phase 04.1 P04 | 45min | 2 tasks | 16 files |
 | Phase 04.1 P05 | 50 min | 2 tasks | 14 files |
 | Phase 04.1 P06 | 40min | 3 tasks | 15 files |
+| Phase 04.1 P07 | 7 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -179,6 +180,8 @@ Recent decisions affecting current work:
 - [Phase 04.1]: 04.1-05: Talk handelt als Owner (falls noch Verwalter), sonst als Verwalter des Schnappschusses der Reihe nach; leerer Schnappschuss heißt kein Talk-Aufruf
 - [Phase 04.1]: 04.1-05: In Talk gelöschter Raum (404 auch für den Owner) wird im nächsten Abgleich neu angelegt; Zeilen ohne Welt räumt der Abgleich ab
 - [Phase 04.1]: 04.1-05: Nur lesen ohne Raum antwortet 409; applied false heißt gemerkt, der Abgleich erzwingt es
+- [Phase 04.1]: 04.1-07: Pfad-Router ohne vue-router; navigate feuert eigenes Ereignis gameworld-route, App.vue hört zusätzlich auf popstate
+- [Phase 04.1]: 04.1-07: Pause-Seite fragt nur bei !document.hidden ab, focus/pageshow statt visibilitychange (Wort visibility im Frontend verboten)
 
 ### Pending Todos
 
@@ -206,6 +209,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-22T00:04:02.663Z
-Stopped at: Completed 04.1-06-PLAN.md
+Last session: 2026-10-22T00:11:22.432Z
+Stopped at: Completed 04.1-07-PLAN.md
 Resume file: None

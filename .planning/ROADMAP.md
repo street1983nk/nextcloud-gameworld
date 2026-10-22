@@ -219,7 +219,7 @@ Plans:
   4. Die Seiten hinter den Benachrichtigungen funktionieren im Handy-Browser und in der Nextcloud-App
   5. Zu jeder Welt gibt es einen Talk-Raum, dessen Mitglieder automatisch den Einladungen folgen (Einladen fügt hinzu, Ausladen entfernt, Gruppen-Einladungen inklusive) plus die Verwalter; niemand sonst kommt hinein
   6. Ein Gameworld-Bot meldet im Raum Weltstart und -stopp, Beitritte und das nahende Ende der Spielzeit; ohne installiertes Talk läuft Gameworld unverändert weiter und zeigt nur einen Hinweis
-**Plans:** 6/9 plans executed
+**Plans:** 7/9 plans executed
 
 Plans:
 
@@ -249,7 +249,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04.1-07-PLAN.md , Handy-Seiten pause, versuch, rueckblick mit Pfad-Router ohne vue-router
+- [x] 04.1-07-PLAN.md , Handy-Seiten pause, versuch, rueckblick mit Pfad-Router ohne vue-router
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
