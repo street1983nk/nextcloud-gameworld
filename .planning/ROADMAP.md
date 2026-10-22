@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: One-Click-Welten** - Welt-Verwaltung im UI mit Presets, Status, Reconciler und Update-/Reboot-Überlebensfähigkeit (completed 2026-10-19)
 - [x] **Phase 3: Zugang und Rollen** - Einladungen über Nextcloud-Konten, serverseitige Whitelist, Eltern verwalten, Kinder spielen (completed 2026-10-20)
 - [x] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt (completed 2026-10-21)
-- [ ] **Phase 4.1: Eltern-Handy und Talk (INSERTED)** - Pause, Hinweis bei fremdem Beitrittsversuch, Tagesrückblick per Push über die Nextcloud-App; Talk-Raum pro Welt mit Gameworld-Bot
+- [x] **Phase 4.1: Eltern-Handy und Talk (INSERTED)** - Pause, Hinweis bei fremdem Beitrittsversuch, Tagesrückblick per Push über die Nextcloud-App; Talk-Raum pro Welt mit Gameworld-Bot (completed 2026-10-22)
 - [ ] **Phase 4.2: Browser-Spike (INSERTED)** - Go/No-Go: Spielen im Browser ohne Luanti-Installation (luanti-wasm, eigener Proxy); Bau nur wenn sinnvoll, Mehrwert und sicher
 - [ ] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip
 - [ ] **Phase 6: Store-Release** - Härtung, Setup-Check, Cleanup und Veröffentlichung im Nextcloud App Store
@@ -219,7 +219,7 @@ Plans:
   4. Die Seiten hinter den Benachrichtigungen funktionieren im Handy-Browser und in der Nextcloud-App
   5. Zu jeder Welt gibt es einen Talk-Raum, dessen Mitglieder automatisch den Einladungen folgen (Einladen fügt hinzu, Ausladen entfernt, Gruppen-Einladungen inklusive) plus die Verwalter; niemand sonst kommt hinein
   6. Ein Gameworld-Bot meldet im Raum Weltstart und -stopp, Beitritte und das nahende Ende der Spielzeit; ohne installiertes Talk läuft Gameworld unverändert weiter und zeigt nur einen Hinweis
-**Plans:** 8/9 plans executed
+**Plans:** 9/9 plans complete
 
 Plans:
 
@@ -257,7 +257,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 04.1-09-PLAN.md , Phasenabnahme: acceptance-phase4_1.sh K1 bis K6 mit Regression plus gemeinsame Playwright-Abnahme (390 px, Benachrichtigungsliste, Talk)
+- [x] 04.1-09-PLAN.md , Phasenabnahme: acceptance-phase4_1.sh K1 bis K6 mit Regression plus gemeinsame Playwright-Abnahme (390 px, Benachrichtigungsliste, Talk)
 
 ### Phase 04.2: Browser-Spike (luanti-wasm) (INSERTED)
 

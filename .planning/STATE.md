@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04.1-08-PLAN.md
-last_updated: "2026-10-22T00:19:20.002Z"
+status: verifying
+stopped_at: Completed 04.1-09-PLAN.md
+last_updated: "2026-10-22T05:28:58.260Z"
 last_activity: 2026-10-22
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 36
-  completed_plans: 35
-  percent: 50
+  completed_plans: 36
+  percent: 63
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.1
-Plan: 9 of 9 (04.1-08 complete)
-Status: Ready to execute
+Plan: 9 of 9 (04.1-09 complete)
+Status: Phase complete , ready for verification
 Last activity: 2026-10-22
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Progress: [██████████] 97%
 | Phase 04.1 P05 | 50 min | 2 tasks | 14 files |
 | Phase 04.1 P06 | 40min | 3 tasks | 15 files |
 | Phase 04.1 P07 | 7 min | 2 tasks | 9 files |
+| Phase 04.1 P09 | 5h | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -184,6 +185,8 @@ Recent decisions affecting current work:
 - [Phase 04.1]: 04.1-07: Pause-Seite fragt nur bei !document.hidden ab, focus/pageshow statt visibilitychange (Wort visibility im Frontend verboten)
 - [Phase 04.1]: 04.1-08: GET /api/talk liefert je Welt token und owner_display (Konto-ID) für Talk-Link und Besitz-Hinweis
 - [Phase 04.1]: 04.1-08: Pause- und Talk-Stand laden im 30-s-Spielzeittakt mit; Rückblick-Uhrzeit 0:15 bis 23:45 im 15-min-Raster, gespeicherte 0 wird 0:15 und ungespeichert
+- [Phase 04.1]: 04.1-09: D-26-Abweichung vom Owner bestätigt ("Kurz (Empfohlen)"): ohne Spieltag morgen nur 'Für heute ist Schluss.'; Bot-Meldung pause_schluss mit Ton ("Mit Ton (Empfohlen)")
+- [Phase 04.1]: 04.1-09: Fremdversuch-Hinweis ohne 'Tippe hier, um nachzusehen.' (Web-Glocke öffnet den Link nur über den Titel); Rückblick behält Spielzeit gelöschter Welten als eine Zeile 'gelöschte Welt'
 
 ### Pending Todos
 
@@ -194,6 +197,7 @@ Recent decisions affecting current work:
 - [Phase 1] Research nötig: Welt-Daten-Ablage (Named Volume vs. Container-FS + Archive-API), Luanti-Image-Wahl, Headless-Administration
 - [Phase 3] Erledigt: eigener Welt-Mod gameworld_access statt Whitelist-Mod (ct_whitelist auf ContentDB nicht mehr auffindbar)
 - [Phase 4] Research nötig: Spielzeit-Durchsetzungspfad Mod vs. Scheduler-Stopp, Umgehungs-Caveat bewerten
+- [Phase 04.1] ExApp-Host-Prozess stürzt unter Windows mit asyncio InvalidStateError (Proactor, WinError 995) ab, 2x am 22.10.2026; voller grüner Nachlauf von acceptance-phase4_1.sh nach den Owner-Fixes offen (Lauf 3 vor den Fixes 128/128; deferred-items.md 04.1)
 
 ### Quick Tasks Completed
 
@@ -211,6 +215,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-22T00:19:19.983Z
-Stopped at: Completed 04.1-08-PLAN.md
+Last session: 2026-10-22T05:28:52.621Z
+Stopped at: Completed 04.1-09-PLAN.md (Owner-Abnahme approved mit Fixes; grüner Nachlauf offen wegen ExApp-Absturz unter Windows)
 Resume file: None
