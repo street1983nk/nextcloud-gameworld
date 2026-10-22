@@ -242,3 +242,17 @@ def test_case_hint_never_reveals_invited_name() -> None:
     assert ":" not in access_mod.TEXT_CASE_HINT
     # Kindgerecht und mit echtem ß.
     assert "Groß- und Kleinschreibung" in access_mod.TEXT_CASE_HINT
+
+
+def test_prejoin_runs_before_builtin_case_check() -> None:
+    """IN-07: Luantis eigene Prüfung in builtin/game/auth.lua nennt den registrierten Namen.
+
+    Sie ist vor allen Mods registriert, und von mehreren Ablehnungen gilt die erste. Der
+    Mod rückt seine Prüfung deshalb direkt nach der Registrierung an die erste Stelle.
+    """
+    end = MOD_INIT_LUA.index("\nend)", MOD_INIT_LUA.index("core.register_on_prejoinplayer(function(name)"))
+    after = MOD_INIT_LUA[end : end + 400]
+    assert "local callbacks = core.registered_on_prejoinplayers" in after
+    assert "table.insert(callbacks, 1, table.remove(callbacks))" in after
+    # Keine weitere Registrierung dazwischen, sonst rückte der falsche Callback nach vorn.
+    assert "register_on" not in after[: after.index("table.insert(callbacks")]

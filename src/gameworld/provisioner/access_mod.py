@@ -285,6 +285,14 @@ core.register_on_prejoinplayer(function(name)
   end
 end)
 
+-- builtin/game/auth.lua prueft vor allen Mods, ob es den Namen in anderer Schreibweise
+-- schon gibt, und nennt dann den registrierten Namen (IN-07). Diese Pruefung laeuft
+-- deshalb zuerst: Von mehreren Ablehnungen gilt die erste (RUN_CALLBACKS_MODE_OR).
+do
+  local callbacks = core.registered_on_prejoinplayers
+  table.insert(callbacks, 1, table.remove(callbacks))
+end
+
 local function tick()
   load()
   for _, player in ipairs(core.get_connected_players()) do
