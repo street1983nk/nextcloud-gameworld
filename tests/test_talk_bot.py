@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from nc_py_api import NextcloudException
 
 from gameworld.lifecycle import enabled_handler
 from gameworld.playtime.engine import META_TIME_ADMINS
@@ -78,6 +79,24 @@ async def test_register_only_with_bots_available(monkeypatch: pytest.MonkeyPatch
     nc.talk.bots_available = _value(True)
     assert await talk_bot.register(nc) is True
     handler.assert_awaited_once_with(True, nc)
+
+
+async def test_register_already_known_bot_keeps_stored_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Talk 34: Bot mit gleicher URL, anderem Geheimnis (am Dev-Stack belegt, OCS 996).
+    monkeypatch.setattr(talk_bot.BOT, "enabled_handler", AsyncMock(side_effect=NextcloudException(996, "x")))
+    monkeypatch.setattr(talk_bot, "aget_bot_secret", AsyncMock(return_value=b"altes-geheimnis"))
+    nc: Any = MagicMock()
+    nc.talk.bots_available = _value(True)
+    assert await talk_bot.register(nc) is True
+
+
+async def test_register_failure_without_secret_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(talk_bot.BOT, "enabled_handler", AsyncMock(side_effect=NextcloudException(996, "x")))
+    monkeypatch.setattr(talk_bot, "aget_bot_secret", AsyncMock(return_value=None))
+    nc: Any = MagicMock()
+    nc.talk.bots_available = _value(True)
+    with pytest.raises(NextcloudException):
+        await talk_bot.register(nc)
 
 
 async def test_nc_bot_registers_once_per_process(monkeypatch: pytest.MonkeyPatch) -> None:

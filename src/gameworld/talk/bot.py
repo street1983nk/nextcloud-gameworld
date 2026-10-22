@@ -16,8 +16,8 @@ from collections.abc import Iterable
 from typing import Protocol
 from urllib.parse import quote
 
-from nc_py_api import AsyncNextcloudApp
-from nc_py_api.talk_bot import AsyncTalkBot
+from nc_py_api import AsyncNextcloudApp, NextcloudException
+from nc_py_api.talk_bot import AsyncTalkBot, aget_bot_secret
 
 from gameworld.nc import nc_app, nc_as
 
@@ -66,10 +66,21 @@ def find_bot_id(bots: Iterable[_BotEntry]) -> int | None:
 
 
 async def register(nc: AsyncNextcloudApp) -> bool:
-    """Registriert den Bot über AppAPI, aber nur, wenn Talk Bots anbietet."""
+    """Registriert den Bot über AppAPI, aber nur, wenn Talk Bots anbietet.
+
+    Seit AppAPI 34 bringt jede Registrierung ein neues Geheimnis mit; steht der Bot
+    schon in Talk, lehnt Talk das ab ("same URL and a different secret"). Ist das
+    gespeicherte Geheimnis noch da, signiert der Bot damit weiter: dann gilt er als
+    registriert, statt alle 5 Minuten zu scheitern. Ohne Geheimnis bleibt der Fehler.
+    """
     if not await nc.talk.bots_available:
         return False
-    await BOT.enabled_handler(True, nc)
+    try:
+        await BOT.enabled_handler(True, nc)
+    except NextcloudException as exc:
+        if await aget_bot_secret(BOT.callback_url) is None:
+            raise
+        LOG.info("Talk-Bot war schon registriert (Status %s), das gespeicherte Geheimnis gilt weiter", exc.status_code)
     _forget_rooms()
     return True
 
