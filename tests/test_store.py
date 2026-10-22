@@ -594,7 +594,8 @@ def test_delete_notify_data_only_touches_one_world(tmp_path: pathlib.Path) -> No
     assert [row.world_id for row in store.outbox_batch()] == ["w2"]
     assert store.run_state("w1") is None
     assert store.run_state("w2") is True
-    assert store.play_seconds(day) == {("gw-kind", "w2"): 10}
+    # Spielzeit bleibt für den Rückblick des Tages (Abnahme 04.1-09).
+    assert store.play_seconds(day) == {("gw-kind", "w1"): 10, ("gw-kind", "w2"): 10}
     assert _world_ids(db, "join_attempts") == ["w2"]
     assert _world_ids(db, "bot_presence") == ["w2"]
     assert _world_ids(db, "talk_rooms") == ["w1", "w2"]

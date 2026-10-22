@@ -125,6 +125,20 @@ async def test_review_lists_kids_with_minutes_per_world(
     assert empty.json()["kids"] == []
 
 
+async def test_review_keeps_play_of_deleted_world(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    del service
+    store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 600})
+    store.book_usage("weg123456789", DAY, {}, {}, play={"gw-kind": 1200})
+    store.delete_notify_data("weg123456789")
+    response = await client.get("/api/review", params={"day": "2026-10-21"}, headers=appapi_headers())
+    assert response.status_code == 200, response.text
+    kid = response.json()["kids"][0]
+    assert kid["minutes"] == 30
+    assert {world["world_name"]: world["minutes"] for world in kid["worlds"]} == {"Wiese": 10, "gelöschte Welt": 20}
+
+
 async def test_review_prefs_read_and_save_per_admin(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:

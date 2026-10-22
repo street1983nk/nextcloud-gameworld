@@ -966,13 +966,16 @@ class WorldStore:
             )
 
     def delete_notify_data(self, world_id: str) -> None:
-        """Ereignis- und Spielzeitdaten einer gelöschten Welt; der Talk-Raum bleibt (eigener Abgleich)."""
+        """Ereignisdaten einer gelöschten Welt; der Talk-Raum bleibt (eigener Abgleich).
+
+        ``play_daily`` bleibt bis zur normalen Aufbewahrungsfrist: Der Rückblick am
+        Abend zählt auch Spielzeit in einer heute gelöschten Welt.
+        """
         with self._connect() as connection:
             for table in (
                 "event_cursor",
                 "event_outbox",
                 "world_run_state",
-                "play_daily",
                 "join_attempts",
                 "bot_presence",
             ):

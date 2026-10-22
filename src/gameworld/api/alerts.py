@@ -34,6 +34,8 @@ from gameworld.worlds.service import WorldService
 # Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
+# Spielzeit einer heute gelöschten Welt bleibt im Rückblick (Abnahme 04.1-09).
+DELETED_WORLD = "gelöschte Welt"
 MSG_UNAVAILABLE = "Die Daten sind gerade nicht lesbar. Bitte gleich noch einmal versuchen."
 
 VerwalterDep = Annotated[str, Depends(require_verwalter)]
@@ -141,7 +143,9 @@ async def get_review(service: ServiceDep, day: DayQuery, uid: VerwalterDep) -> R
     for nc_user, worlds in sorted(play.items()):
         world_items = sorted(
             (
-                ReviewWorldOut(world_id=world_id, world_name=names.get(world_id, "?"), minutes=minutes(seconds))
+                ReviewWorldOut(
+                    world_id=world_id, world_name=names.get(world_id, DELETED_WORLD), minutes=minutes(seconds)
+                )
                 for world_id, seconds in worlds.items()
             ),
             key=lambda item: (item.world_name.casefold(), item.world_id),
