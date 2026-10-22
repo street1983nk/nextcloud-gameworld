@@ -56,7 +56,7 @@ from gameworld.notify.texts import (
     review_message,
     summary_message,
 )
-from gameworld.notify.throttle import is_case_variant
+from gameworld.notify.throttle import Decision, is_case_variant
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
 from gameworld.playtime.pause import OUTBOX_PAUSE_END, OUTBOX_PAUSE_SCHLUSS, OUTBOX_PAUSE_START, clock_text
 from gameworld.playtime.plan import local_day
@@ -182,7 +182,13 @@ async def handle_deny(context: NotifyContext, row: OutboxRow) -> None:
     if world is None or is_case_variant(row.name, invited):
         return
     day = local_day(row.at, context.tz)
-    decision = await anyio.to_thread.run_sync(store.claim_attempt, day, row.world_id, row.name, row.at)
+    # IN-05: Ohne Empfänger oder Link-Adresse nur merken, keinen Hinweis verbrauchen.
+    can_send = context.origin is not None and bool(context.admins)
+
+    def claim() -> Decision:
+        return store.claim_attempt(day, row.world_id, row.name, row.at, notify=can_send)
+
+    decision = await anyio.to_thread.run_sync(claim)
     if decision == "single":
         text = attempt_message(world.id, world.name, row.name, clock_text(row.at, context.tz))
         await _deliver(context, context.admins, text, "versuch", {"welt": world.id, "tag": day.isoformat()})

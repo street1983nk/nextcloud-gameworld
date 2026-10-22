@@ -201,6 +201,8 @@ OUTBOX_MAX = 1000
 OutboxEntry = tuple[str, str, int, str]
 # Tages-Merker der Sammelnachricht für Fremdversuche (D-08).
 FLAG_ATTEMPTS_SUMMARY = "attempts_summary"
+# Tages-Merker je gemeldetem Einzelhinweis: attempt:<Welt>:<Name casefold> (IN-05).
+FLAG_ATTEMPT_PREFIX = "attempt:"
 # Vorgabe des Rückblicks: 20:00 Uhr Haushalts-Zeitzone (D-12).
 REVIEW_DEFAULT_MINUTE = 1200
 
@@ -892,42 +894,63 @@ class WorldStore:
 
     # Fremdversuche und Tagesrückblick (Schema 5, 04.1-04)
 
-    def claim_attempt(self, day: date, world_id: str, name: str, at: int, limit: int = ATTEMPT_LIMIT) -> Decision:
+    def claim_attempt(
+        self, day: date, world_id: str, name: str, at: int, limit: int = ATTEMPT_LIMIT, *, notify: bool = True
+    ) -> Decision:
         """Fremdversuch merken und den Versand beanspruchen, in EINER Transaktion (D-08, Pattern 6).
 
-        Neue Zeile je (Tag, Welt, Name ohne Groß/Klein): Einzelhinweis, solange
-        weniger als ``limit`` gemeldet sind, danach einmal am Tag die
-        Sammelnachricht (Merker ``attempts_summary`` in ``daily_flags``). Eine
-        bekannte Zeile zählt nur ``count`` hoch. Der Aufrufer sendet erst danach:
-        doppelt kommt nie etwas.
+        Je (Tag, Welt, Name ohne Groß/Klein) eine Zeile; wiederholte Versuche
+        zählen nur ``count`` hoch. Ein Einzelhinweis je Name, Welt und Tag,
+        solange heute weniger als ``limit`` gemeldet sind, danach einmal am Tag die
+        Sammelnachricht (Merker ``attempts_summary``). Der Aufrufer sendet erst
+        danach: doppelt kommt nie etwas.
+
+        IN-05: Ohne ``notify`` (keine Empfänger oder keine Link-Adresse) wird nur
+        gemerkt, nichts beansprucht; der nächste Versuch mit Empfängern kann den
+        Hinweis noch auslösen. Gezählt wird in ``daily_flags`` (Merker
+        ``attempt:<Welt>:<Name>``), nicht über ``join_attempts``: Löschen einer Welt
+        senkt den Tageszähler so nicht.
         """
         day_text = day.isoformat()
+        fold = name.casefold()
+        flag = f"{FLAG_ATTEMPT_PREFIX}{world_id}:{fold}"
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO join_attempts "
                 "(day, world_id, name_fold, player_name, first_at, last_at, count, notified) "
                 "VALUES (?, ?, ?, ?, ?, ?, 1, 0)",
-                (day_text, world_id, name.casefold(), name, at, at),
+                (day_text, world_id, fold, name, at, at),
             )
             is_new = cursor.rowcount == 1
             if not is_new:
                 connection.execute(
                     "UPDATE join_attempts SET count = count + 1, last_at = max(last_at, ?) "
                     "WHERE day = ? AND world_id = ? AND name_fold = ?",
-                    (at, day_text, world_id, name.casefold()),
+                    (at, day_text, world_id, fold),
                 )
+            if not notify:
                 return "none"
+            claimed = connection.execute(
+                "SELECT 1 FROM daily_flags WHERE day = ? AND flag = ?", (day_text, flag)
+            ).fetchone()
             notified = connection.execute(
-                "SELECT count(*) FROM join_attempts WHERE day = ? AND notified = 1", (day_text,)
+                "SELECT count(*) FROM daily_flags WHERE day = ? AND flag LIKE ?", (day_text, f"{FLAG_ATTEMPT_PREFIX}%")
             ).fetchone()
             summary = connection.execute(
                 "SELECT 1 FROM daily_flags WHERE day = ? AND flag = ?", (day_text, FLAG_ATTEMPTS_SUMMARY)
             ).fetchone()
-            decision = decide(is_new, int(notified[0]), summary is not None, limit)
+            seen_before = connection.execute(
+                "SELECT notified FROM join_attempts WHERE day = ? AND world_id = ? AND name_fold = ?",
+                (day_text, world_id, fold),
+            ).fetchone()
+            # Kandidat ist ein Name, für den heute noch kein Hinweis beansprucht ist.
+            is_candidate = claimed is None and (is_new or int(seen_before[0]) == 0)
+            decision = decide(is_candidate, int(notified[0]), summary is not None, limit)
             if decision == "single":
+                connection.execute("INSERT OR IGNORE INTO daily_flags (day, flag) VALUES (?, ?)", (day_text, flag))
                 connection.execute(
                     "UPDATE join_attempts SET notified = 1 WHERE day = ? AND world_id = ? AND name_fold = ?",
-                    (day_text, world_id, name.casefold()),
+                    (day_text, world_id, fold),
                 )
             elif decision == "summary":
                 connection.execute(

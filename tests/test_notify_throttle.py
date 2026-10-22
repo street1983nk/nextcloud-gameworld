@@ -85,3 +85,31 @@ def test_review_pref_default_and_save(store: WorldStore) -> None:
     store.set_review_pref("mama", enabled=True, minute=1260)
     assert store.review_pref("mama") == (True, 1260)
     assert store.review_pref("papa") == (True, 1200)
+
+
+def test_claim_without_recipients_records_but_consumes_nothing(store: WorldStore) -> None:
+    """IN-05: Ohne Empfänger oder Link-Adresse werden die 5 Tageshinweise nicht still verbraucht."""
+    for index in range(7):
+        assert store.claim_attempt(DAY, WORLD, f"Name{index}", 1000 + index, notify=False) == "none"
+    assert len(store.attempts(DAY)) == 7
+    # Sobald Empfänger da sind: der nächste Versuch eines schon gemerkten Namens meldet noch.
+    assert store.claim_attempt(DAY, WORLD, "Name0", 2000) == "single"
+    assert store.claim_attempt(DAY, WORLD, "Name0", 2001) == "none"
+    assert [row.count for row in store.attempts(DAY) if row.player_name == "Name0"] == [3]
+
+
+def test_deleting_world_attempts_does_not_lower_day_count(store: WorldStore) -> None:
+    """IN-05: Löscht eine Welt ihre join_attempts, gibt es danach trotzdem keine neuen Einzelhinweise."""
+    for index in range(5):
+        assert store.claim_attempt(DAY, WORLD, f"Name{index}", 1000 + index) == "single"
+    store.delete_notify_data(WORLD)
+    assert store.attempts(DAY) == []
+    assert store.claim_attempt(DAY, "000000000001", "Neu", 3000) == "summary"
+    assert store.claim_attempt(DAY, "000000000001", "Neu2", 3001) == "none"
+
+
+def test_day_counter_ignores_other_flags(store: WorldStore) -> None:
+    """Gegenprobe: Andere Tages-Merker (warn10, Sammelnachricht anderer Tage) zählen nicht als Hinweis."""
+    for index in range(5):
+        assert store.claim_daily_flag(DAY, f"warn10:{WORLD}:kind{index}")
+    assert store.claim_attempt(DAY, WORLD, "Fremder", 1000) == "single"

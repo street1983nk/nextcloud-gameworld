@@ -141,6 +141,27 @@ async def test_origin_falls_back_to_nextcloud_url_and_missing_means_no_send(
     assert {row.player_name for row in store.attempts(DAY)} == {"Fremder", "Anderer"}
 
 
+async def test_missing_origin_does_not_use_up_daily_hints(
+    service: WorldService,
+    store: WorldStore,
+    fake_notifier: FakeNotifier,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """IN-05: Ohne Link-Adresse bleiben die 5 Einzelhinweise des Tages erhalten."""
+    store.set_meta(META_LINK_ORIGIN, "")
+    monkeypatch.delenv("NEXTCLOUD_URL")
+    for index in range(6):
+        store.add_outbox(W1, "deny", f"Fremd{index}", _epoch(18, index))
+    await _run(service, fake_notifier, fake_directory, _epoch(18, 10))
+    assert fake_notifier.calls == []
+    assert len(store.attempts(DAY)) == 6
+    store.set_meta(META_LINK_ORIGIN, "https://cloud.example")
+    store.add_outbox(W1, "deny", "Fremd0", _epoch(18, 20))
+    await _run(service, fake_notifier, fake_directory, _epoch(18, 21))
+    assert [call[1] for call in fake_notifier.calls] == ["Unbekannter Spielername in {world}"] * 2
+
+
 async def test_nextcloud_url_with_webroot_gives_working_links(
     service: WorldService,
     store: WorldStore,
