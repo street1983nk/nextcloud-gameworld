@@ -126,11 +126,17 @@ def link_origin(store: WorldStore) -> str | None:
 
 
 def collect_play(store: WorldStore, day: date, admins: Iterable[str]) -> dict[str, dict[str, int]]:
-    """Gespielte Sekunden eines Tages je Kind und Welt; Verwalter zählen nicht."""
+    """Gespielte Sekunden eines Tages je Kind und Welt; nur Kinder mit Regeln, nie Verwalter (IN-03).
+
+    "Regeln" heißt: ein Wochenplan dieses Haushalts (``child_plans``, wie
+    ``has_rules`` der Spielzeit-Seite). Auch ältere Zeilen von Konten ohne Regeln
+    (vor IN-03 gezählt) oder mit heute entfernten Regeln erscheinen nicht.
+    """
     excluded = set(admins)
+    with_rules = set(store.child_plans())
     result: dict[str, dict[str, int]] = {}
     for (nc_user, world_id), seconds in store.play_seconds(day).items():
-        if nc_user in excluded or seconds <= 0:
+        if nc_user in excluded or nc_user not in with_rules or seconds <= 0:
             continue
         result.setdefault(nc_user, {})[world_id] = seconds
     return result
@@ -427,6 +433,13 @@ async def verify_once(service: WorldService, directory: Directory) -> str | None
             LOG.warning("Verwalter-Schnappschuss nicht geprüft: %s", type(exc).__name__)
     LOOP_STATE.acting = acting
     LOOP_STATE.last_admin_check = time.monotonic()
+    if acting is not None:
+        # Rückblick-Einstellungen früherer Verwalter fallen mit dem bestätigten Stand weg (IN-03).
+        try:
+            confirmed = await anyio.to_thread.run_sync(service.store.get_meta, META_TIME_ADMINS)
+            await anyio.to_thread.run_sync(service.store.prune_review_prefs, set(parse_admins(confirmed)))
+        except Exception as exc:
+            LOG.warning("Rückblick-Einstellungen nicht aufgeräumt: %s", type(exc).__name__)
     return acting
 
 

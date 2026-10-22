@@ -665,7 +665,8 @@ class WorldStore:
         Scheitert ein Schritt (Datenbank gesperrt, Prozessabbruch), bleibt beides
         beim alten Stand: Der nächste Takt verbucht denselben Zuwachs genau einmal,
         nie doppelt (WR-05). ``play`` (Konto auf Sekunden) landet in derselben
-        Transaktion in ``play_daily`` je Welt, auch für Konten ohne Regeln (Pitfall 3).
+        Transaktion in ``play_daily`` je Welt; welche Konten zählen, entscheidet der
+        Aufrufer (TimeEngine.book: nur Kinder mit Regeln, IN-03).
         """
         with self._connect() as connection:
             connection.executemany(
@@ -1045,6 +1046,26 @@ class WorldStore:
                 "last_at = excluded.last_at",
                 (world_id, person, kind, at),
             )
+
+    def prune_bot_presence(self, before_at: int) -> None:
+        """Bot-Drossel älter als ``before_at`` (Epoch) löschen, Frist wie die Tagesdaten (IN-03)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM bot_presence WHERE last_at < ?", (before_at,))
+
+    def prune_review_prefs(self, keep: set[str]) -> int:
+        """Rückblick-Einstellungen von Konten außerhalb ``keep`` (bestätigte Verwalter) löschen (IN-03).
+
+        Leeres ``keep`` löscht nichts: Ohne bestätigten Stand bleibt alles, wie es ist.
+        """
+        if not keep:
+            return 0
+        marks = ",".join("?" * len(keep))
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"DELETE FROM review_prefs WHERE nc_user NOT IN ({marks})",  # noqa: S608
+                tuple(sorted(keep)),
+            )
+        return cursor.rowcount
 
     # Talk-Räume (Phase 4.1, TALK-01)
 

@@ -18,7 +18,7 @@ from gameworld.playtime.engine import META_TIME_ADMINS
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldStore
-from tests.conftest import appapi_headers
+from tests.conftest import appapi_headers, give_rules
 from tests.test_pause_api import _row
 from tests.test_service_lifecycle import FakeProvisioner
 
@@ -35,6 +35,7 @@ def store(app_env: Path) -> WorldStore:
     world_store.insert_world(_row(W1, "Wiese", 30015))
     world_store.insert_world(_row(W2, "Burg", 30016))
     world_store.insert_player(PlayerRow(nc_user="gw-kind", player_name="Lena", rotation=0))
+    give_rules(world_store, "gw-kind")
     world_store.insert_player(PlayerRow(nc_user="admin", player_name="Papa", rotation=0))
     world_store.set_meta(META_TIME_ADMINS, json.dumps(["admin"]))
     return world_store
@@ -123,6 +124,24 @@ async def test_review_lists_kids_with_minutes_per_world(
     }
     empty = await client.get("/api/review", params={"day": "2026-10-20"}, headers=appapi_headers())
     assert empty.json()["kids"] == []
+
+
+async def test_review_shows_only_kids_with_rules(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    """IN-03 (Owner 22.10.2026): Ein eingeladenes Gastkind ohne Regeln erscheint im Rückblick nirgends."""
+    del service
+    store.insert_player(PlayerRow(nc_user="gast-kind", player_name="Gast", rotation=0))
+    # Auch eine ältere Zeile aus der Zeit vor IN-03 (ohne Regeln gezählt) bleibt unsichtbar.
+    store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 600, "gast-kind": 1800})
+    response = await client.get("/api/review", params={"day": "2026-10-21"}, headers=appapi_headers())
+    assert response.status_code == 200, response.text
+    assert [kid["nc_user"] for kid in response.json()["kids"]] == ["gw-kind"]
+    assert "gast" not in response.text.casefold()
+    # Werden die Regeln entfernt, verschwindet auch das eigene Kind aus dem Rückblick.
+    store.clear_child("gw-kind", keep_from=DAY)
+    cleared = await client.get("/api/review", params={"day": "2026-10-21"}, headers=appapi_headers())
+    assert cleared.json()["kids"] == []
 
 
 async def test_review_keeps_play_of_deleted_world(

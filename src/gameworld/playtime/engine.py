@@ -36,7 +36,8 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import astuple, dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
+from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
 from gameworld.playtime.ledger import attribution_day, increments
@@ -148,10 +149,11 @@ class TimeEngine:
 
         Nur Kinder mit Regeln werden auf ihr Kontingent verbucht (Opt-in, O-10);
         für alle anderen Namen wird der Stand nur verankert (Schutz gegen
-        Doppelzählung). Die Tagesspielzeit je Welt (``play_daily``, Rückblick)
-        zählt dagegen jedes Konto mit Spielerzeile, auch ohne Regeln, nur nie
-        Verwalter aus dem Schnappschuss (Pitfall 3). Ein fehlendes Zählbuch (None)
-        ändert nichts.
+        Doppelzählung). Auch die Tagesspielzeit je Welt (``play_daily``, Rückblick)
+        zählt nur Kinder mit Regeln dieses Haushalts und nie Verwalter aus dem
+        Schnappschuss (IN-03, Owner-Entscheid 22.10.2026 "Nur Kinder mit Regeln"):
+        Eingeladene Kinder anderer Familien ohne Regeln erscheinen nirgends mit
+        Minuten. Ein fehlendes Zählbuch (None) ändert nichts.
         """
         if ledger is None:
             return
@@ -168,8 +170,9 @@ class TimeEngine:
                 nc_user = self._store.player_name_owner(name)
                 if nc_user is None:
                     continue
-                if nc_user in plans:
-                    usage[nc_user] = usage.get(nc_user, 0) + seconds
+                if nc_user not in plans:
+                    continue
+                usage[nc_user] = usage.get(nc_user, 0) + seconds
                 if nc_user not in admins:
                     play[nc_user] = play.get(nc_user, 0) + seconds
         # Verbrauch, Tagesspielzeit und neuer Stand in einer Transaktion: nie doppelt verbucht (WR-05).
@@ -315,3 +318,5 @@ class TimeEngine:
         self._store.prune_join_attempts(cut)
         self._store.prune_daily_flags(cut)
         self._store.prune_review_sent(cut)
+        # Bot-Drossel (Konto und Zeitpunkt je Welt) mit derselben Frist (IN-03).
+        self._store.prune_bot_presence(int(datetime.combine(cut, dt_time(0), tz).timestamp()))

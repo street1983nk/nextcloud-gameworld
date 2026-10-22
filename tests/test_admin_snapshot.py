@@ -31,7 +31,15 @@ from gameworld.talk.rooms import RoomMember
 from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldStore
-from tests.conftest import FakeDirectory, FakeNotifier, FakeTalkRooms, appapi_headers, assert_closed, install_fake_nc
+from tests.conftest import (
+    FakeDirectory,
+    FakeNotifier,
+    FakeTalkRooms,
+    appapi_headers,
+    assert_closed,
+    give_rules,
+    install_fake_nc,
+)
 from tests.test_pause_api import VERIFIER, _row
 from tests.test_service_lifecycle import FakeProvisioner
 
@@ -56,6 +64,7 @@ def store(app_env: Path) -> WorldStore:
     world_store.insert_world(_row(W1, "Wiese", 30015))
     world_store.insert_world(_row(W2, "Burg", 30016))
     world_store.insert_player(PlayerRow(nc_user="gw-kind", player_name="Lena", rotation=0))
+    give_rules(world_store, "gw-kind")
     world_store.insert_player(PlayerRow(nc_user="anna", player_name="Anna", rotation=0))
     world_store.apply_world_access(W1, {"gw-kind": VERIFIER, "anna": VERIFIER})
     world_store.set_meta(META_TIME_ADMINS, json.dumps(["anna", "papa"]))

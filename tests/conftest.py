@@ -118,6 +118,14 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return tmp_path
 
 
+def give_rules(store: Any, nc_user: str) -> None:
+    """Spielzeit-Regeln ohne Grenzen für ``nc_user``: nur Kinder mit Regeln erscheinen im Rückblick (IN-03)."""
+    from gameworld.playtime.plan import DayRule, WeekPlan
+
+    week = WeekPlan({weekday: DayRule(True, None, None, None) for weekday in range(1, 8)})
+    store.set_child_plan(nc_user, week, None, "admin", "2026-10-21T10:00:00+00:00")
+
+
 class NcRecorder:
     """Ersatz für AsyncNextcloudApp in gameworld.nc: merkt das Konto je Client, ``error`` lässt den Bau scheitern."""
 

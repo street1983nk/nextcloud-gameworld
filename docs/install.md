@@ -209,7 +209,8 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 ### Tagesrückblick
 
 - Jeder Verwalter bekommt einmal am Abend den "Tagesrückblick" mit den Spielminuten je Kind, Vorgabe 20 Uhr. Uhrzeit und An/Aus stellt jeder Verwalter selbst in den Einstellungen ein ("Tagesrückblick am Abend").
-- Ohne Spielzeit am Tag kommt kein Rückblick. Auch nach einem Neustart kommt er höchstens einmal am Tag.
+- Der Rückblick kommt nur in der halben Stunde nach der eingestellten Uhrzeit. Hat bis dahin niemand gespielt, kommt an diesem Tag keiner mehr, auch wenn später noch gespielt wird. Auch nach einem Neustart kommt er höchstens einmal am Tag.
+- Im Rückblick (Benachrichtigung und Seite) erscheinen nur Kinder, für die dieser Haushalt Spielzeit-Regeln eingestellt hat. Eingeladene Kinder ohne Regeln, etwa Freundinnen und Freunde aus anderen Familien, erscheinen nirgends mit Minuten.
 
 ### Talk-Raum pro Welt
 
@@ -228,4 +229,5 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 ### Datensparsamkeit
 
 - Gameworld speichert keine Chatinhalte aus Talk.
-- Für Rückblick und Hinweise speichert Gameworld nur Tagessummen der Spielzeit je Kind und Welt sowie Spielernamen und Uhrzeit fremder Beitrittsversuche. Beides wird nach 7 Tagen gelöscht.
+- Für Rückblick und Hinweise speichert Gameworld nur Tagessummen der Spielzeit je Kind mit Regeln und Welt sowie Spielernamen und Uhrzeit fremder Beitrittsversuche. Beides wird nach 7 Tagen gelöscht.
+- Für die Drossel der Bot-Meldungen merkt sich Gameworld je Welt und Konto den Zeitpunkt der letzten Meldung, ebenfalls höchstens 7 Tage. Die Rückblick-Einstellung eines Kontos, das kein Verwalter mehr ist, wird beim nächsten Abgleich gelöscht. Wer einen Talk-Raum angelegt hat, bleibt als Besitzer gespeichert, solange es den Raum gibt.

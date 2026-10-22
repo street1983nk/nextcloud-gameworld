@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from nc_py_api import NextcloudException
 
+from gameworld.access.directory import DirectoryUnavailableError
 from gameworld.config import load_settings
 from gameworld.notify import loop
 from gameworld.notify import service as notify_service
@@ -21,7 +22,7 @@ from gameworld.playtime.engine import META_TIME_ADMINS
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldStore
-from tests.conftest import FakeDirectory, FakeNotifier, assert_closed, install_fake_nc
+from tests.conftest import FakeDirectory, FakeNotifier, assert_closed, give_rules, install_fake_nc
 from tests.test_pause_api import VERIFIER, _row
 from tests.test_service_lifecycle import FakeProvisioner
 
@@ -43,6 +44,7 @@ def store(app_env: Path) -> WorldStore:
     world_store.insert_world(_row(W1, "Wiese", 30015))
     world_store.insert_world(_row(W2, "Burg", 30016))
     world_store.insert_player(PlayerRow(nc_user="gw-kind", player_name="Lena", rotation=0))
+    give_rules(world_store, "gw-kind")
     world_store.apply_world_access(W1, {"gw-kind": VERIFIER})
     world_store.set_meta(META_TIME_ADMINS, json.dumps(["admin", "mama"]))
     world_store.set_meta(META_LINK_ORIGIN, "https://cloud.example")
@@ -220,6 +222,52 @@ async def test_review_once_per_admin_and_day_even_after_restart(
     restarted = WorldService(store, cast(DockerProvisioner, FakeProvisioner()), load_settings())
     await _run(restarted, fake_notifier, fake_directory, _epoch(21, 0))
     assert len(fake_notifier.calls) == 1
+
+
+async def test_review_notification_never_names_guest_without_rules(
+    service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
+) -> None:
+    """IN-03: Gastkind ohne Regeln erscheint in der Abend-Benachrichtigung nicht mit Minuten."""
+    store.set_meta(META_TIME_ADMINS, json.dumps(["admin"]))
+    store.insert_player(PlayerRow(nc_user="gast-kind", player_name="Gast", rotation=0))
+    fake_directory.users["gast-kind"] = ("Gast Kind", True)
+    store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 600, "gast-kind": 1800})
+    await _run(service, fake_notifier, fake_directory, _epoch(20, 0))
+    assert [call[3]["kids"]["name"] for call in fake_notifier.calls] == ["Kind (Dev) 10 Min."]
+
+
+async def test_review_with_only_guest_play_sends_nothing(
+    service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
+) -> None:
+    store.insert_player(PlayerRow(nc_user="gast-kind", player_name="Gast", rotation=0))
+    store.book_usage(W1, DAY, {}, {}, play={"gast-kind": 1800})
+    await _run(service, fake_notifier, fake_directory, _epoch(20, 0))
+    assert fake_notifier.calls == []
+
+
+async def test_verified_maintenance_drops_review_prefs_of_former_admins(
+    service: WorldService, store: WorldStore, fake_directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """IN-03: Rückblick-Einstellungen früherer Verwalter bleiben nicht unbegrenzt liegen."""
+    monkeypatch.setattr(loop, "MAINTENANCE", [])
+    store.set_meta(META_TIME_ADMINS, json.dumps(["admin", "anna"]))
+    store.set_review_pref("anna", enabled=True, minute=600)
+    store.set_review_pref("admin", enabled=False, minute=1200)
+    fake_directory.groups["admin"] = ["admin"]
+    await maintain_once(service, fake_directory)
+    assert store.review_pref("anna") == (True, 1200)  # Vorgabe: Zeile weg
+    assert store.review_pref("admin") == (False, 1200)
+
+
+async def test_outage_keeps_review_prefs(
+    service: WorldService, store: WorldStore, fake_directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gegenprobe: Ohne bestätigten Stand wird nichts gelöscht."""
+    monkeypatch.setattr(loop, "MAINTENANCE", [])
+    store.set_review_pref("mama", enabled=False, minute=600)
+    fake_directory.error = DirectoryUnavailableError("weg")
+    await maintain_once(service, fake_directory)
+    assert store.review_pref("mama") == (False, 600)
 
 
 async def test_review_without_play_sends_nothing_but_marks_day_done(

@@ -27,6 +27,9 @@
 					</ul>
 				</li>
 			</ul>
+			<p class="mobile-page__hint">
+				Gezählt werden nur Kinder, für die hier Spielzeit-Regeln eingestellt sind.
+			</p>
 		</template>
 
 		<NcNoteCard v-if="error" type="error">
@@ -91,6 +94,11 @@ onMounted(async () => {
 
 .mobile-page__empty {
 	margin: 16px 0;
+}
+
+.mobile-page__hint {
+	margin: 12px 0 0;
+	color: var(--color-text-maxcontrast);
 }
 
 .mobile-page__buttons {

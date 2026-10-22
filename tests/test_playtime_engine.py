@@ -567,7 +567,8 @@ def test_render_with_day_grid_stays_stable(engine: TimeEngine, store: WorldStore
 # 04.1-02: Tagesspielzeit je Konto und Welt (play_daily, Pitfall 3)
 
 
-def test_book_counts_play_daily_for_all_accounts_except_admins(engine: TimeEngine, store: WorldStore) -> None:
+def test_book_counts_play_daily_only_for_kids_with_rules(engine: TimeEngine, store: WorldStore) -> None:
+    """IN-03 (Owner 22.10.2026, "Nur Kinder mit Regeln"): Gastkinder ohne Regeln werden nicht gezählt."""
     _world(store, "w1", 30015)
     _player(store, "gw-mia", "Mia")
     _player(store, "gw-leo", "Leo")
@@ -578,17 +579,20 @@ def test_book_counts_play_daily_for_all_accounts_except_admins(engine: TimeEngin
 
     engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Mia": 55, "leo": 7, "Papa": 9, "Fremd": 3}))
 
-    assert store.play_seconds(TODAY) == {("gw-mia", "w1"): 15, ("gw-leo", "w1"): 7}
-    # time_usage bleibt wie bisher nur für Kinder mit Regeln.
+    # Positivkontrolle Mia (Regeln), Negativ Leo (Gastkind ohne Regeln), Papa (Verwalter), Fremd (kein Konto).
+    assert store.play_seconds(TODAY) == {("gw-mia", "w1"): 15}
     assert store.usage("gw-mia", TODAY) == 15
     assert store.usage("gw-leo", TODAY) == 0
     assert store.usage("papa", TODAY) == 0
+    # Der gesehene Stand wird für alle verankert: Leo zählt auch später nicht doppelt.
+    assert store.ledger_seen("w1")["leo"] == 7
 
 
 def test_book_play_daily_adds_up_per_world(engine: TimeEngine, store: WorldStore) -> None:
     _world(store, "w1", 30015)
     _world(store, "w2", 30016)
     _player(store, "gw-leo", "Leo")
+    _plan(store, "gw-leo", _week())
     for world_id in ("w1", "w2"):
         store.set_ledger_seen(world_id, {"Leo": 0})
     engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Leo": 20}))
@@ -617,6 +621,11 @@ def test_render_prunes_notify_tables_after_seven_days(engine: TimeEngine, store:
             db.execute("INSERT INTO daily_flags (day, flag) VALUES (?, 'x')", (iso,))
             db.execute("INSERT INTO review_sent (nc_user, day) VALUES ('papa', ?)", (iso,))
 
+    old_at = int(datetime.combine(old, time(0), ZONE).timestamp())
+    kept_at = int(datetime.combine(kept, time(0), ZONE).timestamp())
+    store.set_bot_presence("w1", "gw-alt", "join", old_at)
+    store.set_bot_presence("w1", "gw-neu", "join", kept_at)
+
     engine.render("w1")
 
     with db:
@@ -624,6 +633,9 @@ def test_render_prunes_notify_tables_after_seven_days(engine: TimeEngine, store:
             days = [str(row[0]) for row in db.execute(f"SELECT day FROM {table}")]  # noqa: S608
             assert days == [kept.isoformat()], table
     db.close()
+    # IN-03: Die Bot-Drossel (Konto und Zeitpunkt) hat dieselbe 7-Tage-Frist.
+    assert store.bot_presence_at("w1", "gw-alt") is None
+    assert store.bot_presence_at("w1", "gw-neu") == kept_at
 
 
 # Pause in der Regeldatei (04.1-03)
