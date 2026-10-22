@@ -214,6 +214,9 @@ NcUser = Annotated[str, Path(max_length=64)]
 
 def _to_week(days: list[DayIn]) -> WeekPlan:
     """Tage in einen WeekPlan; jede ungültige Regel wirft ValueError (422)."""
+    # Das dict unten schluckte Dubletten (der letzte Eintrag gewänne), daher jeder Tag nur einmal (AR-4-07).
+    if len(days) != len({day.weekday for day in days}):
+        raise ValueError("Jeder Wochentag darf nur einmal vorkommen.")
     return WeekPlan(
         {day.weekday: DayRule(day.allowed, day.limit_minutes, day.window_start, day.window_end) for day in days}
     )

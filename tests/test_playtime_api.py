@@ -127,6 +127,9 @@ async def test_post_sets_rules_and_pushes_immediately(
     [
         {"normal": [_day(weekday) for weekday in range(1, 7)]},  # nur 6 Tage
         {"normal": [_day(1), _day(1), *(_day(weekday) for weekday in range(3, 8))]},  # Dublette
+        # Alle sieben Tage plus eine Dublette: Der letzte Eintrag gewänne sonst (AR-4-07).
+        {"normal": [*(_day(weekday) for weekday in range(1, 8)), _day(1, limit=1440)]},
+        {"normal": [_day(weekday) for weekday in range(1, 8)], "holiday": [_day(w) for w in (*range(1, 8), 7)]},
         {"normal": [_day(1, limit=0), *(_day(weekday) for weekday in range(2, 8))]},  # Limit 0
         {"normal": [_day(1, limit=1441), *(_day(weekday) for weekday in range(2, 8))]},  # Limit 1441
         {
