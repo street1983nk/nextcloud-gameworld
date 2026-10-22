@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import sqlite3
 import tarfile
 import time
 from collections.abc import Iterator
@@ -1485,6 +1486,68 @@ async def test_tick_time_isolates_read_error(
     service.tick_time()
 
     assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == healthy.id)
+
+
+@pytest.mark.parametrize(
+    ("stage", "error"),
+    [
+        ("book", sqlite3.OperationalError("database is locked")),
+        ("render", ValueError("kaputte Zeile")),
+        ("render", sqlite3.OperationalError("database is locked")),
+        ("events", sqlite3.OperationalError("database is locked")),
+    ],
+)
+async def test_tick_time_isolates_database_and_value_errors(
+    service: WorldService,
+    fake: FakeProvisioner,
+    store: WorldStore,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    stage: str,
+    error: Exception,
+) -> None:
+    """WR-06: Ein Datenbank- oder Wertfehler in Welt A setzt Welt B im selben Takt nicht aus."""
+    broken = await service.create_world("Kaputt")
+    healthy = await service.create_world("Heil")
+    _invite_players(store, healthy.id, "Mia")
+    store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
+    fake.written.clear()
+    engine = service.time
+    targets = {
+        "book": (service, "_book_ledger"),
+        "render": (engine, "render"),
+        "events": (service, "_collect_events"),
+    }
+    owner, name = targets[stage]
+    real = getattr(owner, name)
+
+    def flaky(world_id: str, *args: object) -> object:
+        if world_id == broken.id:
+            raise error
+        return real(world_id, *args)
+
+    monkeypatch.setattr(owner, name, flaky)
+    with caplog.at_level("WARNING"):
+        service.tick_time()
+
+    assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == healthy.id)
+    assert broken.id in caplog.text
+    assert type(error).__name__ in caplog.text
+
+
+async def test_tick_time_does_not_swallow_programming_errors(
+    service: WorldService, fake: FakeProvisioner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gegenprobe: Andere Fehlertypen (Programmfehler) bleiben sichtbar und werden nicht verschluckt."""
+    await service.create_world("Welt")
+
+    def broken(world_id: str) -> tuple[bytes, bool]:
+        del world_id
+        raise TypeError("Programmfehler")
+
+    monkeypatch.setattr(service.time, "render", broken)
+    with pytest.raises(TypeError):
+        service.tick_time()
 
 
 async def test_incomplete_ledger_is_logged_not_silent(

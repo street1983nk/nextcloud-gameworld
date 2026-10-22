@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import secrets
+import sqlite3
 import tarfile
 import threading
 import uuid
@@ -98,6 +99,9 @@ TEXT_UNKNOWN_PRESET = (
 # (CR-01) oder ein nur teilweise eingespieltes Spiel starten und die
 # Abbruchmeldung löschen (WR-05); es bleibt nur Löschen.
 DELETE_ONLY_ERRORS = frozenset({RECONCILE_DATA_MISSING, RECONCILE_INTERRUPTED})
+# Fehler, die im Zeittakt nur die betroffene Welt treffen (WR-06): gesperrte oder kaputte
+# Datenbank, ungültige Zeile beim Rendern. Programmfehler anderer Art bleiben sichtbar.
+_TICK_ERRORS: tuple[type[Exception], ...] = (sqlite3.Error, ValueError, KeyError)
 
 UNKNOWN = "unknown"
 MISSING = "missing"
@@ -450,15 +454,22 @@ class WorldService:
             rows = self._store.list_worlds()
             running = [row for row in rows if (info := managed.get(row.id)) is not None and info.status == RUNNING]
             now = self._time.now()
-            self._track_run_state(rows, managed, now)
+            try:
+                self._track_run_state(rows, managed, now)
+            except _TICK_ERRORS as exc:
+                # Start/Stopp-Meldungen holt der nächste Takt nach; die Regeldateien gehen vor.
+                LOG.warning("Laufzustand im Takt nicht festgehalten (%s)", type(exc).__name__)
             for row in running:
                 try:
                     self._book_ledger(row.id)
                 except ProvisionerError as exc:
                     LOG.warning("Welt %s: Zählbuch im Takt nicht verbucht: %s", row.id, exc)
+                except _TICK_ERRORS as exc:
+                    # WR-06: Datenbank gesperrt oder kaputte Zeile trifft nur diese Welt.
+                    LOG.warning("Welt %s: Zählbuch im Takt nicht verbucht (%s)", row.id, type(exc).__name__)
                 try:
                     self._collect_events(row.id, now)
-                except (ProvisionerError, ValueError) as exc:
+                except (ProvisionerError, *_TICK_ERRORS) as exc:
                     # Nur Welt-ID und Fehlertyp, nie Dateiinhalt oder Spielernamen (T-04.1-08).
                     LOG.warning("Welt %s: Ereignisse im Takt nicht gelesen (%s)", row.id, type(exc).__name__)
             for row in running:
@@ -468,6 +479,10 @@ class WorldService:
                         self._write_time(row.id, data)
                 except ProvisionerError as exc:
                     LOG.warning("Welt %s: Regeldatei im Takt nicht geschrieben: %s", row.id, exc)
+                except _TICK_ERRORS as exc:
+                    # WR-06: Der nächste Takt rendert neu; die übrigen Welten bekommen ihre Datei trotzdem.
+                    self._time.forget(row.id)
+                    LOG.warning("Welt %s: Regeldatei im Takt nicht geschrieben (%s)", row.id, type(exc).__name__)
 
     def apply_pause_sync(self, decide: PauseDecision, outbox_kind: str) -> PauseResult:
         """Pause setzen oder beenden und sofort an alle Welten ausrollen (ELTERN-01, D-01, D-25).
