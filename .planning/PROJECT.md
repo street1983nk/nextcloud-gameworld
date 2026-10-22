@@ -40,7 +40,7 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 - Owner-Entscheid 16.10.2026: Gameworld wird gebaut, Start jetzt (Findling 1.6 läuft in paralleler Session).
 - Marktlücke bestätigt: Nextcloud App Store Kategorie Games hat nur Minispiele, kein Gameserver-Portal. Aternos/Minehut sind öffentlich/werbefinanziert; "privat, nur Familie, Daten zuhause" bedient fast niemand.
 - Luanti-first reduziert Rechtsrisiko (völlig frei) gegenüber Minecraft (EULA erlaubt privates Hosting, Guidelines jederzeit änderbar).
-- Engine-Lage: Pterodactyl im Maintenance-Mode; Pelican aktiv aber Beta; Crafty Controller 4.11 leichter, Minecraft-only, REST-API; Luanti-Ökosystem: LuHost (CU Boulder), luanti.ch-Panel, MinetestEDU.
+- Engine-Lage: Pterodactyl wieder aktiv (v1.15.2 vom 21.10.2026, v2-Beta), aber kein Luanti und für Heimserver zu schwer; Pelican aktiv aber Beta; Crafty Controller 4.11 leichter, Minecraft-only, REST-API; Luanti-Ökosystem: LuHost (CU Boulder), luanti.ch-Panel, MinetestEDU.
 - Vorarbeit/Skillset: Findling (ExApp im Store) und Nextcloud MCP Connector , Python, AppAPI, Store-Submit-Prozess sind bekannt.
 - Pilot-Kandidaten für später: Teckids, CoderDojo (Kontaktanbahnung läuft über "Bringing Kids to Nextcloud", Fabrice Mous).
 - Aufwandsschätzung 16.10.: MVP 1 Luanti ca. 15 bis 22 Arbeitstage.

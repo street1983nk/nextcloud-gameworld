@@ -76,7 +76,7 @@ Gameworld ist ein kindgerechtes Gameserver-Portal als Nextcloud-ExApp. Familien 
 | Docker Socket Proxy (DSP) als AppAPI-Daemon fuer Neuinstallationen | Deprecated, Entfernung fuer NC 35 angekuendigt | HaRP (NC 32+) |
 | Sync-API von nc_py_api (`NextcloudApp`) | Sync-Wrapper werden seit 0.30.0 modulweise entfernt | `AsyncNextcloudApp` von Beginn an |
 | ui_example-Skeleton (cloud-py-api/ui_example) als Frontend-Vorlage | Veraltet: Vue 2.7, @nextcloud/vue ^8, webpack/Babel | Vue 3 + @nextcloud/vue 9 + Vite; nur die Backend-Registrierungslogik des Beispiels als Referenz |
-| Pterodactyl | Maintenance-Mode, kein Luanti | Eigene Provisionierung (MVP 1), Crafty/itzg pruefen (MVP 2) |
+| Pterodactyl | Kein Luanti, Panel + Wings fuer Heimserver ueberdimensioniert (wieder aktiv: v1.15.2 vom 21.10.2026, v2-Beta) | Eigene Provisionierung (MVP 1), Crafty/itzg pruefen (MVP 2) |
 | Roher Docker-Socket im ExApp-/Proxy-Setup ohne Scoping | Root-Aequivalent auf dem Heimserver, Produktkern ist Kindersicherheit | tecnativa/docker-socket-proxy mit minimalen Flags |
 | Luanti-Tag `master` oder `latest` in Produktion | `master` = Dev-Build; `latest` springt bei Releases und bricht Client-Kompatibilitaet | Versions-Pin `5.17.0`, Upgrade als bewusste Produktentscheidung |
 | Mojang-/Minecraft-Anteile in MVP 1 | EULA-/Guideline-Risiko, Owner-Entscheid Luanti-first | Luanti 5.17 |
