@@ -8,7 +8,7 @@ open_items:
   - item: "Backend-Prozess auf Port 10040 verschwand in Abnahmelauf 3 zweimal (kurz davor einmal HTTP 500 auf /my/worlds); Ursache offen"
     severity: info
     reference: ".planning/debug/resolved/p4-regression-500.md"
-    note: "Kein Blocker: Lauf 5 109/109 grün, Dev-Skripte behalten jetzt die Backend-Logs, das Abnahmeskript prüft AppAPI-Verbindungsfehler über den ganzen Lauf"
+    note: "Kein Blocker: Lauf 5 109/109 grün, Dev-Skripte behalten jetzt die Backend-Logs, das Abnahmeskript prüft AppAPI-Verbindungsfehler über den ganzen Lauf. Nachtrag 22.10.2026: sehr wahrscheinlich der Windows-Proactor-Absturz aus .planning/debug/resolved/backend-windows-invalidstate.md, behoben mit 0c448fc"
   - item: "Review-Infos IN-01 bis IN-03 offen (veraltete Restzeit bei Abruffehler, Verwalter-Schnappschuss nach Herabstufung, Render-Cache gelöschter Welten)"
     severity: info
     reference: ".planning/phases/04-spielzeitlimits/04-REVIEW.md"
@@ -119,6 +119,7 @@ Keine offen. Eltern- und Kind-Sicht hat der Owner am 21.10.2026 gemeinsam im sic
 ### Offene Punkte (kein Blocker)
 
 - In Abnahmelauf 3 verschwand der Backend-Prozess auf Port 10040 zweimal, kurz davor lieferte `/my/worlds` einmal HTTP 500. Ursache offen. Die Dev-Skripte behalten seitdem die Backend-Logs, das Abnahmeskript zählt AppAPI-Verbindungsfehler über den ganzen Lauf (Lauf 5: 0). Siehe `.planning/debug/resolved/p4-regression-500.md`. Bei erneutem Auftreten die behaltenen Logs auswerten.
+  - Nachtrag 22.10.2026: Mit hoher Wahrscheinlichkeit derselbe Windows-Proactor-Absturz, der am 22.10. mit Traceback belegt und behoben wurde (InvalidStateError in IocpProactor._poll durch Off-Thread-Finalizer offener niquests-Verbindungen; Fix 0c448fc, SelectorEventLoop auf dem Windows-Dev-Host). Gleiche Signatur: Backend beantwortet die letzte Anfrage selbst mit 500 und ist Sekunden danach weg, kein Windows-Absturz-Event, gleiche AppAPI-Burst-Form im nextcloud.log. Der Traceback von Lauf 3 ist nicht erhalten, direkt belegt ist es daher nicht. Siehe `.planning/debug/resolved/backend-windows-invalidstate.md`.
 - IN-01 bis IN-03 aus 04-REVIEW.md.
 
 ### Gaps Summary

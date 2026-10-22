@@ -197,7 +197,7 @@ Recent decisions affecting current work:
 - [Phase 1] Research nötig: Welt-Daten-Ablage (Named Volume vs. Container-FS + Archive-API), Luanti-Image-Wahl, Headless-Administration
 - [Phase 3] Erledigt: eigener Welt-Mod gameworld_access statt Whitelist-Mod (ct_whitelist auf ContentDB nicht mehr auffindbar)
 - [Phase 4] Research nötig: Spielzeit-Durchsetzungspfad Mod vs. Scheduler-Stopp, Umgehungs-Caveat bewerten
-- [Phase 04.1] ExApp-Host-Prozess stürzt unter Windows mit asyncio InvalidStateError (Proactor, WinError 995) ab, 2x am 22.10.2026; voller grüner Nachlauf von acceptance-phase4_1.sh nach den Owner-Fixes offen (Lauf 3 vor den Fixes 128/128; deferred-items.md 04.1)
+- [Phase 04.1] Erledigt 22.10.2026: ExApp-Absturz unter Windows (asyncio InvalidStateError, Proactor, WinError 995) behoben, Dev-Host startet uvicorn mit SelectorEventLoop (0c448fc); voller Nachlauf acceptance-phase4_1.sh 128/128 Exit 0; Ursache und Belege in .planning/debug/resolved/backend-windows-invalidstate.md. Rest: nie geschlossene AsyncNextcloudApp-Sessions (kein Absturzpfad mehr), Kandidat Phase 6
 
 ### Quick Tasks Completed
 
