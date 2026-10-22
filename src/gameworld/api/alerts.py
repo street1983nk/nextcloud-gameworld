@@ -141,12 +141,17 @@ async def get_review(service: ServiceDep, day: DayQuery, uid: VerwalterDep) -> R
     directory = get_directory()
     kids: list[ReviewKidOut] = []
     for nc_user, worlds in sorted(play.items()):
+        # Alle heute gelöschten Welten zählen als eine Zeile "gelöschte Welt" (leere world_id).
+        merged: dict[str, int] = {}
+        for world_id, seconds in worlds.items():
+            key = world_id if world_id in names else ""
+            merged[key] = merged.get(key, 0) + seconds
         world_items = sorted(
             (
                 ReviewWorldOut(
                     world_id=world_id, world_name=names.get(world_id, DELETED_WORLD), minutes=minutes(seconds)
                 )
-                for world_id, seconds in worlds.items()
+                for world_id, seconds in merged.items()
             ),
             key=lambda item: (item.world_name.casefold(), item.world_id),
         )

@@ -131,12 +131,17 @@ async def test_review_keeps_play_of_deleted_world(
     del service
     store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 600})
     store.book_usage("weg123456789", DAY, {}, {}, play={"gw-kind": 1200})
+    store.book_usage("weg987654321", DAY, {}, {}, play={"gw-kind": 300})
     store.delete_notify_data("weg123456789")
+    store.delete_notify_data("weg987654321")
     response = await client.get("/api/review", params={"day": "2026-10-21"}, headers=appapi_headers())
     assert response.status_code == 200, response.text
     kid = response.json()["kids"][0]
-    assert kid["minutes"] == 30
-    assert {world["world_name"]: world["minutes"] for world in kid["worlds"]} == {"Wiese": 10, "gelöschte Welt": 20}
+    assert kid["minutes"] == 35
+    assert kid["worlds"] == [
+        {"world_id": "", "world_name": "gelöschte Welt", "minutes": 25},
+        {"world_id": W1, "world_name": "Wiese", "minutes": 10},
+    ]
 
 
 async def test_review_prefs_read_and_save_per_admin(
