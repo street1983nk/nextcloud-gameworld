@@ -189,7 +189,7 @@ call() {
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' -H 'Content-Type: application/json' \
 			-X "$2" -d "$5" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
 	else
-		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
+		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -H 'Accept: application/json' \
 			-X "$2" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
 	fi
 }
@@ -204,7 +204,7 @@ remember_world() {
 }
 
 delete_world_hard() {
-	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null \
+	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 		"${API_URL}/worlds/$1" >/dev/null 2>&1 || true
 	for container in $(docker ps -aq --filter "label=gameworld.world_id=$1" 2>/dev/null); do
 		docker rm -f -v "${container}" >/dev/null 2>&1 || true

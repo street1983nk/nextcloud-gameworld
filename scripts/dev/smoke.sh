@@ -32,7 +32,7 @@ fail() {
 cleanup() {
 	status=$?
 	for world_id in ${ID_A} ${ID_B}; do
-		curl -s -u "${AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null "${API_URL}/${world_id}" || true
+		curl -s -u "${AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null "${API_URL}/${world_id}" || true
 	done
 	rm -rf "${WORK_DIR}"
 	exit "${status}"
@@ -50,7 +50,7 @@ api() {
 		curl -s -u "${AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
 			-X "$1" -d "$4" -o "$3" -w '%{http_code}' "${API_URL}$2" || printf '000'
 	else
-		curl -s -u "${AUTH}" -H 'OCS-APIRequest: true' -X "$1" -o "$3" -w '%{http_code}' "${API_URL}$2" || printf '000'
+		curl -s -u "${AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X "$1" -o "$3" -w '%{http_code}' "${API_URL}$2" || printf '000'
 	fi
 }
 

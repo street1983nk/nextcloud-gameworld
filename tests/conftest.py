@@ -431,7 +431,10 @@ async def client(app_env: Path) -> AsyncIterator[httpx.AsyncClient]:
     from gameworld.main import APP
 
     transport = httpx.ASGITransport(app=APP)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+    # Wie das Gameworld-Frontend: jede Anfrage als JSON (IN-08). Tests der JSON-Pflicht
+    # setzen Content-Type ausdrücklich anders (tests/test_csrf.py).
+    headers = {"Content-Type": "application/json"}
+    async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=headers) as http:
         yield http
     # Offene Talk-Hooks (verfolgte Tasks) vor dem Schließen der Schleife abarbeiten.
     from gameworld.talk import service as talk_service

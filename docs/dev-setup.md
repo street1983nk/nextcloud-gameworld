@@ -132,3 +132,5 @@ Mit `down -v` verschwinden auch die Daten der Dev-Nextcloud. Welt-Container und 
 Der Docker-Proxy ist nur auf `127.0.0.1:23750` publiziert. Wer diesen Port erreicht, kann Container erzeugen und ist damit faktisch root auf dem Host. Die Bindung an Loopback darf nicht gelockert werden. Das Backend bindet im Dev auf `0.0.0.0:10040`, damit der Nextcloud-Container es über `host.docker.internal` erreicht; geschützt ist es durch das Secret. Mit `GAMEWORLD_APP_HOST` lässt sich die Bindung einengen.
 
 Auf demselben Rechner laufende Findling-Stacks (Port 8090) bleiben unberührt: eigener Projektname, eigene Ports, eigene Labels.
+
+Der AppAPI-Proxy prüft das requesttoken nicht (`#[NoCSRFRequired]`, am Dev-Stack belegt). Darum nimmt das Backend Änderungen (POST, PUT, PATCH, DELETE) mit angemeldetem Nutzer nur mit `Content-Type: application/json` und ohne `Sec-Fetch-Site: cross-site`/`same-site` an, sonst 403. Eigene Skripte schicken den Header auch bei Anfragen ohne Inhalt mit (`curl -H 'Content-Type: application/json'`), so wie die Abnahmeskripte.

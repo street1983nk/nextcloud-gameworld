@@ -1,7 +1,8 @@
 // Zugriff auf die Welt-API der ExApp über den Nextcloud-Proxy.
 //
-// @nextcloud/axios setzt das requesttoken, damit Nextcloud den Aufruf gegen
-// CSRF prüfen kann. Die Basis-URL kommt vom Backend (lifecycle.py, Initial
+// @nextcloud/axios setzt das requesttoken; der AppAPI-Proxy prüft es aber nicht
+// (NoCSRFRequired, IN-08). Gegen Cross-Site-Anfragen schützt darum die JSON-Pflicht
+// der Änderungen (post, del unten). Die Basis-URL kommt vom Backend (lifecycle.py, Initial
 // State gameworld_config): unter manual-install der AppAPI-Proxy, unter HaRP
 // /exapps/gameworld.
 import axios from '@nextcloud/axios'
@@ -26,6 +27,20 @@ function readConfig() {
 }
 
 export const apiBase = readConfig().apiBase ?? fallback.apiBase
+
+// IN-08: Jede Änderung geht als JSON, auch ohne Inhalt. Das Backend lehnt
+// zustandsändernde Anfragen ohne Content-Type application/json ab (403), damit
+// ein Formular einer fremden Seite nichts auslösen kann; der AppAPI-Proxy prüft
+// das requesttoken nicht.
+const JSON_HEADERS = Object.freeze({ 'Content-Type': 'application/json' })
+
+export function post(url, data = {}) {
+	return axios.post(url, data, { headers: { ...JSON_HEADERS } })
+}
+
+export function del(url) {
+	return axios.delete(url, { data: {}, headers: { ...JSON_HEADERS } })
+}
 
 // Deutsche Meldung aus einer Fehlerantwort der API (detail als Text oder als
 // FastAPI-Validierungsliste), sonst ein allgemeiner Satz.
@@ -66,7 +81,7 @@ export async function getSettings() {
 }
 
 export async function saveSettings(joinHost) {
-	const response = await axios.post(`${apiBase}/api/settings`, { join_host: joinHost })
+	const response = await post(`${apiBase}/api/settings`, { join_host: joinHost })
 	return response.data
 }
 
@@ -86,28 +101,28 @@ export async function listWorlds() {
 }
 
 export async function createWorld(name, preset) {
-	const response = await axios.post(`${apiBase}/api/worlds`, { name, preset })
+	const response = await post(`${apiBase}/api/worlds`, { name, preset })
 	return response.data
 }
 
 export async function startWorld(id) {
-	const response = await axios.post(`${apiBase}/api/worlds/${id}/start`)
+	const response = await post(`${apiBase}/api/worlds/${id}/start`)
 	return response.data
 }
 
 export async function stopWorld(id) {
-	const response = await axios.post(`${apiBase}/api/worlds/${id}/stop`)
+	const response = await post(`${apiBase}/api/worlds/${id}/stop`)
 	return response.data
 }
 
 // Neustart läuft im Backend als Stoppen plus Starten (gleiche Port-Saga wie Start).
 export async function restartWorld(id) {
-	const response = await axios.post(`${apiBase}/api/worlds/${id}/restart`)
+	const response = await post(`${apiBase}/api/worlds/${id}/restart`)
 	return response.data
 }
 
 export async function deleteWorld(id) {
-	await axios.delete(`${apiBase}/api/worlds/${id}`)
+	await del(`${apiBase}/api/worlds/${id}`)
 }
 
 // Einladungen und Spieler (03-03/03-04). Passwörter kommen abgeleitet aus der
@@ -119,23 +134,23 @@ export async function listPlayers(worldId) {
 
 // kind: 'user' oder 'group'; das Backend prüft Konto oder Gruppe erneut bei Nextcloud.
 export async function invite(worldId, kind, target) {
-	const response = await axios.post(`${apiBase}/api/worlds/${worldId}/invites`, { kind, target })
+	const response = await post(`${apiBase}/api/worlds/${worldId}/invites`, { kind, target })
 	return response.data
 }
 
 export async function removeInvite(worldId, kind, target) {
-	const response = await axios.post(`${apiBase}/api/worlds/${worldId}/invites/remove`, { kind, target })
+	const response = await post(`${apiBase}/api/worlds/${worldId}/invites/remove`, { kind, target })
 	return response.data
 }
 
 // Neues Passwort in allen Welten des Kontos; das alte gilt sofort nicht mehr.
 export async function rotatePassword(ncUser) {
-	const response = await axios.post(`${apiBase}/api/players/password`, { nc_user: ncUser })
+	const response = await post(`${apiBase}/api/players/password`, { nc_user: ncUser })
 	return response.data
 }
 
 export async function renamePlayer(ncUser, playerName) {
-	const response = await axios.post(`${apiBase}/api/players/name`, { nc_user: ncUser, player_name: playerName })
+	const response = await post(`${apiBase}/api/players/name`, { nc_user: ncUser, player_name: playerName })
 	return response.data
 }
 
@@ -147,41 +162,41 @@ export async function getPlaytime() {
 
 // normal und holiday sind je 7 Tage im API-Format; holiday null heißt: Normalplan gilt auch in den Ferien.
 export async function saveChildPlan(ncUser, normal, holiday) {
-	const response = await axios.post(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`, { normal, holiday })
+	const response = await post(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`, { normal, holiday })
 	return response.data
 }
 
 // Keine Begrenzung: alle Regeln des Kindes entfernen.
 export async function clearChildPlan(ncUser) {
-	const response = await axios.delete(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`)
+	const response = await del(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`)
 	return response.data
 }
 
 // Ferienliste des Haushalts; Daten als JJJJ-MM-TT, Bezeichnung optional.
 export async function addHoliday(label, startDate, endDate) {
-	const response = await axios.post(`${apiBase}/api/playtime/holidays`, { label, start_date: startDate, end_date: endDate })
+	const response = await post(`${apiBase}/api/playtime/holidays`, { label, start_date: startDate, end_date: endDate })
 	return response.data
 }
 
 export async function removeHoliday(id) {
-	const response = await axios.delete(`${apiBase}/api/playtime/holidays/${encodeURIComponent(id)}`)
+	const response = await del(`${apiBase}/api/playtime/holidays/${encodeURIComponent(id)}`)
 	return response.data
 }
 
 // IANA-Name, etwa Europe/Berlin; das Backend kennt nur Namen aus tzdata.
 export async function setTimeZone(timeZone) {
-	const response = await axios.post(`${apiBase}/api/playtime/time-zone`, { time_zone: timeZone })
+	const response = await post(`${apiBase}/api/playtime/time-zone`, { time_zone: timeZone })
 	return response.data
 }
 
 // days: genau 7 Tage { weekday, open, window_start, window_end }; "immer offen" ist clearWorldWindow.
 export async function setWorldWindow(worldId, days) {
-	const response = await axios.post(`${apiBase}/api/playtime/worlds/${encodeURIComponent(worldId)}/window`, { days })
+	const response = await post(`${apiBase}/api/playtime/worlds/${encodeURIComponent(worldId)}/window`, { days })
 	return response.data
 }
 
 export async function clearWorldWindow(worldId) {
-	const response = await axios.delete(`${apiBase}/api/playtime/worlds/${encodeURIComponent(worldId)}/window`)
+	const response = await del(`${apiBase}/api/playtime/worlds/${encodeURIComponent(worldId)}/window`)
 	return response.data
 }
 
@@ -193,19 +208,19 @@ export async function getPause() {
 
 // minutes: genau 15, 30 oder 60 (das Backend lehnt alles andere ab).
 export async function startPause(minutes) {
-	const response = await axios.post(`${apiBase}/api/pause`, { minutes })
+	const response = await post(`${apiBase}/api/pause`, { minutes })
 	return response.data
 }
 
 // "Weiter": Pause oder "Für heute Schluss" sofort beenden.
 export async function endPause() {
-	const response = await axios.post(`${apiBase}/api/pause/end`)
+	const response = await post(`${apiBase}/api/pause/end`)
 	return response.data
 }
 
 // "Für heute Schluss": bis zum Ende des Tages in der Haushalts-Zeitzone.
 export async function stopForToday() {
-	const response = await axios.post(`${apiBase}/api/pause/schluss`)
+	const response = await post(`${apiBase}/api/pause/schluss`)
 	return response.data
 }
 
@@ -238,7 +253,7 @@ export async function getReviewPrefs() {
 }
 
 export async function saveReviewPrefs(enabled, minute) {
-	const response = await axios.post(`${apiBase}/api/review/prefs`, { enabled, minute })
+	const response = await post(`${apiBase}/api/review/prefs`, { enabled, minute })
 	return response.data
 }
 
@@ -251,7 +266,7 @@ export async function getTalkStatus() {
 // "Nur lesen" an ist POST, aus ist DELETE.
 export async function setTalkReadOnly(worldId, on) {
 	const url = `${apiBase}/api/worlds/${encodeURIComponent(worldId)}/talk/read-only`
-	const response = on ? await axios.post(url) : await axios.delete(url)
+	const response = on ? await post(url) : await del(url)
 	return response.data
 }
 
@@ -260,7 +275,7 @@ export async function setTalkReadOnly(worldId, on) {
 // Adresse; eine abweichende erst mit confirm (Antwort confirm_needed), und eine
 // https-Adresse ersetzt er nie durch http.
 export async function reportOrigin(origin, webroot, confirm = false) {
-	const response = await axios.post(`${apiBase}/api/origin`, { origin, webroot, confirm })
+	const response = await post(`${apiBase}/api/origin`, { origin, webroot, confirm })
 	return response.data
 }
 

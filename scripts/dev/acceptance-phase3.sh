@@ -144,7 +144,7 @@ cleanup() {
 	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
 		-X POST -d '{"join_host":""}' -o /dev/null "${API_URL}/settings" >/dev/null 2>&1 || true
 	for world_id in ${WORLD_IDS}; do
-		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null \
+		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 			"${API_URL}/worlds/${world_id}" >/dev/null 2>&1 || true
 		# Fallback, falls die API nicht mehr antwortet: direkt über die docker-CLI.
 		for container in $(docker ps -aq --filter "label=gameworld.world_id=${world_id}" 2>/dev/null); do
@@ -167,7 +167,7 @@ call() {
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
 			-X "$2" -d "$5" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
 	else
-		curl -s -u "$1" -H 'OCS-APIRequest: true' -X "$2" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
+		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X "$2" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
 	fi
 }
 
@@ -315,7 +315,7 @@ http_code GET "${API_URL}/worlds" "${WORK_DIR}/pre.json" >/dev/null
 for old_id in $(jq -r --arg a "${NAME_WORLD}" '.worlds[]? | select(.name == $a) | .id' "${WORK_DIR}/pre.json" 2>/dev/null || true); do
 	printf 'entferne Rest eines früheren Laufs: %s\n' "${old_id}"
 	remember_world "${old_id}"
-	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
+	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
 done
 
 printf '\n== K1 Einladen und Provisionieren ==\n'

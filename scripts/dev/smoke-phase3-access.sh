@@ -96,7 +96,7 @@ cleanup() {
 			|| printf 'register-exapp.sh scheiterte, bitte von Hand starten\n' >&2
 	fi
 	if [ -n "${WORLD_ID}" ]; then
-		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null \
+		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 			"${API_URL}/worlds/${WORLD_ID}" >/dev/null 2>&1 || true
 		for container in $(docker ps -aq --filter "label=gameworld.world_id=${WORLD_ID}" 2>/dev/null); do
 			docker rm -f -v "${container}" >/dev/null 2>&1 || true
@@ -117,7 +117,7 @@ http_code() {
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
 			-X "$1" -d "$4" -o "$3" -w '%{http_code}' "$2" 2>/dev/null || printf '000'
 	else
-		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X "$1" -o "$3" -w '%{http_code}' "$2" 2>/dev/null || printf '000'
+		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X "$1" -o "$3" -w '%{http_code}' "$2" 2>/dev/null || printf '000'
 	fi
 }
 

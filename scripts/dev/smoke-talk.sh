@@ -101,7 +101,7 @@ call() {
 			-H 'Content-Type: application/json' -X "$2" -d "$5" -o "$4" -w '%{http_code}' "$3" 2>/dev/null \
 			|| printf '000'
 	else
-		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
+		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -H 'Accept: application/json' \
 			-X "$2" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
 	fi
 }

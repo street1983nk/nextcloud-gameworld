@@ -145,7 +145,7 @@ cleanup() {
 			|| printf 'register-exapp.sh scheiterte, bitte von Hand starten\n' >&2
 	fi
 	for world_id in ${WORLD_IDS}; do
-		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null \
+		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 			"${API_URL}/worlds/${world_id}" >/dev/null 2>&1 || true
 		# Fallback, falls die API nicht mehr antwortet: direkt über die docker-CLI.
 		for container in $(docker ps -aq --filter "label=gameworld.world_id=${world_id}" 2>/dev/null); do
@@ -167,7 +167,7 @@ http_code() {
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
 			-X "$1" -d "$4" -o "$3" -w '%{http_code}' "$2" 2>/dev/null || printf '000'
 	else
-		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X "$1" -o "$3" -w '%{http_code}' "$2" 2>/dev/null || printf '000'
+		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X "$1" -o "$3" -w '%{http_code}' "$2" 2>/dev/null || printf '000'
 	fi
 }
 
@@ -284,7 +284,7 @@ for old_id in $(jq -r --arg a "${NAME_KREATIV}" --arg b "${NAME_SANFT}" --arg c 
 	"${WORK_DIR}/pre.json" 2>/dev/null || true); do
 	printf 'entferne Rest eines früheren Laufs: %s\n' "${old_id}"
 	remember_world "${old_id}"
-	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
+	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
 done
 
 printf '\n== K1 Presets per One-Click ==\n'

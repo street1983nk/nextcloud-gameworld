@@ -16,6 +16,7 @@ from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
 from gameworld.api import alerts, invites, me, pause, playtime, setup_check, talk, talk_bot, worlds
+from gameworld.api.csrf import JsonOnlyChangesMiddleware
 from gameworld.lifecycle import enabled_handler
 from gameworld.notify.loop import notify_forever
 from gameworld.playtime.ticker import time_forever
@@ -88,6 +89,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 APP = FastAPI(lifespan=lifespan)
+# Reihenfolge zählt: Zuerst hinzugefügt heißt innen. Die JSON-Pflicht für Änderungen
+# (IN-08) läuft so nach AppAPIAuthMiddleware, die scope["username"] setzt.
+APP.add_middleware(JsonOnlyChangesMiddleware)
 APP.add_middleware(AppAPIAuthMiddleware)
 APP.include_router(me.router)
 APP.include_router(worlds.router)
