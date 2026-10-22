@@ -11,7 +11,7 @@ globalThis.window = {
 	dispatchEvent: (event) => events.push(event.type),
 }
 
-const { EMBED_STEM, PAGES, currentPage, navigate, pageParams, pagePath, parsePath } = await import('../src/route.js')
+const { EMBED_STEM, PAGES, currentPage, dayLabel, localDay, navigate, pageParams, pagePath, parsePath } = await import('../src/route.js')
 
 const stem = '/index.php/apps/app_api/embedded/gameworld/gameworld'
 
@@ -48,6 +48,13 @@ assert.deepEqual(pageParams('?tag=2026-13-01'), {})
 assert.deepEqual(pageParams('?andere=1'), {})
 assert.deepEqual(pageParams(''), {})
 assert.deepEqual(pageParams(undefined), {})
+
+// Tag nach der Uhr des Geräts und Überschrift
+assert.equal(localDay(new Date(2026, 9, 1, 23, 59)), '2026-10-01')
+assert.equal(localDay(new Date(2026, 0, 31, 0, 0)), '2026-01-31')
+assert.equal(dayLabel('2026-10-21', '2026-10-21'), 'Heute')
+assert.equal(dayLabel('2026-10-20', '2026-10-21'), 'Dienstag, 20. Oktober')
+assert.equal(dayLabel('kaputt', '2026-10-21'), '')
 
 // Aktueller Ort aus window.location
 assert.equal(currentPage(), 'versuch')

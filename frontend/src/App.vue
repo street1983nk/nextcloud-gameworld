@@ -9,7 +9,12 @@
 					{{ error }}
 				</NcNoteCard>
 			</div>
-			<ParentView v-else-if="me.role === 'verwalter'" />
+			<template v-else-if="me.role === 'verwalter'">
+				<PauseView v-if="page === 'pause'" />
+				<AttemptsView v-else-if="page === 'versuch'" :key="routeKey" />
+				<ReviewView v-else-if="page === 'rueckblick'" :key="routeKey" />
+				<ParentView v-else />
+			</template>
 			<PlayerView v-else :user="me" />
 		</NcAppContent>
 	</NcContent>
@@ -21,8 +26,11 @@ import NcAppContent from '@nextcloud/vue/components/NcAppContent'
 import NcContent from '@nextcloud/vue/components/NcContent'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
+import AttemptsView from './views/AttemptsView.vue'
 import ParentView from './views/ParentView.vue'
+import PauseView from './views/PauseView.vue'
 import PlayerView from './views/PlayerView.vue'
+import ReviewView from './views/ReviewView.vue'
 import { getMe, reportOrigin } from './api.js'
 import { ROUTE_EVENT, currentPage } from './route.js'
 
@@ -34,9 +42,12 @@ const error = ref('')
 const me = ref(null)
 // Handy-Seite aus dem Pfad (route.js): "pause", "versuch", "rueckblick" oder "" (Übersicht).
 const page = ref(currentPage())
+// Neue Parameter (anderer Tag, andere Welt) laden die Seite neu.
+const routeKey = ref(window.location.search)
 
 function syncPage() {
 	page.value = currentPage()
+	routeKey.value = window.location.search
 }
 
 onMounted(async () => {

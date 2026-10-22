@@ -65,6 +65,27 @@ export function pageParams(search) {
 	return cleanParams({ welt: query.get('welt'), tag: query.get('tag') })
 }
 
+// Vorgabe für tag: heute nach der Uhr dieses Geräts (JJJJ-MM-TT).
+export function localDay(now = new Date()) {
+	const month = String(now.getMonth() + 1).padStart(2, '0')
+	const day = String(now.getDate()).padStart(2, '0')
+	return `${now.getFullYear()}-${month}-${day}`
+}
+
+// Überschrift für einen Tag: "Heute" oder etwa "Dienstag, 21. Oktober".
+export function dayLabel(tag, today = localDay()) {
+	if (tag === today) {
+		return 'Heute'
+	}
+	if (!validDay(tag)) {
+		return ''
+	}
+	const [year, month, day] = tag.split('-').map(Number)
+	return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('de-DE', {
+		timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long',
+	})
+}
+
 // Pfad für generateUrl; unbekannte Seiten führen zur Übersicht.
 export function pagePath(page) {
 	return PAGES.includes(page) ? `${EMBED_STEM}/${page}` : EMBED_STEM
