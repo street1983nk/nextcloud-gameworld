@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.1-07-PLAN.md
-last_updated: "2026-10-22T00:11:22.452Z"
+stopped_at: Completed 04.1-08-PLAN.md
+last_updated: "2026-10-22T00:19:20.002Z"
 last_activity: 2026-10-22
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 36
-  completed_plans: 34
+  completed_plans: 35
   percent: 50
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.1
-Plan: 8 of 9 (04.1-07 complete)
+Plan: 9 of 9 (04.1-08 complete)
 Status: Ready to execute
 Last activity: 2026-10-22
 
-Progress: [█████████░] 94%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -182,6 +182,8 @@ Recent decisions affecting current work:
 - [Phase 04.1]: 04.1-05: Nur lesen ohne Raum antwortet 409; applied false heißt gemerkt, der Abgleich erzwingt es
 - [Phase 04.1]: 04.1-07: Pfad-Router ohne vue-router; navigate feuert eigenes Ereignis gameworld-route, App.vue hört zusätzlich auf popstate
 - [Phase 04.1]: 04.1-07: Pause-Seite fragt nur bei !document.hidden ab, focus/pageshow statt visibilitychange (Wort visibility im Frontend verboten)
+- [Phase 04.1]: 04.1-08: GET /api/talk liefert je Welt token und owner_display (Konto-ID) für Talk-Link und Besitz-Hinweis
+- [Phase 04.1]: 04.1-08: Pause- und Talk-Stand laden im 30-s-Spielzeittakt mit; Rückblick-Uhrzeit 0:15 bis 23:45 im 15-min-Raster, gespeicherte 0 wird 0:15 und ungespeichert
 
 ### Pending Todos
 
@@ -209,6 +211,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-22T00:11:22.432Z
-Stopped at: Completed 04.1-07-PLAN.md
+Last session: 2026-10-22T00:19:19.983Z
+Stopped at: Completed 04.1-08-PLAN.md
 Resume file: None
