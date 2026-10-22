@@ -330,11 +330,20 @@ class TimeService:
         Antwort steht; ungeprüft wird nie ein Konto eingefügt. Die Antwort ersetzt
         den Schnappschuss (ohne Warten auf die Welt-Sperre). Lehnt Nextcloud jedes
         Konto ausdrücklich ab (401/403), ist niemand mehr bestätigt: Der
-        Schnappschuss wird leer (fail closed, keine Empfänger, keine Freistellung),
-        aber nur, wenn Nextcloud die ExApp selbst annimmt (Directory.app_accepted).
+        Schnappschuss wird leer (fail closed, keine Empfänger, keine Freistellung).
+        Vorher muss Nextcloud die ExApp selbst annehmen (Directory.app_accepted),
+        sonst fragt die Prüfung gar nicht erst und der Stand bleibt.
         Bei einer Störung bleibt der letzte Stand, es gilt aber kein Konto als
         bestätigt. Belegte Sperre: None, der nächste Lauf versucht es erneut.
         """
+        # Gegenprobe zuerst: Solange Nextcloud die ExApp selbst ablehnt (Start,
+        # Neuregistrierung), bekommt jedes Konto 401. Das ist eine Störung, keine
+        # Ablehnung der Konten; ohne Gegenprobe leerte jeder Neustart den
+        # Schnappschuss. Danach, nicht davor: eine spätere Probe könnte schon gelingen,
+        # während die Abfragen noch abgelehnt wurden (am Dev-Stack beobachtet).
+        if not await self._directory.app_accepted():
+            LOG.warning("Verwalter-Schnappschuss nicht bestätigt, Nextcloud nimmt Gameworld gerade nicht an")
+            return None
         tried = 0
         rejected = 0
         for uid in candidates:
@@ -354,12 +363,7 @@ class TimeService:
                 ADMINS_STATE.last = monotonic()
                 return uid
             return None
-        # Lehnt Nextcloud gerade die ExApp selbst ab (Start, Neuregistrierung), bekommt
-        # jedes Konto 401: das ist eine Störung, keine Ablehnung der Konten. Ohne diese
-        # Gegenprobe leerte jeder Neustart den Schnappschuss, Hinweise blieben stumm.
-        if tried and rejected == tried and not await self._directory.app_accepted():
-            LOG.warning("Verwalter-Schnappschuss nicht bestätigt, Nextcloud nimmt Gameworld gerade nicht an")
-        elif tried and rejected == tried:
+        if tried and rejected == tried:
             LOG.warning("Kein Konto des Verwalter-Schnappschusses ist noch Admin, der Schnappschuss wird geleert")
             await anyio.to_thread.run_sync(self._store_admins_background_sync, "[]")
         else:

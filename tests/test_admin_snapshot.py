@@ -203,6 +203,9 @@ async def test_rejection_while_app_not_accepted_keeps_snapshot(
     assert _snapshot(store) == ["anna", "papa"]
     assert seen == []
     assert loop.LOOP_STATE.acting is None
+    # Gegenprobe vor den Abfragen: Eine spätere Probe könnte schon gelingen, während
+    # die Abfragen noch abgelehnt wurden (Wettlauf am Dev-Stack beobachtet).
+    assert fake_directory.group_calls == []
     # Sobald Nextcloud die ExApp wieder annimmt, bestätigt der nächste Lauf und Hinweise gehen raus.
     fake_directory.error = None
     fake_directory.app_ok = True
