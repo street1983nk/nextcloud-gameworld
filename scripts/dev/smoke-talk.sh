@@ -343,6 +343,9 @@ done
 check "${KID} tritt der Welt bei (Prober: Sitzung gehalten)" eq "${JOINED}" 0
 check "Bot schreibt '... ${TEXT_JOIN}' binnen 60 s" bot_said "${TEXT_JOIN}" 60
 # Drossel D-22: erneut rein und raus binnen 10 Minuten bringt keine neue Meldung.
+# Steht die Beitrittsmeldung schon beim ersten Blick im Chat, käme der zweite Beitritt
+# sonst in die Wiederbeitritts-Sperre der Welt (etwa 2 s, "Bitte einen Moment warten").
+sleep 2.5
 probe "${WORK_DIR}/rejoin.json" "${KID_NAME}" "${KID_PW}" --hold 5 --timeout 30
 check "Positivkontrolle: zweiter Beitritt gelingt (ist $(jq -r '"\(.result) \(.reason // "")"' "${WORK_DIR}/rejoin.json" 2>/dev/null))" \
 	eq "$(jq -r '.result' "${WORK_DIR}/rejoin.json" 2>/dev/null)" held
