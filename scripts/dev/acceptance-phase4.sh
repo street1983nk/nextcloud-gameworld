@@ -815,7 +815,10 @@ else
 	grep 'FEHLGESCHLAGEN\|ABBRUCH' "${WORK_DIR}/phase3.log" >&2 || tail -n 20 "${WORK_DIR}/phase3.log" >&2
 fi
 for expected in "84 von 84 Prüfungen bestanden" "104 von 104 Prüfungen bestanden" "75 von 75 Prüfungen bestanden"; do
-	check "Regression: Log enthält '${expected}'" grep -q -F -- "${expected}" "${WORK_DIR}/phase3.log"
+	# Nur die Summenzeile oder eine bestanden-Zeile zählt, nie ein Zitat in einer FEHLGESCHLAGEN-Zeile.
+	check "Regression: Log enthält '${expected}'" awk -v e="${expected}" \
+		'$0 == e || (index($0, "bestanden: ") == 1 && index($0, e) > 0) { found = 1 } END { exit !found }' \
+		"${WORK_DIR}/phase3.log"
 done
 
 printf '\n== ExApp über den ganzen Lauf erreichbar ==\n'

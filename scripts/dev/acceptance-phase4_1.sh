@@ -952,7 +952,10 @@ else
 fi
 for expected in "84 von 84 Prüfungen bestanden" "104 von 104 Prüfungen bestanden" \
 	"75 von 75 Prüfungen bestanden" "109 von 109 Prüfungen bestanden"; do
-	check "Regression: Log enthält '${expected}'" grep -q -F -- "${expected}" "${WORK_DIR}/phase4.log"
+	# Nur die Summenzeile oder eine bestanden-Zeile zählt, nie ein Zitat in einer FEHLGESCHLAGEN-Zeile.
+	check "Regression: Log enthält '${expected}'" awk -v e="${expected}" \
+		'$0 == e || (index($0, "bestanden: ") == 1 && index($0, e) > 0) { found = 1 } END { exit !found }' \
+		"${WORK_DIR}/phase4.log"
 done
 check "nach der Regression: Talk (spreed) aktiviert und ExApp erreichbar" sh -c \
 	'[ -n "$1" ] && curl -sf "http://127.0.0.1:$2/heartbeat" >/dev/null' _ \
