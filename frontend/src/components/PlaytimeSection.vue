@@ -123,4 +123,27 @@ function usage(child) {
 .playtime__actions {
 	text-align: end;
 }
+
+/* Handy: vier Spalten passen nicht in 390 px, die Zeile bricht um (Name oben, darunter Regel und Knopf). */
+@media (max-width: 480px) {
+	.playtime__list tr {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.playtime__list td {
+		border-bottom: none;
+	}
+
+	.playtime__list td:first-child {
+		flex: 1 1 100%;
+		padding-bottom: 0;
+	}
+
+	.playtime__actions {
+		margin-inline-start: auto;
+	}
+}
 </style>
