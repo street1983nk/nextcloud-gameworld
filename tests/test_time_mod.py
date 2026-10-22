@@ -215,7 +215,7 @@ def test_kid_text(args: tuple[str, int | None, int | None, int | None], expected
 
 
 def test_kid_text_next_week_with_minutes() -> None:
-    assert kid_text("tag", 7, 6, 870).endswith("Nächsten Samstag ab 14:30 Uhr kannst du wieder spielen.")
+    assert kid_text("tag", 7, 6, 870).endswith("Nächsten Samstag ab 14:30 kannst du wieder spielen.")
 
 
 @pytest.mark.parametrize("reason", ["fenster", "limit", "tag", "welt"])
@@ -250,7 +250,7 @@ def test_kid_text_never_says_midnight() -> None:
             for weekday in range(1, 8):
                 for minute in (0, 540, 870, 1439):
                     text = kid_text(reason, days_ahead, weekday, minute)
-                    # "0 Uhr" nur als eigene Zahl: "14:30 Uhr" ist erlaubt, "0 Uhr" nie.
+                    # "0 Uhr" nur als eigene Zahl: "14:30" ist erlaubt, "0 Uhr" nie.
                     assert not forbidden.search(text), text
 
 
@@ -454,7 +454,7 @@ def test_pause_texts() -> None:
         ("schluss", None, "Für heute ist Schluss. Morgen kannst du wieder spielen."),
         ("schluss", 0, "Für heute ist Schluss. Morgen kannst du wieder spielen."),
         ("schluss", 540, "Für heute ist Schluss. Morgen ab 9 Uhr kannst du wieder spielen."),
-        ("schluss", 570, "Für heute ist Schluss. Morgen ab 9:30 Uhr kannst du wieder spielen."),
+        ("schluss", 570, "Für heute ist Schluss. Morgen ab 9:30 kannst du wieder spielen."),
         ("schluss", -1, "Für heute ist Schluss."),
     ],
 )

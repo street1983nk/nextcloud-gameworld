@@ -46,9 +46,9 @@ function clockShort(minutes) {
 	return rest === 0 ? String(hours) : `${hours}:${String(rest).padStart(2, '0')}`
 }
 
-// "19 Uhr", "19:30 Uhr"; 1440 ist "24 Uhr" (Ende des Tages).
+// "19 Uhr", "19:30" (mit Minuten ohne "Uhr", Owner-Entscheid 22.10.2026); 1440 ist "24 Uhr" (Ende des Tages).
 export function formatClock(minutes) {
-	return `${clockShort(minutes)} Uhr`
+	return minutes % 60 === 0 ? `${clockShort(minutes)} Uhr` : clockShort(minutes)
 }
 
 // Tageslimit-Auswahl: 15 min bis 4 Std im 15-Minuten-Raster; "ohne Limit" extra.
@@ -323,7 +323,7 @@ function longName(weekday) {
 	return WEEKDAYS[weekday - 1]?.long ?? ''
 }
 
-// Tagesbezug wie kid_text im Welt-Mod: "Heute ab 15 Uhr", "Morgen", "Am Samstag ab 9:30 Uhr",
+// Tagesbezug wie kid_text im Welt-Mod: "Heute ab 15 Uhr", "Morgen", "Am Samstag ab 9:30",
 // "Nächsten Mittwoch"; eine Uhrzeit nur bei Minute > 0. null bei fehlenden oder unsinnigen Angaben.
 function dayPhrase(next) {
 	const ahead = next?.days_ahead
@@ -407,7 +407,7 @@ export function minutesText(minutes) {
 
 // Pause-Seite: until_clock aus /api/pause (H:MM in der Haushalts-Zeitzone).
 export function pauseUntilText(untilClock) {
-	return typeof untilClock === 'string' && untilClock !== '' ? `Pause bis ${untilClock} Uhr` : 'Pause läuft'
+	return typeof untilClock === 'string' && untilClock !== '' ? `Pause bis ${untilClock}` : 'Pause läuft'
 }
 
 // Rückblick-Einstellung (04.1-08): Vorgabe 20 Uhr, Auswahl 0:15 bis 23:45 im 15-Minuten-Raster.

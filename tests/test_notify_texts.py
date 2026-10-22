@@ -40,7 +40,7 @@ def test_fixed_texts_follow_text_rules() -> None:
 def test_attempt_message_keeps_values_in_highlight_params() -> None:
     subject, message, params = texts.attempt_message("abc123def456", "Baum%haus", "Fre{md}er", "18:05")
     assert subject == "Unbekannter Spielername in {world}"
-    assert message == "{player} wollte um {time} Uhr beitreten."
+    assert message == "{player} wollte um {time} beitreten."
     assert set(params) == {"world", "player", "time"}
     for param in params.values():
         assert param["type"] == "highlight"

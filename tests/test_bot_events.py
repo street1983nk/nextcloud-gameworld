@@ -286,8 +286,8 @@ async def test_warn10_separate_per_person_world_and_day(
     [
         ("start", "", "Die Welt ist gestartet.", True),
         ("stop", "", "Die Welt ist gestoppt.", True),
-        ("pause_start", str(_epoch(18, 30)), "Pause bis 18:30 Uhr.", False),
-        ("pause_start", str(_epoch(19, 0)), "Pause bis 19:00 Uhr.", False),
+        ("pause_start", str(_epoch(18, 30)), "Pause bis 18:30.", False),
+        ("pause_start", str(_epoch(19, 0)), "Pause bis 19:00.", False),
         ("pause_schluss", "", "Für heute ist Schluss.", False),
         ("pause_end", "", "Die Pause ist vorbei.", True),
     ],

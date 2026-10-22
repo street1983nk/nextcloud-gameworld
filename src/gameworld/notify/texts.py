@@ -15,7 +15,7 @@ from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 ATTEMPT_SUBJECT = "Unbekannter Spielername in {world}"
-ATTEMPT_MESSAGE = "{player} wollte um {time} Uhr beitreten."
+ATTEMPT_MESSAGE = "{player} wollte um {time} beitreten."
 SUMMARY_SUBJECT = "Weitere Beitrittsversuche"
 SUMMARY_MESSAGE = "Heute gab es weitere Beitrittsversuche, siehe Gameworld."
 REVIEW_SUBJECT = "Tagesrückblick"
@@ -83,7 +83,7 @@ BOT_JOIN = "{name} ist jetzt in der Welt."
 BOT_LEAVE = "{name} hat die Welt verlassen."
 BOT_START = "Die Welt ist gestartet."
 BOT_STOP = "Die Welt ist gestoppt."
-BOT_PAUSE = "Pause bis {clock} Uhr."
+BOT_PAUSE = "Pause bis {clock}."
 BOT_SCHLUSS = "Für heute ist Schluss."
 BOT_PAUSE_END = "Die Pause ist vorbei."
 BOT_WARN10 = "Noch 10 Minuten Spielzeit für {name}."

@@ -182,8 +182,9 @@ _BASE = {"limit": TEXT_LIMIT, "tag": TEXT_TAG, "fenster": TEXT_FENSTER, "welt": 
 
 
 def _clock(minute: int) -> str:
+    """ "9 Uhr" zur vollen Stunde, sonst "9:30" ohne "Uhr" (Owner-Entscheid 22.10.2026)."""
     hours, minutes = divmod(minute, 60)
-    return str(hours) if minutes == 0 else f"{hours}:{minutes:02d}"
+    return f"{hours}{CLOCK_UNIT}" if minutes == 0 else f"{hours}:{minutes:02d}"
 
 
 def _is_int(value: object) -> bool:
@@ -228,7 +229,7 @@ def kid_text(
     else:
         day = DAY_NEXT + WEEKDAY_NAMES[weekday - 1]
     if minute > 0:
-        day += CLOCK_FROM + _clock(minute) + CLOCK_UNIT
+        day += CLOCK_FROM + _clock(minute)
     if reason == "welt":
         tail = TEXT_OPEN_AGAIN
     elif days_ahead == 0:
@@ -252,7 +253,7 @@ def pause_text(art: str, morgen_minute: int | None) -> str:
         return TEXT_SCHLUSS
     day = DAY_TOMORROW
     if morgen_minute is not None and _is_int(morgen_minute) and 0 < morgen_minute < _DAY_MINUTES:
-        day += CLOCK_FROM + _clock(morgen_minute) + CLOCK_UNIT
+        day += CLOCK_FROM + _clock(morgen_minute)
     return f"{TEXT_SCHLUSS} {day}{TEXT_PLAY_AGAIN}"
 
 
@@ -452,11 +453,11 @@ local function day_index(t)
   return nil
 end
 
--- Uhrzeit wie _clock in time_mod.py: "9" oder "9:30".
+-- Uhrzeit wie _clock in time_mod.py: "9 Uhr" oder "9:30" (ohne "Uhr").
 local function clock(minute)
   local h = math.floor(minute / 60)
   local m = minute % 60
-  return m == 0 and tostring(h) or string.format("%d:%02d", h, m)
+  return m == 0 and (tostring(h) .. CLOCK_UNIT) or string.format("%d:%02d", h, m)
 end
 
 -- Tagesbezug mit Uhrzeit, z. B. "Morgen ab 9 Uhr", und Tage ab heute; nil, wenn etwas fehlt.
@@ -478,7 +479,7 @@ local function day_phrase(key)
     s = DAY_NEXT .. WEEKDAYS[wd]
   end
   if st.minute > 0 then
-    s = s .. CLOCK_FROM .. clock(st.minute) .. CLOCK_UNIT
+    s = s .. CLOCK_FROM .. clock(st.minute)
   end
   return s, ahead
 end
@@ -511,7 +512,7 @@ local function pause_text(name)
   local m = morgen[name]
   if m == -1 then return SCHLUSS end
   local s = SCHLUSS .. " " .. DAY_TOMORROW
-  if m and m > 0 then s = s .. CLOCK_FROM .. clock(m) .. CLOCK_UNIT end
+  if m and m > 0 then s = s .. CLOCK_FROM .. clock(m) end
   return s .. PLAY_AGAIN
 end
 

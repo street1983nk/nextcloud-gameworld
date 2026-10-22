@@ -69,7 +69,7 @@ async def test_deny_notifies_every_admin_with_deep_link(
     uid, subject, message, params, link = fake_notifier.calls[0]
     del uid
     assert subject == "Unbekannter Spielername in {world}"
-    assert message == "{player} wollte um {time} Uhr beitreten."
+    assert message == "{player} wollte um {time} beitreten."
     assert params["player"]["name"] == "Fremder"
     assert params["world"]["name"] == "Wiese"
     assert params["time"]["name"] == "18:05"

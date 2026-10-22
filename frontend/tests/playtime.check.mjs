@@ -109,7 +109,7 @@ assert.equal(formatMinutes(45), '45 min')
 assert.equal(formatMinutes(60), '1 Std')
 assert.equal(formatMinutes(90), '1 Std 30 min')
 assert.equal(formatClock(1140), '19 Uhr')
-assert.equal(formatClock(1170), '19:30 Uhr')
+assert.equal(formatClock(1170), '19:30')
 assert.equal(formatClock(1440), '24 Uhr')
 assert.equal(usageText(2700, 60), 'heute 45 von 60 min')
 assert.equal(usageText(0, 120), 'heute 0 von 120 min')
@@ -148,7 +148,7 @@ assert.equal(kidPlaytimeText(null), null)
 assert.equal(kidPlaytimeText({ limited: false, state: null, remaining_minutes: null, until_minute: null, next: null }), null)
 assert.equal(kidPlaytimeText(kid('ok', 60, 1140)), 'Heute noch 60 Minuten, bis 19 Uhr.')
 assert.equal(kidPlaytimeText(kid('ok', 45, null)), 'Heute noch 45 Minuten.')
-assert.equal(kidPlaytimeText(kid('ok', 1, 1170)), 'Heute noch 1 Minute, bis 19:30 Uhr.')
+assert.equal(kidPlaytimeText(kid('ok', 1, 1170)), 'Heute noch 1 Minute, bis 19:30.')
 assert.equal(kidPlaytimeText(kid('ok', null, 1140)), 'Heute kannst du bis 19 Uhr spielen.')
 assert.equal(kidPlaytimeText(kid('ok', null, null)), null)
 assert.equal(
@@ -161,7 +161,7 @@ assert.equal(
 )
 assert.equal(
 	kidPlaytimeText(kid('tag', 0, null, { weekday: 6, minute: 570, days_ahead: 3 })),
-	'Heute ist kein Spieltag. Am Samstag ab 9:30 Uhr kannst du wieder spielen.',
+	'Heute ist kein Spieltag. Am Samstag ab 9:30 kannst du wieder spielen.',
 )
 assert.equal(
 	kidPlaytimeText(kid('fenster', 0, null, { weekday: 3, minute: 900, days_ahead: 0 })),
@@ -224,7 +224,7 @@ assert.equal(
 assert.equal(windowText({ window_open: false, window_next: null }), 'Diese Welt ist gerade zu.')
 
 // Verbotsliste (Owner-Entscheid 21.10.2026): nie "0 Uhr", "00:00", "Mitternacht", "24 Uhr".
-// "0 Uhr" nur als eigene Zahl: "14:30 Uhr" ist erlaubt.
+// "0 Uhr" nur als eigene Zahl: "14:30" ist erlaubt.
 const FORBIDDEN = /(?<!\d)0 Uhr|00:00|Mitternacht|24 Uhr/
 const MINUTES = [0, 540, 870, 1439]
 for (const state of ['aufgebraucht', 'fenster', 'tag']) {
@@ -266,8 +266,8 @@ for (const forbidden of ['–', '—', 'uebernimmt', 'Aenderung', 'naechsten']) 
 assert.equal(minutesText(45), '45 Min.')
 assert.equal(minutesText(0), '0 Min.')
 assert.equal(minutesText(130), '130 Min.')
-assert.equal(pauseUntilText('18:30'), 'Pause bis 18:30 Uhr')
-assert.equal(pauseUntilText('9:05'), 'Pause bis 9:05 Uhr')
+assert.equal(pauseUntilText('18:30'), 'Pause bis 18:30')
+assert.equal(pauseUntilText('9:05'), 'Pause bis 9:05')
 assert.equal(pauseUntilText(null), 'Pause läuft')
 assert.equal(pauseUntilText(''), 'Pause läuft')
 
@@ -279,8 +279,8 @@ assert.equal(times[times.length - 1].value, 1425)
 assert.ok(times.every((option, index) => option.value === 15 * (index + 1)))
 assert.ok(times.every((option) => option.label === formatClock(option.value)))
 assert.ok(times.some((option) => option.value === 1200 && option.label === '20 Uhr'))
-assert.ok(times.some((option) => option.value === 1230 && option.label === '20:30 Uhr'))
-assert.equal(times[0].label, '0:15 Uhr')
+assert.ok(times.some((option) => option.value === 1230 && option.label === '20:30'))
+assert.equal(times[0].label, '0:15')
 assert.ok(!times.some((option) => option.value === 0))
 for (const option of times) {
 	assert.ok(!FORBIDDEN.test(option.label), option.label)
@@ -297,7 +297,7 @@ assert.equal(odd.options.length, 96)
 assert.equal(odd.selected, 1207)
 assert.equal(odd.dirty, false)
 const oddIndex = odd.options.findIndex((option) => option.value === 1207)
-assert.deepEqual(odd.options[oddIndex], { value: 1207, label: '20:07 Uhr' })
+assert.deepEqual(odd.options[oddIndex], { value: 1207, label: '20:07' })
 assert.equal(odd.options[oddIndex - 1].value, 1200)
 assert.equal(odd.options[oddIndex + 1].value, 1215)
 for (const stored of [1, 7, 1207, 1439]) {

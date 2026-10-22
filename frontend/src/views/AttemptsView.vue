@@ -25,7 +25,7 @@
 					class="attempts__item">
 					<strong class="attempts__name">{{ attempt.player_name }}</strong>
 					<span class="attempts__meta">
-						{{ attempt.world_name }}, {{ attempt.clock }} Uhr<template v-if="attempt.count >= 2">, mehrmals</template>
+						{{ attempt.world_name }}, {{ attempt.clock }}<template v-if="attempt.count >= 2">, mehrmals</template>
 					</span>
 				</li>
 			</ul>

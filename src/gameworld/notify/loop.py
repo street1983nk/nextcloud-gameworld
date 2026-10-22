@@ -306,7 +306,7 @@ async def handle_warn10(context: NotifyContext, row: OutboxRow) -> None:
 
 
 async def handle_pause_start(context: NotifyContext, row: OutboxRow) -> None:
-    """Pause bis H:MM Uhr in Haushalts-Zeitzone, mit Ton; ohne gültiges Ende nichts."""
+    """Pause bis H:MM in Haushalts-Zeitzone, mit Ton; ohne gültiges Ende nichts."""
     try:
         bis = int(row.detail)
     except ValueError:
