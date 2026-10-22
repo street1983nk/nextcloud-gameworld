@@ -325,9 +325,15 @@ async def test_webhook_with_valid_appapi_auth_answers_200_and_logs_nothing(
     assert "4711" not in caplog.text
 
 
-async def test_webhook_needs_no_verwalter(client: httpx.AsyncClient) -> None:
-    response = await client.post("/talk/bot", headers=appapi_headers("gw-kind"), content=b"{}")
-    assert response.status_code == 200
+@pytest.mark.parametrize("user", ["gw-kind", "admin", "gw-fremd"])
+async def test_webhook_refuses_every_logged_in_account(
+    client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture, user: str
+) -> None:
+    """IN-01: Über den Nutzer-Proxy erreicht jedes Konto die Route; nur AppAPI ohne Nutzer gilt."""
+    caplog.set_level(logging.DEBUG)
+    response = await client.post("/talk/bot", headers=appapi_headers(user), json={"x": CHAT})
+    assert response.status_code == 403
+    assert CHAT not in caplog.text
 
 
 async def test_webhook_without_auth_is_401(client: httpx.AsyncClient) -> None:
