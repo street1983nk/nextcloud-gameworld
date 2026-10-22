@@ -351,18 +351,43 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("password", nargs="?", default=None)
     parser.add_argument("--timeout", type=float, default=6.0)
     parser.add_argument("--hold", type=float, default=None, metavar="SEKUNDEN")
+    parser.add_argument("--rejoin-after", type=float, default=None, metavar="SEKUNDEN")
     args = parser.parse_args(argv)
     if args.hold is not None and args.password is None:
         parser.error("--hold braucht ein Passwort")
+    if args.rejoin_after is not None and args.hold is None:
+        parser.error("--rejoin-after braucht --hold")
     try:
         if args.hold is None:
             result = join(args.host, args.port, args.name, args.password, timeout=args.timeout)
-        else:
+        elif args.rejoin_after is None:
             result = session(args.host, args.port, args.name, args.password, args.hold, timeout=args.timeout)
+        else:
+            result = hold_then_rejoin(
+                args.host, args.port, args.name, args.password, args.hold, args.rejoin_after, timeout=args.timeout
+            )
     except (TimeoutError, OSError):
         result = {"result": "timeout"}
     print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def hold_then_rejoin(
+    host: str, port: int, name: str, password: str, hold: float, rejoin_after: float, timeout: float = 8.0
+) -> dict[str, object]:
+    """Sitzung halten, trennen und nach ``rejoin_after`` Sekunden im SELBEN Prozess erneut beitreten.
+
+    Für die Wiederbeitritts-Sperre (K6): Zwei getrennte Prober-Aufrufe brauchen je
+    einen Prozessstart (uv), dessen Dauer schwankt und die 2-s-Sperre des Mods
+    manchmal schon überschreitet. Hier ist der Abstand zwischen Trennen und neuem
+    Versuch gemessen (``gap_s``), der Aufrufer prüft ihn mit.
+    """
+    held = session(host, port, name, password, hold, timeout=timeout)
+    left_at = time.monotonic()
+    time.sleep(rejoin_after)
+    gap = time.monotonic() - left_at
+    rejoin = join(host, port, name, password, timeout=timeout)
+    return {"result": held.get("result"), "session": held, "rejoin": rejoin, "gap_s": round(gap, 3)}
 
 
 if __name__ == "__main__":

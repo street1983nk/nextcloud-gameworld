@@ -120,6 +120,28 @@ occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
 }
 
+# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
+# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
+# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
+# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
+# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+add_user() {
+	occ user:delete "$1" >/dev/null 2>&1 || true
+	add_try=1
+	while [ "${add_try}" -le 3 ]; do
+		if docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="$2" app \
+			php occ user:add --password-from-env --display-name="$3" "$1" >"${WORK_DIR}/user-add.log" 2>&1; then
+			return 0
+		fi
+		printf 'occ user:add %s scheiterte (Versuch %s von 3): %s\n' "$1" "${add_try}" \
+			"$(tr '\r\n' '  ' <"${WORK_DIR}/user-add.log" | cut -c1-300)" >&2
+		occ user:delete "$1" >/dev/null 2>&1 || true
+		add_try=$((add_try + 1))
+		sleep 3
+	done
+	return 1
+}
+
 heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
@@ -403,6 +425,8 @@ user_present() { occ user:info "$1" >/dev/null 2>&1; }
 user_absent() { ! user_present "$1"; }
 
 eq() { [ "$1" = "$2" ]; }
+# same_nonempty A B: gleich und nicht leer; ein gescheitertes Lesen (leer) besteht nie (WR-08).
+same_nonempty() { [ -n "$1" ] && [ "$1" = "$2" ]; }
 ne() { [ "$1" != "$2" ]; }
 matches() { printf '%s' "$1" | grep -Eq "$2"; }
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
@@ -466,9 +490,7 @@ check "Welt running binnen 40 s" wait_status "${WORLD_ID}" running 40
 PORT=$(docker port "${CONTAINER}" 30000/udp 2>/dev/null | head -n 1 | awk -F: '{print $NF}' | tr -d '\r')
 check "docker port liefert einen UDP-Port (ist ${PORT:-leer})" matches "${PORT}" '^[0-9]+$'
 
-docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="${GUEST_PASS}" app \
-	php occ user:add --password-from-env --display-name="Gast Abnahme 4" "${GUEST}" >/dev/null 2>&1 \
-	|| abort "Konto ${GUEST} ließ sich nicht anlegen"
+add_user "${GUEST}" "${GUEST_PASS}" "Gast Abnahme 4" || abort "Konto ${GUEST} ließ sich nach drei Versuchen nicht anlegen (occ-Ausgabe oben)"
 for target in "${KID}" "${GUEST}" admin; do
 	CODE=$(http_code POST "${API_URL}/worlds/${WORLD_ID}/invites" "${WORK_DIR}/inv.json" "{\"kind\":\"user\",\"target\":\"${target}\"}")
 	check "POST invites user ${target} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
@@ -534,7 +556,8 @@ check "K1 Negativkontrolle: Fensterende vor Fensteranfang HTTP 422 (ist ${CODE})
 CODE=$(set_plan "$(week "${TODAY_WD}" 60 null null | jq -c '.[0:6]')")
 check "K1 Negativkontrolle: nur 6 Wochentage HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/playtime/children/${KID}" /dev/null "{\"normal\":$(week "${TODAY_WD}" null null null)}")
-check "K1 Negativkontrolle: ${KID} setzt eigene Regeln, nicht 200 (ist ${CODE})" ne "${CODE}" 200
+# Genau 404 (AppAPI, ADMIN-Route): Ein abgestürztes Backend besteht nicht mehr (WR-08).
+check "K1 Negativkontrolle: ${KID} setzt eigene Regeln, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
 http_code GET "${API_URL}/playtime" "${WORK_DIR}/pt1b.json" >/dev/null
 check "K1 nach den Fehlversuchen gilt weiter limit 120 am heutigen Tag" \
 	eq "$(jq -r --arg u "${KID}" --argjson d "${TODAY_WD}" \
@@ -559,7 +582,7 @@ check "K2 Plan heute erlaubt: HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 check "K2 Positivkontrolle: ${KID} auth_accept" \
 	probe_expect "${WORK_DIR}/k2-ok.json" '.result == "auth_accept"' 10 "${KID_NAME}" "${KID_PW}"
 check "K2 ohne Neustart der Welt (State.StartedAt unverändert)" \
-	eq "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED}"
+	same_nonempty "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED}"
 call "${ADMIN_AUTH}" GET "${BUNDLE_URL}" "${WORK_DIR}/bundle.js" >/dev/null
 for preset in "Keine Begrenzung" "Nur am Wochenende" "Jeden Tag 1 Stunde" "Schultage kurz, Wochenende länger"; do
 	check "K2 Voreinstellung '${preset}' im ausgelieferten Bundle" \
@@ -583,7 +606,7 @@ check "K3 POST holidays ${TODAY} bis ${TODAY}: HTTP 200 (ist ${CODE})" eq "${COD
 check "K3 Positivkontrolle: in den Ferien ${KID} auth_accept" \
 	probe_expect "${WORK_DIR}/k3-ok.json" '.result == "auth_accept"' 10 "${KID_NAME}" "${KID_PW}"
 check "K3 ohne Neustart der Welt (State.StartedAt unverändert)" \
-	eq "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED}"
+	same_nonempty "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED}"
 http_code GET "${API_URL}/playtime" "${WORK_DIR}/pt3.json" >/dev/null
 check "K3 GET /playtime: Zeitraum '${HOLIDAY_LABEL}' active true" \
 	eq "$(jq -r --arg l "${HOLIDAY_LABEL}" '.holidays[]? | select(.label == $l) | .active' "${WORK_DIR}/pt3.json" 2>/dev/null)" true
@@ -621,7 +644,7 @@ check "K4 'Fremder' denied mit '${TEXT_DENY}', nicht mit dem Zeittext" \
 	sh -c 'jq -e --arg d "$2" --arg w "$3" ".result == \"denied\" and ((.reason // \"\") | contains(\$d)) and ((.reason // \"\") | contains(\$w) | not)" "$1" >/dev/null' _ \
 	"${WORK_DIR}/k4-fremd.json" "${TEXT_DENY}" "${TEXT_WELT}"
 check "K4 Container läuft weiter (State.Status running)" eq "$(inspect "${CONTAINER}" '{{.State.Status}}')" running
-check "K4 Container nicht neu gestartet (StartedAt unverändert)" eq "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED}"
+check "K4 Container nicht neu gestartet (StartedAt unverändert)" same_nonempty "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED}"
 check "K4 desired_state in der SQLite-Datei running" \
 	eq "$(sql "SELECT desired_state FROM worlds WHERE id = '${WORLD_ID}'")" running
 CODE=$(http_code DELETE "${API_URL}/playtime/worlds/${WORLD_ID}/window" /dev/null)
@@ -703,7 +726,9 @@ check "K6 POST restart HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 check "K6 Welt nach dem Neustart running binnen 60 s" wait_status "${WORLD_ID}" running 60
 CONTAINER=$(container_of "${WORLD_ID}")
 STARTED_RESTART=$(inspect "${CONTAINER}" '{{.State.StartedAt}}')
-check "K6 Welt wirklich neu gestartet (StartedAt geändert)" ne "${STARTED_RESTART}" "${STARTED}"
+# Beide Zeitpunkte müssen gelesen sein: ein leeres inspect besteht nicht (WR-08).
+check "K6 Welt wirklich neu gestartet (StartedAt geändert, ${STARTED} -> ${STARTED_RESTART:-leer})" sh -c \
+	'[ -n "$1" ] && [ -n "$2" ] && [ "$1" != "$2" ]' _ "${STARTED_RESTART}" "${STARTED}"
 PORT=$(docker port "${CONTAINER}" 30000/udp 2>/dev/null | head -n 1 | awk -F: '{print $NF}' | tr -d '\r')
 check "K6 nach Welt-Neustart: ${KID} denied mit '${TEXT_LIMIT}'" \
 	probe_expect "${WORK_DIR}/k6-restart.json" ".result == \"denied\" and ((.reason // \"\") | contains(\"${TEXT_LIMIT}\"))" 40 \
@@ -745,26 +770,35 @@ check "K6 Positivkontrolle: dieselben greps finden eine IP und eine fremde Zeile
 	"${WORK_DIR}/ip-probe.txt" "${IP_RE}"
 
 printf 'Wiederbeitritts-Sperre: fünf Runden %s, Sitzung 2 s, Join nach 0,2 s\n' "${GUEST}"
+# Sitzung und neuer Versuch laufen in EINEM Prober-Prozess (--rejoin-after): Zwei
+# getrennte Aufrufe brauchen je einen Prozessstart (uv), der unter Windows bis zu
+# etwa 2 s dauert und damit die 2-s-Sperre des Mods (COOLDOWN) gelegentlich schon
+# überschreitet (früher 4 von 5). Der gemessene Abstand gap_s muss klar unter der
+# Sperre liegen, sonst belegt die Runde nichts und zählt nicht.
 STARTED_GUARD=$(inspect "${CONTAINER}" '{{.State.StartedAt}}')
 GUARD_OK=0
 round=1
 while [ "${round}" -le 5 ]; do
 	sleep 2.5
-	probe "${WORK_DIR}/k6-hold.json" "${GUEST_NAME}" "${GUEST_PW}" --hold 2 --timeout "${SESSION_TIMEOUT}"
-	sleep 0.2
-	probe "${WORK_DIR}/k6-wait.json" "${GUEST_NAME}" "${GUEST_PW}"
-	printf '  Runde %s: Sitzung %s, Join %s\n' "${round}" \
-		"$(jq -r '.result' "${WORK_DIR}/k6-hold.json" 2>/dev/null)" "$(probe_summary "${WORK_DIR}/k6-wait.json")"
-	if [ "$(jq -r '.result' "${WORK_DIR}/k6-hold.json" 2>/dev/null)" = held ] \
+	probe "${WORK_DIR}/k6-guard.json" "${GUEST_NAME}" "${GUEST_PW}" --hold 2 --rejoin-after 0.2 \
+		--timeout "${SESSION_TIMEOUT}"
+	jq '.rejoin // {"result":"prober_error"}' "${WORK_DIR}/k6-guard.json" >"${WORK_DIR}/k6-wait.json" 2>/dev/null \
+		|| printf '{"result":"prober_error"}' >"${WORK_DIR}/k6-wait.json"
+	GAP=$(jq -r '.gap_s // "x"' "${WORK_DIR}/k6-guard.json" 2>/dev/null || printf 'x')
+	printf '  Runde %s: Sitzung %s, Join nach %s s: %s\n' "${round}" \
+		"$(jq -r '.result' "${WORK_DIR}/k6-guard.json" 2>/dev/null)" "${GAP}" "$(probe_summary "${WORK_DIR}/k6-wait.json")"
+	if [ "$(jq -r '.result' "${WORK_DIR}/k6-guard.json" 2>/dev/null)" = held ] \
+		&& awk -v g="${GAP}" 'BEGIN { exit !(g ~ /^[0-9.]+$/ && g + 0 >= 0.2 && g + 0 < 1.0) }' \
 		&& denied_with "${WORK_DIR}/k6-wait.json" "${TEXT_WAIT}"; then
 		GUARD_OK=$((GUARD_OK + 1))
 	fi
 	round=$((round + 1))
 done
-check "K6 fünfmal Sitzung held und Join nach 0,2 s denied mit '${TEXT_WAIT}' (ist ${GUARD_OK} von 5)" eq "${GUARD_OK}" 5
+check "K6 fünfmal Sitzung held und Join nach 0,2 s (gemessen unter 1 s) denied mit '${TEXT_WAIT}' (ist ${GUARD_OK} von 5)" \
+	eq "${GUARD_OK}" 5
 sleep 2
 check "K6 danach Container running" eq "$(inspect "${CONTAINER}" '{{.State.Status}}')" running
-check "K6 danach StartedAt unverändert (kein Absturz)" eq "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED_GUARD}"
+check "K6 danach StartedAt unverändert (kein Absturz)" same_nonempty "$(inspect "${CONTAINER}" '{{.State.StartedAt}}')" "${STARTED_GUARD}"
 sleep 2.5
 check "K6 Positivkontrolle: nach 2,5 s Pause kommt ${GUEST} wieder hinein (held)" \
 	probe_expect "${WORK_DIR}/k6-again.json" '.result == "held"' 6 "${GUEST_NAME}" "${GUEST_PW}" --hold 2 --timeout "${SESSION_TIMEOUT}"

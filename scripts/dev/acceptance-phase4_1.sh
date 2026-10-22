@@ -86,6 +86,8 @@ TEXT_SCHLUSS="Für heute ist Schluss."
 # gw-kind darf in K1 morgen ab 9 Uhr spielen; so steht die Uhrzeit im Schluss-Text.
 TEXT_SCHLUSS_FULL="Für heute ist Schluss. Morgen ab 9 Uhr kannst du wieder spielen."
 TEXT_DENY="nicht eingeladen"
+# Groß/Klein-Hinweis aus provisioner/access_mod.py (Teilstring, IN-07: ohne Namen).
+TEXT_CASE_HINT="Groß- und Kleinschreibung"
 # Elterntexte aus notify/texts.py.
 SUBJECT_ATTEMPT="Unbekannter Spielername"
 SUBJECT_SUMMARY="Weitere Beitrittsversuche"
@@ -140,6 +142,28 @@ check() {
 
 occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
+}
+
+# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
+# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
+# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
+# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
+# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+add_user() {
+	occ user:delete "$1" >/dev/null 2>&1 || true
+	add_try=1
+	while [ "${add_try}" -le 3 ]; do
+		if docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="$2" app \
+			php occ user:add --password-from-env --display-name="$3" "$1" >"${WORK_DIR}/user-add.log" 2>&1; then
+			return 0
+		fi
+		printf 'occ user:add %s scheiterte (Versuch %s von 3): %s\n' "$1" "${add_try}" \
+			"$(tr '\r\n' '  ' <"${WORK_DIR}/user-add.log" | cut -c1-300)" >&2
+		occ user:delete "$1" >/dev/null 2>&1 || true
+		add_try=$((add_try + 1))
+		sleep 3
+	done
+	return 1
 }
 
 heartbeat_up() {
@@ -379,26 +403,41 @@ play_today() {
 
 # Benachrichtigungen ---------------------------------------------------------
 
-# notif_fetch AUTH DATEI -> Liste der Benachrichtigungen des Kontos als JSON
+# num WERT -> 0, wenn WERT eine nicht leere Ganzzahl ist (WR-08: leere Abrufe bestehen nie)
+num() { printf '%s' "$1" | grep -Eq '^[0-9]+$'; }
+# eq_num A B -> beide Zahlen und gleich
+eq_num() { num "$1" && num "$2" && [ "$1" = "$2" ]; }
+
+# notif_fetch AUTH DATEI -> Liste der Benachrichtigungen als JSON; Exit 1 bei HTTP-Code ungleich 200
+# oder einer Antwort ohne OCS-Liste (WR-08: ein 401 oder 404 heißt nie "keine Hinweise").
 notif_fetch() {
-	call "$1" GET "${NOTIFY_URL}" "$2" >/dev/null
+	fetch_code=$(call "$1" GET "${NOTIFY_URL}" "$2")
+	[ "${fetch_code}" = 200 ] || return 1
+	[ "$(jq -r '(.ocs.data | type) == "array"' "$2" 2>/dev/null)" = true ]
 }
 
-# notif_max AUTH -> höchste notification_id des Kontos (Grundlinie, 0 ohne Einträge)
+# notif_max AUTH -> höchste notification_id des Kontos (Grundlinie, 0 ohne Einträge), x bei Abruffehler
 notif_max() {
-	notif_fetch "$1" "${WORK_DIR}/nmax.json"
-	jq -r '[.ocs.data[]?.notification_id] | max // 0' "${WORK_DIR}/nmax.json" 2>/dev/null || printf '0'
+	notif_fetch "$1" "${WORK_DIR}/nmax.json" || {
+		printf 'x'
+		return 0
+	}
+	jq -r '[.ocs.data[]?.notification_id] | max // 0' "${WORK_DIR}/nmax.json" 2>/dev/null || printf 'x'
 }
 
-# notif_new AUTH GRUNDLINIE BETREFF DATEI -> neue Gameworld-Benachrichtigungen mit BETREFF (JSON-Liste)
+# notif_new AUTH GRUNDLINIE BETREFF DATEI -> neue Gameworld-Benachrichtigungen mit BETREFF (JSON-Liste);
+# bei Abruffehler oder ungültiger Grundlinie steht FEHLER in DATEI (kein JSON, length scheitert).
 notif_new() {
-	notif_fetch "$1" "${WORK_DIR}/nall.json"
+	if ! num "$2" || ! notif_fetch "$1" "${WORK_DIR}/nall.json"; then
+		printf 'FEHLER' >"$4"
+		return 0
+	fi
 	jq -c --argjson b "$2" --arg s "$3" \
 		'[.ocs.data[]? | select(.app == "gameworld" and .notification_id > $b and (.subject | contains($s)))]' \
-		"${WORK_DIR}/nall.json" >"$4" 2>/dev/null || printf '[]' >"$4"
+		"${WORK_DIR}/nall.json" >"$4" 2>/dev/null || printf 'FEHLER' >"$4"
 }
 
-# notif_count AUTH GRUNDLINIE BETREFF -> Anzahl
+# notif_count AUTH GRUNDLINIE BETREFF -> Anzahl, x bei Abruffehler (dann scheitert jedes eq)
 notif_count() {
 	notif_new "$1" "$2" "$3" "${WORK_DIR}/ncount.json"
 	jq -r 'length' "${WORK_DIR}/ncount.json" 2>/dev/null || printf 'x'
@@ -471,9 +510,7 @@ done
 for account in "${GUEST}:${GUEST_PASS}:Gast Abnahme 41" "${ADMIN2}:${ADMIN2_PASS}:Verwalter Zwei"; do
 	uid=${account%%:*}
 	rest=${account#*:}
-	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="${rest%%:*}" app \
-		php occ user:add --password-from-env --display-name="${rest#*:}" "${uid}" >/dev/null 2>&1 \
-		|| abort "Konto ${uid} ließ sich nicht anlegen"
+	add_user "${uid}" "${rest%%:*}" "${rest#*:}" || abort "Konto ${uid} ließ sich nach drei Versuchen nicht anlegen (occ-Ausgabe oben)"
 done
 occ group:adduser admin "${ADMIN2}" >/dev/null 2>&1 || abort "${ADMIN2} ließ sich nicht in admin aufnehmen"
 check "zweites Verwalter-Konto ${ADMIN2} in Gruppe admin" \
@@ -523,7 +560,11 @@ check "Rückblick admin vorerst aus HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${ADMIN2_AUTH}" POST "${API_URL}/review/prefs" /dev/null '{"enabled":false,"minute":1200}')
 check "Rückblick ${ADMIN2} aus HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/review/prefs" /dev/null '{"enabled":true,"minute":600}')
-check "Negativkontrolle: ${KID} hat keine Rückblick-Einstellung, nicht 200 (ist ${CODE})" ne "${CODE}" 200
+# Genau 404: AppAPI weist Nicht-Admins auf ADMIN-Routen vor dem Backend ab (am Dev-Stack
+# belegt); ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht nicht (WR-08).
+check "Negativkontrolle: ${KID} hat keine Rückblick-Einstellung, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+KID_PREFS=$(sql "SELECT count(*) FROM review_prefs WHERE nc_user = '${KID}'")
+check "Negativkontrolle: keine Rückblick-Zeile für ${KID} in review_prefs (ist ${KID_PREFS:-leer})" eq "${KID_PREFS}" 0
 
 CODE=$(http_code POST "${API_URL}/worlds" "${WORK_DIR}/world.json" "{\"name\":\"${NAME_PAUSE}\",\"preset\":\"mtg_kreativ\"}")
 WORLD_ID=$(jq -r '.id // empty' "${WORK_DIR}/world.json" 2>/dev/null || true)
@@ -583,8 +624,12 @@ CODE=$(http_code POST "${API_URL}/pause" /dev/null '{"minutes":20}')
 check "K1 Negativkontrolle: minutes 20 HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 CODE=$(http_code POST "${API_URL}/pause" /dev/null '{"minutes":"15"}')
 check "K1 Negativkontrolle: minutes als Text HTTP 422 (ist ${CODE})" eq "${CODE}" 422
+PAUSE_BEFORE=$(sql "SELECT bis FROM pause_state WHERE id = 1")
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/pause" /dev/null '{"minutes":15}')
-check "K1 Negativkontrolle: ${KID} startet keine Pause, nicht 200 (ist ${CODE})" ne "${CODE}" 200
+check "K1 Negativkontrolle: ${KID} startet keine Pause, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+PAUSE_AFTER=$(sql "SELECT bis FROM pause_state WHERE id = 1")
+check "K1 Negativkontrolle: Pausenende danach unverändert (${PAUSE_BEFORE:-leer} -> ${PAUSE_AFTER:-leer})" \
+	eq_num "${PAUSE_AFTER}" "${PAUSE_BEFORE}"
 wait "${KID_JOB}" || true
 KID_JOB=""
 wait "${GUEST_JOB}" || true
@@ -619,8 +664,10 @@ printf 'warte zwei Takte (35 s): Verbrauch %s s, Spielzeit %s s\n' "${USAGE_A}" 
 sleep 35
 USAGE_B=$(usage_today "${KID}")
 PLAY_B=$(play_today "${KID}")
-check "K1 time_usage von ${KID} steigt in der Pause nicht (${USAGE_A} -> ${USAGE_B})" eq "${USAGE_B}" "${USAGE_A}"
-check "K1 play_daily von ${KID} steigt in der Pause nicht (${PLAY_A} -> ${PLAY_B})" eq "${PLAY_B}" "${PLAY_A}"
+# Beide Seiten müssen Zahlen sein: Scheitert sql, wären sonst beide leer und gleich (WR-08).
+check "K1 time_usage von ${KID} steigt in der Pause nicht (${USAGE_A:-leer} -> ${USAGE_B:-leer})" \
+	eq_num "${USAGE_B}" "${USAGE_A}"
+check "K1 play_daily von ${KID} steigt in der Pause nicht (${PLAY_A:-leer} -> ${PLAY_B:-leer})" eq_num "${PLAY_B}" "${PLAY_A}"
 wait "${ADMIN_JOB}" || true
 ADMIN_JOB=""
 printf 'admin: %s\n' "$(probe_summary "${WORK_DIR}/k1-admin.json")"
@@ -644,7 +691,8 @@ printf '%s: %s\n' "${KID}" "$(probe_summary "${WORK_DIR}/k1-schluss.json")"
 check "K1 Schluss-Text nennt die Startzeit von morgen ('${TEXT_SCHLUSS_FULL}')" \
 	denied_with "${WORK_DIR}/k1-schluss.json" "${TEXT_SCHLUSS_FULL}"
 sleep 20
-check "K1 time_usage nach Schluss unverändert (${USAGE_S} -> $(usage_today "${KID}"))" eq "$(usage_today "${KID}")" "${USAGE_S}"
+USAGE_S2=$(usage_today "${KID}")
+check "K1 time_usage nach Schluss unverändert (${USAGE_S:-leer} -> ${USAGE_S2:-leer})" eq_num "${USAGE_S2}" "${USAGE_S}"
 CODE=$(http_code POST "${API_URL}/pause/end" "${WORK_DIR}/pause-end2.json")
 check "K1 POST /pause/end nach Schluss HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 check "K1 Positivkontrolle: nach Weiter kommt ${KID} wieder hinein" \
@@ -655,6 +703,9 @@ printf '\n== K2 Hinweis bei fremdem Beitrittsversuch ==\n'
 BASE_ADMIN=$(notif_max "${ADMIN_AUTH}")
 BASE_ADMIN2=$(notif_max "${ADMIN2_AUTH}")
 BASE_KID=$(notif_max "${KID_AUTH}")
+check "K2 Grundlinien der Benachrichtigungen lesbar (admin ${BASE_ADMIN}, ${ADMIN2} ${BASE_ADMIN2}, ${KID} ${BASE_KID})" \
+	sh -c 'for v in "$@"; do printf "%s" "$v" | grep -Eq "^[0-9]+$" || exit 1; done' _ \
+	"${BASE_ADMIN}" "${BASE_ADMIN2}" "${BASE_KID}"
 printf 'Grundlinie der Benachrichtigungen: admin %s, %s %s, %s %s\n' \
 	"${BASE_ADMIN}" "${ADMIN2}" "${BASE_ADMIN2}" "${KID}" "${BASE_KID}"
 probe "${WORK_DIR}/k2-f1.json" Fremder1
@@ -679,7 +730,8 @@ notif_new "${ADMIN2_AUTH}" "${BASE_ADMIN2}" "${SUBJECT_ATTEMPT}" "${WORK_DIR}/k2
 check "K2 ${ADMIN2} bekommt ebenfalls genau einen Hinweis (ist $(jq -r 'length' "${WORK_DIR}/k2-admin2.json"))" \
 	eq "$(jq -r 'length' "${WORK_DIR}/k2-admin2.json")" 1
 ADMIN2_LINK=$(jq -r '.[0].link // empty' "${WORK_DIR}/k2-admin2.json" 2>/dev/null || true)
-check "K2 Link von ${ADMIN2} gleich dem von admin" eq "${ADMIN2_LINK}" "${LINK}"
+check "K2 Link von ${ADMIN2} gleich dem von admin (nicht leer)" sh -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ \
+	"${ADMIN2_LINK}" "${LINK}"
 check "K2 ${KID} hat keinen Hinweis (ist $(notif_count "${KID_AUTH}" "${BASE_KID}" ""))" \
 	eq "$(notif_count "${KID_AUTH}" "${BASE_KID}" "")" 0
 printf 'Fremder1 fünfmal erneut, Groß/Klein-Variante und falsches Passwort\n'
@@ -692,11 +744,15 @@ done
 CASE_NAME=$(printf '%s' "${KID_NAME}" | tr '[:lower:]' '[:upper:]')
 [ "${CASE_NAME}" = "${KID_NAME}" ] && CASE_NAME=$(printf '%s' "${KID_NAME}" | tr '[:upper:]' '[:lower:]')
 probe "${WORK_DIR}/k2-case.json" "${CASE_NAME}"
-check "K2 Groß/Klein-Variante '${CASE_NAME}' kommt nicht hinein ($(probe_summary "${WORK_DIR}/k2-case.json"))" \
-	not result_is "${WORK_DIR}/k2-case.json" auth_accept
+# Erwartet ist die konkrete Ablehnung, nie "nicht auth_accept": Ein Prober-Fehler (Welt
+# nicht erreichbar) bestünde sonst (WR-08). Der Hinweis nennt den eingeladenen Namen nicht (IN-07).
+check "K2 Groß/Klein-Variante '${CASE_NAME}' denied mit '${TEXT_CASE_HINT}', ohne den Namen ($(probe_summary "${WORK_DIR}/k2-case.json"))" \
+	sh -c '[ "$(jq -r --arg t "$2" --arg n "$3" ".result == \"denied\" and ((.reason // \"\") | (contains(\$t) and (contains(\$n) | not)))" "$1" 2>/dev/null)" = true ]' _ \
+	"${WORK_DIR}/k2-case.json" "${TEXT_CASE_HINT}" "${KID_NAME}"
 probe "${WORK_DIR}/k2-wrongpw.json" "${KID_NAME}" "falsch-falsch-falsch"
-check "K2 falsches Passwort für ${KID_NAME} kommt nicht hinein ($(probe_summary "${WORK_DIR}/k2-wrongpw.json"))" \
-	not result_is "${WORK_DIR}/k2-wrongpw.json" auth_accept
+check "K2 falsches Passwort für ${KID_NAME} denied mit WRONG_PASSWORD ($(probe_summary "${WORK_DIR}/k2-wrongpw.json"))" \
+	sh -c '[ "$(jq -r ".result == \"denied\" and .code == \"WRONG_PASSWORD\"" "$1" 2>/dev/null)" = true ]' _ \
+	"${WORK_DIR}/k2-wrongpw.json"
 sleep "${NOTIFY_WAIT}"
 check "K2 Drossel: admin hat nach Wiederholung, Variante und falschem Passwort weiter genau einen Hinweis (ist $(notif_count "${ADMIN_AUTH}" "${BASE_ADMIN}" "${SUBJECT_ATTEMPT}"))" \
 	eq "$(notif_count "${ADMIN_AUTH}" "${BASE_ADMIN}" "${SUBJECT_ATTEMPT}")" 1
@@ -744,7 +800,7 @@ check "K2 Filter world=${WORLD_ID}: HTTP 200 und 6 Namen (ist ${CODE} $(jq -r '.
 CODE=$(http_code GET "${API_URL}/attempts?day=kaputt" /dev/null)
 check "K2 Negativkontrolle: day=kaputt HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/attempts?day=${TODAY}" /dev/null)
-check "K2 Negativkontrolle: ${KID} liest /attempts nicht, nicht 200 (ist ${CODE})" ne "${CODE}" 200
+check "K2 Negativkontrolle: ${KID} liest /attempts nicht, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
 
 printf '\n== K3 Tagesrückblick ==\n'
 # K3 Rückblick einmal am Tag je Verwalter, abschaltbar, neustartfest (SC 3)
@@ -798,7 +854,7 @@ check "K3 Rückblick zeigt ${KID} mit Minuten größer 0 in '${NAME_PAUSE}' (ist
 check "K3 Verwalter erscheinen nicht im Rückblick" \
 	eq "$(jq -r --arg a "${ADMIN2}" '[.kids[]? | select(.nc_user == "admin" or .nc_user == $a)] | length' "${WORK_DIR}/review.json" 2>/dev/null)" 0
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/review?day=${TODAY}" /dev/null)
-check "K3 Negativkontrolle: ${KID} liest /review nicht, nicht 200 (ist ${CODE})" ne "${CODE}" 200
+check "K3 Negativkontrolle: ${KID} liest /review nicht, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
 # Ohne Spielzeit kommt kein Rückblick (D-14): ein frischer Tag ohne Spielzeit ist im
 # laufenden Stack nicht herstellbar; belegt durch tests/test_notify_loop.py.
 
@@ -837,11 +893,13 @@ http_code GET "${API_URL}/worlds" /dev/null >/dev/null
 waited=0
 while [ "${waited}" -le 15 ]; do
 	ADMINS=$(sql "SELECT value FROM meta WHERE key = 'time_admins'")
-	printf '%s' "${ADMINS}" | grep -q "\"${ADMIN2}\"" || break
+	printf '%s' "${ADMINS}" | grep -q '"admin"' && ! printf '%s' "${ADMINS}" | grep -q "\"${ADMIN2}\"" && break
 	sleep 3
 	waited=$((waited + 3))
 done
-check "Verwalter-Schnappschuss ohne ${ADMIN2} (ist ${ADMINS:-leer})" not matches "${ADMINS}" "\"${ADMIN2}\""
+# Ein leerer Wert (sql gescheitert) besteht nie: admin muss darin stehen, ${ADMIN2} nicht (WR-08).
+check "Verwalter-Schnappschuss ohne ${ADMIN2}, mit admin (ist ${ADMINS:-leer})" sh -c \
+	'printf "%s" "$1" | grep -q "\"admin\"" && ! printf "%s" "$1" | grep -q "\"$2\""' _ "${ADMINS}" "${ADMIN2}"
 
 printf '\n== K5 Talk-Raum je Welt und K6 Bot (smoke-talk.sh) ==\n'
 # K5 Talk-Raum je Welt mit exakten Mitgliedern, nur lesen, Raum verschwindet mit der Welt (SC 5)

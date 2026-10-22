@@ -48,6 +48,7 @@ TEXT_LEAVE="hat die Welt verlassen."
 # Kinderchat-Nachricht des Tests; sie darf nie im ExApp-Log stehen.
 CHAT_MARKER="Smoke Kinderchat 4711"
 EXAPP_LOG="${REPO_ROOT}/.dev/exapp.log"
+BACKEND_PORT=10040
 
 PYTHONUTF8=1
 PYTHONIOENCODING=utf-8
@@ -71,6 +72,30 @@ fail() {
 	printf 'FEHLGESCHLAGEN: %s\n' "$1" >&2
 }
 
+# skip GRUND -> eine Prüfung, die im Dev-Stack nichts belegen kann, ehrlich ausweisen statt
+# grün zählen (WR-08). Zählt weder als bestanden noch als fehlgeschlagen.
+SKIPPED=0
+skip() {
+	SKIPPED=$((SKIPPED + 1))
+	printf 'ÜBERSPRUNGEN: %s\n' "$1"
+}
+
+# backend_post BENUTZER PFAD KÖRPER -> HTTP-Code; ruft das ExApp-Backend direkt mit
+# AppAPI-Authentifizierung (Secret aus .dev/exapp.secret), wie AppAPI selbst. BENUTZER leer
+# heißt: ohne Nutzer, so ruft AppAPIs talk_proxy den Bot-Webhook auf.
+backend_post() {
+	secret=$(cat "${REPO_ROOT}/.dev/exapp.secret" 2>/dev/null || true)
+	version=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' "${REPO_ROOT}/appinfo/info.xml" | head -n 1)
+	[ -n "${secret}" ] && [ -n "${version}" ] || {
+		printf '000'
+		return 0
+	}
+	auth=$(printf '%s:%s' "$1" "${secret}" | base64 | tr -d '\n')
+	curl -s -X POST -H 'EX-APP-ID: gameworld' -H "EX-APP-VERSION: ${version}" -H 'AA-VERSION: 34.0.0' \
+		-H "AUTHORIZATION-APP-API: ${auth}" -H 'Content-Type: application/json' -d "$3" -o /dev/null \
+		-w '%{http_code}' "http://127.0.0.1:${BACKEND_PORT}$2" 2>/dev/null || printf '000'
+}
+
 abort() {
 	printf 'ABBRUCH: %s\n' "$1" >&2
 	exit 1
@@ -92,6 +117,28 @@ not() { ! "$@"; }
 
 occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
+}
+
+# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
+# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
+# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
+# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
+# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+add_user() {
+	occ user:delete "$1" >/dev/null 2>&1 || true
+	add_try=1
+	while [ "${add_try}" -le 3 ]; do
+		if docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="$2" app \
+			php occ user:add --password-from-env --display-name="$3" "$1" >"${WORK_DIR}/user-add.log" 2>&1; then
+			return 0
+		fi
+		printf 'occ user:add %s scheiterte (Versuch %s von 3): %s\n' "$1" "${add_try}" \
+			"$(tr '\r\n' '  ' <"${WORK_DIR}/user-add.log" | cut -c1-300)" >&2
+		occ user:delete "$1" >/dev/null 2>&1 || true
+		add_try=$((add_try + 1))
+		sleep 3
+	done
+	return 1
 }
 
 # call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code; OCS-Antworten als JSON.
@@ -220,9 +267,17 @@ bot_count() {
 }
 
 # Erfolgreiche Webhook-Aufrufe laut Zugriffslog der ExApp (uvicorn loggt nur Pfad und Status).
+# Ohne lesbares Log x statt einer Zahl: dann scheitert jeder Vergleich (WR-08).
 webhook_hits() {
+	if [ ! -r "${EXAPP_LOG}" ]; then
+		printf 'x'
+		return 0
+	fi
 	grep -c -F 'POST /talk/bot HTTP/1.1" 200' "${EXAPP_LOG}" 2>/dev/null || true
 }
+
+# num WERT -> 0, wenn WERT eine nicht leere Ganzzahl ist
+num() { printf '%s' "$1" | grep -Eq '^[0-9]+$'; }
 
 bot_names() {
 	jq -r '[.ocs.data[]? | select(.actorType == "bots") | .actorDisplayName] | unique | join(",")' \
@@ -283,12 +338,12 @@ check "admin ist Owner oder Moderator (Typ ${ADMIN_TYPE:-leer})" sh -c '[ "$1" =
 check "${KID} ist normaler Teilnehmer, Typ 3 (ist $(participant_type "${KID}"))" eq "$(participant_type "${KID}")" 3
 
 printf '\n== (4) Kind kann niemanden hinzufügen ==\n'
-docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="${GUEST_PASS}" app \
-	php occ user:add --password-from-env --display-name="Gast Talk" "${GUEST}" >/dev/null 2>&1 \
-	|| abort "Konto ${GUEST} ließ sich nicht anlegen"
+add_user "${GUEST}" "${GUEST_PASS}" "Gast Talk" || abort "Konto ${GUEST} ließ sich nach drei Versuchen nicht anlegen (occ-Ausgabe oben)"
 ADD_BODY="{\"newParticipant\":\"${GUEST}\",\"source\":\"users\"}"
 CODE=$(call "${KID_AUTH}" POST "${SPREED}/v4/room/${TOKEN}/participants" "${WORK_DIR}/kidadd.json" "${ADD_BODY}")
-check "${KID} fügt ${GUEST} hinzu: abgewiesen (HTTP ${CODE}, nicht 200)" ne "${CODE}" 200
+# Talk antwortet Nicht-Moderatoren mit 403 (spreed NotAModeratorException, Quelltext Talk
+# 24.0.6 im Dev-Stack); 000, 500 oder 404 bestehen nicht mehr (WR-08).
+check "${KID} fügt ${GUEST} hinzu: abgewiesen, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 check "${GUEST} ist danach nicht im Raum" not has_user "${GUEST}"
 
 printf '\n== (5) Abgleich entfernt Fremde ==\n'
@@ -359,19 +414,37 @@ CODE=$(call "${KID_AUTH}" POST "${SPREED}/v1/chat/${TOKEN}" "${WORK_DIR}/kidmsg.
 	"{\"message\":\"${CHAT_MARKER}\"}")
 check "Positivkontrolle: ${KID} schreibt in den Raum, HTTP 201 (ist ${CODE})" eq "${CODE}" 201
 # Im Dev-Stack erreicht Talk die Bot-URL nicht: AppAPI trägt sie mit der Adresse
-# des Browsers ein (localhost:8091), im Container lauscht dort niemand. Ob ein
-# Webhook ankommt, belegt darum nur eine Instanz mit erreichbarer eigener URL
-# (Prüfpunkt Phase 6); hier gilt: kein Inhalt im Log, gefälschte Signatur abgewiesen.
-sleep 10
-check "Chatinhalt steht nicht im Log der ExApp" eq "$(grep -c -F -- "${CHAT_MARKER}" "${EXAPP_LOG}" 2>/dev/null || true)" 0
+# des Browsers ein (localhost:8091), im Container lauscht dort niemand. Dass ein
+# echter Kinderchat über Talk ankommt und verworfen wird, belegt darum nur eine
+# Instanz mit erreichbarer eigener URL (Prüfpunkt Phase 6). Statt eines leeren
+# Grüns (WR-08) prüft das Skript den Webhook direkt am Backend, so wie AppAPI ihn
+# aufruft, mit Positivkontrolle für den Zähler.
+skip "echter Webhook von Talk mit Kinderchat (im Dev-Stack nicht erreichbar, Prüfpunkt Phase 6)"
+WEBHOOK_BEFORE=$(webhook_hits)
+CHAT_BODY="{\"type\":\"Create\",\"object\":{\"name\":\"message\",\"content\":\"{\\\"message\\\":\\\"${CHAT_MARKER}\\\"}\"}}"
+CODE=$(backend_post "" /talk/bot "${CHAT_BODY}")
+check "Webhook wie von AppAPI (ohne Nutzer) direkt am Backend: HTTP 200 (ist ${CODE})" eq "${CODE}" 200
+sleep 1
+WEBHOOK_AFTER=$(webhook_hits)
+check "Positivkontrolle: das Zugriffslog zählt diesen Webhook (${WEBHOOK_BEFORE} -> ${WEBHOOK_AFTER})" \
+	sh -c 'printf "%s %s" "$1" "$2" | grep -Eq "^[0-9]+ [0-9]+$" && [ "$2" -eq $(($1 + 1)) ]' _ \
+	"${WEBHOOK_BEFORE}" "${WEBHOOK_AFTER}"
+check "Chatinhalt des Webhooks steht nicht im Log der ExApp (Log lesbar, 0 Treffer)" sh -c \
+	'[ -r "$1" ] && [ "$(grep -c -F -- "$2" "$1" || true)" = 0 ]' _ "${EXAPP_LOG}" "${CHAT_MARKER}"
+# IN-01: Über den Nutzer-Proxy käme jedes Konto zum Webhook; mit Nutzer gilt 403.
+CODE=$(backend_post "${KID}" /talk/bot "${CHAT_BODY}")
+check "Negativkontrolle: Webhook mit Nutzer ${KID} HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 WEBHOOK_BEFORE=$(webhook_hits)
 CODE=$(curl -s -X POST -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
 	-H 'X-Nextcloud-Talk-Random: smoke' -H 'X-Nextcloud-Talk-Signature: 00' \
 	-d "{\"type\":\"Create\",\"object\":{\"content\":\"${CHAT_MARKER}\"}}" -o /dev/null -w '%{http_code}' \
 	"${NEXTCLOUD_URL}/ocs/v2.php/apps/app_api/api/v1/talk_proxy/gameworld/talk/bot" 2>/dev/null || printf '000')
 check "talk_proxy mit gefälschter Signatur: AppAPI weist ab (HTTP ${CODE}, erwartet 404)" eq "${CODE}" 404
-check "gefälschter Aufruf erreicht die ExApp nicht (Webhook-Treffer $(webhook_hits), vorher ${WEBHOOK_BEFORE})" \
-	eq "$(webhook_hits)" "${WEBHOOK_BEFORE}"
+sleep 1
+WEBHOOK_AFTER=$(webhook_hits)
+check "gefälschter Aufruf erreicht die ExApp nicht (Webhook-Treffer ${WEBHOOK_BEFORE} -> ${WEBHOOK_AFTER}, Zahlen)" \
+	sh -c 'printf "%s %s" "$1" "$2" | grep -Eq "^[0-9]+ [0-9]+$" && [ "$1" = "$2" ]' _ \
+	"${WEBHOOK_BEFORE}" "${WEBHOOK_AFTER}"
 
 printf '\n== (9) Nur lesen ==\n'
 CODE=$(http_code POST "${API_URL}/worlds/${WORLD_ID}/talk/read-only" "${WORK_DIR}/ro.json")
@@ -408,5 +481,8 @@ WORLD_ID=""
 check "kein Container der Welt mehr" eq \
 	"$(docker ps -aq --filter "label=gameworld.world_id=${WORLD_ID_DONE}" | wc -l | tr -d ' ')" 0
 
+if [ "${SKIPPED}" -gt 0 ]; then
+	printf '%s Prüfung(en) übersprungen, im Dev-Stack nicht belegbar (siehe ÜBERSPRUNGEN)\n' "${SKIPPED}"
+fi
 printf '\n%s von %s Prüfungen bestanden\n' "${PASSED}" "${TOTAL}"
 [ "${FAILED}" -eq 0 ]

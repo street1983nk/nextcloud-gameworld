@@ -95,6 +95,28 @@ occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
 }
 
+# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
+# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
+# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
+# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
+# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+add_user() {
+	occ user:delete "$1" >/dev/null 2>&1 || true
+	add_try=1
+	while [ "${add_try}" -le 3 ]; do
+		if docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="$2" app \
+			php occ user:add --password-from-env --display-name="$3" "$1" >"${WORK_DIR}/user-add.log" 2>&1; then
+			return 0
+		fi
+		printf 'occ user:add %s scheiterte (Versuch %s von 3): %s\n' "$1" "${add_try}" \
+			"$(tr '\r\n' '  ' <"${WORK_DIR}/user-add.log" | cut -c1-300)" >&2
+		occ user:delete "$1" >/dev/null 2>&1 || true
+		add_try=$((add_try + 1))
+		sleep 3
+	done
+	return 1
+}
+
 heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
@@ -340,9 +362,7 @@ check "K1 GET players: ${KID} mit Spielername '${KID_NAME}' nach Muster" matches
 check "K1 GET players: Passwort von ${KID} passt auf das Muster (Länge ${#KID_PW})" matches "${KID_PW}" "${PASSWORD_RE}"
 
 occ group:add "${GROUP}" >/dev/null 2>&1 || true
-docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="${GUEST_PASS}" app \
-	php occ user:add --password-from-env --display-name="Gast Abnahme" "${GUEST}" >/dev/null 2>&1 \
-	|| abort "Konto ${GUEST} ließ sich nicht anlegen"
+add_user "${GUEST}" "${GUEST_PASS}" "Gast Abnahme" || abort "Konto ${GUEST} ließ sich nach drei Versuchen nicht anlegen (occ-Ausgabe oben)"
 occ group:adduser "${GROUP}" "${GUEST}" >/dev/null 2>&1 || abort "${GUEST} ließ sich nicht in ${GROUP} aufnehmen"
 CODE=$(http_code POST "${API_URL}/worlds/${WORLD_ID}/invites" "${WORK_DIR}/inv-group.json" "{\"kind\":\"group\",\"target\":\"${GROUP}\"}")
 check "K1 POST invites group ${GROUP} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
@@ -408,7 +428,7 @@ check "K2 neues Passwort von ${GUEST} auth_accept" \
 	probe_expect "${WORK_DIR}/j-guest-new.json" '.result == "auth_accept"' 10 "${GUEST_NAME}" "${GUEST_PW_NEW}"
 GUEST_PW=${GUEST_PW_NEW}
 STARTED_AFTER=$(inspect "${CONTAINER}" '{{.State.StartedAt}}')
-check "K2 ohne Neustart der Welt (State.StartedAt unverändert)" eq "${STARTED_AFTER}" "${STARTED_BEFORE}"
+check "K2 ohne Neustart der Welt (State.StartedAt unverändert, ist ${STARTED_AFTER:-leer})" sh -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ "${STARTED_AFTER}" "${STARTED_BEFORE}"
 EXEC=$(curl -s -X POST -o /dev/null -w '%{http_code}' "${DOCKER_PROXY_URL}/exec/x/start" 2>/dev/null || printf '000')
 check "K2 Docker-Proxy POST /exec/x/start weiterhin 403 (ist ${EXEC})" eq "${EXEC}" 403
 
@@ -447,18 +467,23 @@ CODE=$(call "${KID_AUTH}" GET "${PAGE_URL}" "${WORK_DIR}/page-kid.html")
 check "K4 Seite als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${KID_AUTH}" GET "${BUNDLE_URL}" /dev/null)
 check "K4 Bundle als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
+# Erwartet ist genau 404: AppAPI weist Nicht-Admins auf ADMIN-Routen vor dem Backend ab
+# (am Dev-Stack belegt). Ein abgestürztes Backend (500, 503) oder ein curl-Fehler (000)
+# gilt so nicht mehr als "abgewiesen" (WR-08).
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/worlds" /dev/null)
-check "K4 Negativkontrolle: GET /api/worlds als ${KID} nicht 200 (ist ${CODE})" ne "${CODE}" 200
+check "K4 Negativkontrolle: GET /api/worlds als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+WORLDS_BEFORE=$(call "${ADMIN_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/kid-before.json" >/dev/null; jq -r '.worlds | length' "${WORK_DIR}/kid-before.json" 2>/dev/null || printf 'x')
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/worlds" "${WORK_DIR}/kid-create.json" '{"name":"Kind darf nicht","preset":"mtg_kreativ"}')
 remember_world "$(jq -r '.id // empty' "${WORK_DIR}/kid-create.json" 2>/dev/null || true)"
-check "K4 Negativkontrolle: POST /api/worlds als ${KID} nicht 200/201 (ist ${CODE})" \
-	sh -c '[ "$1" != 200 ] && [ "$1" != 201 ]' _ "${CODE}"
+WORLDS_AFTER=$(call "${ADMIN_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/kid-after.json" >/dev/null; jq -r '.worlds | length' "${WORK_DIR}/kid-after.json" 2>/dev/null || printf 'x')
+check "K4 Negativkontrolle: POST /api/worlds als ${KID} HTTP 404, Weltenzahl unverändert (ist ${CODE}, ${WORLDS_BEFORE} -> ${WORLDS_AFTER})" \
+	sh -c '[ "$1" = 404 ] && printf "%s" "$2" | grep -Eq "^[0-9]+$" && [ "$2" = "$3" ]' _ "${CODE}" "${WORLDS_BEFORE}" "${WORLDS_AFTER}"
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/worlds/${WORLD_ID}/players" /dev/null)
-check "K4 Negativkontrolle: GET players als ${KID} nicht 200 (ist ${CODE})" ne "${CODE}" 200
+check "K4 Negativkontrolle: GET players als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/players/password" /dev/null "{\"nc_user\":\"${GUEST}\"}")
-check "K4 Negativkontrolle: POST players/password als ${KID} nicht 200 (ist ${CODE})" ne "${CODE}" 200
+check "K4 Negativkontrolle: POST players/password als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/settings" /dev/null)
-check "K4 Negativkontrolle: GET settings als ${KID} nicht 200 (ist ${CODE})" ne "${CODE}" 200
+check "K4 Negativkontrolle: GET settings als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
 players_to "${WORK_DIR}/p4.json" >/dev/null
 check "K4 Passwort von ${GUEST} nach den Kind-Aufrufen unverändert" \
 	eq "$(sha_of "$(player_field "${WORK_DIR}/p4.json" "${GUEST}" password)")" "$(sha_of "${GUEST_PW}")"

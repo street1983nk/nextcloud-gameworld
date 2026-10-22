@@ -221,7 +221,9 @@ KID_BUNDLE=$(http_code GET "${BUNDLE_URL}" "${KID_AUTH}" /dev/null)
 check "K1 Bundle für ${KID_USER} HTTP 200 (ist ${KID_BUNDLE})" eq "${KID_BUNDLE}" 200
 
 KID_API=$(http_code GET "${API_URL}/worlds" "${KID_AUTH}" /dev/null)
-check "K1 Negativkontrolle: Welt-API für ${KID_USER} kein 200 (ist ${KID_API})" ne "${KID_API}" 200
+# AppAPI weist Nicht-Admins auf ADMIN-Routen vor dem Backend mit 404 ab (am Dev-Stack belegt);
+# ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht mehr (WR-08).
+check "K1 Negativkontrolle: Welt-API für ${KID_USER} HTTP 404 (ist ${KID_API})" eq "${KID_API}" 404
 
 KID_ME=$(http_code GET "${API_URL}/me" "${KID_AUTH}" "${WORK_DIR}/me-kid.json")
 check "K1 /api/me für ${KID_USER} HTTP 200 (ist ${KID_ME})" eq "${KID_ME}" 200
@@ -254,7 +256,9 @@ check "K2 beide Container gleichzeitig running (docker ps)" eq "$(printf '%s\n' 
 
 PORT_A=$(inspect "${CONTAINER_A}" '{{index .Config.Labels "gameworld.port"}}')
 PORT_B=$(inspect "${CONTAINER_B}" '{{index .Config.Labels "gameworld.port"}}')
-check "K2 Ports verschieden (A=${PORT_A}, B=${PORT_B})" ne "${PORT_A}" "${PORT_B}"
+# Beide Ports müssen Zahlen sein: ein leerer Wert (inspect gescheitert) besteht nicht (WR-08).
+check "K2 Ports verschieden (A=${PORT_A}, B=${PORT_B})" sh -c \
+	'printf "%s %s" "$1" "$2" | grep -Eq "^[0-9]+ [0-9]+$" && [ "$1" != "$2" ]' _ "${PORT_A}" "${PORT_B}"
 for pair in "A ${CONTAINER_A} ${PORT_A}" "B ${CONTAINER_B} ${PORT_B}"; do
 	# shellcheck disable=SC2086
 	set -- ${pair}
