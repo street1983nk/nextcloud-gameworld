@@ -15,7 +15,7 @@ from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 ATTEMPT_SUBJECT = "Unbekannter Spielername in {world}"
-ATTEMPT_MESSAGE = "{player} wollte um {time} Uhr beitreten. Tippe hier, um nachzusehen."
+ATTEMPT_MESSAGE = "{player} wollte um {time} Uhr beitreten."
 SUMMARY_SUBJECT = "Weitere Beitrittsversuche"
 SUMMARY_MESSAGE = "Heute gab es weitere Beitrittsversuche, siehe Gameworld."
 REVIEW_SUBJECT = "Tagesrückblick"
