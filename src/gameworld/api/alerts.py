@@ -22,7 +22,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from gameworld.access.directory import get_directory
 from gameworld.access.roles import require_verwalter
-from gameworld.api.worlds import ServiceDep
+from gameworld.api.worlds import ServiceDep, refresh_snapshot
 from gameworld.notify.links import clean_origin
 from gameworld.notify.loop import META_LINK_ORIGIN, collect_play, display_name, limits_reached
 from gameworld.notify.review import minutes
@@ -31,8 +31,9 @@ from gameworld.playtime.pause import clock_text
 from gameworld.playtime.plan import local_day
 from gameworld.worlds.service import WorldService
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN.
-router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
+# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN. Jeder Aufruf
+# frischt den Verwalter-Schnappschuss auf (CR-01), erst nach der Sperre.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter), Depends(refresh_snapshot)])
 
 # Spielzeit einer heute gelöschten Welt bleibt im Rückblick (Abnahme 04.1-09).
 DELETED_WORLD = "gelöschte Welt"

@@ -242,12 +242,12 @@ async def test_reconcile_registers_and_enables_every_room(
     store: WorldStore, fake_talk: FakeTalkRooms, fake_bot: FakeBot
 ) -> None:
     talk = TalkService(store, fake_talk)
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     tokens = {row.token for row in store.list_talk_rooms()}
     assert len(tokens) == 2
     assert fake_bot.registered >= 1
     fake_bot.enabled.clear()
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     assert {token for token, _uid in fake_bot.enabled} == tokens
 
 
@@ -255,7 +255,7 @@ async def test_reconcile_without_bots_registers_nothing(
     store: WorldStore, fake_talk: FakeTalkRooms, fake_bot: FakeBot
 ) -> None:
     fake_talk.bots = False
-    await TalkService(store, fake_talk).reconcile_all()
+    await TalkService(store, fake_talk).reconcile_all("admin")
     assert fake_bot.registered == 0
     assert fake_bot.enabled == []
 

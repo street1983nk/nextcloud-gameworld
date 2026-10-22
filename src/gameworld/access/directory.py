@@ -17,6 +17,9 @@ LOG = logging.getLogger(__name__)
 
 # 998 ist der OCS-Code "nicht gefunden" der Provisioning-API.
 _NOT_FOUND_CODES = frozenset({404, 998})
+# Ausdrückliche Ablehnung des handelnden Kontos: 401 (AppAPI kennt das Konto nicht,
+# OCS 997) und 403 (kein Admin, "must be at least a sub admin"), am Dev-Stack belegt.
+_REJECTED_CODES = frozenset({401, 403, 997})
 
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
 
@@ -30,6 +33,15 @@ class DirectoryUser:
 
 class DirectoryUnavailableError(Exception):
     """Nextcloud hat die Kontoprüfung nicht beantwortet."""
+
+
+class DirectoryRejectedError(DirectoryUnavailableError):
+    """Nextcloud lehnt das handelnde Konto ab (401/403): es ist kein Admin (mehr) oder es gibt es nicht.
+
+    Unterklasse von DirectoryUnavailableError: Wer nur Störungen behandelt, bleibt
+    beim bisherigen Verhalten (nie eine leere Gruppe, nie Rechte). Nur die
+    Hintergrund-Prüfung des Verwalter-Schnappschusses unterscheidet beide Fälle.
+    """
 
 
 class Directory(Protocol):
@@ -82,6 +94,8 @@ class NcDirectory:
             if exc.status_code in _NOT_FOUND_CODES:
                 return None
             LOG.warning("Gruppenabfrage bei Nextcloud gescheitert: Status %s", exc.status_code)
+            if exc.status_code in _REJECTED_CODES:
+                raise DirectoryRejectedError(MSG_UNAVAILABLE) from None
             raise DirectoryUnavailableError(MSG_UNAVAILABLE) from None
         except Exception as exc:
             LOG.warning("Gruppenabfrage bei Nextcloud gescheitert: %s", type(exc).__name__)

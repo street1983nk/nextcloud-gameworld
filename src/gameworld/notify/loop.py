@@ -3,8 +3,10 @@
 Der 15-s-Takt legt Ereignisse ohne Netzaufruf in die SQLite-Outbox (04.1-02).
 Dieser Loop läuft im Event-Loop, arbeitet die Outbox alle ``NOTIFY_SECONDS`` ab,
 prüft den Tagesrückblick je Verwalter und stößt alle ``MAINTENANCE_SECONDS``
-die Wartung an (Verwalter-Schnappschuss auffrischen, Einträge aus
-``MAINTENANCE``, etwa der Talk-Abgleich aus 04.1-05).
+die Wartung an (Einträge aus ``MAINTENANCE``, etwa der Talk-Abgleich aus
+04.1-05). Den Verwalter-Schnappschuss lässt er alle ``ADMIN_CHECK_SECONDS`` von
+Nextcloud bestätigen (CR-01): Handelnd ist nur ein Konto, das Nextcloud gerade
+als Admin bestätigt, nie ungeprüft das erste aus dem Schnappschuss.
 
 Regeln:
 
@@ -68,6 +70,9 @@ LOG = logging.getLogger(__name__)
 
 NOTIFY_SECONDS = 5.0
 MAINTENANCE_SECONDS = 300
+# Verwalter-Schnappschuss im Hintergrund höchstens so lange ungeprüft (CR-01): Verliert
+# ein Konto die Adminrechte, fällt es spätestens dann aus Empfängern, Talk und frei.
+ADMIN_CHECK_SECONDS = 60
 # Basis-URL der Links, gemeldet vom Browser eines Verwalters (POST /api/origin).
 META_LINK_ORIGIN = "link_origin"
 
@@ -77,7 +82,10 @@ class LoopState:
     """Zustand des Loops im Speicher (in Tests je Test frisch)."""
 
     last_maintenance: float | None = None
+    last_admin_check: float | None = None
     origin_warned: bool = False
+    # Zuletzt von Nextcloud als Admin bestätigtes Konto (verify_admins), sonst None.
+    acting: str | None = None
 
 
 LOOP_STATE = LoopState()
@@ -94,6 +102,9 @@ class NotifyContext:
     tz: ZoneInfo
     admins: tuple[str, ...]
     origin: str | None
+    # Konto für Talk- und Verzeichnis-Aufrufe: das zuletzt bestätigte, falls noch im
+    # Schnappschuss, sonst das erste daraus; None ohne Verwalter.
+    acting: str | None = None
     # Namen je Durchlauf zwischengespeichert: Spielername (casefold) -> (Schlüssel, Bot-Name).
     names: dict[str, tuple[str, str]] = field(default_factory=dict)
 
@@ -197,10 +208,10 @@ def _room_token(store: WorldStore, world_id: str) -> str | None:
 
 async def _bot_room(context: NotifyContext, world_id: str) -> str | None:
     """Raum-Token, wenn Talk mit Bots da ist und die Welt einen Raum hat; sonst None."""
-    if not context.admins:
+    if context.acting is None:
         return None
     store = context.service.store
-    talk, bots = await get_talk_service(store).is_available(context.admins[0])
+    talk, bots = await get_talk_service(store).is_available(context.acting)
     if not talk or not bots:
         return None
     return await anyio.to_thread.run_sync(_room_token, store, world_id)
@@ -214,9 +225,10 @@ async def _bot_person(context: NotifyContext, player_name: str) -> tuple[str, st
     store = context.service.store
     nc_user = await anyio.to_thread.run_sync(store.player_name_owner, player_name)
     label = player_name
-    if nc_user is not None:
+    acting = context.acting
+    if nc_user is not None and acting is not None:
         try:
-            user = await context.directory.user(context.admins[0], nc_user)
+            user = await context.directory.user(acting, nc_user)
         except DirectoryUnavailableError:
             user = None
         if user is not None:
@@ -289,9 +301,11 @@ HANDLERS: dict[str, Handler] = {
 
 
 async def talk_reconcile(service: WorldService, acting: str) -> None:
-    """Talk-Abgleich (04.1-05): Räume anlegen, Mitglieder, nur lesen, offene Löschungen."""
-    del acting
-    await get_talk_service(service.store).reconcile_all()
+    """Talk-Abgleich (04.1-05): Räume anlegen, Mitglieder, nur lesen, offene Löschungen.
+
+    ``acting`` ist das eben von Nextcloud bestätigte Konto (verify_once, CR-01).
+    """
+    await get_talk_service(service.store).reconcile_all(acting)
 
 
 MAINTENANCE: list[MaintenanceHook] = [talk_reconcile]
@@ -308,7 +322,8 @@ def _due_admins(store: WorldStore, admins: tuple[str, ...], day: date, minute: i
 
 async def _reviews(context: NotifyContext) -> None:
     """Tagesrückblick: Inhalt zuerst, nur mit Inhalt beanspruchen, dann senden (Pattern 5, D-14, D-15)."""
-    if not context.admins or context.origin is None:
+    acting = context.acting
+    if acting is None or not context.admins or context.origin is None:
         return
     store = context.service.store
     local = datetime.fromtimestamp(context.now, context.tz)
@@ -322,7 +337,7 @@ async def _reviews(context: NotifyContext) -> None:
     reached = await anyio.to_thread.run_sync(limits_reached, context.service, list(play))
     entries = [
         (
-            await display_name(context.directory, context.admins[0], store, nc_user),
+            await display_name(context.directory, acting, store, nc_user),
             sum(worlds.values()),
             nc_user in reached,
         )
@@ -349,7 +364,8 @@ async def run_once(service: WorldService, notifier: Notifier, directory: Directo
     if origin is None and not LOOP_STATE.origin_warned:
         LOOP_STATE.origin_warned = True
         LOG.warning("Keine Basis-URL für Benachrichtigungs-Links (link_origin, NEXTCLOUD_URL); es wird nichts gesendet")
-    context = NotifyContext(service, notifier, directory, now, tz, admins, origin)
+    acting = LOOP_STATE.acting if LOOP_STATE.acting in admins else (admins[0] if admins else None)
+    context = NotifyContext(service, notifier, directory, now, tz, admins, origin, acting)
     rows = await anyio.to_thread.run_sync(store.outbox_batch)
     for row in rows:
         handler = HANDLERS.get(row.kind)
@@ -366,17 +382,30 @@ async def run_once(service: WorldService, notifier: Notifier, directory: Directo
     await _reviews(context)
 
 
-async def maintain_once(service: WorldService, directory: Directory) -> None:
-    """Wartung: Schnappschuss mit dem ersten bekannten Verwalter auffrischen, dann MAINTENANCE (Pitfall 9)."""
+async def verify_once(service: WorldService, directory: Directory) -> str | None:
+    """Schnappschuss im Hintergrund von Nextcloud bestätigen lassen (CR-01); bestätigtes Konto oder None.
+
+    Nie ``admins[0]`` ungeprüft: Erst ein Konto, dessen Gruppenabfrage gelingt und
+    das selbst Admin ist, gilt als handelnd (TimeService.verify_admins).
+    """
     raw = await anyio.to_thread.run_sync(service.store.get_meta, META_TIME_ADMINS)
     admins = sorted(parse_admins(raw))
-    if not admins:
+    acting: str | None = None
+    if admins:
+        try:
+            acting = await TimeService(service, directory).verify_admins(admins)
+        except Exception as exc:
+            LOG.warning("Verwalter-Schnappschuss nicht geprüft: %s", type(exc).__name__)
+    LOOP_STATE.acting = acting
+    LOOP_STATE.last_admin_check = time.monotonic()
+    return acting
+
+
+async def maintain_once(service: WorldService, directory: Directory) -> None:
+    """Wartung: Schnappschuss bestätigen, dann MAINTENANCE nur mit dem bestätigten Konto (Pitfall 9, CR-01)."""
+    acting = await verify_once(service, directory)
+    if acting is None:
         return
-    acting = admins[0]
-    try:
-        await TimeService(service, directory).refresh_admins(acting, blocking=False)
-    except Exception as exc:
-        LOG.warning("Verwalter-Schnappschuss nicht aufgefrischt: %s", type(exc).__name__)
     for hook in list(MAINTENANCE):
         try:
             await hook(service, acting)
@@ -384,20 +413,35 @@ async def maintain_once(service: WorldService, directory: Directory) -> None:
             LOG.warning("Wartungsschritt fehlgeschlagen: %s", type(exc).__name__)
 
 
+def _due(last: float | None, now: float, seconds: float) -> bool:
+    return last is None or now - last >= seconds
+
+
 async def notify_forever(service: WorldService, *, interval_seconds: float = NOTIFY_SECONDS) -> None:
-    """Durchlauf im Abstand interval_seconds, Wartung alle MAINTENANCE_SECONDS; läuft bis CancelledError."""
+    """Durchlauf im Abstand interval_seconds, Wartung alle MAINTENANCE_SECONDS; läuft bis CancelledError.
+
+    Dazwischen prüft der Loop den Verwalter-Schnappschuss alle ADMIN_CHECK_SECONDS
+    (verify_once), damit ein früherer Verwalter nicht bis zur nächsten Wartung bleibt.
+    """
     notifier = get_notifier()
     directory = get_directory()
     while True:
-        try:
-            await run_once(service, notifier, directory, int(time.time()))
-        except Exception as exc:
-            LOG.warning("Benachrichtigungs-Durchlauf fehlgeschlagen: %s", type(exc).__name__)
+        # Erst prüfen, dann senden: Nach einem Neustart geht nichts an einen
+        # gespeicherten, aber nicht mehr bestätigten Verwalter.
         now = time.monotonic()
-        if LOOP_STATE.last_maintenance is None or now - LOOP_STATE.last_maintenance >= MAINTENANCE_SECONDS:
+        if _due(LOOP_STATE.last_maintenance, now, MAINTENANCE_SECONDS):
             LOOP_STATE.last_maintenance = now
             try:
                 await maintain_once(service, directory)
             except Exception as exc:
                 LOG.warning("Wartung fehlgeschlagen: %s", type(exc).__name__)
+        elif _due(LOOP_STATE.last_admin_check, now, ADMIN_CHECK_SECONDS):
+            try:
+                await verify_once(service, directory)
+            except Exception as exc:
+                LOG.warning("Verwalter-Prüfung fehlgeschlagen: %s", type(exc).__name__)
+        try:
+            await run_once(service, notifier, directory, int(time.time()))
+        except Exception as exc:
+            LOG.warning("Benachrichtigungs-Durchlauf fehlgeschlagen: %s", type(exc).__name__)
         await asyncio.sleep(interval_seconds)

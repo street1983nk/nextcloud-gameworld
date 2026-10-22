@@ -135,7 +135,7 @@ async def test_empty_snapshot_means_no_talk_call(
     store.set_meta(META_TIME_ADMINS, "[]")
     fake_talk.calls.clear()
     await talk.sync_members(W1)
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     assert fake_talk.calls == []
 
 
@@ -145,7 +145,7 @@ async def test_without_talk_nothing_happens_and_nothing_raises(
     fake_talk.talk = False
     await talk.ensure_room(W1, "admin")
     await talk.sync_members(W1)
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     assert store.list_talk_rooms() == []
     assert set(fake_talk.methods()) == {"available"}
 
@@ -192,7 +192,7 @@ async def test_failed_delete_stays_pending_and_reconcile_retries(
     assert row is not None
     assert row.state == TALK_STATE_DELETE_PENDING
     fake_talk.error = None
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     assert store.talk_room(W1) is None
     assert token not in fake_talk.rooms
 
@@ -204,7 +204,7 @@ async def test_reconcile_backfills_enforces_read_only_and_privacy(
     token = _token(store)
     assert store.set_talk_read_only(W1, on=True)
     fake_talk.calls.clear()
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     w2 = store.talk_room(W2)
     assert w2 is not None
     assert ("create", "admin", ("Gameworld: Burg",)) in fake_talk.calls
@@ -218,7 +218,7 @@ async def test_reconcile_removes_room_of_vanished_world(
     await talk.ensure_room(W1, "admin")
     token = _token(store)
     store.delete_world(W1)
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     assert store.talk_room(W1) is None
     assert token not in fake_talk.rooms
 
@@ -231,7 +231,7 @@ async def test_room_deleted_in_talk_is_recreated(
     fake_talk.rooms.pop(old)
     await talk.sync_members(W1)
     assert store.talk_room(W1) is None
-    await talk.reconcile_all()
+    await talk.reconcile_all("admin")
     assert _token(store) != old
 
 
@@ -268,7 +268,7 @@ async def test_reconcile_isolates_errors_and_logs_no_names(
 
     fake_talk.participants = broken  # type: ignore[method-assign]
     with caplog.at_level(logging.WARNING):
-        await talk.reconcile_all()
+        await talk.reconcile_all("admin")
     assert store.talk_room(W2) is not None
     assert W1 in caplog.text
     assert "TalkUnavailableError" in caplog.text

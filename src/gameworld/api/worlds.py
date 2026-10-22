@@ -67,6 +67,21 @@ def get_service() -> WorldService:
 ServiceDep = Annotated[WorldService, Depends(get_service)]
 
 
+async def refresh_snapshot(
+    service: ServiceDep,
+    uid: Annotated[str, Depends(require_verwalter)],
+    directory: Annotated[Directory, Depends(get_directory)],
+) -> None:
+    """Router-Abhängigkeit der Handy-Seiten: Verwalter-Schnappschuss mit dem geprüften Konto auffrischen (CR-01).
+
+    Gedrosselt und nie blockierend wie beim Dashboard; ein Fehler erreicht die Seite nie.
+    """
+    try:
+        await TimeService(service, directory).refresh_admins(uid, blocking=False)
+    except Exception as exc:
+        LOG.warning("Verwalter-Stand beim Seitenaufruf nicht aktualisiert: %s", type(exc).__name__)
+
+
 class CreateWorldRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

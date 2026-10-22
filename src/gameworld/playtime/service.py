@@ -32,6 +32,7 @@ import json
 import logging
 import sqlite3
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from time import monotonic
@@ -39,7 +40,7 @@ from zoneinfo import ZoneInfo
 
 import anyio.to_thread
 
-from gameworld.access.directory import Directory, DirectoryUnavailableError
+from gameworld.access.directory import Directory, DirectoryRejectedError, DirectoryUnavailableError
 from gameworld.access.roles import ADMIN_GROUP
 from gameworld.access.service import MSG_NO_PLAYER, PlayerNotFoundError
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
@@ -321,6 +322,44 @@ class TimeService:
             return await anyio.to_thread.run_sync(self._store_admins_sync, value)
         return await anyio.to_thread.run_sync(self._try_store_admins_sync, value)
 
+    async def verify_admins(self, candidates: Iterable[str]) -> str | None:
+        """Hintergrund-Prüfung des Schnappschusses ohne geprüften Verwalter (CR-01); bestätigtes Konto oder None.
+
+        Fragt die Gruppe admin der Reihe nach als jedes Konto aus ``candidates``.
+        Bestätigt ist nur ein Konto, dessen Abfrage gelingt und das selbst in der
+        Antwort steht; ungeprüft wird nie ein Konto eingefügt. Die Antwort ersetzt
+        den Schnappschuss (ohne Warten auf die Welt-Sperre). Lehnt Nextcloud jedes
+        Konto ausdrücklich ab (401/403), ist niemand mehr bestätigt: Der
+        Schnappschuss wird leer (fail closed, keine Empfänger, keine Freistellung).
+        Bei einer Störung bleibt der letzte Stand, es gilt aber kein Konto als
+        bestätigt. Belegte Sperre: None, der nächste Lauf versucht es erneut.
+        """
+        tried = 0
+        rejected = 0
+        for uid in candidates:
+            tried += 1
+            try:
+                members = await self._directory.group_members(uid, ADMIN_GROUP)
+            except DirectoryRejectedError:
+                rejected += 1
+                continue
+            except DirectoryUnavailableError:
+                continue
+            found = set(members or ())
+            if uid not in found:
+                rejected += 1
+                continue
+            if await anyio.to_thread.run_sync(self._store_admins_background_sync, json.dumps(sorted(found))):
+                ADMINS_STATE.last = monotonic()
+                return uid
+            return None
+        if tried and rejected == tried:
+            LOG.warning("Kein Konto des Verwalter-Schnappschusses ist noch Admin, der Schnappschuss wird geleert")
+            await anyio.to_thread.run_sync(self._store_admins_background_sync, "[]")
+        else:
+            LOG.warning("Verwalter-Schnappschuss nicht bestätigt, der letzte Stand bleibt")
+        return None
+
     async def list_children(self, acting_uid: str) -> PlaytimeView:
         """Alle Konten mit Spielerzeile (ohne Verwalter), je mit Regeln, Verbrauch und Auswertung."""
         await self.refresh_admins(acting_uid)
@@ -438,6 +477,14 @@ class TimeService:
                 ADMINS_STATE.last = None
                 return False
             return self._apply_admins(value)
+
+    def _store_admins_background_sync(self, value: str) -> bool:
+        """Hintergrund: Schnappschuss ohne Warten ablegen; True, wenn er jetzt ``value`` ist."""
+        with self._worlds.try_mutation() as acquired:
+            if not acquired:
+                return False
+            self._apply_admins(value)
+            return True
 
     def _apply_admins(self, value: str) -> bool:
         """Nur unter der Sperre: neuen Schnappschuss ablegen und alle Welten neu rendern."""

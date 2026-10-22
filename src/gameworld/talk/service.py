@@ -274,12 +274,18 @@ class TalkService:
 
     # 5-min-Abgleich
 
-    async def reconcile_all(self) -> None:
-        """Löscht offene Räume, legt fehlende an (Backfill D-16/D-20), gleicht alle ab."""
+    async def reconcile_all(self, acting_uid: str | None = None) -> None:
+        """Löscht offene Räume, legt fehlende an (Backfill D-16/D-20), gleicht alle ab.
+
+        ``acting_uid`` ist das Konto, das Nextcloud gerade als Admin bestätigt hat
+        (notify.loop.verify_once, CR-01); nur so wird ein neuer Raum angelegt. Ohne
+        bestätigtes Konto im Schnappschuss legt der Abgleich keine Räume an.
+        """
         admins = await self._admins()
         if not admins:
             return
-        talk, bots = await self.is_available(admins[0])
+        acting = acting_uid if acting_uid in admins else None
+        talk, bots = await self.is_available(acting or admins[0])
         if not talk:
             return
         if bots:
@@ -300,8 +306,9 @@ class TalkService:
         for world in worlds:
             if world.id in with_room:
                 await self._isolated("Abgleich", world.id, self._reconcile_room(world.id, admins, bots=bots))
-            else:
-                await self._isolated("Anlegen", world.id, self.ensure_room(world.id, admins[0]))
+            elif acting is not None:
+                # Owner eines neuen Kinder-Raums wird nur ein bestätigter Verwalter (CR-01).
+                await self._isolated("Anlegen", world.id, self.ensure_room(world.id, acting))
 
     async def _reconcile_room(self, world_id: str, admins: list[str], *, bots: bool) -> None:
         async with self._lock(world_id):

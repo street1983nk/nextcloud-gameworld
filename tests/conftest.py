@@ -290,6 +290,9 @@ class FakeDirectory:
         self.calls: list[tuple[str, str]] = []
         self.group_calls: list[tuple[str, str]] = []
         self.error: Exception | None = None
+        # Wie Nextcloud (am Dev-Stack belegt): Gruppen löst nur ein Admin auf, alle
+        # anderen bekommen 403 (DirectoryRejectedError). Aus, damit ältere Tests bleiben.
+        self.strict = False
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
         self.calls.append((acting_uid, uid))
@@ -305,6 +308,10 @@ class FakeDirectory:
         self.lock_held.append(world_service._LOCK.locked())  # pyright: ignore[reportPrivateUsage]
         if self.error is not None:
             raise self.error
+        if self.strict and acting_uid not in self.groups.get("admin", []):
+            from gameworld.access.directory import DirectoryRejectedError
+
+            raise DirectoryRejectedError("kein Admin")
         members = self.groups.get(gid)
         return None if members is None else list(members)
 

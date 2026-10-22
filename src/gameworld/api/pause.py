@@ -22,12 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, BeforeValidator, ConfigDict
 
 from gameworld.access.roles import require_verwalter
-from gameworld.api.worlds import ServiceDep
+from gameworld.api.worlds import ServiceDep, refresh_snapshot
 from gameworld.playtime.pause import MSG_BAD_MINUTES, PauseResult, PauseService, clock_text
 from gameworld.provisioner.client import ProvisionerError
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-04.1-11).
-router = APIRouter(prefix="/api/pause", dependencies=[Depends(require_verwalter)])
+# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-04.1-11). Jeder
+# Aufruf frischt den Verwalter-Schnappschuss auf (CR-01), erst nach der Sperre.
+router = APIRouter(prefix="/api/pause", dependencies=[Depends(require_verwalter), Depends(refresh_snapshot)])
 
 MSG_UNAVAILABLE = "Die Pause konnte gerade nicht gespeichert werden. Bitte gleich noch einmal versuchen."
 
