@@ -182,3 +182,49 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 - Gameworld speichert nur Tagessummen in Sekunden und nur für Kinder mit Regeln. Kinder ohne Regeln werden nicht gezählt.
 - Tagessummen werden nach 7 Tagen gelöscht.
 - Keine Uhrzeiten einzelner Sitzungen, keine IP-Adressen. Das Zählbuch in der Welt enthält nur Spielernamen und Sekunden.
+
+## 10. Eltern-Handy und Talk
+
+### Pause für alle Welten
+
+- Oben auf der Gameworld-Seite steht die Karte "Pause für alle Kinder". Sie führt zur Pause-Seite, die auch auf dem Handy gut bedienbar ist: 15, 30 oder 60 Minuten.
+- Kinder bekommen im Spiel 30 Sekunden vorher die Nachricht "In 30 Sekunden ist Pause." und werden dann mit "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen." getrennt. Bis zum Ende der Pause kommen sie nicht hinein. Das gilt für alle Kinder, auch für Kinder ohne Spielzeitregeln.
+- Verwalter (Gruppe `admin`) bleiben in der Welt und kommen jederzeit hinein.
+- "Weiter" beendet die Pause sofort. "Für heute Schluss" sperrt bis Mitternacht; das Kind liest dann zum Beispiel "Für heute ist Schluss. Morgen ab 9 Uhr kannst du wieder spielen." Ist morgen laut Plan kein Spieltag, steht nur "Für heute ist Schluss." da.
+- Die Pausenzeit zählt nicht auf die Spielzeit. Zeitfenster laufen weiter: Endet ein Fenster während der Pause, verlängert die Pause es nicht.
+- Welten mit einem älteren Gameworld-Mod werden beim Start einer Pause automatisch neu gestartet, damit die Pause sicher greift.
+
+### Benachrichtigungen aufs Handy
+
+- Gameworld schickt Hinweise als normale Nextcloud-Benachrichtigungen an alle Verwalter. Auf dem Handy kommen sie über die Nextcloud-App an. Voraussetzung: Die App "Notifications" ist aktiv, und die Instanz kann Push senden (Push-Proxy der Nextcloud-App, bei öffentlich erreichbaren Instanzen Standard).
+- Ein Tipp auf die Benachrichtigung öffnet die passende Gameworld-Seite im Browser. Wer nicht angemeldet ist, meldet sich an und landet danach direkt auf der Seite.
+
+### Hinweis bei fremdem Beitrittsversuch
+
+- Versucht ein nicht eingeladener Spielername einer Welt beizutreten, bekommen alle Verwalter "Unbekannter Spielername in <Welt>" mit Name und Uhrzeit. Die Seite "Beitrittsversuche" zeigt alle Versuche des Tages; mit "Jemanden einladen" lässt sich wie gewohnt einladen. Einen fremden Namen freizugeben gibt es bewusst nicht.
+- Gedrosselt: höchstens ein Hinweis je Name, Welt und Tag, insgesamt höchstens 5 am Tag, danach genau eine Sammelnachricht "Weitere Beitrittsversuche".
+- Kein Hinweis bei einem falschen Spielpasswort eines eingeladenen Kindes und bei einer anderen Groß- und Kleinschreibung eines eingeladenen Namens.
+
+### Tagesrückblick
+
+- Jeder Verwalter bekommt einmal am Abend den "Tagesrückblick" mit den Spielminuten je Kind, Vorgabe 20 Uhr. Uhrzeit und An/Aus stellt jeder Verwalter selbst in den Einstellungen ein ("Tagesrückblick am Abend").
+- Ohne Spielzeit am Tag kommt kein Rückblick. Auch nach einem Neustart kommt er höchstens einmal am Tag.
+
+### Talk-Raum pro Welt
+
+- Ist die App Talk installiert, bekommt jede Welt einen eigenen Raum "Gameworld: <Welt>". Er ist nie öffentlich und nicht auffindbar.
+- Mitglieder folgen den Einladungen der Welt: eingeladene Konten und Gruppen plus alle Verwalter. Wer später in eine eingeladene Gruppe kommt, erscheint nach dem nächsten Abgleich (spätestens nach 5 Minuten) im Raum. Wer in Talk von Hand hinzugefügt wird, ohne eingeladen zu sein, wird beim Abgleich wieder entfernt.
+- Verwalter sind Moderatoren. Mit "Nur lesen" in der Welt-Zeile lässt sich das Schreiben im Raum sperren. Anrufe folgen den Talk-Standards der Instanz.
+- Wird die Welt gelöscht, löscht Gameworld den Raum samt Verlauf; der Lösch-Dialog weist darauf hin.
+- Ohne Talk läuft Gameworld unverändert weiter. Wird Talk später installiert oder wieder aktiviert, legt Gameworld die fehlenden Räume beim nächsten Abgleich an.
+
+### Gameworld-Bot
+
+- Der Bot "Gameworld" schreibt in den Raum der Welt: "Die Welt ist gestartet." und "Die Welt ist gestoppt.", "<Name> ist jetzt in der Welt." und "<Name> hat die Welt verlassen." (je Person und Welt höchstens alle 10 Minuten), "Pause bis H:MM Uhr.", "Für heute ist Schluss.", "Die Pause ist vorbei." und "Noch 10 Minuten Spielzeit für <Name>.".
+- Mit Ton kommen nur Pause, "Für heute ist Schluss." und die 10-Minuten-Warnung. Start, Stopp, Beitritt, Verlassen und das Pausenende kommen still.
+- Der Bot liest keine Nachrichten der Kinder mit.
+
+### Datensparsamkeit
+
+- Gameworld speichert keine Chatinhalte aus Talk.
+- Für Rückblick und Hinweise speichert Gameworld nur Tagessummen der Spielzeit je Kind und Welt sowie Spielernamen und Uhrzeit fremder Beitrittsversuche. Beides wird nach 7 Tagen gelöscht.

@@ -344,7 +344,7 @@ check "${KID} tritt der Welt bei (Prober: Sitzung gehalten)" eq "${JOINED}" 0
 check "Bot schreibt '... ${TEXT_JOIN}' binnen 60 s" bot_said "${TEXT_JOIN}" 60
 # Drossel D-22: erneut rein und raus binnen 10 Minuten bringt keine neue Meldung.
 probe "${WORK_DIR}/rejoin.json" "${KID_NAME}" "${KID_PW}" --hold 5 --timeout 30
-check "Positivkontrolle: zweiter Beitritt gelingt (ist $(jq -r '.result' "${WORK_DIR}/rejoin.json" 2>/dev/null))" \
+check "Positivkontrolle: zweiter Beitritt gelingt (ist $(jq -r '"\(.result) \(.reason // "")"' "${WORK_DIR}/rejoin.json" 2>/dev/null))" \
 	eq "$(jq -r '.result' "${WORK_DIR}/rejoin.json" 2>/dev/null)" held
 # Takt 15 s plus Loop 5 s: nach 30 s wären neue Meldungen sicher im Chat.
 sleep 30

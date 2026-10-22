@@ -91,6 +91,20 @@ Werkzeuge wie in Phase 3: docker-CLI, curl, jq, tar, grep und `uv`. Einziges Pyt
 
 Das Skript legt die Welt "Abnahme Spielzeit" und das Wegwerfkonto `gw-abnahme4` an, setzt und löscht Regeln für `gw-kind`, legt einen Ferientag an, startet die Welt einmal und die ExApp einmal neu und hält in K5 zwei Sitzungen bis zu 170 s. Ein trap räumt alles in jedem Fall auf: Welt, Regeln von `gw-kind`, Ferien, Zeitzone zurück auf `Europe/Berlin`, Konto `gw-abnahme4`, `gw-kind` nicht in `admin`. Spielpasswörter erscheinen nie in der Ausgabe. Am Ende ruft es `acceptance-phase3.sh` als Regression, das wiederum Phase 1 und 2 ruft. Laufzeit etwa 20 Minuten (davon etwa 8 für Phase 4), Exit 0 nur bei "N von N Prüfungen bestanden". Mit `GAMEWORLD_SKIP_REGRESSION=1` entfällt die Regression; der Lauf endet dann bewusst mit Exit 1.
 
+## Phasenabnahme Phase 4.1
+
+Belegt die sechs Erfolgskriterien von Phase 4.1 (Pause für alle Welten, Hinweis bei fremdem Beitrittsversuch, Tagesrückblick, Handy-Seiten hinter den Links, Talk-Raum je Welt, Gameworld-Bot und Betrieb ohne Talk) gegen den laufenden Stack mit echter Nextcloud, laufender ExApp und installiertem Talk (siehe "Talk im Dev-Stack"):
+
+```sh
+sh scripts/dev/acceptance-phase4_1.sh
+```
+
+Werkzeuge wie in Phase 4: docker-CLI, curl, jq, grep und `uv`; Benachrichtigungen zählt das Skript über die OCS-API der App Notifications (`/ocs/v2.php/apps/notifications/api/v2/notifications`) je Konto, Talk über die OCS-API von spreed. Einziges Python-Werkzeug des Projekts ist der Session-Prober über seine CLI. Für K5 und K6 ruft es `smoke-talk.sh` auf. Echter Push auf ein Handy ist im Dev-Stack nicht prüfbar (localhost, manual-install); die Benachrichtigungsliste im Web ist der Ersatz.
+
+Das Skript legt die Welten "Abnahme Pause", "Abnahme Ohne Talk" und "Abnahme Nachlegen" und die Wegwerfkonten `gw-abnahme41` und `gw-admin2` (in `admin`) an, setzt Regeln für `gw-kind`, startet eine Pause und "Für heute Schluss", schaltet den Tagesrückblick von admin kurz um, deaktiviert Talk einmal (`occ app:disable spreed`) und startet die ExApp dreimal gezielt neu. Bei gestoppter ExApp löscht es die Fremdversuche, Tagesmerker und den Rückblick-Versand des heutigen Tages, damit es an einem Tag mehrfach laufen kann. Ein trap räumt alles in jedem Fall auf: Welten, Pause, Rückblick-Einstellung von admin, Regeln und Verbrauch von `gw-kind`, beide Konten, `gw-kind` nicht in `admin`, Talk wieder aktiviert. Die Benachrichtigungen bleiben in der Glocke von admin stehen (für die Browser-Abnahme). Zwischen 23 Uhr und 0:16 wartet es bis 0:16.
+
+Am Ende ruft es `acceptance-phase4.sh` als Regression, das wiederum Phase 1 bis 3 ruft. Laufzeit etwa 40 Minuten (davon etwa 15 für Phase 4.1, wegen der Wartezeit auf den 5-min-Talk-Abgleich in `smoke-talk.sh` und beim Nachlegen), Exit 0 nur bei "N von N Prüfungen bestanden". Mit `GAMEWORLD_SKIP_REGRESSION=1` entfällt die Regression; der Lauf endet dann bewusst mit Exit 1.
+
 ## Talk im Dev-Stack
 
 Für die Talk-Räume je Welt (Phase 4.1) braucht die Dev-Nextcloud die App Talk (spreed). Einmalig installieren (braucht Internet):
