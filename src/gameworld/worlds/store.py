@@ -921,6 +921,14 @@ class WorldStore:
                 )
         return decision
 
+    def claim_daily_flag(self, day: date, flag: str) -> bool:
+        """Tages-Merker beanspruchen: True nur beim ersten Aufruf je (Tag, Merker), auch nach Neustart."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO daily_flags (day, flag) VALUES (?, ?)", (day.isoformat(), flag)
+            )
+        return cursor.rowcount == 1
+
     def attempts(self, day: date, world_id: str | None = None) -> list[AttemptRow]:
         """Fremdversuche eines lokalen Tages (optional nur einer Welt), früheste zuerst."""
         query = "SELECT world_id, player_name, first_at, count FROM join_attempts WHERE day = ?"

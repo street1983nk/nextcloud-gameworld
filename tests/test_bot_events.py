@@ -208,6 +208,51 @@ async def test_warn10_has_sound(
     assert fake_bot.sent == [(ROOM, "Noch 10 Minuten Spielzeit für Lena.", False)]
 
 
+async def test_warn10_flood_by_rejoining_rings_once_per_day(
+    service: WorldService,
+    store: WorldStore,
+    fake_notifier: FakeNotifier,
+    fake_directory: FakeDirectory,
+    fake_talk: FakeTalkRooms,
+    fake_bot: FakeBot,
+) -> None:
+    """WR-02: Neuverbinden alle paar Sekunden erzeugt je Beitritt ein warn10, gesendet wird einmal."""
+    for second in range(0, 60, 3):
+        store.add_outbox(W1, "warn10", "lena", _epoch(17, 0) + second)
+    store.add_outbox(W1, "warn10", "LENA", _epoch(17, 1))
+    await _run(service, fake_notifier, fake_directory, _epoch(17, 1), fake_talk)
+    assert fake_bot.sent == [(ROOM, "Noch 10 Minuten Spielzeit für Lena.", False)]
+    # Auch nach einem Neustart der ExApp (frischer Dienst, gleiche Datenbank) nicht erneut.
+    restarted = WorldService(store, cast(DockerProvisioner, FakeProvisioner()), load_settings())
+    store.add_outbox(W1, "warn10", "lena", _epoch(19, 0))
+    await _run(restarted, fake_notifier, fake_directory, _epoch(19, 0), fake_talk)
+    assert len(fake_bot.sent) == 1
+
+
+async def test_warn10_separate_per_person_world_and_day(
+    service: WorldService,
+    store: WorldStore,
+    fake_notifier: FakeNotifier,
+    fake_directory: FakeDirectory,
+    fake_talk: FakeTalkRooms,
+    fake_bot: FakeBot,
+) -> None:
+    """Positivkontrolle: Andere Person, andere Welt und der nächste Tag bekommen je einen Hinweis."""
+    store.apply_world_access(W2, {"lena": VERIFIER})
+    store.insert_talk_room(W2, "room-w2", "admin", "2026-10-21T10:00:00+00:00")
+    store.add_outbox(W1, "warn10", "lena", _epoch(17, 0))
+    store.add_outbox(W1, "warn10", "tom_k-2", _epoch(17, 0))
+    store.add_outbox(W2, "warn10", "lena", _epoch(17, 0))
+    store.add_outbox(W1, "warn10", "lena", _epoch(17, 0) + 86400)
+    await _run(service, fake_notifier, fake_directory, _epoch(17, 0), fake_talk)
+    assert [(token, text.split(" für ")[1]) for token, text, _silent in fake_bot.sent] == [
+        (ROOM, "Lena."),
+        (ROOM, "tom\\_k\\-2."),
+        ("room-w2", "Lena."),
+        (ROOM, "Lena."),
+    ]
+
+
 @pytest.mark.parametrize(
     ("kind", "detail", "text", "silent"),
     [

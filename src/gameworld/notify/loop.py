@@ -267,12 +267,26 @@ def _presence(template: str) -> Handler:
     return handler
 
 
+def warn10_flag(world_id: str, person: str) -> str:
+    """Tages-Merker des 10-Minuten-Hinweises je Welt und Person (WR-02)."""
+    return f"warn10:{world_id}:{person}"
+
+
 async def handle_warn10(context: NotifyContext, row: OutboxRow) -> None:
-    """Noch 10 Minuten Spielzeit, mit Ton (D-23, D-28)."""
+    """Noch 10 Minuten Spielzeit, mit Ton (D-23, D-28); je Welt, Person und Tag höchstens einmal (WR-02).
+
+    Der Mod meldet nach jedem Neuverbinden mit 5 bis 10 Minuten Rest erneut. Darum
+    erst den Tages-Merker beanspruchen, dann senden: Neuverbinden klingelt nie
+    wieder auf allen Handys im Raum, auch nicht nach einem Neustart der ExApp.
+    """
     token = await _bot_room(context, row.world_id)
     if token is None:
         return
-    _person, name = await _bot_person(context, row.name)
+    person, name = await _bot_person(context, row.name)
+    day = local_day(row.at, context.tz)
+    store = context.service.store
+    if not await anyio.to_thread.run_sync(store.claim_daily_flag, day, warn10_flag(row.world_id, person)):
+        return
     await get_bot().send(token, BOT_WARN10.format(name=name), silent=False)
 
 
