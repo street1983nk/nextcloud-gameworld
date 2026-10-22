@@ -312,6 +312,18 @@ def fake_notifier(app_env: Path) -> FakeNotifier:
 
 # Geheimnis der Tests; das echte liegt nur in Nextcloud (appconfig_ex).
 TEST_SECRET = bytes(range(32))
+# Fester Zusatz neuer Spielerzeilen (Fixture fixed_salt); echt ist er je Zeile zufällig.
+TEST_SALT = "5a" * 16
+
+
+@pytest.fixture
+def fixed_salt(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Neue Spielerzeilen bekommen TEST_SALT statt eines zufälligen Zusatzes (vorab berechenbare Passwörter)."""
+    del app_env
+    from gameworld.access import service as access_service
+
+    monkeypatch.setattr(access_service, "new_player_salt", lambda: TEST_SALT)
+    return TEST_SALT
 
 
 class FakeDirectory:
@@ -321,7 +333,7 @@ class FakeDirectory:
     admin für Welt-Fenster ab 04-05). Gruppe familie: gw-kind und gw-aus, Gruppe admin:
     admin (Verwalter-Schnappschuss, 04-05); im Test änderbar (groups). ``lock_held``
     hält für jede Gruppenabfrage fest, ob die Welt-Sperre dabei belegt war (Sperrregel:
-    Nextcloud-Aufrufe nie unter mutation()).
+    Nextcloud-Aufrufe nie unter mutation()), ``user_lock_held`` dasselbe für jede Kontoabfrage.
     """
 
     def __init__(self) -> None:
@@ -333,6 +345,7 @@ class FakeDirectory:
         }
         self.groups: dict[str, list[str]] = {"familie": ["gw-kind", "gw-aus"], "admin": ["admin"]}
         self.lock_held: list[bool] = []
+        self.user_lock_held: list[bool] = []
         self.calls: list[tuple[str, str]] = []
         self.group_calls: list[tuple[str, str]] = []
         self.error: Exception | None = None
@@ -343,7 +356,10 @@ class FakeDirectory:
         self.app_ok = True
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
+        from gameworld.worlds import service as world_service
+
         self.calls.append((acting_uid, uid))
+        self.user_lock_held.append(world_service._LOCK.locked())  # pyright: ignore[reportPrivateUsage]
         if self.error is not None:
             raise self.error
         entry = self.users.get(uid)

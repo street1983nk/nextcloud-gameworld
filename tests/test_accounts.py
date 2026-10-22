@@ -13,6 +13,7 @@ from gameworld.access.accounts import (
     PASSWORD_ALPHABET,
     PLAYER_NAME_MAX,
     derive_password,
+    new_player_salt,
     suggest_player_name,
     validate_player_name,
 )
@@ -49,6 +50,29 @@ def test_derive_password_changes_with_rotation_account_and_secret() -> None:
     assert derive_password(SECRET, "gw-kind", 1) != base
     assert derive_password(SECRET, "gw-anders", 0) != base
     assert derive_password(bytes(32), "gw-kind", 0) != base
+
+
+# Zusatz je Spielerzeile (Schema 6). Vektor unabhängig berechnet: HMAC von Hand über
+# sha256 (ipad/opad), Ziffern per wiederholtem Rest; derselbe Weg liefert VECTOR_GW_KIND_0.
+SALT = "5a" * 16
+VECTOR_GW_KIND_0_SALTED = "uq8x-t78x-7zyf"
+
+
+def test_empty_salt_keeps_exact_previous_password() -> None:
+    assert derive_password(SECRET, "gw-kind", 0, "") == VECTOR_GW_KIND_0
+    assert derive_password(SECRET, "gw-kind", 1, "") == VECTOR_GW_KIND_1
+
+
+def test_salt_changes_password_with_fixed_vector() -> None:
+    assert derive_password(SECRET, "gw-kind", 0, SALT) == VECTOR_GW_KIND_0_SALTED
+    assert derive_password(SECRET, "gw-kind", 0, SALT) != VECTOR_GW_KIND_0
+    assert derive_password(SECRET, "gw-kind", 0, "6b" * 16) != VECTOR_GW_KIND_0_SALTED
+
+
+def test_new_player_salt_is_random_hex() -> None:
+    first, second = new_player_salt(), new_player_salt()
+    assert re.fullmatch(r"[0-9a-f]{32}", first)
+    assert first != second
 
 
 # Spielernamen

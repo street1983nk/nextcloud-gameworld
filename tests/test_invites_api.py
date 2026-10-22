@@ -18,13 +18,16 @@ from gameworld.config import load_settings
 from gameworld.provisioner.client import DockerProvisioner, DockerUnavailableError
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldRow, WorldStore
-from tests.conftest import TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers
+from tests.conftest import TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers
 from tests.test_service_lifecycle import FakeProvisioner
 
+# Fester Zusatz neuer Spielerzeilen, damit die Passwörter hier vorab berechenbar sind.
+pytestmark = pytest.mark.usefixtures("fixed_salt")
+
 W1 = "aaaaaaaaaaa1"
-PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0)
-PASSWORD_1 = derive_password(TEST_SECRET, "gw-kind", 1)
-PASSWORD_2 = derive_password(TEST_SECRET, "gw-kind", 2)
+PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0, TEST_SALT)
+PASSWORD_1 = derive_password(TEST_SECRET, "gw-kind", 1, TEST_SALT)
+PASSWORD_2 = derive_password(TEST_SECRET, "gw-kind", 2, TEST_SALT)
 INVITE = {"kind": "user", "target": "gw-kind"}
 GROUP = {"kind": "group", "target": "familie"}
 KIND = {"nc_user": "gw-kind"}
@@ -192,7 +195,7 @@ async def test_secret_change_with_busy_lock_hides_player_passwords(
     assert (await _invite(client)).status_code == 200
     new_secret = bytes(range(2, 34))
     fake_secret.value = new_secret
-    new_password = derive_password(new_secret, "gw-kind", 0)
+    new_password = derive_password(new_secret, "gw-kind", 0, TEST_SALT)
     lock = world_service._LOCK  # pyright: ignore[reportPrivateUsage]
     lock.acquire()
     try:
@@ -482,8 +485,8 @@ async def test_rotation_rename_and_groups_leak_nothing(
     assert docker_gone.json()["applied"] is False
     verifiers |= set(store.world_access(W1).values())
 
-    passwords = [PASSWORD, PASSWORD_1, PASSWORD_2, derive_password(TEST_SECRET, "gw-kind", 3)]
-    passwords.append(derive_password(TEST_SECRET, "gw-mia", 0))
+    passwords = [PASSWORD, PASSWORD_1, PASSWORD_2, derive_password(TEST_SECRET, "gw-kind", 3, TEST_SALT)]
+    passwords.append(derive_password(TEST_SECRET, "gw-mia", 0, TEST_SALT))
     forbidden = [*passwords, TEST_SECRET.hex(), repr(TEST_SECRET), *verifiers]
     # Auch Teile der Verifier (Salz, v) dürfen nicht auftauchen.
     forbidden += [part for verifier in verifiers for part in verifier.split("#") if len(part) > 8]

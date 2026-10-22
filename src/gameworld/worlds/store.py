@@ -26,7 +26,7 @@ from gameworld.playtime.pause import ART_PAUSE, PauseState
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
-SCHEMA_VERSION = "5"
+SCHEMA_VERSION = "6"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS worlds (
 CREATE TABLE IF NOT EXISTS players (
   nc_user TEXT PRIMARY KEY,
   player_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  rotation INTEGER NOT NULL DEFAULT 0
+  rotation INTEGER NOT NULL DEFAULT 0,
+  salt TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS invites (
   world_id TEXT NOT NULL,
@@ -212,6 +213,23 @@ ADD_PRESET = "ALTER TABLE worlds ADD COLUMN preset TEXT NOT NULL DEFAULT 'mtg_kr
 ADD_ACCESS_GENERATION = "ALTER TABLE worlds ADD COLUMN access_generation INTEGER NOT NULL DEFAULT 0"
 # Schema 3 auf 4: Zähler der Regeldatei je Welt (Zeit-Mod, wie access_generation).
 ADD_TIME_GENERATION = "ALTER TABLE worlds ADD COLUMN time_generation INTEGER NOT NULL DEFAULT 0"
+# Schema 5 auf 6: Zusatz der Passwortableitung je Spielerzeile. Bestehende Zeilen
+# bekommen den leeren Wert und behalten damit exakt ihr bisheriges Passwort.
+ADD_PLAYER_SALT = "ALTER TABLE players ADD COLUMN salt TEXT NOT NULL DEFAULT ''"
+# Tabellen, deren Zeilen einem Nextcloud-Konto gehören (Spalte nc_user), für forget_account.
+# Nicht dabei: talk_rooms.owner_uid (Raum gehört der Welt), invites.invited_by (wer eingeladen
+# hat) und time_ledger_seen (Spielername je Welt, schützt vor doppelter Verbuchung).
+ACCOUNT_TABLES = (
+    "players",
+    "world_access",
+    "time_children",
+    "time_plans",
+    "time_usage",
+    "play_daily",
+    "review_prefs",
+    "review_sent",
+    "bot_presence",
+)
 
 
 @dataclass
@@ -234,11 +252,15 @@ class WorldRow:
 
 @dataclass(frozen=True)
 class PlayerRow:
-    """Spieler je Nextcloud-Konto; das Passwort folgt aus Geheimnis, Konto und Rotation."""
+    """Spieler je Nextcloud-Konto; das Passwort folgt aus Geheimnis, Konto, Rotation und Zusatz.
+
+    ``salt`` leer: Zeile aus Schema 5 oder älter (bisherige Ableitung, accounts.derive_password).
+    """
 
     nc_user: str
     player_name: str
     rotation: int
+    salt: str = ""
 
 
 @dataclass(frozen=True)
@@ -325,6 +347,9 @@ class WorldStore:
                 connection.execute(ADD_ACCESS_GENERATION)
             if "time_generation" not in columns:
                 connection.execute(ADD_TIME_GENERATION)
+            player_columns = {str(info[1]) for info in connection.execute("PRAGMA table_info(players)").fetchall()}
+            if "salt" not in player_columns:
+                connection.execute(ADD_PLAYER_SALT)
             connection.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -391,9 +416,9 @@ class WorldStore:
     def get_player(self, nc_user: str) -> PlayerRow | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT nc_user, player_name, rotation FROM players WHERE nc_user = ?", (nc_user,)
+                "SELECT nc_user, player_name, rotation, salt FROM players WHERE nc_user = ?", (nc_user,)
             ).fetchone()
-        return None if row is None else PlayerRow(str(row[0]), str(row[1]), int(row[2]))
+        return None if row is None else PlayerRow(str(row[0]), str(row[1]), int(row[2]), str(row[3]))
 
     def player_names(self) -> set[str]:
         """Alle vergebenen Spielernamen, kleingeschrieben (Vergleich wie COLLATE NOCASE)."""
@@ -404,17 +429,17 @@ class WorldStore:
     def insert_player(self, row: PlayerRow) -> None:
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO players (nc_user, player_name, rotation) VALUES (?, ?, ?)",
-                (row.nc_user, row.player_name, row.rotation),
+                "INSERT INTO players (nc_user, player_name, rotation, salt) VALUES (?, ?, ?, ?)",
+                (row.nc_user, row.player_name, row.rotation, row.salt),
             )
 
     def list_players(self) -> list[PlayerRow]:
         """Alle Spieler je Nextcloud-Konto, sortiert nach Spielername (Verwalteransicht Spielzeit)."""
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT nc_user, player_name, rotation FROM players ORDER BY player_name"
+                "SELECT nc_user, player_name, rotation, salt FROM players ORDER BY player_name"
             ).fetchall()
-        return [PlayerRow(str(row[0]), str(row[1]), int(row[2])) for row in rows]
+        return [PlayerRow(str(row[0]), str(row[1]), int(row[2]), str(row[3])) for row in rows]
 
     def add_invite(self, world_id: str, kind: str, target: str, invited_by: str, created_at: str) -> None:
         """Einladung anlegen; eine vorhandene bleibt unverändert (erster Einladender, erster Zeitpunkt)."""
@@ -549,6 +574,40 @@ class WorldStore:
                 connection.execute(
                     "UPDATE worlds SET access_generation = access_generation + 1 WHERE id = ?", (world_id,)
                 )
+
+    def direct_invite_targets(self) -> set[str]:
+        """Alle direkt eingeladenen Konten über alle Welten (kind user)."""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT DISTINCT target FROM invites WHERE kind = 'user'").fetchall()
+        return {str(row[0]) for row in rows}
+
+    def forget_account(self, nc_user: str) -> bool:
+        """Vergisst ein in Nextcloud gelöschtes Konto vollständig, in EINER Transaktion.
+
+        Löscht Spielerzeile (der Spielername wird frei), direkte Einladungen,
+        Zugang je Welt, Spielzeitregeln, Verbrauch, Rückblick-Daten und die
+        Bot-Drossel dieses Kontos. Welten, in denen es Zugang hatte, bekommen eine
+        neue Generation; die Zugangsdatei schreibt der Aufrufer unter derselben
+        Sperre neu. Nur unter worlds.mutation() aufrufen. True, wenn etwas gelöscht wurde.
+        """
+        with self._connect() as connection:
+            worlds = [
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT world_id FROM world_access WHERE nc_user = ? ORDER BY world_id", (nc_user,)
+                ).fetchall()
+            ]
+            removed = connection.execute("DELETE FROM invites WHERE kind = 'user' AND target = ?", (nc_user,)).rowcount
+            for table in ACCOUNT_TABLES:
+                removed += connection.execute(
+                    f"DELETE FROM {table} WHERE nc_user = ?",  # noqa: S608
+                    (nc_user,),
+                ).rowcount
+            connection.executemany(
+                "UPDATE worlds SET access_generation = access_generation + 1 WHERE id = ?",
+                [(world_id,) for world_id in worlds],
+            )
+        return removed > 0
 
     def delete_access_data(self, world_id: str) -> None:
         """Einladungen und Zugang einer gelöschten Welt; Spieler bleiben (gelten für alle Welten)."""

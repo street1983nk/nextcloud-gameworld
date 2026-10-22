@@ -170,7 +170,7 @@ def test_players_have_no_password_column(tmp_path: pathlib.Path) -> None:
     store = _store3(tmp_path)
     del store
     db = tmp_path / "gameworld.sqlite3"
-    assert _columns(db, "players") == ["nc_user", "player_name", "rotation"]
+    assert _columns(db, "players") == ["nc_user", "player_name", "rotation", "salt"]
     for table in _tables(db):
         assert not [column for column in _columns(db, table) if "pass" in column.lower()], table
 
@@ -433,8 +433,7 @@ def test_schema_4_is_migrated_to_5_keeps_data(tmp_path: pathlib.Path) -> None:
     assert not NOTIFY_TABLES & set(_tables(db))
     store = WorldStore(db)
     store.migrate()
-    assert SCHEMA_VERSION == "5"
-    assert _schema_version(db) == "5"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert NOTIFY_TABLES.issubset(_tables(db))
     assert TIME_TABLES.issubset(_tables(db))
     world = store.get_world("w1")
@@ -453,7 +452,7 @@ def test_schema_4_to_5_is_idempotent(tmp_path: pathlib.Path) -> None:
     store.migrate()
     store.take_events("w1", 3, [("join", "Mia", 100, "")])
     store.migrate()
-    assert _schema_version(db) == "5"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert store.event_cursor("w1") == 3
     assert len(store.outbox_batch()) == 1
 

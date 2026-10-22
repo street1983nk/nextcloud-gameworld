@@ -27,15 +27,18 @@ from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds import service as world_service
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldRow, WorldStore
-from tests.conftest import FAKE_PROFILES, TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers
+from tests.conftest import FAKE_PROFILES, TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers
 from tests.test_service_lifecycle import FakeProvisioner
+
+# Fester Zusatz neuer Spielerzeilen, damit die Passwörter hier vorab berechenbar sind.
+pytestmark = pytest.mark.usefixtures("fixed_salt")
 
 W1 = "aaaaaaaaaaa1"
 W2 = "aaaaaaaaaaa2"
-PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0)
+PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0, TEST_SALT)
 NEW_SECRET = bytes(range(2, 34))
 FRIEND = "gw-freund"
-FRIEND_PASSWORD = derive_password(TEST_SECRET, FRIEND, 0)
+FRIEND_PASSWORD = derive_password(TEST_SECRET, FRIEND, 0, TEST_SALT)
 KIND_GROUPS: dict[str, tuple[str, ...]] = {"gw-kind": ("familie",)}
 
 
@@ -393,7 +396,7 @@ async def test_secret_change_before_my_worlds_no_deadlock(
         response = await _mine(client)
     assert response.status_code == 200
     [world] = response.json()["worlds"]
-    assert world["password"] == derive_password(NEW_SECRET, "gw-kind", 0)
+    assert world["password"] == derive_password(NEW_SECRET, "gw-kind", 0, TEST_SALT)
     from gameworld.access.secret import fingerprint
 
     assert store.get_meta("secret_fingerprint") == fingerprint(NEW_SECRET)
@@ -412,7 +415,7 @@ async def test_secret_change_with_busy_lock_shows_no_wrong_password(
     del service
     await _invite(client, W1, "user", "gw-kind")
     fake_secret.value = NEW_SECRET
-    new_password = derive_password(NEW_SECRET, "gw-kind", 0)
+    new_password = derive_password(NEW_SECRET, "gw-kind", 0, TEST_SALT)
     lock = world_service._LOCK  # pyright: ignore[reportPrivateUsage]
     lock.acquire()
     try:

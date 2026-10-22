@@ -2,7 +2,7 @@
 
 Ein Kind hat einen Luanti-Namen und ein Passwort für alle Welten (A2).
 Gespeichert wird das Passwort nirgends (A3): Es folgt jedes Mal neu aus
-HMAC-SHA256(Geheimnis, "<Nextcloud-Konto>:<Rotation>"). Das Geheimnis liegt
+HMAC-SHA256(Geheimnis, "<Nextcloud-Konto>:<Rotation>[:<Zusatz>]"). Das Geheimnis liegt
 nur in der Nextcloud-Konfiguration (access/secret.py). Rein, nur stdlib.
 """
 
@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+import secrets
 import unicodedata
 
 # Ohne die verwechselbaren i, l, o, 0 und 1; nur Kleinbuchstaben, damit auf
@@ -57,7 +58,12 @@ def validate_player_name(raw: str) -> str:
     return raw
 
 
-def derive_password(secret: bytes, nc_user: str, rotation: int) -> str:
+def new_player_salt() -> str:
+    """Zufälliger Zusatz je neu angelegter Spielerzeile (128 Bit, hex)."""
+    return secrets.token_hex(16)
+
+
+def derive_password(secret: bytes, nc_user: str, rotation: int, salt: str = "") -> str:
     """Spielpasswort eines Kontos, etwa ``k7mp-q3xa-9tre``.
 
     Zwölf Zeichen aus 31 ergeben 12 x log2(31) = 59,4 Bit. Das ist nötig, weil
@@ -65,8 +71,14 @@ def derive_password(secret: bytes, nc_user: str, rotation: int) -> str:
     davon erbeutet, kann offline raten. Wortkombinationen mit 22 bis 30 Bit
     wären in Stunden gefunden, 59 Bit nicht. Online begrenzt zusätzlich die
     Sperre des Welt-Mods (5 Fehlversuche, 10 Minuten).
+
+    ``salt`` stammt aus der Spielerzeile (Schema 6). Leer heißt: Zeile aus der
+    Zeit davor, das Passwort bleibt exakt das bisherige. Mit Zusatz bekommt ein
+    später unter derselben Konto-ID neu angelegtes Konto nie das Passwort des
+    gelöschten Kontos, auch wenn die Rotation wieder bei 0 beginnt.
     """
-    mac = hmac.new(secret, f"{nc_user}:{rotation}".encode(), hashlib.sha256).digest()
+    message = f"{nc_user}:{rotation}" if not salt else f"{nc_user}:{rotation}:{salt}"
+    mac = hmac.new(secret, message.encode(), hashlib.sha256).digest()
     number = int.from_bytes(mac, "big")
     chars: list[str] = []
     for _ in range(PASSWORD_GROUPS * GROUP_LENGTH):

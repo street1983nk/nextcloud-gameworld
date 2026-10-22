@@ -40,7 +40,7 @@ from time import monotonic
 
 import anyio.to_thread
 
-from gameworld.access.accounts import derive_password, suggest_player_name, validate_player_name
+from gameworld.access.accounts import derive_password, new_player_salt, suggest_player_name, validate_player_name
 from gameworld.access.directory import Directory, DirectoryUnavailableError, DirectoryUser
 from gameworld.access.roles import Profile
 from gameworld.access.secret import PlayerSecret, SecretUnavailableError, fingerprint
@@ -301,7 +301,7 @@ class AccessService:
                     nc_user=nc_user,
                     display_name=await self._display_name(acting_uid, nc_user),
                     player_name=player.player_name,
-                    password=derive_password(secret, nc_user, player.rotation),
+                    password=_password(secret, player),
                     via=via,
                 )
             )
@@ -341,6 +341,33 @@ class AccessService:
             user = DirectoryUser(uid=uid, display_name=profile.display_name, enabled=True)
             await anyio.to_thread.run_sync(self._provision_self, pending, user, groups, secret)
         return await anyio.to_thread.run_sync(self._my_worlds_sync, uid, secret)
+
+    async def purge_missing_accounts(self, acting_uid: str) -> list[str]:
+        """Vergisst Konten, die Nextcloud eindeutig als gelöscht meldet; gibt sie sortiert zurück.
+
+        Geprüft werden alle Spielerzeilen und alle direkt eingeladenen Konten, im
+        Namen des bestätigten Verwalters und außerhalb der Welt-Sperre (Sperr-Regel).
+        Vergessen wird nur bei ``None`` (Nextcloud 404/998). Ein deaktiviertes Konto
+        bleibt: Es hat ohnehin keinen Zugang und bekommt ihn beim Aktivieren zurück.
+        Jede Störung bricht den ganzen Lauf ab, bevor etwas gelöscht ist; ebenso,
+        wenn Nextcloud nicht einmal den handelnden Verwalter selbst bestätigt
+        (Positivkontrolle gegen eine Fehlkonfiguration, die alles als fehlend meldet).
+
+        Ohne diesen Schritt griffe eine alte direkte Einladung wieder, sobald ein
+        Admin ein Konto mit derselben ID neu anlegt, und die Spielerzeile mit
+        Rotation 0 gäbe ihm das Passwort des gelöschten Kontos.
+        """
+        if await self._directory.user(acting_uid, acting_uid) is None:
+            LOG.warning("Nextcloud bestätigt den handelnden Verwalter nicht; gelöschte Konten bleiben vorerst")
+            return []
+        candidates = await anyio.to_thread.run_sync(self._purge_candidates)
+        gone = [uid for uid in sorted(candidates) if await self._directory.user(acting_uid, uid) is None]
+        if not gone:
+            return []
+        forgotten = await anyio.to_thread.run_sync(self._forget_sync, gone)
+        if forgotten:
+            LOG.info("%d in Nextcloud gelöschte Konten vergessen", len(forgotten))
+        return forgotten
 
     def list_invites(self, world_id: str) -> list[tuple[str, str, str, str]]:
         """Einladungen als (kind, target, invited_by, created_at), für die Verwalteransicht."""
@@ -394,7 +421,7 @@ class AccessService:
             nc_user=player.nc_user,
             display_name=await self._display_name(acting_uid, player.nc_user),
             player_name=player.player_name,
-            password=derive_password(secret, player.nc_user, player.rotation),
+            password=_password(secret, player),
             applied=applied,
         )
 
@@ -576,7 +603,7 @@ class AccessService:
         player = self._store.get_player(uid)
         if player is None:
             return []
-        password = derive_password(secret, uid, player.rotation)
+        password = _password(secret, player)
         return [
             MyWorld(world_id=world_id, player_name=player.player_name, password=password)
             for world_id in self._store.player_worlds(uid)
@@ -594,6 +621,29 @@ class AccessService:
         pushed = [self._worlds.push_access(world_id) for world_id in world_ids]
         return all(pushed)
 
+    def _purge_candidates(self) -> set[str]:
+        return {player.nc_user for player in self._store.list_players()} | self._store.direct_invite_targets()
+
+    def _forget_sync(self, gone: list[str]) -> list[str]:
+        """Vergisst die geprüften Konten unter der Welt-Sperre und schreibt betroffene Welten neu.
+
+        Ruft nie Nextcloud und nie _ensure_fingerprint. Die Zugangsdatei jeder Welt,
+        in der ein vergessenes Konto Zugang hatte, entsteht frisch aus der Datenbank
+        (push_access, samt Regeldatei); das Konto steht dann in keiner Datei mehr.
+        """
+        forgotten: list[str] = []
+        affected: set[str] = set()
+        with self._worlds.mutation():
+            for uid in gone:
+                worlds = self._store.player_worlds(uid)
+                if self._store.forget_account(uid):
+                    forgotten.append(uid)
+                    affected.update(worlds)
+            for world_id in sorted(affected):
+                if self._store.get_world(world_id) is not None:
+                    self._worlds.push_access(world_id)
+        return forgotten
+
     def _require_player(self, nc_user: str) -> PlayerRow:
         player = self._store.get_player(nc_user)
         if player is None:
@@ -603,13 +653,20 @@ class AccessService:
     @staticmethod
     def _verifier(player: PlayerRow, secret: bytes) -> str:
         """Frischer Verifier mit neuem Salz; Passwort nur im Speicher."""
-        return make_verifier(player.player_name, derive_password(secret, player.nc_user, player.rotation))
+        return make_verifier(player.player_name, _password(secret, player))
 
     def _ensure_player(self, user: DirectoryUser) -> PlayerRow:
         player = self._store.get_player(user.uid)
         if player is None:
             name = suggest_player_name(user.display_name, user.uid, self._store.player_names())
-            player = PlayerRow(nc_user=user.uid, player_name=name, rotation=0)
+            # Frischer Zusatz je Zeile: Ein später unter derselben ID neu angelegtes
+            # Konto bekommt nie das Passwort eines gelöschten (purge_missing_accounts).
+            player = PlayerRow(nc_user=user.uid, player_name=name, rotation=0, salt=new_player_salt())
             self._store.insert_player(player)
             LOG.info("Spielername %s für ein Nextcloud-Konto angelegt", name)
         return player
+
+
+def _password(secret: bytes, player: PlayerRow) -> str:
+    """Spielpasswort aus Geheimnis und Spielerzeile (Konto, Rotation, Zusatz)."""
+    return derive_password(secret, player.nc_user, player.rotation, player.salt)

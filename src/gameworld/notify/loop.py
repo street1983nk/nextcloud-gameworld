@@ -3,8 +3,8 @@
 Der 15-s-Takt legt Ereignisse ohne Netzaufruf in die SQLite-Outbox (04.1-02).
 Dieser Loop läuft im Event-Loop, arbeitet die Outbox alle ``NOTIFY_SECONDS`` ab,
 prüft den Tagesrückblick je Verwalter und stößt alle ``MAINTENANCE_SECONDS``
-die Wartung an (Einträge aus ``MAINTENANCE``, etwa der Talk-Abgleich aus
-04.1-05). Den Verwalter-Schnappschuss lässt er alle ``ADMIN_CHECK_SECONDS`` von
+die Wartung an (Einträge aus ``MAINTENANCE``: gelöschte Konten vergessen, dann
+der Talk-Abgleich aus 04.1-05). Den Verwalter-Schnappschuss lässt er alle ``ADMIN_CHECK_SECONDS`` von
 Nextcloud bestätigen (CR-01): Handelnd ist nur ein Konto, das Nextcloud gerade
 als Admin bestätigt, nie ungeprüft das erste aus dem Schnappschuss.
 
@@ -36,6 +36,8 @@ from zoneinfo import ZoneInfo
 import anyio.to_thread
 
 from gameworld.access.directory import Directory, DirectoryUnavailableError, get_directory
+from gameworld.access.secret import get_player_secret
+from gameworld.access.service import AccessService
 from gameworld.notify.links import clean_origin, page_link
 from gameworld.notify.review import review_due, review_line
 from gameworld.notify.service import Notifier, get_notifier
@@ -337,7 +339,18 @@ async def talk_reconcile(service: WorldService, acting: str) -> None:
     await get_talk_service(service.store).reconcile_all(acting)
 
 
-MAINTENANCE: list[MaintenanceHook] = [talk_reconcile]
+async def purge_accounts(service: WorldService, acting: str) -> None:
+    """In Nextcloud gelöschte Konten vergessen: Spieler, Einladungen, Spielzeit, Rückblick.
+
+    ``acting`` ist das eben bestätigte Konto (CR-01). Vor dem Talk-Abgleich, damit
+    der kein gelöschtes Konto mehr in Räume holen will. Eine Störung bei Nextcloud
+    bricht den Lauf ohne Löschen ab (AccessService.purge_missing_accounts).
+    """
+    access = AccessService(service.store, service, get_directory(), get_player_secret())
+    await access.purge_missing_accounts(acting)
+
+
+MAINTENANCE: list[MaintenanceHook] = [purge_accounts, talk_reconcile]
 
 
 def _due_admins(store: WorldStore, admins: tuple[str, ...], day: date, minute: int) -> list[str]:

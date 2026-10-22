@@ -33,12 +33,15 @@ from gameworld.provisioner.luanti_auth import make_verifier
 from gameworld.worlds import service as world_service
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldRow, WorldStore
-from tests.conftest import TEST_SECRET, FakeDirectory, StaticSecret
+from tests.conftest import TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret
 from tests.test_service_lifecycle import FakeProvisioner
+
+# Fester Zusatz neuer Spielerzeilen, damit die Passwörter hier vorab berechenbar sind.
+pytestmark = pytest.mark.usefixtures("fixed_salt")
 
 W1 = "aaaaaaaaaaa1"
 W2 = "aaaaaaaaaaa2"
-PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0)
+PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0, TEST_SALT)
 
 
 def _world(world_id: str, port: int) -> WorldRow:
@@ -433,7 +436,7 @@ async def test_rotate_password(access: AccessService, store: WorldStore, fake: F
     pushes = len(_access_writes(fake))
 
     change = await access.rotate_password("admin", "gw-kind")
-    new_password = derive_password(TEST_SECRET, "gw-kind", 1)
+    new_password = derive_password(TEST_SECRET, "gw-kind", 1, TEST_SALT)
     assert change.password == new_password
     assert new_password != PASSWORD
     assert (change.player_name, change.applied) == ("Kind", True)
@@ -505,7 +508,7 @@ async def test_fingerprint_stored_then_reprovision_on_new_secret(
     fake_secret.value = NEW_SECRET
     await access.sync_world(W1, "admin")
     assert store.get_meta("secret_fingerprint") == fingerprint(NEW_SECRET)
-    new_password = derive_password(NEW_SECRET, "gw-kind", 0)
+    new_password = derive_password(NEW_SECRET, "gw-kind", 0, TEST_SALT)
     for world_id in (W1, W2):
         assert _verifier_ok(store.world_access(world_id)["gw-kind"], "Kind", new_password)
         assert _generation(store, world_id) == 2
@@ -531,7 +534,7 @@ async def _prepare_secret_change(access: AccessService, fake_secret: StaticSecre
 
 
 def _assert_all_verifiers_new(store: WorldStore, rotation: int) -> None:
-    password = derive_password(NEW_SECRET, "gw-kind", rotation)
+    password = derive_password(NEW_SECRET, "gw-kind", rotation, TEST_SALT)
     for world_id in (W1, W2):
         access = store.world_access(world_id)
         if "gw-kind" in access:
@@ -557,7 +560,7 @@ async def test_secret_change_during_rotate_password_no_deadlock(
     await _prepare_secret_change(access, fake_secret)
     with anyio.fail_after(5):
         change = await access.rotate_password("admin", "gw-kind")
-    assert change.password == derive_password(NEW_SECRET, "gw-kind", 1)
+    assert change.password == derive_password(NEW_SECRET, "gw-kind", 1, TEST_SALT)
     _assert_all_verifiers_new(store, 1)
     assert _lock_free()
 
