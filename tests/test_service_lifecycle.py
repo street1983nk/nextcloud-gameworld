@@ -1688,6 +1688,20 @@ async def test_tick_fresh_event_file_reports_first_events(
     assert len(_outbox(store)) == 1
 
 
+async def test_tick_drops_future_deny_from_manipulated_file(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """IN-10: Eine deny-Zeile mit Zukunftsdatum landet nicht in der Outbox; der Cursor rückt trotzdem vor."""
+    created = await service.create_world("Welt")
+    now = int(time.time())
+    fake.events[created.id] = _events_file(
+        FRESH, 2, (1, now - 5, "deny", "Echt"), (2, 999_999_999_999, "deny", "Zukunft")
+    )
+    service.tick_time()
+    assert _outbox(store) == [(created.id, "deny", "Echt")]
+    assert store.event_cursor(created.id) == 2
+
+
 async def test_tick_event_errors_are_isolated_per_world(
     service: WorldService,
     fake: FakeProvisioner,

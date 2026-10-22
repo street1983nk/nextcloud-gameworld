@@ -1,6 +1,14 @@
 """Reiner Parser der Ereignisdatei und Cursor-Regel (Erstkontakt, Rücksprung, frische Datei)."""
 
-from gameworld.events.parse import FIRST_CONTACT_MAX_AGE, Event, new_events, parse_events
+from gameworld.events.parse import (
+    FIRST_CONTACT_MAX_AGE,
+    MAX_AGE,
+    MAX_AHEAD,
+    Event,
+    new_events,
+    parse_events,
+    plausible,
+)
 
 NOW = 1_800_000_000
 
@@ -86,3 +94,18 @@ def test_sequence_jump_back_only_anchors() -> None:
 def test_fresh_boundary_exactly_max_age_counts() -> None:
     events = [Event(1, NOW - FIRST_CONTACT_MAX_AGE, "join", "lena")]
     assert new_events(None, 1, events, now=NOW) == (events, 1)
+
+
+def test_plausible_keeps_recent_and_drops_far_past_and_future() -> None:
+    """IN-10: Zukunfts- und Uraltdaten aus einer manipulierten Datei fallen weg."""
+    now = 1_800_000_000
+    events = [
+        Event(1, now, "deny", "Jetzt"),
+        Event(2, now - MAX_AGE, "deny", "Gestern"),
+        Event(3, now + MAX_AHEAD, "deny", "Uhrabweichung"),
+        Event(4, now - MAX_AGE - 1, "deny", "Zualt"),
+        Event(5, now + MAX_AHEAD + 1, "deny", "Zukunft"),
+        Event(6, 999_999_999_999, "deny", "Jahr33658"),
+        Event(7, 0, "deny", "Epoch0"),
+    ]
+    assert [event.name for event in plausible(events, now=now)] == ["Jetzt", "Gestern", "Uhrabweichung"]

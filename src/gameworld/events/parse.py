@@ -18,6 +18,9 @@ from gameworld.provisioner.status_mod import PLAYER_NAME
 # Erstkontakt: Eine Datei, deren Ereignisse alle höchstens so alt sind (Sekunden)
 # und die bei Sequenz 1 beginnt, stammt von einer gerade gestarteten Welt.
 FIRST_CONTACT_MAX_AGE = 120
+# Glaubhafte Zeitpunkte (IN-10): ein Tag zurück (ExApp lange aus), 5 Minuten voraus (Uhrenabweichung).
+MAX_AGE = 86400
+MAX_AHEAD = 300
 
 _HEAD = re.compile(re.escape(EVENTS_HEADER) + r" ([0-9]{1,12})")
 _LINE = re.compile(r"([0-9]{1,12}) ([0-9]{1,12}) ([a-z0-9]{1,12}) (\S{1,20})")
@@ -50,6 +53,15 @@ def parse_events(content: bytes) -> tuple[int, list[Event]] | None:
             continue
         events.append(Event(int(match.group(1)), int(match.group(2)), match.group(3), match.group(4)))
     return int(head.group(1)), events
+
+
+def plausible(events: list[Event], *, now: int) -> list[Event]:
+    """Nur Ereignisse mit glaubhaftem Zeitpunkt: höchstens MAX_AGE alt, höchstens MAX_AHEAD in der Zukunft (IN-10).
+
+    Die Datei ist unvertrauenswürdig: Ein manipulierter Lua-Prozess könnte sonst
+    Fremdversuche mit Zukunftsdatum anlegen, die nie unter die Löschfrist fallen.
+    """
+    return [event for event in events if now - MAX_AGE <= event.at <= now + MAX_AHEAD]
 
 
 def new_events(cursor: int | None, last_seq: int, events: list[Event], *, now: int) -> tuple[list[Event], int]:

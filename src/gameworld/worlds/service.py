@@ -24,7 +24,7 @@ from time import monotonic
 import anyio.to_thread
 
 from gameworld.config import Settings
-from gameworld.events.parse import new_events, parse_events
+from gameworld.events.parse import new_events, parse_events, plausible
 from gameworld.playtime.engine import TimeEngine
 from gameworld.playtime.pause import (
     OUTBOX_PAUSE_START,
@@ -417,7 +417,9 @@ class WorldService:
         fresh, new_cursor = new_events(cursor, last_seq, events, now=now)
         if not fresh and new_cursor == cursor:
             return
-        self._store.take_events(world_id, new_cursor, [(event.kind, event.name, event.at, "") for event in fresh])
+        # Unglaubhafte Zeitpunkte fallen weg, der Cursor rückt trotzdem vor (IN-10).
+        kept = plausible(fresh, now=now)
+        self._store.take_events(world_id, new_cursor, [(event.kind, event.name, event.at, "") for event in kept])
 
     def _track_run_state(self, rows: list[WorldRow], managed: dict[str, ContainerInfo], now: int) -> None:
         """Start und Stopp aus dem beobachteten Docker-Zustand (Pitfall 10), nie aus Requests.
