@@ -208,6 +208,34 @@ async def test_warn10_has_sound(
     assert fake_bot.sent == [(ROOM, "Noch 10 Minuten Spielzeit für Lena.", False)]
 
 
+@pytest.mark.parametrize("display", ["@all", '@"papa"', "Lena @admin", "@@here"])
+def test_bot_name_never_mentions(display: str) -> None:
+    """WR-07: Kein echtes @ im Bot-Text, damit ein Anzeigename niemanden anpingt."""
+    name = texts.bot_name(display)
+    assert "@" not in name
+    assert texts.MENTION_SAFE in name
+
+
+async def test_join_with_mention_display_name_pings_nobody(
+    service: WorldService,
+    store: WorldStore,
+    fake_notifier: FakeNotifier,
+    fake_directory: FakeDirectory,
+    fake_talk: FakeTalkRooms,
+    fake_bot: FakeBot,
+) -> None:
+    """Negativtest: Ein Kind setzt den Anzeigenamen "@all" und tritt bei, mit Ton (warn10) und still (join)."""
+    fake_directory.users["lena"] = ("@all", True)
+    store.add_outbox(W1, "join", "lena", _epoch(17, 0))
+    store.add_outbox(W1, "warn10", "lena", _epoch(17, 0))
+    await _run(service, fake_notifier, fake_directory, _epoch(17, 0), fake_talk)
+    assert [text for _token, text, _silent in fake_bot.sent] == [
+        f"{texts.MENTION_SAFE}all ist jetzt in der Welt.",
+        f"Noch 10 Minuten Spielzeit für {texts.MENTION_SAFE}all.",
+    ]
+    assert all("@" not in text for _token, text, _silent in fake_bot.sent)
+
+
 async def test_warn10_flood_by_rejoining_rings_once_per_day(
     service: WorldService,
     store: WorldStore,

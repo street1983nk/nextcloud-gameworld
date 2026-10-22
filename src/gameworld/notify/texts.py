@@ -97,9 +97,17 @@ def md_escape(value: str) -> str:
     return "".join("\\" + char if char in _MD_SPECIAL else char for char in value)
 
 
+# Talk wertet "@" in Bot-Nachrichten als Erwähnung aus (spreed ChatManager::sendMessage
+# ruft notifyMentionedUsers auch für Bots, am Quelltext von Talk 24.0.6 im Dev-Stack
+# geprüft). Ein Anzeigename wie "@all" oder '@"papa"' würde sonst alle oder einzelne
+# Mitglieder anpingen (WR-07). Das Vollbreiten-@ sieht gleich aus und erwähnt niemanden.
+_MENTION = "@"
+MENTION_SAFE = chr(0xFF20)
+
+
 def bot_name(value: str) -> str:
-    """Name für den Bot-Text: bereinigt, auf 64 Zeichen gekappt, dann escaped."""
-    return md_escape(clean_value(value, MAX_DISPLAY))
+    """Name für den Bot-Text: bereinigt, auf 64 Zeichen gekappt, ohne Erwähnung, dann escaped."""
+    return md_escape(clean_value(value, MAX_DISPLAY).replace(_MENTION, MENTION_SAFE))
 
 
 def bot_clock(epoch: int, tz: ZoneInfo) -> str:
