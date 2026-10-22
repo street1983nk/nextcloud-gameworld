@@ -335,7 +335,12 @@ def _due_admins(store: WorldStore, admins: tuple[str, ...], day: date, minute: i
 
 
 async def _reviews(context: NotifyContext) -> None:
-    """Tagesrückblick: Inhalt zuerst, nur mit Inhalt beanspruchen, dann senden (Pattern 5, D-14, D-15)."""
+    """Tagesrückblick: Inhalt zuerst, beanspruchen, dann senden (Pattern 5, D-14, D-15, WR-03).
+
+    Fällig nur im kurzen Fenster nach der eingestellten Minute. Ohne Spielzeit
+    kommt keine Nachricht, der Tag gilt für die fälligen Verwalter aber als
+    erledigt: Späteres Spielen am selben Tag löst keinen Rückblick mehr aus.
+    """
     acting = context.acting
     if acting is None or not context.admins or context.origin is None:
         return
@@ -347,6 +352,8 @@ async def _reviews(context: NotifyContext) -> None:
         return
     play = await anyio.to_thread.run_sync(collect_play, store, day, context.admins)
     if not play:
+        for uid in due:
+            await anyio.to_thread.run_sync(store.claim_review, uid, day)
         return
     reached = await anyio.to_thread.run_sync(limits_reached, context.service, list(play))
     entries = [
@@ -359,6 +366,8 @@ async def _reviews(context: NotifyContext) -> None:
     ]
     line = review_line(entries)
     if line is None:
+        for uid in due:
+            await anyio.to_thread.run_sync(store.claim_review, uid, day)
         return
     text = review_message(line)
     for uid in due:

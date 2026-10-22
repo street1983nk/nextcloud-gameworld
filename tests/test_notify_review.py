@@ -1,6 +1,6 @@
 """Tagesrückblick: Fälligkeit und Zeile je Kind (D-12 bis D-15)."""
 
-from gameworld.notify.review import minutes, review_due, review_line
+from gameworld.notify.review import REVIEW_GRACE_MINUTES, minutes, review_due, review_line
 
 
 def test_review_line_formats_minutes_and_limit() -> None:
@@ -24,5 +24,19 @@ def test_minutes_rounds_with_floor_of_one() -> None:
 def test_review_due() -> None:
     assert not review_due(1199, 1200, enabled=True)
     assert review_due(1200, 1200, enabled=True)
-    assert review_due(1439, 1200, enabled=True)
+    assert review_due(1229, 1200, enabled=True)
     assert not review_due(1300, 1200, enabled=False)
+
+
+def test_review_due_only_in_window_after_pref() -> None:
+    """WR-03: Nach dem 30-Minuten-Fenster ist der Rückblick nicht mehr fällig, auch nicht spätabends."""
+    assert REVIEW_GRACE_MINUTES == 30
+    assert not review_due(1230, 1200, enabled=True)
+    assert not review_due(1290, 1200, enabled=True)
+    assert not review_due(1439, 1200, enabled=True)
+    # Früh eingestellt (0:15): morgens um 9 nicht mehr fällig.
+    assert review_due(15, 15, enabled=True)
+    assert not review_due(540, 15, enabled=True)
+    # Spät eingestellt (23:45): bis Tagesende fällig, nie über den Tag hinaus.
+    assert review_due(1439, 1425, enabled=True)
+    assert not review_due(0, 1425, enabled=True)

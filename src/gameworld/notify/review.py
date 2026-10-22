@@ -2,8 +2,8 @@
 
 ``review_line`` baut "Lena 45 Min., Tom 60 Min. (Limit erreicht)" aus
 (Anzeigename, Sekunden, Limit erreicht); ohne Spielzeit gibt es keine Zeile und
-damit keine Nachricht (D-14). ``review_due`` vergleicht die lokale Minute mit
-der eingestellten Minute des Verwalters.
+damit keine Nachricht (D-14). ``review_due`` prüft, ob die lokale Minute im
+kurzen Fenster ab der eingestellten Minute des Verwalters liegt (WR-03).
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from collections.abc import Iterable
 from gameworld.notify.texts import REVIEW_LIMIT_SUFFIX
 
 ReviewEntry = tuple[str, int, bool]
+# So lange nach der eingestellten Minute darf der Rückblick noch kommen (Neustart, Takt).
+REVIEW_GRACE_MINUTES = 30
 
 
 def minutes(seconds: int) -> int:
@@ -33,5 +35,9 @@ def review_line(entries: Iterable[ReviewEntry]) -> str | None:
 
 
 def review_due(local_minute: int, pref_minute: int, *, enabled: bool) -> bool:
-    """Fällig ab der eingestellten Minute des lokalen Tages; abgeschaltet nie."""
-    return enabled and local_minute >= pref_minute
+    """Fällig nur im Fenster REVIEW_GRACE_MINUTES ab der eingestellten Minute; abgeschaltet nie (WR-03).
+
+    Später am Tag kommt kein Rückblick mehr: Sonst käme er beim ersten Spielen
+    nach der Uhrzeit mit Teildaten, bei früher Uhrzeit sogar morgens.
+    """
+    return enabled and pref_minute <= local_minute < pref_minute + REVIEW_GRACE_MINUTES

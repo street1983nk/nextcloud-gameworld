@@ -184,12 +184,41 @@ async def test_review_once_per_admin_and_day_even_after_restart(
     assert len(fake_notifier.calls) == 1
 
 
-async def test_review_without_play_sends_nothing_and_claims_nothing(
+async def test_review_without_play_sends_nothing_but_marks_day_done(
     service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
 ) -> None:
+    """WR-03: Ohne Spielzeit bis zur Uhrzeit keine Nachricht, und spätes Spielen löst keine mehr aus."""
     await _run(service, fake_notifier, fake_directory, _epoch(20, 0))
     assert fake_notifier.calls == []
-    assert store.claim_review("admin", DAY)
+    assert store.review_was_sent("admin", DAY)
+    assert store.review_was_sent("mama", DAY)
+    # Ein Kind fängt um 20:10 an (noch im Fenster): kein "Heute gespielt: Lena 1 Min." mit Teildaten.
+    store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 60})
+    await _run(service, fake_notifier, fake_directory, _epoch(20, 10))
+    assert fake_notifier.calls == []
+
+
+async def test_review_not_sent_after_window_when_play_starts_late(
+    service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
+) -> None:
+    """WR-03, Beispiel aus dem Review: Vorgabe 20:00, ExApp lief bis 21:30 nicht, Spiel ab 21:30."""
+    store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 60})
+    await _run(service, fake_notifier, fake_directory, _epoch(21, 30))
+    assert fake_notifier.calls == []
+    assert not store.review_was_sent("admin", DAY)
+
+
+async def test_early_review_time_does_not_fire_in_the_morning(
+    service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
+) -> None:
+    store.set_meta(META_TIME_ADMINS, json.dumps(["admin"]))
+    store.set_review_pref("admin", enabled=True, minute=15)
+    store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 600})
+    await _run(service, fake_notifier, fake_directory, _epoch(9, 0))
+    assert fake_notifier.calls == []
+    # Positivkontrolle: im Fenster nach 0:15 kommt er.
+    await _run(service, fake_notifier, fake_directory, _epoch(0, 20))
+    assert [call[1] for call in fake_notifier.calls] == ["Tagesrückblick"]
 
 
 async def test_review_respects_pref_and_falls_back_to_player_name(
