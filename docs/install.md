@@ -142,7 +142,7 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 - Ein Kind hat ein einziges Tageskontingent über alle Welten. Wer eine Stunde am Tag darf, kann sie auf mehrere Welten verteilen, aber nicht in jeder Welt eine Stunde spielen. Gameworld gleicht den Verbrauch alle 15 Sekunden zwischen den Welten ab.
 - Eingestellt wird im Abschnitt "Spielzeit" unter der Weltenliste, mit "Bearbeiten" je Kind. Vier Voreinstellungen helfen beim Start: "Keine Begrenzung", "Nur am Wochenende" (Sa und So je 2 Stunden, 9 bis 19 Uhr), "Jeden Tag 1 Stunde" (9 bis 19 Uhr) und "Schultage kurz, Wochenende länger" (Mo bis Fr 1 Stunde, 15 bis 19 Uhr; Sa und So 2 Stunden, 9 bis 19 Uhr). Danach lässt sich jeder Tag in seiner Kachel ändern: Spielen erlaubt oder nicht, Tageslimit, Uhrzeit von und bis oder ganzer Tag.
 - Der Verbrauch zählt online verbrachte Zeit. Auch wer nur verbunden ist und nichts tut (AFK), verbraucht Spielzeit.
-- Verwalter (Gruppe `admin`) haben nie Zeitregeln und kommen immer hinein. Wird jemand aus `admin` entfernt, bleibt er im Spiel frei, bis ein Verwalter das Dashboard öffnet; danach gelten seine Regeln nach höchstens etwa 60 Sekunden.
+- Verwalter (Gruppe `admin`) haben nie Zeitregeln und kommen immer hinein. Wird ein Konto aus `admin` entfernt, bemerkt Gameworld das im Hintergrund nach höchstens etwa 60 Sekunden; ab dann gelten für dieses Konto die Regeln wie für alle anderen.
 
 ### Ferien
 
