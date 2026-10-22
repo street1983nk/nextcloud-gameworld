@@ -68,6 +68,7 @@ Ein Elternteil ohne Serverwissen kann in wenigen Minuten eine private, sichere L
 | Spielpasswörter per HMAC-Ableitung statt Klartext in DB | Owner-Rückfrage 19.10.2026 zur DB-Sicherheit; Geheimnis verschlüsselt in appconfig_ex, players-Tabelle ohne Passwortfeld | Umgesetzt (Phase 3) |
 | Verwalter = NC-Gruppe admin (v1) | Einfachstes Familienmodell; Schulen folgen über einstellbare Verwalter-Gruppen (ROLLE-03, Phase 6) | Umgesetzt (Phase 3) |
 | Spielzeit mit Wochenplan, Ferienzeiten und Welt-Zeitfenster | Owner 20.10.2026: Wochenend-Regeln und Ferien sind der Alltag; Welt-Zeitfenster macht Unterrichtsstunden möglich (ZEIT-03/04/05) | Pending (Phase 4) |
+| Schul-Meilenstein erst nach Pilotsuche | Recherche .planning/research/SCHULEN.md: bedingtes Go, aber kein Pilotpartner vorhanden. Nach dem v1-Store-Release viele Schulen, Schulträger und Medienzentren ansprechen, die schon Luanti und Nextcloud betreiben, und mit Interessierten starten; Claude erstellt Kontaktliste und Entwürfe, der Owner sendet (Owner 22.10.2026) | Pending |
 
 ## Evolution
 
