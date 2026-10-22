@@ -19,6 +19,7 @@ from gameworld.api import alerts, invites, me, pause, playtime, setup_check, tal
 from gameworld.lifecycle import enabled_handler
 from gameworld.notify.loop import notify_forever
 from gameworld.playtime.ticker import time_forever
+from gameworld.talk.service import shutdown_talk
 from gameworld.worlds.reconciler import reconcile_forever
 
 # nc_py_api tippt den Handler als Union aus Sync- und Async-Client. Eine
@@ -76,6 +77,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        # Talk-Hooks der Eltern-Requests (Anlegen, Abgleich, Löschen) nicht verwaisen lassen (IN-06).
+        try:
+            cancelled = await shutdown_talk()
+        except Exception as exc:
+            LOG.warning("Talk-Hooks beim Beenden nicht abgeschlossen: %s", type(exc).__name__)
+        else:
+            if cancelled:
+                LOG.info("Beim Beenden %d offene Talk-Hooks abgebrochen", cancelled)
 
 
 APP = FastAPI(lifespan=lifespan)

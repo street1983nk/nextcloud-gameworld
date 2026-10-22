@@ -318,3 +318,35 @@ async def test_schedule_and_drain(talk: TalkService, store: WorldStore, fake_tal
 def test_singleton_follows_store(store: WorldStore) -> None:
     first = get_talk_service(store)
     assert get_talk_service(store) is first
+
+
+# IN-06: Herunterfahren bricht offene Hooks nach einer Frist ab.
+
+
+async def test_shutdown_waits_for_quick_hooks_and_cancels_slow_ones(talk: TalkService) -> None:
+    import asyncio
+
+    finished: list[str] = []
+    started = asyncio.Event()
+
+    async def quick() -> None:
+        await asyncio.sleep(0)
+        finished.append("schnell")
+
+    async def slow() -> None:
+        started.set()
+        await asyncio.sleep(3600)
+        finished.append("langsam")
+
+    talk._spawn("Abgleich", "w1", quick())  # pyright: ignore[reportPrivateUsage]
+    talk._spawn("Abgleich", "w2", slow())  # pyright: ignore[reportPrivateUsage]
+    await started.wait()
+    cancelled = await talk.shutdown(grace_seconds=0.05)
+    assert cancelled == 1
+    assert finished == ["schnell"]
+    assert talk._tasks == set()  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_shutdown_talk_without_service_is_noop(app_env: Path) -> None:
+    del app_env
+    assert await talk_service.shutdown_talk() == 0

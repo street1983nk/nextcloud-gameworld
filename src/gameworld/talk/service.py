@@ -43,6 +43,8 @@ LOG = logging.getLogger(__name__)
 # Capability-Abfrage höchstens alle 5 Minuten (Pitfall 8).
 TALK_INTERVAL_SECONDS = 300.0
 ROOM_PREFIX = "Gameworld: "
+# So lange wartet das Herunterfahren auf offene Talk-Hooks, dann bricht es sie ab (IN-06).
+SHUTDOWN_SECONDS = 5.0
 
 
 @dataclass
@@ -382,6 +384,22 @@ class TalkService:
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
+    async def shutdown(self, grace_seconds: float = SHUTDOWN_SECONDS) -> int:
+        """Beim Herunterfahren (IN-06): bis ``grace_seconds`` warten, dann offene Hooks abbrechen; Anzahl abgebrochen.
+
+        Ein abgebrochenes Löschen bleibt ``delete_pending`` und wird im nächsten
+        Abgleich nach dem Start wiederholt.
+        """
+        pending = set(self._tasks)
+        if not pending:
+            return 0
+        _done, still = await asyncio.wait(pending, timeout=grace_seconds)
+        for task in still:
+            task.cancel()
+        if still:
+            await asyncio.gather(*still, return_exceptions=True)
+        return len(still)
+
 
 _talk_service: TalkService | None = None
 
@@ -392,3 +410,10 @@ def get_talk_service(store: WorldStore) -> TalkService:
     if _talk_service is None or _talk_service.store is not store:
         _talk_service = TalkService(store, get_talk_rooms())
     return _talk_service
+
+
+async def shutdown_talk(grace_seconds: float = SHUTDOWN_SECONDS) -> int:
+    """Lifespan-Ende: offene Talk-Hooks abwarten oder abbrechen; ohne Dienst nichts (IN-06)."""
+    if _talk_service is None:
+        return 0
+    return await _talk_service.shutdown(grace_seconds)

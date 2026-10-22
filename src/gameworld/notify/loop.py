@@ -24,6 +24,7 @@ Regeln:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
@@ -86,6 +87,8 @@ class LoopState:
     origin_warned: bool = False
     # Zuletzt von Nextcloud als Admin bestätigtes Konto (verify_admins), sonst None.
     acting: str | None = None
+    # Laufende Wartung (Talk-Abgleich) als eigener Task, höchstens einer (IN-06).
+    maintenance_task: asyncio.Task[None] | None = None
 
 
 LOOP_STATE = LoopState()
@@ -443,11 +446,8 @@ async def verify_once(service: WorldService, directory: Directory) -> str | None
     return acting
 
 
-async def maintain_once(service: WorldService, directory: Directory) -> None:
-    """Wartung: Schnappschuss bestätigen, dann MAINTENANCE nur mit dem bestätigten Konto (Pitfall 9, CR-01)."""
-    acting = await verify_once(service, directory)
-    if acting is None:
-        return
+async def run_hooks(service: WorldService, acting: str) -> None:
+    """Alle Einträge aus MAINTENANCE mit dem bestätigten Konto; Fehler je Eintrag isoliert."""
     for hook in list(MAINTENANCE):
         try:
             await hook(service, acting)
@@ -455,35 +455,62 @@ async def maintain_once(service: WorldService, directory: Directory) -> None:
             LOG.warning("Wartungsschritt fehlgeschlagen: %s", type(exc).__name__)
 
 
+async def maintain_once(service: WorldService, directory: Directory) -> None:
+    """Wartung: Schnappschuss bestätigen, dann MAINTENANCE nur mit dem bestätigten Konto (Pitfall 9, CR-01)."""
+    acting = await verify_once(service, directory)
+    if acting is None:
+        return
+    await run_hooks(service, acting)
+
+
 def _due(last: float | None, now: float, seconds: float) -> bool:
     return last is None or now - last >= seconds
+
+
+def _start_maintenance(service: WorldService) -> None:
+    """Wartung als eigener Task (IN-06): Ein langsamer Talk-Abgleich hält Hinweise und Rückblick nicht auf.
+
+    Höchstens ein Wartungs-Task zugleich; läuft der vorige noch, wartet der nächste.
+    """
+    task = LOOP_STATE.maintenance_task
+    if task is not None and not task.done():
+        return
+    acting = LOOP_STATE.acting
+    LOOP_STATE.last_maintenance = time.monotonic()
+    if acting is None:
+        return
+    LOOP_STATE.maintenance_task = asyncio.get_running_loop().create_task(run_hooks(service, acting))
 
 
 async def notify_forever(service: WorldService, *, interval_seconds: float = NOTIFY_SECONDS) -> None:
     """Durchlauf im Abstand interval_seconds, Wartung alle MAINTENANCE_SECONDS; läuft bis CancelledError.
 
-    Dazwischen prüft der Loop den Verwalter-Schnappschuss alle ADMIN_CHECK_SECONDS
-    (verify_once), damit ein früherer Verwalter nicht bis zur nächsten Wartung bleibt.
+    Vor jedem Versand prüft der Loop den Verwalter-Schnappschuss, sobald
+    ADMIN_CHECK_SECONDS vorbei sind (verify_once): Nach einem Neustart geht nichts
+    an einen gespeicherten, aber nicht mehr bestätigten Verwalter, und ein früherer
+    Verwalter bleibt höchstens so lange. Die Wartung (Talk-Abgleich) läuft als
+    eigener Task (IN-06) und wird beim Beenden mit abgebrochen.
     """
     notifier = get_notifier()
     directory = get_directory()
-    while True:
-        # Erst prüfen, dann senden: Nach einem Neustart geht nichts an einen
-        # gespeicherten, aber nicht mehr bestätigten Verwalter.
-        now = time.monotonic()
-        if _due(LOOP_STATE.last_maintenance, now, MAINTENANCE_SECONDS):
-            LOOP_STATE.last_maintenance = now
+    try:
+        while True:
+            now = time.monotonic()
+            if _due(LOOP_STATE.last_admin_check, now, ADMIN_CHECK_SECONDS):
+                try:
+                    await verify_once(service, directory)
+                except Exception as exc:
+                    LOG.warning("Verwalter-Prüfung fehlgeschlagen: %s", type(exc).__name__)
+            if _due(LOOP_STATE.last_maintenance, now, MAINTENANCE_SECONDS):
+                _start_maintenance(service)
             try:
-                await maintain_once(service, directory)
+                await run_once(service, notifier, directory, int(time.time()))
             except Exception as exc:
-                LOG.warning("Wartung fehlgeschlagen: %s", type(exc).__name__)
-        elif _due(LOOP_STATE.last_admin_check, now, ADMIN_CHECK_SECONDS):
-            try:
-                await verify_once(service, directory)
-            except Exception as exc:
-                LOG.warning("Verwalter-Prüfung fehlgeschlagen: %s", type(exc).__name__)
-        try:
-            await run_once(service, notifier, directory, int(time.time()))
-        except Exception as exc:
-            LOG.warning("Benachrichtigungs-Durchlauf fehlgeschlagen: %s", type(exc).__name__)
-        await asyncio.sleep(interval_seconds)
+                LOG.warning("Benachrichtigungs-Durchlauf fehlgeschlagen: %s", type(exc).__name__)
+            await asyncio.sleep(interval_seconds)
+    finally:
+        task = LOOP_STATE.maintenance_task
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task

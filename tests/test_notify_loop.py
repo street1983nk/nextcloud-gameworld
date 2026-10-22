@@ -410,3 +410,43 @@ async def test_nc_notifier_errors_return_false(
     assert app.notifications.create.await_count == 1
     assert_closed(app, times=1)
     assert "mama" not in caplog.text
+
+
+async def test_maintenance_runs_as_own_task_and_does_not_block_sending(
+    service: WorldService,
+    store: WorldStore,
+    fake_notifier: FakeNotifier,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """IN-06: Ein hängender Talk-Abgleich verzögert keine Fremdversuch-Hinweise; Beenden bricht ihn ab."""
+    fake_directory.groups["admin"] = ["admin", "mama"]
+    hook_started = asyncio.Event()
+    hook_cancelled: list[bool] = []
+
+    async def hanging(world_service: WorldService, acting_uid: str) -> None:
+        del world_service, acting_uid
+        hook_started.set()
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            hook_cancelled.append(True)
+            raise
+
+    monkeypatch.setattr(loop, "MAINTENANCE", [hanging])
+    store.add_outbox(W1, "deny", "Fremder", int(datetime.now(BERLIN).timestamp()))
+    task = asyncio.create_task(loop.notify_forever(service, interval_seconds=0.01))
+    await asyncio.wait_for(hook_started.wait(), timeout=5)
+    for _ in range(500):
+        if fake_notifier.calls:
+            break
+        await asyncio.sleep(0.01)
+    assert {call[0] for call in fake_notifier.calls} == {"admin", "mama"}
+    maintenance = loop.LOOP_STATE.maintenance_task
+    assert maintenance is not None
+    assert not maintenance.done()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert maintenance.done()
+    assert hook_cancelled == [True]
