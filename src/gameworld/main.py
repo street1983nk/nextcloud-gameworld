@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import cast
@@ -90,5 +91,20 @@ APP.include_router(talk.router)
 APP.include_router(talk_bot.router)
 
 
+def _uvicorn_loop() -> str:
+    """Event-Loop für uvicorn: unter Windows der Selector-Loop, sonst uvicorns Vorgabe.
+
+    Betrifft nur den Windows-Dev-Host (manual-install, Host-Prozess). Mit dem
+    Proactor-Loop stirbt der Prozess sporadisch: Der GC räumt nicht geschlossene
+    niquests-Verbindungen auch in anyio-Worker-Threads ab, StreamWriter.__del__
+    cancelt dort die laufende overlapped Recv-Future am Loop vorbei, und
+    IocpProactor._poll endet mit InvalidStateError
+    (.planning/debug/resolved/backend-windows-invalidstate.md). Der Selector-Loop
+    kennt keine overlapped Futures. asyncio-Subprozesse, die er unter Windows nicht
+    kann, braucht der Code nicht. Im Linux-Container bleibt es bei "auto" (uvloop).
+    """
+    return "asyncio:SelectorEventLoop" if sys.platform == "win32" else "auto"
+
+
 if __name__ == "__main__":
-    run_app("gameworld.main:APP", log_level="info")
+    run_app("gameworld.main:APP", log_level="info", loop=_uvicorn_loop())
