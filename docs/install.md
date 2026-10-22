@@ -222,7 +222,8 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 
 ### Gameworld-Bot
 
-- Der Bot "Gameworld" schreibt in den Raum der Welt: "Die Welt ist gestartet." und "Die Welt ist gestoppt.", "<Name> ist jetzt in der Welt." und "<Name> hat die Welt verlassen." (je Person und Welt höchstens alle 10 Minuten), "Pause bis H:MM Uhr.", "Für heute ist Schluss.", "Die Pause ist vorbei." und "Noch 10 Minuten Spielzeit für <Name>.".
+- Der Bot "Gameworld" schreibt in den Raum der Welt: "Die Welt ist gestartet." und "Die Welt ist gestoppt.", "<Name> ist jetzt in der Welt." und "<Name> hat die Welt verlassen." (je Person und Welt höchstens alle 10 Minuten), "Pause bis H:MM Uhr.", "Für heute ist Schluss.", "Die Pause ist vorbei." (bei "Weiter" und wenn die Pause von selbst endet) und "Noch 10 Minuten Spielzeit für <Name>." (je Kind und Welt höchstens einmal am Tag, auch wenn es sich neu verbindet).
+- Anzeigenamen stehen ohne echtes "@" im Bot-Text, damit ein Name wie "@all" niemanden anpingt.
 - Mit Ton kommen nur Pause, "Für heute ist Schluss." und die 10-Minuten-Warnung. Start, Stopp, Beitritt, Verlassen und das Pausenende kommen still.
 - Der Bot liest keine Nachrichten der Kinder mit.
 

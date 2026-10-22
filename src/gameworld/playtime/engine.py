@@ -41,7 +41,7 @@ from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
 from gameworld.playtime.ledger import attribution_day, increments
-from gameworld.playtime.pause import ART_SCHLUSS, morgen_minutes
+from gameworld.playtime.pause import ART_SCHLUSS, OUTBOX_PAUSE_END, morgen_minutes
 from gameworld.playtime.plan import (
     ChildState,
     NextStart,
@@ -140,7 +140,9 @@ class TimeEngine:
             return None
         if now >= state.bis:
             # Nur löschen, was bis jetzt abgelaufen ist: eine eben neu gesetzte Pause bleibt.
-            self._store.clear_pause(ended_by=now)
+            # Läuft eine kurze Pause von selbst ab, meldet der Bot es still in jeder Welt
+            # wie bei "Weiter" (IN-09); "Für heute Schluss" endet still um Mitternacht.
+            self._store.expire_pause(now, OUTBOX_PAUSE_END)
             return None
         return PauseLine(ab=state.ab, bis=state.bis, art=state.art)
 

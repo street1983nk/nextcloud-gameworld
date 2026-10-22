@@ -22,7 +22,7 @@ from dataclasses import astuple, dataclass, fields
 from datetime import date
 
 from gameworld.notify.throttle import ATTEMPT_LIMIT, Decision, decide
-from gameworld.playtime.pause import PauseState
+from gameworld.playtime.pause import ART_PAUSE, PauseState
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
@@ -787,6 +787,26 @@ class WorldStore:
                 "bis = excluded.bis, art = excluded.art",
                 (state.started_by, state.ab, state.bis, state.art),
             )
+
+    def expire_pause(self, now: int, kind: str) -> bool:
+        """Abgelaufene Pause löschen und je Welt eine Outbox-Zeile ``kind`` anlegen, in EINER Transaktion (IN-09).
+
+        Nur eine kurze Pause (Art ``pause``) wird gemeldet, "Für heute Schluss"
+        endet still um Mitternacht. True, wenn eine Pause abgelaufen war.
+        """
+        with self._connect() as connection:
+            row = connection.execute("SELECT art FROM pause_state WHERE id = 1 AND bis <= ?", (now,)).fetchone()
+            if row is None:
+                return False
+            connection.execute("DELETE FROM pause_state WHERE id = 1 AND bis <= ?", (now,))
+            if str(row[0]) == ART_PAUSE:
+                worlds = connection.execute("SELECT id FROM worlds WHERE desired_state != 'deleted'").fetchall()
+                connection.executemany(
+                    "INSERT INTO event_outbox (world_id, kind, name, at, detail) VALUES (?, ?, '', ?, '')",
+                    [(str(world[0]), kind, now) for world in worlds],
+                )
+                self._cap_outbox(connection)
+        return True
 
     def clear_pause(self, *, ended_by: int | None = None) -> None:
         """Pause löschen; mit ``ended_by`` nur, wenn sie bis dahin abgelaufen ist (bis <= ended_by)."""

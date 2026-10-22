@@ -708,6 +708,37 @@ def test_render_expired_pause_same_bytes_as_without_and_clears_state(store: Worl
     assert store.get_pause() is None
 
 
+def test_expired_pause_announces_end_once_in_every_world(store: WorldStore) -> None:
+    """IN-09: Läuft die Pause von selbst ab, bekommt jede Welt einmal "pause_end" (still wie bei Weiter)."""
+    clock = [float(FIXED)]
+    engine = TimeEngine(store, clock=lambda: clock[0])
+    _world(store, "w1", 30015)
+    _world(store, "w2", 30016)
+    _world(store, "w3", 30017)
+    store.update_world("w3", desired_state="deleted")
+    store.set_pause(PauseState(started_by="admin", ab=FIXED + 30, bis=FIXED + 930, art=ART_PAUSE))
+    engine.render("w1")
+    assert store.outbox_batch() == []
+    clock[0] = float(FIXED + 930)
+    engine.render("w1")
+    engine.render("w2")
+    engine.render("w1")
+    rows = [(row.world_id, row.kind) for row in store.outbox_batch()]
+    assert sorted(rows) == [("w1", "pause_end"), ("w2", "pause_end")]
+
+
+def test_expired_schluss_ends_silently(store: WorldStore) -> None:
+    """Gegenprobe: "Für heute Schluss" endet um Mitternacht ohne Bot-Meldung."""
+    clock = [float(FIXED)]
+    engine = TimeEngine(store, clock=lambda: clock[0])
+    _world(store, "w1", 30015)
+    store.set_pause(PauseState(started_by="admin", ab=FIXED + 30, bis=FIXED + 930, art=ART_SCHLUSS))
+    clock[0] = float(FIXED + 930)
+    engine.render("w1")
+    assert store.get_pause() is None
+    assert store.outbox_batch() == []
+
+
 def test_render_pause_change_changes_cache_key(engine: TimeEngine, store: WorldStore) -> None:
     _world(store, "w1", 30015)
     _player(store, "gw-leo", "Leo")
