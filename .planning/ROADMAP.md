@@ -272,17 +272,17 @@ Plans:
 **Plans:** 11 plans
 
 Plans:
-- [ ] 04.2-01-PLAN.md , CI-Build luanti-wasm bc0a515 in zwei Speichervarianten (Push nur nach Owner-Wort), K.-o. Build
+- [ ] 04.2-01-PLAN.md , CI-Workflow luanti-wasm bc0a515 in zwei Speichervarianten, Push nur nach Owner-Wort, Lauf 1 anstoßen, Spike-Startzeit
 - [ ] 04.2-02-PLAN.md , Spielseite /play/ mit COOP/COEP/CSP hinter GAMEWORLD_BROWSER_SPIKE, info.xml-Routen
 - [ ] 04.2-03-PLAN.md , Header- und WS-Proben unter manual-install und HaRP (Timebox), K.-o. Header
-- [ ] 04.2-04-PLAN.md , Gerätetest Einzelspieler mit Owner (iPhone, iPad, Laptop, Touch), Build-Wahl
-- [ ] 04.2-05-PLAN.md , Reine Protokollmodule: 24-Byte-Kopf, NEWADDR/BIND, MTP-Wächter (Name, FIRST_SRP)
+- [ ] 04.2-04-PLAN.md , CI-Lauf abwarten (max. 2 Läufe), Artefakte messen, K.-o. Build; Gerätetest Einzelspieler mit Owner (iPhone, iPad, Laptop, Touch), Build-Wahl
+- [ ] 04.2-05-PLAN.md , Reine Protokollmodule: 24-Byte-Kopf, NEWADDR/BIND, MTP-Wächter (Name, FIRST_SRP, RELIABLE(SPLIT))
 - [ ] 04.2-06-PLAN.md , Ein-Mal-Tickets, POST /api/my/play-ticket und /play/launch, Negativtests Ticket
 - [ ] 04.2-07-PLAN.md , WebSocket-zu-UDP-Proxy (Sitzungen, Relais, Grenzen), Negativtests WebSocket
 - [ ] 04.2-08-PLAN.md , Dev-Front, Knopf Im Browser spielen, e2e gegen echte Welt, Laptop-Lauf (Variante B)
 - [ ] 04.2-09-PLAN.md , Variante A: SRP-Übernahme am Proxy (Timebox 4 h) mit Gegenproben
 - [ ] 04.2-10-PLAN.md , 15-Minuten-Praxistest auf den Owner-Geräten über den Proxy, Rückbau
-- [ ] 04.2-11-PLAN.md , Sicherheitsreview mit Befehlsbelegen, Go/No-Go-Bericht, Owner-Entscheid
+- [ ] 04.2-11-PLAN.md , Sicherheitsreview mit Befehlsbelegen, Go/No-Go-Bericht mit Aufwand und Budget (D-13), Owner-Entscheid
 
 ### Phase 5: Backup und Restore
 
