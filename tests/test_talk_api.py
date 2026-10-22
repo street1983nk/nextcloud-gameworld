@@ -153,7 +153,16 @@ async def test_talk_status_and_read_only(
         "available": True,
         "bots": True,
         "worlds": [
-            {"world_id": W1, "world_name": "Wiese", "has_room": True, "read_only": False, "owner_not_admin": False}
+            {
+                "world_id": W1,
+                "world_name": "Wiese",
+                "has_room": True,
+                "read_only": False,
+                "owner_not_admin": False,
+                "token": row.token,
+                # Nur gefüllt, wenn der Raum-Owner kein Verwalter mehr ist (D-27).
+                "owner_display": None,
+            }
         ],
     }
     on = await client.post(f"/api/worlds/{W1}/talk/read-only", headers=appapi_headers())

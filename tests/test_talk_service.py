@@ -248,7 +248,11 @@ async def test_owner_no_longer_admin_acts_as_first_admin(
     by_world = {w.world_id: w for w in status.worlds}
     assert by_world[W1].owner_not_admin is True
     assert by_world[W1].has_room is True
+    assert by_world[W1].owner_display == "admin"
+    assert by_world[W1].token == _token(store)
     assert by_world[W2].has_room is False
+    assert by_world[W2].token is None
+    assert by_world[W2].owner_display is None
 
 
 async def test_reconcile_isolates_errors_and_logs_no_names(

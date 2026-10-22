@@ -6,6 +6,7 @@ import {
 	NOT_APPLIED_TEXT,
 	NO_LIMIT_OPTION,
 	PRESETS,
+	TALK_MISSING_TEXT,
 	formatClock,
 	formatMinutes,
 	fromApiDays,
@@ -14,7 +15,10 @@ import {
 	minutesText,
 	notAppliedText,
 	pauseUntilText,
+	reviewSelectOptions,
+	reviewTimeOptions,
 	summarize,
+	talkHint,
 	toApiDays,
 	toWindowDays,
 	usageText,
@@ -266,5 +270,65 @@ assert.equal(pauseUntilText('18:30'), 'Pause bis 18:30 Uhr')
 assert.equal(pauseUntilText('9:05'), 'Pause bis 9:05 Uhr')
 assert.equal(pauseUntilText(null), 'Pause läuft')
 assert.equal(pauseUntilText(''), 'Pause läuft')
+
+// Rückblick-Einstellung (04.1-08): Uhrzeiten 0:15 bis 23:45 im 15-Minuten-Raster, nie "0 Uhr".
+const times = reviewTimeOptions()
+assert.equal(times.length, 95)
+assert.equal(times[0].value, 15)
+assert.equal(times[times.length - 1].value, 1425)
+assert.ok(times.every((option, index) => option.value === 15 * (index + 1)))
+assert.ok(times.every((option) => option.label === formatClock(option.value)))
+assert.ok(times.some((option) => option.value === 1200 && option.label === '20 Uhr'))
+assert.ok(times.some((option) => option.value === 1230 && option.label === '20:30 Uhr'))
+assert.equal(times[0].label, '0:15 Uhr')
+assert.ok(!times.some((option) => option.value === 0))
+for (const option of times) {
+	assert.ok(!FORBIDDEN.test(option.label), option.label)
+}
+
+// Gespeicherter Wert in der Liste: genau die Liste
+const inList = reviewSelectOptions(1230)
+assert.deepEqual(inList.options, times)
+assert.equal(inList.selected, 1230)
+assert.equal(inList.dirty, false)
+// Gespeicherter Wert außerhalb des Rasters (API erlaubt 0..1439): Zusatz-Option, nach Wert einsortiert
+const odd = reviewSelectOptions(1207)
+assert.equal(odd.options.length, 96)
+assert.equal(odd.selected, 1207)
+assert.equal(odd.dirty, false)
+const oddIndex = odd.options.findIndex((option) => option.value === 1207)
+assert.deepEqual(odd.options[oddIndex], { value: 1207, label: '20:07 Uhr' })
+assert.equal(odd.options[oddIndex - 1].value, 1200)
+assert.equal(odd.options[oddIndex + 1].value, 1215)
+for (const stored of [1, 7, 1207, 1439]) {
+	for (const option of reviewSelectOptions(stored).options) {
+		assert.ok(!FORBIDDEN.test(option.label), option.label)
+	}
+}
+assert.equal(reviewSelectOptions(1439).options.at(-1).value, 1439)
+// 0 würde "0 Uhr" zeigen: nächster Listenwert, als ungespeichert markiert
+const zero = reviewSelectOptions(0)
+assert.deepEqual(zero.options, times)
+assert.equal(zero.selected, 15)
+assert.equal(zero.dirty, true)
+// Ohne gespeicherten Wert: Vorgabe 20 Uhr
+for (const stored of [null, undefined]) {
+	const fresh = reviewSelectOptions(stored)
+	assert.deepEqual(fresh.options, times)
+	assert.equal(fresh.selected, 1200)
+	assert.equal(fresh.dirty, false)
+}
+
+// Talk-Hinweise (D-20, D-27)
+assert.equal(talkHint({ available: false }), TALK_MISSING_TEXT)
+assert.equal(TALK_MISSING_TEXT, 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.')
+assert.equal(
+	talkHint({ available: true, owner_not_admin: true, owner_display: 'Anna' }),
+	'Der Talk-Raum gehört noch Anna, der kein Verwalter mehr ist. Den Besitz kannst du in Talk in den Raum-Einstellungen übertragen.',
+)
+assert.equal(talkHint({ available: true, owner_not_admin: false, owner_display: null }), '')
+assert.equal(talkHint(null), '')
+// Ohne Namen trotzdem ein ganzer Satz
+assert.match(talkHint({ available: true, owner_not_admin: true, owner_display: null }), /^Der Talk-Raum gehört noch einem früheren Verwalter\./)
 
 console.log('playtime.check: alle Prüfungen bestanden')
