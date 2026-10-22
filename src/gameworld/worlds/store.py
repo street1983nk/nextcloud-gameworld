@@ -498,6 +498,20 @@ class WorldStore:
                 (key, value),
             )
 
+    def compare_and_set_meta(self, key: str, expected: str | None, value: str) -> bool:
+        """Setzt ``value`` nur, wenn der Wert noch ``expected`` ist (None: noch keiner); True bei Erfolg.
+
+        Zwei gleichzeitige Meldungen überschreiben sich so nie gegenseitig (WR-04).
+        """
+        with self._connect() as connection:
+            if expected is None:
+                cursor = connection.execute("INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)", (key, value))
+            else:
+                cursor = connection.execute(
+                    "UPDATE meta SET value = ? WHERE key = ? AND value = ?", (value, key, expected)
+                )
+        return cursor.rowcount == 1
+
     def player_name_owner(self, player_name: str) -> str | None:
         """Konto, dem der Spielername ohne Rücksicht auf Groß-/Kleinschreibung gehört."""
         with self._connect() as connection:

@@ -101,10 +101,68 @@ def test_page_link_rejects_unknown_page_and_long_links() -> None:
         "https://192.168.1.10:8443",
         "https://[::1]:8443",
         "https://Cloud.Example.org",
+        "https://example.org/nextcloud",
+        "https://example.org/apps/nc-1.2_x~y",
     ],
 )
 def test_clean_origin_accepts_scheme_host_port(value: str) -> None:
     assert links.clean_origin(value) == value
+
+
+def test_page_link_with_webroot() -> None:
+    """WR-04: Nextcloud im Unterordner; der Link führt nicht mehr ins 404 unter /index.php."""
+    assert links.page_link("https://example.org/nextcloud", "pause", {}) == (
+        "https://example.org/nextcloud/index.php/apps/app_api/embedded/gameworld/gameworld/pause"
+    )
+
+
+def test_join_base_origin_plus_webroot() -> None:
+    assert links.join_base("https://example.org", "/nextcloud") == "https://example.org/nextcloud"
+    assert links.join_base("http://localhost:8091", "") == "http://localhost:8091"
+
+
+@pytest.mark.parametrize(
+    ("origin", "webroot"),
+    [
+        ("https://example.org/pfad", ""),
+        ("https://example.org", "nextcloud"),
+        ("https://example.org", "/nextcloud/"),
+        ("https://example.org", "/"),
+        ("https://example.org", "/../admin"),
+        ("https://example.org", "/a/./b"),
+        ("https://example.org", "/%2e%2e"),
+        ("https://example.org", "/a b"),
+        ("https://example.org", "/a?x=1"),
+        ("https://example.org", "/a#x"),
+        ("https://example.org", "//evil.example"),
+        ("https://example.org", "/a\\b"),
+        ("https://example.org", "/" + "a" * 300),
+    ],
+)
+def test_join_base_rejects_manipulated_parts(origin: str, webroot: str) -> None:
+    with pytest.raises(ValueError):  # noqa: PT011
+        links.join_base(origin, webroot)
+
+
+@pytest.mark.parametrize(
+    ("current", "proposed", "confirm", "store", "confirm_needed"),
+    [
+        (None, "http://192.168.1.10", False, True, False),
+        ("https://cloud.example", "https://cloud.example", False, False, False),
+        ("https://cloud.example", "https://cloud.example", True, False, False),
+        ("https://cloud.example", "https://neu.example", False, False, True),
+        ("https://cloud.example", "https://neu.example", True, True, False),
+        ("http://192.168.1.10", "https://cloud.example", False, False, True),
+        ("http://192.168.1.10", "https://cloud.example", True, True, False),
+        # https wird nie durch http ersetzt, auch nicht bestätigt, und ohne Rückfrage.
+        ("https://cloud.example", "http://192.168.1.10", False, False, False),
+        ("https://cloud.example", "http://192.168.1.10", True, False, False),
+        ("https://cloud.example", "http://cloud.example", True, False, False),
+    ],
+)
+def test_decide_origin(current: str | None, proposed: str, confirm: bool, store: bool, confirm_needed: bool) -> None:
+    decision = links.decide_origin(current, proposed, confirm=confirm)
+    assert (decision.store, decision.confirm_needed) == (store, confirm_needed)
 
 
 @pytest.mark.parametrize(
@@ -113,7 +171,10 @@ def test_clean_origin_accepts_scheme_host_port(value: str) -> None:
         "",
         "cloud.example",
         "https://cloud.example/",
-        "https://cloud.example/pfad",
+        "https://cloud.example/pfad/",
+        "https://cloud.example/..",
+        "https://cloud.example/a/./b",
+        "https://cloud.example//b",
         "https://user:pw@cloud.example",
         "https://cloud.example#x",
         "https://cloud.example?x=1",

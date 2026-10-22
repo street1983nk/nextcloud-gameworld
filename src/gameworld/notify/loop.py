@@ -114,12 +114,12 @@ MaintenanceHook = Callable[[WorldService, str], Awaitable[None]]
 
 
 def link_origin(store: WorldStore) -> str | None:
-    """Basis-URL aus meta link_origin, sonst NEXTCLOUD_URL; beides ungültig oder leer: None."""
+    """Basis-URL aus meta link_origin, sonst NEXTCLOUD_URL (auch mit Webroot); ungültig oder leer: None."""
     for candidate in (store.get_meta(META_LINK_ORIGIN), os.environ.get("NEXTCLOUD_URL")):
         if not candidate:
             continue
         try:
-            return clean_origin(candidate.rstrip("/"))
+            return clean_origin(candidate.rstrip("/").removesuffix("/index.php"))
         except ValueError:
             continue
     return None

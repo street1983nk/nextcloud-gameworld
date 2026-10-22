@@ -198,6 +198,7 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 
 - Gameworld schickt Hinweise als normale Nextcloud-Benachrichtigungen an alle Verwalter. Auf dem Handy kommen sie über die Nextcloud-App an. Voraussetzung: Die App "Notifications" ist aktiv, und die Instanz kann Push senden (Push-Proxy der Nextcloud-App, bei öffentlich erreichbaren Instanzen Standard).
 - Ein Tipp auf die Benachrichtigung öffnet die passende Gameworld-Seite im Browser. Wer nicht angemeldet ist, meldet sich an und landet danach direkt auf der Seite.
+- Die Adresse der Links merkt sich Gameworld beim ersten Besuch eines Verwalters (auch mit Nextcloud in einem Unterordner, etwa `https://example.org/nextcloud`). Öffnet ein Verwalter Gameworld später über eine andere Adresse, fragt die Seite einmal: "Links in Hinweisen künftig über diese Adresse öffnen?" mit alter und neuer Adresse. Erst nach "Ja, diese Adresse" gilt die neue. Eine https-Adresse ersetzt Gameworld nie durch eine http-Adresse, dann kommt auch keine Frage.
 
 ### Hinweis bei fremdem Beitrittsversuch
 

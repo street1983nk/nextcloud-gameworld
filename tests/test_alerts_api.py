@@ -174,21 +174,116 @@ async def test_review_prefs_validation(
     assert response.status_code == 422
 
 
+async def _origin(client: httpx.AsyncClient, body: dict[str, object], user: str = "admin") -> httpx.Response:
+    return await client.post("/api/origin", json=body, headers=appapi_headers(user))
+
+
 async def test_origin_saved(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
     del service
-    response = await client.post("/api/origin", json={"origin": "https://cloud.example"}, headers=appapi_headers())
+    response = await _origin(client, {"origin": "https://cloud.example"})
     assert response.status_code == 200, response.text
-    assert response.json() == {"origin": "https://cloud.example"}
+    assert response.json() == {
+        "origin": "https://cloud.example",
+        "proposed": "https://cloud.example",
+        "saved": True,
+        "confirm_needed": False,
+    }
+    assert store.get_meta(META_LINK_ORIGIN) == "https://cloud.example"
+
+
+async def test_origin_first_wins_change_only_confirmed(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    """WR-04: Ein Besuch über eine LAN-Adresse überschreibt nichts ohne Bestätigung."""
+    del service
+    await _origin(client, {"origin": "https://cloud.example"})
+    asked = await _origin(client, {"origin": "https://neu.example"})
+    assert asked.status_code == 200
+    assert asked.json() == {
+        "origin": "https://cloud.example",
+        "proposed": "https://neu.example",
+        "saved": False,
+        "confirm_needed": True,
+    }
+    assert store.get_meta(META_LINK_ORIGIN) == "https://cloud.example"
+    confirmed = await _origin(client, {"origin": "https://neu.example", "confirm": True})
+    assert confirmed.json()["saved"] is True
+    assert store.get_meta(META_LINK_ORIGIN) == "https://neu.example"
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_origin_https_never_replaced_by_http(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, confirm: bool
+) -> None:
+    del service
+    store.set_meta(META_LINK_ORIGIN, "https://cloud.example")
+    response = await _origin(client, {"origin": "http://192.168.1.10", "confirm": confirm})
+    assert response.status_code == 200
+    assert response.json()["saved"] is False
+    # Ohne Rückfrage: http ersetzt https nie, darum fragt die Seite gar nicht.
+    assert response.json()["confirm_needed"] is False
+    assert store.get_meta(META_LINK_ORIGIN) == "https://cloud.example"
+
+
+async def test_origin_with_webroot(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
+    del service
+    response = await _origin(client, {"origin": "https://example.org", "webroot": "/nextcloud"})
+    assert response.status_code == 200, response.text
+    assert store.get_meta(META_LINK_ORIGIN) == "https://example.org/nextcloud"
+
+
+async def test_origin_corrupt_stored_value_is_replaced_without_confirm(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore
+) -> None:
+    del service
+    store.set_meta(META_LINK_ORIGIN, "javascript:alert(1)")
+    response = await _origin(client, {"origin": "https://cloud.example"})
+    assert response.json()["saved"] is True
     assert store.get_meta(META_LINK_ORIGIN) == "https://cloud.example"
 
 
 @pytest.mark.parametrize(
-    "origin", ["https://cloud.example/pfad", "javascript:x", "https://u:p@cloud.example", "x" * 400]
+    "body",
+    [
+        {"origin": "https://cloud.example/pfad"},
+        {"origin": "javascript:x"},
+        {"origin": "https://u:p@cloud.example"},
+        {"origin": "x" * 400},
+        {"origin": "https://cloud.example", "webroot": "/../admin"},
+        {"origin": "https://cloud.example", "webroot": "nextcloud"},
+        {"origin": "https://cloud.example", "webroot": "/a?b"},
+        {"origin": "https://cloud.example", "confirm": "yes"},
+        {"origin": "https://cloud.example", "confirm": 1},
+        {"origin": "https://cloud.example", "extra": 1},
+        {},
+    ],
 )
 async def test_origin_rejected(
-    client: httpx.AsyncClient, service: WorldService, store: WorldStore, origin: str
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, body: dict[str, object]
 ) -> None:
     del service
-    response = await client.post("/api/origin", json={"origin": origin}, headers=appapi_headers())
+    response = await _origin(client, body)
     assert response.status_code == 422
     assert store.get_meta(META_LINK_ORIGIN) is None
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_kid_cannot_set_or_confirm_origin(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, confirm: bool
+) -> None:
+    """Negativtest: Ein Kind setzt nichts, weder zuerst noch mit Bestätigung."""
+    del service
+    for stored in (None, "https://cloud.example"):
+        if stored is not None:
+            store.set_meta(META_LINK_ORIGIN, stored)
+        response = await _origin(client, {"origin": "http://evil.example", "confirm": confirm}, user="gw-kind")
+        assert response.status_code == 403
+        assert store.get_meta(META_LINK_ORIGIN) == stored
+
+
+async def test_origin_change_race_never_overwrites_silently(store: WorldStore) -> None:
+    """Gleichzeitige Erstmeldungen: compare_and_set lässt nur eine gewinnen."""
+    assert store.compare_and_set_meta(META_LINK_ORIGIN, None, "https://a.example")
+    assert not store.compare_and_set_meta(META_LINK_ORIGIN, None, "https://b.example")
+    assert not store.compare_and_set_meta(META_LINK_ORIGIN, "https://x.example", "https://b.example")
+    assert store.get_meta(META_LINK_ORIGIN) == "https://a.example"

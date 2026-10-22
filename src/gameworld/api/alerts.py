@@ -3,7 +3,8 @@
 - ``GET /api/attempts?day=&world=``: Fremdversuche eines Tages (Seite versuch, D-09)
 - ``GET /api/review?day=``: Minuten je Kind und Welt (Seite rueckblick, D-13)
 - ``GET``/``POST /api/review/prefs``: Rückblick an/aus und Uhrzeit, je Verwalter (D-12, D-15)
-- ``POST /api/origin``: Basis-URL der Links aus dem Browser (Pattern 9, T-04.1-19)
+- ``POST /api/origin``: Basis-URL der Links aus dem Browser (Pattern 9, T-04.1-19); die
+  erste wird gespeichert, ein Wechsel nur mit ``confirm`` (WR-04)
 
 Alles nur für Verwalter (require_verwalter routerweit, T-04.1-18). ``day`` ist
 ein Datum, ``world`` eine Welt-ID; Deep-Link-Parameter wirken nur als Filter
@@ -18,12 +19,12 @@ from typing import Annotated
 
 import anyio.to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from gameworld.access.directory import get_directory
 from gameworld.access.roles import require_verwalter
 from gameworld.api.worlds import ServiceDep, refresh_snapshot
-from gameworld.notify.links import clean_origin
+from gameworld.notify.links import MAX_BASE, clean_origin, decide_origin, join_base
 from gameworld.notify.loop import META_LINK_ORIGIN, collect_play, display_name, limits_reached
 from gameworld.notify.review import minutes
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
@@ -84,13 +85,27 @@ class ReviewPrefs(BaseModel):
 
 
 class OriginIn(BaseModel):
+    """Origin und Webroot aus dem Browser des Verwalters; ``confirm`` nur nach der Rückfrage (WR-04)."""
+
     model_config = ConfigDict(extra="forbid")
 
-    origin: Annotated[str, Field(max_length=300), AfterValidator(clean_origin)]
+    origin: Annotated[str, Field(max_length=MAX_BASE)]
+    webroot: Annotated[str, Field(max_length=MAX_BASE)] = ""
+    confirm: StrictBool = False
+
+    @model_validator(mode="after")
+    def _valid_base(self) -> OriginIn:
+        join_base(self.origin, self.webroot)
+        return self
 
 
 class OriginOut(BaseModel):
-    origin: str
+    """``origin``: danach gespeicherte Basis-URL (None: keine). ``confirm_needed``: Rückfrage zeigen."""
+
+    origin: str | None
+    proposed: str
+    saved: bool
+    confirm_needed: bool
 
 
 def _unavailable() -> HTTPException:
@@ -190,10 +205,43 @@ async def save_review_prefs(body: ReviewPrefs, service: ServiceDep, uid: Verwalt
     return body
 
 
+def _stored_origin(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    try:
+        return clean_origin(raw)
+    except ValueError:
+        return None
+
+
+# Wie oft ein gleichzeitiger Schreiber das Speichern wiederholen lässt (compare_and_set).
+_ORIGIN_ATTEMPTS = 3
+
+
+def _save_origin_sync(service: WorldService, proposed: str, *, confirm: bool) -> OriginOut:
+    """Erste Adresse merken, Wechsel nur bestätigt, nie https durch http (decide_origin)."""
+    store = service.store
+    for _attempt in range(_ORIGIN_ATTEMPTS):
+        raw = store.get_meta(META_LINK_ORIGIN)
+        current = _stored_origin(raw)
+        decision = decide_origin(current, proposed, confirm=confirm)
+        if not decision.store:
+            return OriginOut(origin=current, proposed=proposed, saved=False, confirm_needed=decision.confirm_needed)
+        if store.compare_and_set_meta(META_LINK_ORIGIN, raw, proposed):
+            return OriginOut(origin=proposed, proposed=proposed, saved=True, confirm_needed=False)
+    raise sqlite3.OperationalError("link_origin wurde gleichzeitig geändert")
+
+
 @router.post("/origin")
 async def save_origin(body: OriginIn, service: ServiceDep) -> OriginOut:
+    """Basis-URL der Links: speichert nur die erste, eine abweichende nur mit ``confirm`` (WR-04).
+
+    Die Bestätigung erzwingt der Server: Ohne ``confirm`` wird eine vorhandene
+    Adresse nie ersetzt, die Antwort sagt dann ``confirm_needed``. Eine
+    https-Adresse ersetzt nie eine http-Adresse, auch nicht bestätigt.
+    """
+    proposed = join_base(body.origin, body.webroot)
     try:
-        await anyio.to_thread.run_sync(service.store.set_meta, META_LINK_ORIGIN, body.origin)
+        return await anyio.to_thread.run_sync(lambda: _save_origin_sync(service, proposed, confirm=body.confirm))
     except sqlite3.Error:
         raise _unavailable() from None
-    return OriginOut(origin=body.origin)

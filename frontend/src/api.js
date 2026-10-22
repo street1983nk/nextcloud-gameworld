@@ -249,9 +249,12 @@ export async function setTalkReadOnly(worldId, on) {
 	return response.data
 }
 
-// Basis-URL für die Links in Benachrichtigungen (nur Schema, Host, Port).
-export async function reportOrigin(origin) {
-	const response = await axios.post(`${apiBase}/api/origin`, { origin })
+// Basis-URL für die Links in Benachrichtigungen: Origin des Browsers plus Webroot
+// der Nextcloud (getRootUrl, etwa /nextcloud). Der Server speichert nur die erste
+// Adresse; eine abweichende erst mit confirm (Antwort confirm_needed), und eine
+// https-Adresse ersetzt er nie durch http.
+export async function reportOrigin(origin, webroot, confirm = false) {
+	const response = await axios.post(`${apiBase}/api/origin`, { origin, webroot, confirm })
 	return response.data
 }
 

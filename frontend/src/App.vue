@@ -10,6 +10,23 @@
 				</NcNoteCard>
 			</div>
 			<template v-else-if="me.role === 'verwalter'">
+				<div v-if="originAsk" class="gameworld-origin">
+					<NcNoteCard type="info">
+						<p>Links in Hinweisen künftig über diese Adresse öffnen?</p>
+						<p class="gameworld-origin__urls">
+							Bisher: <span>{{ originAsk.current }}</span><br>
+							Neu: <span>{{ originAsk.proposed }}</span>
+						</p>
+						<div class="gameworld-origin__actions">
+							<NcButton variant="primary" :disabled="originSaving" @click="confirmOrigin">
+								Ja, diese Adresse
+							</NcButton>
+							<NcButton variant="tertiary" :disabled="originSaving" @click="dismissOrigin">
+								Nein
+							</NcButton>
+						</div>
+					</NcNoteCard>
+				</div>
 				<PauseView v-if="page === 'pause'" />
 				<AttemptsView v-else-if="page === 'versuch'" :key="routeKey" />
 				<ReviewView v-else-if="page === 'rueckblick'" :key="routeKey" />
@@ -22,7 +39,9 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { getRootUrl } from '@nextcloud/router'
 import NcAppContent from '@nextcloud/vue/components/NcAppContent'
+import NcButton from '@nextcloud/vue/components/NcButton'
 import NcContent from '@nextcloud/vue/components/NcContent'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
@@ -32,6 +51,7 @@ import PauseView from './views/PauseView.vue'
 import PlayerView from './views/PlayerView.vue'
 import ReviewView from './views/ReviewView.vue'
 import { getMe, reportOrigin } from './api.js'
+import { originQuestion, readDismissed, rememberDismissed } from './origin.js'
 import { ROUTE_EVENT, currentPage } from './route.js'
 
 // Die Rolle kommt allein vom Backend (/api/me, Gruppe admin). Die Weiche hier
@@ -44,6 +64,36 @@ const me = ref(null)
 const page = ref(currentPage())
 // Neue Parameter (anderer Tag, andere Welt) laden die Seite neu.
 const routeKey = ref(window.location.search)
+// Rückfrage zur Link-Adresse (WR-04): { current, proposed } oder null.
+const originAsk = ref(null)
+const originSaving = ref(false)
+
+function storage() {
+	try {
+		return window.localStorage
+	} catch {
+		return null
+	}
+}
+
+async function confirmOrigin() {
+	originSaving.value = true
+	try {
+		await reportOrigin(window.location.origin, getRootUrl(), true)
+	} catch {
+		// Best effort: Beim nächsten Besuch fragt die Seite erneut.
+	} finally {
+		originSaving.value = false
+		originAsk.value = null
+	}
+}
+
+function dismissOrigin() {
+	if (originAsk.value) {
+		rememberDismissed(storage(), originAsk.value.proposed)
+	}
+	originAsk.value = null
+}
 
 function syncPage() {
 	page.value = currentPage()
@@ -65,7 +115,12 @@ onMounted(async () => {
 	}
 	if (me.value?.role === 'verwalter') {
 		// Basis-URL für absolute Links in Benachrichtigungen (Pattern 9); best effort.
-		reportOrigin(window.location.origin).catch(() => {})
+		// Der Server speichert nur die erste Adresse; eine andere erst nach "Ja".
+		reportOrigin(window.location.origin, getRootUrl())
+			.then((result) => {
+				originAsk.value = originQuestion(result, readDismissed(storage()))
+			})
+			.catch(() => {})
 	}
 })
 
@@ -79,5 +134,22 @@ onBeforeUnmount(() => {
 .gameworld-shell {
 	max-width: 820px;
 	padding: 24px;
+}
+
+.gameworld-origin {
+	max-width: 820px;
+	padding: 12px 24px 0;
+}
+
+.gameworld-origin__urls span {
+	overflow-wrap: anywhere;
+	font-weight: bold;
+}
+
+.gameworld-origin__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
 }
 </style>

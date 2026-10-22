@@ -488,10 +488,18 @@ heartbeat_up || abort "ExApp nach dem Neustart nicht erreichbar"
 check "Vorbereitung: keine Fremdversuche und kein Rückblick-Versand für ${TODAY} (sqlite3)" \
 	eq "$(sql "SELECT (SELECT count(*) FROM join_attempts WHERE day = '${TODAY}') + (SELECT count(*) FROM review_sent WHERE day = '${TODAY}')")" 0
 
-CODE=$(http_code POST "${API_URL}/origin" "${WORK_DIR}/origin.json" "{\"origin\":\"${NEXTCLOUD_URL}\"}")
-check "POST /api/origin ${NEXTCLOUD_URL} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
-CODE=$(call "${KID_AUTH}" POST "${API_URL}/origin" /dev/null '{"origin":"http://evil.example"}')
-check "Negativkontrolle: ${KID} setzt die Basis-URL nicht, nicht 200 (ist ${CODE})" ne "${CODE}" 200
+# Erste Adresse gilt, ein Wechsel nur bestätigt (WR-04): Die Abnahme bestätigt ausdrücklich.
+CODE=$(http_code POST "${API_URL}/origin" "${WORK_DIR}/origin.json" \
+	"{\"origin\":\"${NEXTCLOUD_URL}\",\"webroot\":\"\",\"confirm\":true}")
+check "POST /api/origin ${NEXTCLOUD_URL} (bestätigt) HTTP 200 (ist ${CODE})" eq "${CODE}" 200
+ORIGIN_NOW=$(sql "SELECT value FROM meta WHERE key = 'link_origin'")
+check "link_origin ist ${NEXTCLOUD_URL} (ist ${ORIGIN_NOW:-leer})" eq "${ORIGIN_NOW}" "${NEXTCLOUD_URL}"
+CODE=$(call "${KID_AUTH}" POST "${API_URL}/origin" /dev/null '{"origin":"http://evil.example","confirm":true}')
+# AppAPI weist Nicht-Admins auf ADMIN-Routen mit 404 ab (am Dev-Stack belegt), vor dem Backend.
+check "Negativkontrolle: ${KID} setzt die Basis-URL nicht, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+ORIGIN_AFTER=$(sql "SELECT value FROM meta WHERE key = 'link_origin'")
+check "Negativkontrolle: link_origin danach unverändert (ist ${ORIGIN_AFTER:-leer})" \
+	sh -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ "${ORIGIN_AFTER}" "${ORIGIN_NOW}"
 CODE=$(http_code GET "${API_URL}/worlds" "${WORK_DIR}/visit.json")
 check "Verwalter-Besuch GET /api/worlds HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 ADMINS=""

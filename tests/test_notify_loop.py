@@ -141,6 +141,23 @@ async def test_origin_falls_back_to_nextcloud_url_and_missing_means_no_send(
     assert {row.player_name for row in store.attempts(DAY)} == {"Fremder", "Anderer"}
 
 
+async def test_nextcloud_url_with_webroot_gives_working_links(
+    service: WorldService,
+    store: WorldStore,
+    fake_notifier: FakeNotifier,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-04: NEXTCLOUD_URL mit Unterordner (und /index.php) fällt nicht mehr weg."""
+    store.set_meta(META_LINK_ORIGIN, "")
+    monkeypatch.setenv("NEXTCLOUD_URL", "https://example.org/nextcloud/index.php/")
+    store.add_outbox(W1, "deny", "Fremder", _epoch(18, 5))
+    await _run(service, fake_notifier, fake_directory, _epoch(18, 6))
+    assert fake_notifier.calls[0][4].startswith(
+        "https://example.org/nextcloud/index.php/apps/app_api/embedded/gameworld/gameworld/versuch?"
+    )
+
+
 async def test_handler_error_is_isolated(
     service: WorldService,
     store: WorldStore,
