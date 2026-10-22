@@ -400,6 +400,16 @@ export function windowText(world) {
 	return phrase ? `${WORLD_CLOSED} ${phrase} ist sie wieder offen.` : WORLD_CLOSED
 }
 
+// Rückblick (04.1-07): "45 Min." je Kind und Welt.
+export function minutesText(minutes) {
+	return `${minutes} Min.`
+}
+
+// Pause-Seite: until_clock aus /api/pause (H:MM in der Haushalts-Zeitzone).
+export function pauseUntilText(untilClock) {
+	return typeof untilClock === 'string' && untilClock !== '' ? `Pause bis ${untilClock} Uhr` : 'Pause läuft'
+}
+
 // Antwort mit applied false (WR-08): gespeichert, aber mindestens eine Welt trägt den neuen
 // Stand noch nicht. Laufende Welten holt der 15-s-Takt nach, gestoppte der nächste Start.
 export const NOT_APPLIED_TEXT = 'Gespeichert, aber noch nicht in jeder Welt angekommen. '

@@ -185,6 +185,76 @@ export async function clearWorldWindow(worldId) {
 	return response.data
 }
 
+// Pause aller Welten (04.1-03): Zustand mit until_clock (H:MM) und je Welt applied/restarted.
+export async function getPause() {
+	const response = await axios.get(`${apiBase}/api/pause`)
+	return response.data
+}
+
+// minutes: genau 15, 30 oder 60 (das Backend lehnt alles andere ab).
+export async function startPause(minutes) {
+	const response = await axios.post(`${apiBase}/api/pause`, { minutes })
+	return response.data
+}
+
+// "Weiter": Pause oder "Für heute Schluss" sofort beenden.
+export async function endPause() {
+	const response = await axios.post(`${apiBase}/api/pause/end`)
+	return response.data
+}
+
+// "Für heute Schluss": bis zum Ende des Tages in der Haushalts-Zeitzone.
+export async function stopForToday() {
+	const response = await axios.post(`${apiBase}/api/pause/schluss`)
+	return response.data
+}
+
+// Fremdversuche eines Tages (JJJJ-MM-TT), optional nur einer Welt.
+export async function listAttempts(day, worldId = null) {
+	const params = { day }
+	if (worldId) {
+		params.world = worldId
+	}
+	const response = await axios.get(`${apiBase}/api/attempts`, { params })
+	return response.data.attempts
+}
+
+// Tagesrückblick: Minuten je Kind und Welt, limit_reached nur für heute.
+export async function getReview(day) {
+	const response = await axios.get(`${apiBase}/api/review`, { params: { day } })
+	return response.data
+}
+
+// Rückblick an/aus und Uhrzeit (Minute ab 00:00), je Verwalter.
+export async function getReviewPrefs() {
+	const response = await axios.get(`${apiBase}/api/review/prefs`)
+	return response.data
+}
+
+export async function saveReviewPrefs(enabled, minute) {
+	const response = await axios.post(`${apiBase}/api/review/prefs`, { enabled, minute })
+	return response.data
+}
+
+// Talk-Räume je Welt: available, bots und je Welt has_room, read_only, owner_not_admin.
+export async function getTalkStatus() {
+	const response = await axios.get(`${apiBase}/api/talk`)
+	return response.data
+}
+
+// "Nur lesen" an ist POST, aus ist DELETE.
+export async function setTalkReadOnly(worldId, on) {
+	const url = `${apiBase}/api/worlds/${encodeURIComponent(worldId)}/talk/read-only`
+	const response = on ? await axios.post(url) : await axios.delete(url)
+	return response.data
+}
+
+// Basis-URL für die Links in Benachrichtigungen (nur Schema, Host, Port).
+export async function reportOrigin(origin) {
+	const response = await axios.post(`${apiBase}/api/origin`, { origin })
+	return response.data
+}
+
 // Suche über Nextclouds eigene Autovervollständigung (Benutzer 0, Gruppen 1),
 // mit Nextclouds Regeln, wer wen finden darf. Keine eigene Benutzerliste.
 export async function searchAccounts(term) {
