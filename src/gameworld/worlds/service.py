@@ -1077,7 +1077,9 @@ class WorldService:
             self._store.delete_world(world_id)
             # Kein PRAGMA foreign_keys: Einladungen, Zugang, Welt-Fenster und
             # gesehene Zählbuchstände der Welt explizit löschen, dazu Cursor,
-            # Outbox, Laufzustand und Tagesspielzeit (Schema 5).
+            # Outbox, Laufzustand, Fremdversuche und Bot-Drossel (Schema 5). Die
+            # Tagesspielzeit (play_daily) bleibt bis zur normalen Frist, damit der
+            # Rückblick am Abend auch eine heute gelöschte Welt zählt.
             self._store.delete_access_data(world_id)
             self._store.delete_time_data(world_id)
             self._store.delete_notify_data(world_id)
