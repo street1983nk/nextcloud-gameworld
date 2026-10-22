@@ -18,7 +18,7 @@ from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
 from gameworld.playtime.pause import ART_PAUSE, PauseState
 from gameworld.playtime.plan import day_starts, local_day
-from gameworld.provisioner.client import DockerProvisioner, StatusFile
+from gameworld.provisioner.client import DockerProvisioner, DockerUnavailableError, StatusFile
 from gameworld.provisioner.time_mod import RULES_FILE_NAME
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldRow, WorldStore
@@ -183,6 +183,35 @@ async def test_old_mod_world_is_restarted(
     assert fake.calls.index(f"stop:{W1}") < fake.calls.index(f"start:{W1}")
     # Der Neustart schreibt die Regeldatei mit Pause vor dem Start (_launch).
     assert "@pause" in _rules_of(fake, W1)
+
+
+async def test_unreadable_events_file_restarts_fail_closed(
+    client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner
+) -> None:
+    """AR-41-09: Ohne lesbare Ereignisdatei ist der Mod-Stand unklar, die Pause startet neu."""
+    del service
+    fake.events_error = DockerUnavailableError("Proxy weg")
+    response = await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())
+    assert response.status_code == 200, response.text
+    worlds = _worlds(response.json())
+    assert worlds[W1]["restarted"] is True
+    assert worlds[W2]["restarted"] is True
+    assert sorted(fake.stopped) == [W1, W2]
+    assert "@pause" in _rules_of(fake, W1)
+
+
+async def test_missing_started_at_restarts_fail_closed(
+    client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner
+) -> None:
+    """AR-41-09: Ohne StartedAt ist nicht entscheidbar, ob die Ereignisdatei aus diesem Lauf stammt."""
+    del service
+    fake.extra[W1] = {}
+    response = await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())
+    assert response.status_code == 200, response.text
+    worlds = _worlds(response.json())
+    assert worlds[W1]["restarted"] is True
+    assert worlds[W2]["restarted"] is False
+    assert fake.stopped == [W1]
 
 
 async def test_end_pause_removes_line_and_is_idempotent(

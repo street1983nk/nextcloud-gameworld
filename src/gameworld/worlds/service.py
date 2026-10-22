@@ -535,7 +535,9 @@ class WorldService:
             and not delete_only(row)
             and container is not None
             and container.status == RUNNING
-            and self._events_restart_needed(row, container, WorldStatus(RUNNING, ""))
+            # Fail-closed (AR-41-09): Ist der Mod-Stand unklar, startet die Welt neu.
+            # Die Pause trennt ohnehin alle, nur so ist @pause sicher wirksam.
+            and self._events_restart_needed(row, container, WorldStatus(RUNNING, ""), unknown=True)
         ):
             try:
                 try:
@@ -716,13 +718,16 @@ class WorldService:
             return False
         return written is None or written < started
 
-    def _events_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
+    def _events_restart_needed(
+        self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus, *, unknown: bool = False
+    ) -> bool:
         """Läuft die Welt noch mit altem Zugangs-Mod ohne Ereignisdatei (Pattern 3)?
 
         Nur bei status running: Der neue Mod schreibt die Ereignisdatei bei
         mods_loaded. Fehlt sie oder ist sie älter als der Start des Containers,
         kommen aus dieser Welt keine Hinweise, bis sie neu startet. Gleiche Regel
-        und Isolierung wie _time_restart_needed; ein Lesefehler ergibt False.
+        und Isolierung wie _time_restart_needed; ein Lesefehler oder ein fehlendes
+        StartedAt ergibt ``unknown`` (Anzeige: False, Pause: True).
         """
         if container is None or status.code != RUNNING:
             return False
@@ -730,13 +735,13 @@ class WorldService:
             events_file = self._provisioner.read_events(row.id)
         except ProvisionerError as exc:
             LOG.warning("Ereignisdatei von Welt %s nicht lesbar: %s", row.id, exc)
-            return False
+            return unknown
         if events_file is None:
             return True
         written = parse_docker_time(events_file.mtime)
         started = parse_docker_time(container.started_at)
         if started is None:
-            return False
+            return unknown
         return written is None or written < started
 
     def _memory(self, row: WorldRow, container: ContainerInfo | None) -> MemoryUsage | None:
