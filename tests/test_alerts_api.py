@@ -28,6 +28,32 @@ BERLIN = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 10, 21)
 
 
+def _household_today(zone: ZoneInfo = BERLIN) -> str:
+    return datetime.now(zone).date().isoformat()
+
+
+@pytest.mark.parametrize("path", ["/api/attempts", "/api/review"])
+async def test_without_day_backend_uses_household_today(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, path: str
+) -> None:
+    """IN-04: Ohne tag nimmt das Backend den heutigen Tag der Haushalts-Zeitzone, nicht die Uhr des Handys."""
+    del service
+    # Eine Zeitzone weit weg von der Geräteuhr: Pacific/Kiritimati (UTC+14) liegt oft schon im Morgen.
+    store.set_meta("time_zone", "Pacific/Kiritimati")
+    response = await client.get(path, headers=appapi_headers())
+    assert response.status_code == 200, response.text
+    data = response.json()
+    expected = _household_today(ZoneInfo("Pacific/Kiritimati"))
+    assert data["day"] == expected
+    assert data["today"] == expected
+
+
+async def test_explicit_day_is_kept_and_today_reported(client: httpx.AsyncClient, service: WorldService) -> None:
+    del service
+    response = await client.get("/api/review", params={"day": "2026-10-20"}, headers=appapi_headers())
+    assert (response.json()["day"], response.json()["today"]) == ("2026-10-20", _household_today())
+
+
 @pytest.fixture
 def store(app_env: Path) -> WorldStore:
     world_store = WorldStore(app_env / "gameworld.sqlite3")
@@ -60,7 +86,9 @@ async def test_attempts_lists_world_player_clock_and_count(
     store.claim_attempt(DAY, W2, "Anderer", at + 120)
     response = await client.get("/api/attempts", params={"day": "2026-10-21"}, headers=appapi_headers())
     assert response.status_code == 200, response.text
-    assert response.json() == {
+    data = response.json()
+    assert data.pop("today") == _household_today()
+    assert data == {
         "day": "2026-10-21",
         "attempts": [
             {"world_id": W1, "world_name": "Wiese", "player_name": "Fremder", "clock": "18:05", "count": 2},
@@ -73,7 +101,7 @@ async def test_attempts_lists_world_player_clock_and_count(
 
 @pytest.mark.parametrize(
     "params",
-    [{"day": "2026-13-01"}, {"day": "gestern"}, {}, {"day": "2026-10-21", "world": "../etc"}],
+    [{"day": "2026-13-01"}, {"day": "gestern"}, {"day": ""}, {"day": "2026-10-21", "world": "../etc"}],
 )
 async def test_attempts_validates_query(
     client: httpx.AsyncClient, service: WorldService, params: dict[str, str]
@@ -107,7 +135,9 @@ async def test_review_lists_kids_with_minutes_per_world(
     store.book_usage(W2, DAY, {}, {}, play={"gw-kind": 700})
     response = await client.get("/api/review", params={"day": "2026-10-21"}, headers=appapi_headers())
     assert response.status_code == 200, response.text
-    assert response.json() == {
+    data = response.json()
+    assert data.pop("today") == _household_today()
+    assert data == {
         "day": "2026-10-21",
         "kids": [
             {

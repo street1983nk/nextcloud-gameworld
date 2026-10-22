@@ -209,19 +209,25 @@ export async function stopForToday() {
 	return response.data
 }
 
-// Fremdversuche eines Tages (JJJJ-MM-TT), optional nur einer Welt.
-export async function listAttempts(day, worldId = null) {
-	const params = { day }
+// Fremdversuche eines Tages (JJJJ-MM-TT), optional nur einer Welt. Ohne day wählt
+// das Backend den heutigen Tag der Haushalts-Zeitzone (IN-04); die Antwort nennt
+// day und today ({ day, today, attempts }).
+export async function listAttempts(day = null, worldId = null) {
+	const params = {}
+	if (day) {
+		params.day = day
+	}
 	if (worldId) {
 		params.world = worldId
 	}
 	const response = await axios.get(`${apiBase}/api/attempts`, { params })
-	return response.data.attempts
+	return response.data
 }
 
-// Tagesrückblick: Minuten je Kind und Welt, limit_reached nur für heute.
-export async function getReview(day) {
-	const response = await axios.get(`${apiBase}/api/review`, { params: { day } })
+// Tagesrückblick: Minuten je Kind und Welt, limit_reached nur für heute; ohne day
+// der heutige Tag der Haushalts-Zeitzone ({ day, today, kids }).
+export async function getReview(day = null) {
+	const response = await axios.get(`${apiBase}/api/review`, { params: day ? { day } : {} })
 	return response.data
 }
 

@@ -8,7 +8,9 @@
 
 Alles nur für Verwalter (require_verwalter routerweit, T-04.1-18). ``day`` ist
 ein Datum, ``world`` eine Welt-ID; Deep-Link-Parameter wirken nur als Filter
-(T-04.1-22). Verwalter erscheinen im Rückblick nicht. Nur GET und POST.
+(T-04.1-22). Fehlt ``day``, gilt der heutige Tag der Haushalts-Zeitzone; die
+Antwort nennt ihn als ``today`` (IN-04). Verwalter erscheinen im Rückblick
+nicht. Nur GET und POST.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ DELETED_WORLD = "gelöschte Welt"
 MSG_UNAVAILABLE = "Die Daten sind gerade nicht lesbar. Bitte gleich noch einmal versuchen."
 
 VerwalterDep = Annotated[str, Depends(require_verwalter)]
-DayQuery = Annotated[date, Query()]
+# Ohne day gilt der heutige Tag der Haushalts-Zeitzone, nie die Uhr des Handys (IN-04).
+DayQuery = Annotated[date | None, Query()]
 WorldQuery = Annotated[str | None, Query(pattern="^[0-9a-f]{12}$")]
 
 
@@ -55,6 +58,8 @@ class AttemptOut(BaseModel):
 
 class AttemptsOut(BaseModel):
     day: date
+    # Heutiger Tag der Haushalts-Zeitzone, damit die Seite "Heute" richtig benennt (IN-04).
+    today: date
     attempts: list[AttemptOut]
 
 
@@ -74,6 +79,7 @@ class ReviewKidOut(BaseModel):
 
 class ReviewOut(BaseModel):
     day: date
+    today: date
     kids: list[ReviewKidOut]
 
 
@@ -112,6 +118,11 @@ def _unavailable() -> HTTPException:
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE)
 
 
+def _household_today(service: WorldService) -> date:
+    """Heutiger Tag in der Haushalts-Zeitzone (meta time_zone), nicht in der des Geräts."""
+    return local_day(service.time.now(), service.time.zone())
+
+
 def _attempts_sync(service: WorldService, day: date, world: str | None) -> list[AttemptOut]:
     store = service.store
     tz = service.time.zone()
@@ -129,12 +140,14 @@ def _attempts_sync(service: WorldService, day: date, world: str | None) -> list[
 
 
 @router.get("/attempts")
-async def get_attempts(service: ServiceDep, day: DayQuery, world: WorldQuery = None) -> AttemptsOut:
+async def get_attempts(service: ServiceDep, day: DayQuery = None, world: WorldQuery = None) -> AttemptsOut:
     try:
-        items = await anyio.to_thread.run_sync(_attempts_sync, service, day, world)
+        today = await anyio.to_thread.run_sync(_household_today, service)
+        chosen = today if day is None else day
+        items = await anyio.to_thread.run_sync(_attempts_sync, service, chosen, world)
     except sqlite3.Error:
         raise _unavailable() from None
-    return AttemptsOut(day=day, attempts=items)
+    return AttemptsOut(day=chosen, today=today, attempts=items)
 
 
 def _review_sync(service: WorldService, day: date) -> tuple[dict[str, dict[str, int]], dict[str, str], set[str]]:
@@ -149,8 +162,10 @@ def _review_sync(service: WorldService, day: date) -> tuple[dict[str, dict[str, 
 
 
 @router.get("/review")
-async def get_review(service: ServiceDep, day: DayQuery, uid: VerwalterDep) -> ReviewOut:
+async def get_review(service: ServiceDep, uid: VerwalterDep, day: DayQuery = None) -> ReviewOut:
     try:
+        today = await anyio.to_thread.run_sync(_household_today, service)
+        day = today if day is None else day
         play, names, reached = await anyio.to_thread.run_sync(_review_sync, service, day)
     except sqlite3.Error:
         raise _unavailable() from None
@@ -181,7 +196,7 @@ async def get_review(service: ServiceDep, day: DayQuery, uid: VerwalterDep) -> R
             )
         )
     kids.sort(key=lambda kid: (kid.display_name.casefold(), kid.nc_user))
-    return ReviewOut(day=day, kids=kids)
+    return ReviewOut(day=day, today=today, kids=kids)
 
 
 @router.get("/review/prefs")

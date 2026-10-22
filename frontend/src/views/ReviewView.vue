@@ -51,22 +51,27 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { errorText, getReview } from '../api.js'
 import { minutesText } from '../playtime.js'
-import { currentParams, dayLabel, localDay, navigate } from '../route.js'
+import { currentParams, dayLabel, navigate } from '../route.js'
 
-// tag aus dem Link ist schon geprüft (route.js); das Backend prüft erneut.
-const today = localDay()
-const day = currentParams().tag ?? today
+// tag aus dem Link ist schon geprüft (route.js); das Backend prüft erneut. Ohne
+// tag wählt das Backend den heutigen Tag der Haushalts-Zeitzone, nicht die Uhr
+// dieses Geräts (IN-04); Tag und "heute" kommen aus der Antwort.
+const linkDay = currentParams().tag ?? null
 
 const loading = ref(true)
 const error = ref('')
 const kids = ref([])
+const day = ref(linkDay ?? '')
+const today = ref('')
 
-const heading = computed(() => dayLabel(day, today))
+const heading = computed(() => (day.value ? dayLabel(day.value, today.value) : ''))
 
 onMounted(async () => {
 	try {
-		const review = await getReview(day)
+		const review = await getReview(linkDay)
 		kids.value = review.kids ?? []
+		day.value = review.day ?? day.value
+		today.value = review.today ?? ''
 	} catch (err) {
 		error.value = errorText(err)
 	} finally {

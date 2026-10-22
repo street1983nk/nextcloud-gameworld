@@ -67,21 +67,23 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import InviteDialog from '../components/InviteDialog.vue'
 import { errorText, listAttempts } from '../api.js'
-import { currentParams, dayLabel, localDay, navigate } from '../route.js'
+import { currentParams, dayLabel, navigate } from '../route.js'
 
 // Parameter aus dem Link sind schon geprüft (route.js); das Backend prüft erneut.
+// Ohne tag wählt das Backend den heutigen Tag der Haushalts-Zeitzone, nicht die
+// Uhr dieses Geräts (IN-04); Tag und "heute" kommen aus der Antwort.
 const params = currentParams()
-const today = localDay()
-const day = params.tag ?? today
 const worldFilter = params.welt ?? null
 
 const loading = ref(true)
 const error = ref('')
 const attempts = ref([])
 const inviteWorld = ref(null)
+const day = ref(params.tag ?? '')
+const today = ref('')
 
-const heading = computed(() => dayLabel(day, today))
-const emptyText = computed(() => (day === today
+const heading = computed(() => (day.value ? dayLabel(day.value, today.value) : ''))
+const emptyText = computed(() => (day.value !== '' && day.value === today.value
 	? 'Heute gab es keine Beitrittsversuche.'
 	: 'An diesem Tag gab es keine Beitrittsversuche.'))
 
@@ -98,7 +100,10 @@ const worlds = computed(() => {
 
 onMounted(async () => {
 	try {
-		attempts.value = await listAttempts(day, worldFilter)
+		const result = await listAttempts(params.tag ?? null, worldFilter)
+		attempts.value = result.attempts ?? []
+		day.value = result.day ?? day.value
+		today.value = result.today ?? ''
 	} catch (err) {
 		error.value = errorText(err)
 	} finally {
