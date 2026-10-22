@@ -109,7 +109,7 @@ def test_lua_texts_and_limits() -> None:
     assert access_mod.TEXT_DENY == "Du bist in diese Welt nicht eingeladen. Frag deine Eltern."
     assert access_mod.TEXT_KICK == "Deine Einladung für diese Welt wurde beendet."
     assert access_mod.TEXT_LOCKED == "Zu viele falsche Passwörter. Bitte in 10 Minuten nochmal versuchen."
-    assert access_mod.TEXT_CASE_HINT == "Achte auf Groß- und Kleinschreibung: "
+    assert access_mod.TEXT_CASE_HINT == "Achte auf Groß- und Kleinschreibung bei deinem Spielernamen."
     for text in (access_mod.TEXT_DENY, access_mod.TEXT_KICK, access_mod.TEXT_LOCKED, access_mod.TEXT_CASE_HINT):
         assert access_mod._lua_string(text) in MOD_INIT_LUA
     assert "local FAIL_LIMIT = 5" in MOD_INIT_LUA
@@ -182,7 +182,7 @@ def test_deny_event_only_before_return_deny() -> None:
     for other in ("return CASE_HINT", "return LOCKED", "return WAIT"):
         assert body.index(other) < deny_event or body.index(other) > return_deny
     # Die CASE_HINT-Zeile meldet nichts.
-    assert "return CASE_HINT .. variant end" in body
+    assert "if variant then return CASE_HINT end" in body
     assert "if locked(name) then return LOCKED end" in body
 
 
@@ -230,3 +230,15 @@ def test_events_contain_no_ip_or_password() -> None:
     write = write[: write.index("\nend\n")]
     for forbidden in ("get_player_ip", "_ip", "hash", "password", "allowed"):
         assert forbidden not in write
+
+
+def test_case_hint_never_reveals_invited_name() -> None:
+    """IN-07: Der Hinweis nennt den eingeladenen Namen nicht (nur ob die Schreibweise abweicht)."""
+    body = _prejoin_body()
+    assert "CASE_HINT .." not in MOD_INIT_LUA
+    assert ".. variant" not in body
+    # Der Text endet als ganzer Satz, nicht mit einem Doppelpunkt für einen Namen.
+    assert access_mod.TEXT_CASE_HINT.endswith(".")
+    assert ":" not in access_mod.TEXT_CASE_HINT
+    # Kindgerecht und mit echtem ß.
+    assert "Groß- und Kleinschreibung" in access_mod.TEXT_CASE_HINT

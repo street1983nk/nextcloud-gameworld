@@ -78,7 +78,9 @@ DENY_PER_MINUTE = 30
 TEXT_DENY = "Du bist in diese Welt nicht eingeladen. Frag deine Eltern."
 TEXT_KICK = "Deine Einladung für diese Welt wurde beendet."
 TEXT_LOCKED = "Zu viele falsche Passwörter. Bitte in 10 Minuten nochmal versuchen."
-TEXT_CASE_HINT = "Achte auf Groß- und Kleinschreibung: "
+# Ohne den eingeladenen Namen (IN-07): Wer den UDP-Port erreicht, erführe sonst die
+# genaue Schreibweise des Spielernamens eines eingeladenen Kindes.
+TEXT_CASE_HINT = "Achte auf Groß- und Kleinschreibung bei deinem Spielernamen."
 TEXT_WAIT = "Bitte einen Moment warten und dann nochmal beitreten."
 
 VERIFIER = re.compile(r"#1#[A-Za-z0-9+/=]+#[A-Za-z0-9+/=]+")
@@ -209,6 +211,7 @@ local function load()
   core.safe_file_write(state_path, generation)
 end
 
+-- Nur ob es eine andere Schreibweise gibt; der Name selbst geht nie an den Client (IN-07).
 local function case_variant(name)
   local lower = name:lower()
   for allowed_name in pairs(allowed) do
@@ -268,7 +271,7 @@ core.register_on_prejoinplayer(function(name)
   local hash = allowed[name]
   if not hash then
     local variant = case_variant(name)
-    if variant then return CASE_HINT .. variant end
+    if variant then return CASE_HINT end
     -- Nur ein fremder Name wird gemeldet (D-10, D-29), gedrosselt.
     if deny_allowed(name) then event("deny", name) end
     return DENY
