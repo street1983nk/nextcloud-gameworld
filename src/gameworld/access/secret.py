@@ -21,6 +21,8 @@ from typing import Protocol
 
 from nc_py_api import AsyncNextcloudApp
 
+from gameworld.nc import close_nc
+
 SECRET_KEY = "player_password_secret"  # noqa: S105 (Schlüsselname, kein Wert)
 SECRET_BYTES = 32
 _HEX = re.compile(f"[0-9a-f]{{{2 * SECRET_BYTES}}}")
@@ -88,11 +90,16 @@ class PlayerSecret:
 
     async def _load(self) -> bytes:
         try:
-            config = self._nc_factory().appconfig_ex
-            stored = await config.get_value(SECRET_KEY)
-            if stored is None:
-                await config.set_value(SECRET_KEY, secrets.token_hex(SECRET_BYTES), sensitive=True)
+            nc = self._nc_factory()
+            try:
+                config = nc.appconfig_ex
                 stored = await config.get_value(SECRET_KEY)
+                if stored is None:
+                    await config.set_value(SECRET_KEY, secrets.token_hex(SECRET_BYTES), sensitive=True)
+                    stored = await config.get_value(SECRET_KEY)
+            finally:
+                # Sessions schließen, auch im Fehlerfall (WR-05).
+                await close_nc(nc)
         except SecretUnavailableError:
             raise
         except Exception as exc:

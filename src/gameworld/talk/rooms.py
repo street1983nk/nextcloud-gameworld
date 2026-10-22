@@ -1,7 +1,8 @@
 """Talk-Räume über die OCS-API von spreed, im Namen eines Verwalters (TALK-01).
 
 ExApps haben für OCS keinen eigenen Systemnutzer, Talk verlangt einen
-angemeldeten Nutzer. Darum läuft jeder Aufruf per ``set_user`` als Verwalter.
+angemeldeten Nutzer. Darum läuft jeder Aufruf als Verwalter, je Ablauf mit eigenem, kurzlebigem
+Client (``gameworld.nc.nc_as``, schließt seine Sessions, WR-05).
 Logs enthalten nur Statuscode oder Typname, nie Namen oder Teilnehmerlisten
 (T-04.1-27). Anruf-Einstellungen bleiben auf Talk-Standard (D-18).
 """
@@ -14,8 +15,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import quote
 
-from nc_py_api import AsyncNextcloudApp, NextcloudException
+from nc_py_api import NextcloudException
 from nc_py_api.talk import ConversationType
+
+from gameworld.nc import nc_as
 
 LOG = logging.getLogger(__name__)
 
@@ -109,47 +112,47 @@ def _unavailable(exc: Exception) -> TalkUnavailableError:
     return TalkUnavailableError(MSG_UNAVAILABLE)
 
 
-async def _as_user(acting_uid: str) -> AsyncNextcloudApp:
-    nc = AsyncNextcloudApp()
-    await nc.set_user(acting_uid)
-    return nc
-
-
 class NcTalkRooms:
-    """OCS spreed v4, je Aufruf frisch als handelnder Verwalter."""
+    """OCS spreed v4, je Ablauf ein eigener, kurzlebiger Client als handelnder Verwalter (WR-05)."""
 
     async def available(self, acting_uid: str) -> tuple[bool, bool]:
         try:
-            nc = await _as_user(acting_uid)
-            talk = bool(await nc.talk.available)
-            bots = talk and bool(await nc.talk.bots_available)
+            async with nc_as(acting_uid) as nc:
+                talk = bool(await nc.talk.available)
+                bots = talk and bool(await nc.talk.bots_available)
         except Exception as exc:
             raise _unavailable(exc) from None
         return talk, bots
 
     async def create(self, acting_uid: str, name: str) -> str:
+        """Anlegen und "nicht auffindbar" in einem Client; scheitert das zweite, wird der Raum entfernt."""
         try:
-            nc = await _as_user(acting_uid)
-            room = await nc.talk.create_conversation(ConversationType.GROUP, room_name=clean_room_name(name))
-            token = str(room.token)
+            async with nc_as(acting_uid) as nc:
+                try:
+                    room = await nc.talk.create_conversation(ConversationType.GROUP, room_name=clean_room_name(name))
+                    token = str(room.token)
+                except Exception as exc:
+                    raise _unavailable(exc) from None
+                try:
+                    await nc.ocs("PUT", _path(token, "/listable"), params={"scope": 0})
+                except Exception as exc:
+                    # Kein auffindbarer Raum ohne Eintrag: wieder wegräumen, dann melden.
+                    error = _unavailable(exc)
+                    try:
+                        await nc.ocs("DELETE", _path(token))
+                    except Exception as cleanup:
+                        LOG.warning("Talk-Raum nach Fehler nicht entfernt: %s", type(cleanup).__name__)
+                    raise error from None
+        except TalkUnavailableError:
+            raise
         except Exception as exc:
             raise _unavailable(exc) from None
-        try:
-            await nc.ocs("PUT", _path(token, "/listable"), params={"scope": 0})
-        except Exception as exc:
-            # Kein auffindbarer Raum ohne Eintrag: wieder wegräumen, dann melden.
-            error = _unavailable(exc)
-            try:
-                await nc.ocs("DELETE", _path(token))
-            except Exception as cleanup:
-                LOG.warning("Talk-Raum nach Fehler nicht entfernt: %s", type(cleanup).__name__)
-            raise error from None
         return token
 
     async def participants(self, acting_uid: str, token: str) -> list[RoomMember]:
         try:
-            nc = await _as_user(acting_uid)
-            raw = await nc.talk.list_participants(quote(token, safe=""))
+            async with nc_as(acting_uid) as nc:
+                raw = await nc.talk.list_participants(quote(token, safe=""))
         except NextcloudException as exc:
             if exc.status_code == 404:
                 raise RoomGoneError(MSG_UNAVAILABLE) from None
@@ -168,8 +171,8 @@ class NcTalkRooms:
 
     async def _ocs(self, acting_uid: str, method: str, path: str, **kwargs: Any) -> None:
         try:
-            nc = await _as_user(acting_uid)
-            await nc.ocs(method, path, **kwargs)
+            async with nc_as(acting_uid) as nc:
+                await nc.ocs(method, path, **kwargs)
         except Exception as exc:
             raise _unavailable(exc) from None
 
@@ -192,19 +195,19 @@ class NcTalkRooms:
 
     async def ensure_private(self, acting_uid: str, token: str) -> None:
         try:
-            nc = await _as_user(acting_uid)
-            room = await nc.talk.get_conversation_by_token(quote(token, safe=""))
-            if int(room.conversation_type) == int(ConversationType.PUBLIC):
-                await nc.ocs("DELETE", _path(token, "/public"))
-            if int(room.listable) != 0:
-                await nc.ocs("PUT", _path(token, "/listable"), params={"scope": 0})
+            async with nc_as(acting_uid) as nc:
+                room = await nc.talk.get_conversation_by_token(quote(token, safe=""))
+                if int(room.conversation_type) == int(ConversationType.PUBLIC):
+                    await nc.ocs("DELETE", _path(token, "/public"))
+                if int(room.listable) != 0:
+                    await nc.ocs("PUT", _path(token, "/listable"), params={"scope": 0})
         except Exception as exc:
             raise _unavailable(exc) from None
 
     async def delete(self, acting_uid: str, token: str) -> None:
         try:
-            nc = await _as_user(acting_uid)
-            await nc.ocs("DELETE", _path(token))
+            async with nc_as(acting_uid) as nc:
+                await nc.ocs("DELETE", _path(token))
         except NextcloudException as exc:
             if exc.status_code == 404:
                 return

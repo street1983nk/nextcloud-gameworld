@@ -11,7 +11,6 @@ import pytest
 from nc_py_api import NextcloudException
 from nc_py_api.talk import ConversationType
 
-from gameworld.talk import rooms as rooms_mod
 from gameworld.talk.rooms import (
     BASE,
     NcTalkRooms,
@@ -21,13 +20,14 @@ from gameworld.talk.rooms import (
     clean_room_name,
     get_talk_rooms,
 )
+from tests.conftest import assert_closed, install_fake_nc
 
 ROOM_TOKEN = "abc123"  # noqa: S105 (Raum-Token, kein Geheimnis)
 
 
 def fake_nc() -> Any:
     nc = MagicMock()
-    nc.set_user = AsyncMock()
+
     nc.ocs = AsyncMock(return_value=[])
     nc.talk.create_conversation = AsyncMock(return_value=SimpleNamespace(token=ROOM_TOKEN))
     nc.talk.list_participants = AsyncMock(return_value=[])
@@ -40,14 +40,14 @@ def fake_nc() -> Any:
 @pytest.fixture
 def nc(monkeypatch: pytest.MonkeyPatch) -> Any:
     instance = fake_nc()
-    monkeypatch.setattr(rooms_mod, "AsyncNextcloudApp", lambda: instance)
+    instance.recorder = install_fake_nc(monkeypatch, instance)
     return instance
 
 
 async def test_create_makes_group_room_and_hides_it(nc: Any) -> None:
     room = await NcTalkRooms().create("mama", "Gameworld: Insel")
     assert room == ROOM_TOKEN
-    nc.set_user.assert_awaited_with("mama")
+    assert nc.recorder.users[-1] == "mama"
     nc.talk.create_conversation.assert_awaited_once_with(ConversationType.GROUP, room_name="Gameworld: Insel")
     nc.ocs.assert_awaited_once_with("PUT", f"{BASE}/abc123/listable", params={"scope": 0})
 
@@ -107,7 +107,7 @@ async def test_calls_expected_ocs_paths(nc: Any, call: Any, expected: tuple[str,
     await call(NcTalkRooms())
     method, path, kwargs = expected
     nc.ocs.assert_awaited_once_with(method, path, **kwargs)
-    nc.set_user.assert_awaited_with("mama")
+    assert nc.recorder.users[-1] == "mama"
 
 
 async def test_ensure_private_leaves_private_room_alone(nc: Any) -> None:
@@ -155,7 +155,7 @@ async def test_missing_room_on_participants_is_room_gone(nc: Any) -> None:
 
 
 async def test_set_user_failure_becomes_unavailable(nc: Any) -> None:
-    nc.set_user = AsyncMock(side_effect=NextcloudException(401))
+    nc.recorder.error = NextcloudException(401)
     with pytest.raises(TalkUnavailableError):
         await NcTalkRooms().promote("mama", "tok", 1)
 
@@ -173,7 +173,7 @@ async def test_available_reports_talk_and_bots(nc: Any) -> None:
 
 
 async def test_available_failure_is_unavailable(nc: Any) -> None:
-    nc.set_user = AsyncMock(side_effect=OSError("weg"))
+    nc.recorder.error = OSError("weg")
     with pytest.raises(TalkUnavailableError):
         await NcTalkRooms().available("mama")
 
@@ -186,3 +186,39 @@ def test_clean_room_name_caps_and_strips_controls() -> None:
 
 def test_singleton() -> None:
     assert get_talk_rooms() is get_talk_rooms()
+
+
+# WR-05: Jeder Ablauf schließt seinen Client, auch im Fehlerfall.
+
+
+async def test_create_uses_one_client_and_closes_it(nc: Any) -> None:
+    await NcTalkRooms().create("mama", "Gameworld: Insel")
+    assert nc.recorder.users == ["mama"]
+    assert_closed(nc, times=1)
+
+
+async def test_create_closes_client_when_hiding_fails(nc: Any) -> None:
+    nc.ocs = AsyncMock(side_effect=[NextcloudException(500), []])
+    with pytest.raises(TalkUnavailableError):
+        await NcTalkRooms().create("mama", "Gameworld: Insel")
+    assert_closed(nc, times=1)
+
+
+async def test_ensure_private_uses_one_client(nc: Any) -> None:
+    nc.talk.get_conversation_by_token = AsyncMock(
+        return_value=SimpleNamespace(conversation_type=ConversationType.PUBLIC, listable=2)
+    )
+    await NcTalkRooms().ensure_private("mama", "tok")
+    assert nc.recorder.users == ["mama"]
+    assert_closed(nc, times=1)
+
+
+@pytest.mark.parametrize("error", [NextcloudException(500), NextcloudException(404), OSError("weg")])
+async def test_errors_still_close_the_client(nc: Any, error: Exception) -> None:
+    nc.ocs = AsyncMock(side_effect=error)
+    nc.talk.list_participants = AsyncMock(side_effect=error)
+    with pytest.raises(TalkUnavailableError):
+        await NcTalkRooms().add_user("mama", "tok", "lena")
+    with pytest.raises(TalkUnavailableError):
+        await NcTalkRooms().participants("mama", "tok")
+    assert_closed(nc, times=2)

@@ -21,7 +21,7 @@ from gameworld.playtime.engine import META_TIME_ADMINS
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldStore
-from tests.conftest import FakeDirectory, FakeNotifier
+from tests.conftest import FakeDirectory, FakeNotifier, assert_closed, install_fake_nc
 from tests.test_pause_api import VERIFIER, _row
 from tests.test_service_lifecycle import FakeProvisioner
 
@@ -309,9 +309,8 @@ async def test_notify_forever_survives_errors(service: WorldService, monkeypatch
 
 def _fake_app(monkeypatch: pytest.MonkeyPatch, error: Exception | None = None) -> MagicMock:
     app = MagicMock()
-    app.set_user = AsyncMock()
     app.notifications.create = AsyncMock(side_effect=error, return_value="obj")
-    monkeypatch.setattr(notify_service, "AsyncNextcloudApp", lambda: app)
+    app.recorder = install_fake_nc(monkeypatch, app)
     return app
 
 
@@ -320,10 +319,11 @@ async def test_nc_notifier_sets_user_and_creates(monkeypatch: pytest.MonkeyPatch
     params = {"world": {"type": "highlight", "id": W1, "name": "Wiese"}}
     ok = await notify_service.NcNotifier().notify("mama", "S {world}", "M {world}", params, "https://x/y")
     assert ok
-    app.set_user.assert_awaited_once_with("mama")
+    assert app.recorder.users == ["mama"]
     app.notifications.create.assert_awaited_once_with(
         "S {world}", "M {world}", subject_params=params, message_params=params, link="https://x/y"
     )
+    assert_closed(app, times=1)
 
 
 @pytest.mark.parametrize("error", [NextcloudException(404, "Not found"), NextcloudException(500), RuntimeError("x")])
@@ -334,4 +334,5 @@ async def test_nc_notifier_errors_return_false(
     ok = await notify_service.NcNotifier().notify("mama", "S", "M", {}, "https://x/y")
     assert not ok
     assert app.notifications.create.await_count == 1
+    assert_closed(app, times=1)
     assert "mama" not in caplog.text

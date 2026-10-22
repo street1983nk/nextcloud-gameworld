@@ -19,6 +19,8 @@ from urllib.parse import quote
 from nc_py_api import AsyncNextcloudApp
 from nc_py_api.talk_bot import AsyncTalkBot
 
+from gameworld.nc import nc_app, nc_as
+
 LOG = logging.getLogger(__name__)
 
 BOT = AsyncTalkBot("/talk/bot", "Gameworld", "Meldet Ereignisse der Gameworld-Welten")
@@ -84,12 +86,6 @@ def _forget_rooms() -> None:
         _bot.forget()
 
 
-async def _as_user(acting_uid: str) -> AsyncNextcloudApp:
-    nc = AsyncNextcloudApp()
-    await nc.set_user(acting_uid)
-    return nc
-
-
 class NcBot:
     """Echter Bot; merkt sich Registrierung, Bot-ID und freigeschaltete Räume im Prozess."""
 
@@ -101,24 +97,26 @@ class NcBot:
     async def register(self) -> bool:
         if self._registered:
             return True
-        self._registered = await register(AsyncNextcloudApp())
+        async with nc_app() as nc:
+            self._registered = await register(nc)
         return self._registered
 
     async def ensure_enabled(self, token: str, acting_uid: str) -> None:
         if token in self._enabled:
             return
-        nc = await _as_user(acting_uid)
-        if self._bot_id is None:
-            self._bot_id = find_bot_id(await nc.talk.list_bots())
+        # Bot suchen und freischalten in einem kurzlebigen Client (WR-05).
+        async with nc_as(acting_uid) as nc:
             if self._bot_id is None:
-                raise BotMissingError
-        try:
-            # nc_py_api setzt den Token roh in den Pfad.
-            await nc.talk.enable_bot(quote(token, safe=""), self._bot_id)
-        except Exception:
-            # Bot womöglich neu registriert (neue Talk-ID): beim nächsten Mal neu suchen.
-            self._bot_id = None
-            raise
+                self._bot_id = find_bot_id(await nc.talk.list_bots())
+                if self._bot_id is None:
+                    raise BotMissingError
+            try:
+                # nc_py_api setzt den Token roh in den Pfad.
+                await nc.talk.enable_bot(quote(token, safe=""), self._bot_id)
+            except Exception:
+                # Bot womöglich neu registriert (neue Talk-ID): beim nächsten Mal neu suchen.
+                self._bot_id = None
+                raise
         self._enabled.add(token)
 
     def forget(self) -> None:

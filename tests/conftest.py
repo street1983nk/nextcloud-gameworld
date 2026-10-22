@@ -8,6 +8,7 @@ import sqlite3
 from base64 import b64encode
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -115,6 +116,43 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
     monkeypatch.setattr(talk_bot, "_bot", FakeBot())
     return tmp_path
+
+
+class NcRecorder:
+    """Ersatz für AsyncNextcloudApp in gameworld.nc: merkt das Konto je Client, ``error`` lässt den Bau scheitern."""
+
+    def __init__(self, instance: Any) -> None:
+        self.instance = instance
+        self.users: list[str | None] = []
+        self.error: Exception | None = None
+
+    def __call__(self, **kwargs: Any) -> Any:
+        if self.error is not None:
+            raise self.error
+        self.users.append(kwargs.get("user"))
+        return self.instance
+
+
+def install_fake_nc(monkeypatch: pytest.MonkeyPatch, instance: Any) -> NcRecorder:
+    """Lässt nc_as/nc_app ``instance`` liefern; beide Sessions bekommen ein prüfbares close (WR-05)."""
+    from unittest.mock import AsyncMock
+
+    from gameworld import nc as nc_mod
+
+    instance._session.adapter.close = AsyncMock()
+    instance._session.adapter_dav.close = AsyncMock()
+    recorder = NcRecorder(instance)
+    monkeypatch.setattr(nc_mod, "AsyncNextcloudApp", recorder)
+    return recorder
+
+
+def assert_closed(instance: Any, times: int | None = None) -> None:
+    """Beide Sessions wurden geschlossen (optional genau ``times`` Mal)."""
+    for adapter in (instance._session.adapter, instance._session.adapter_dav):
+        if times is None:
+            assert adapter.close.await_count >= 1
+        else:
+            assert adapter.close.await_count == times
 
 
 class FakeBot:

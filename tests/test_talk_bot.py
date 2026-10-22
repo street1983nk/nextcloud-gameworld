@@ -17,7 +17,7 @@ from gameworld.playtime.engine import META_TIME_ADMINS
 from gameworld.talk import bot as talk_bot
 from gameworld.talk.service import TalkService
 from gameworld.worlds.store import WorldStore
-from tests.conftest import FakeBot, FakeTalkRooms, appapi_headers
+from tests.conftest import FakeBot, FakeTalkRooms, appapi_headers, assert_closed, install_fake_nc
 from tests.test_lifecycle import fake_nc
 from tests.test_pause_api import _row
 
@@ -88,7 +88,7 @@ async def test_nc_bot_registers_once_per_process(monkeypatch: pytest.MonkeyPatch
         return True
 
     monkeypatch.setattr(talk_bot, "register", fake_register)
-    monkeypatch.setattr(talk_bot, "AsyncNextcloudApp", MagicMock)
+    install_fake_nc(monkeypatch, MagicMock())
     sender = talk_bot.NcBot()
     assert await sender.register() is True
     assert await sender.register() is True
@@ -103,7 +103,7 @@ async def test_nc_bot_retries_register_after_failure(monkeypatch: pytest.MonkeyP
         return results.pop(0)
 
     monkeypatch.setattr(talk_bot, "register", fake_register)
-    monkeypatch.setattr(talk_bot, "AsyncNextcloudApp", MagicMock)
+    install_fake_nc(monkeypatch, MagicMock())
     sender = talk_bot.NcBot()
     assert await sender.register() is False
     assert await sender.register() is True
@@ -112,18 +112,27 @@ async def test_nc_bot_retries_register_after_failure(monkeypatch: pytest.MonkeyP
 # ensure_enabled
 
 
-def _fake_user_nc(monkeypatch: pytest.MonkeyPatch, bots: list[FakeBotInfo]) -> tuple[Any, list[str]]:
+def _fake_user_nc(monkeypatch: pytest.MonkeyPatch, bots: list[FakeBotInfo]) -> tuple[Any, list[str | None]]:
     nc: Any = MagicMock()
     nc.talk.list_bots = AsyncMock(return_value=bots)
     nc.talk.enable_bot = AsyncMock()
-    acting: list[str] = []
+    recorder = install_fake_nc(monkeypatch, nc)
+    return nc, recorder.users
 
-    async def as_user(uid: str) -> Any:
-        acting.append(uid)
-        return nc
 
-    monkeypatch.setattr(talk_bot, "_as_user", as_user)
-    return nc, acting
+async def test_ensure_enabled_closes_client_also_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WR-05: Suchen und Freischalten in einem Client, der immer geschlossen wird."""
+    nc, acting = _fake_user_nc(monkeypatch, [FakeBotInfo(9, f"http://nc/ocs/v2.php{SUFFIX}")])
+    nc.talk.enable_bot = AsyncMock(side_effect=RuntimeError("weg"))
+    sender = talk_bot.NcBot()
+    with pytest.raises(RuntimeError):
+        await sender.ensure_enabled("tok1", "admin")
+    assert acting == ["admin"]
+    assert_closed(nc, times=1)
+    nc.talk.list_bots = AsyncMock(return_value=[])
+    with pytest.raises(talk_bot.BotMissingError):
+        await sender.ensure_enabled("tok1", "admin")
+    assert_closed(nc, times=2)
 
 
 async def test_ensure_enabled_finds_bot_and_enables_once(monkeypatch: pytest.MonkeyPatch) -> None:

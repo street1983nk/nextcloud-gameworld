@@ -20,7 +20,6 @@ import httpx
 import pytest
 from nc_py_api import NextcloudException
 
-from gameworld.access import directory as directory_mod
 from gameworld.access.directory import DirectoryRejectedError, DirectoryUnavailableError, NcDirectory
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
@@ -32,7 +31,7 @@ from gameworld.talk.rooms import RoomMember
 from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldStore
-from tests.conftest import FakeDirectory, FakeNotifier, FakeTalkRooms, appapi_headers
+from tests.conftest import FakeDirectory, FakeNotifier, FakeTalkRooms, appapi_headers, assert_closed, install_fake_nc
 from tests.test_pause_api import VERIFIER, _row
 from tests.test_service_lifecycle import FakeProvisioner
 
@@ -277,23 +276,25 @@ async def test_kid_never_triggers_refresh(
     assert _snapshot(store) == ["anna", "papa"]
 
 
-def _fake_nc(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
+def _fake_nc(monkeypatch: pytest.MonkeyPatch, error: Exception) -> MagicMock:
     app = MagicMock()
-    app.set_user = AsyncMock()
     app.users_groups.get_members = AsyncMock(side_effect=error)
-    monkeypatch.setattr(directory_mod, "AsyncNextcloudApp", lambda *args, **kwargs: app)
+    install_fake_nc(monkeypatch, app)
+    return app
 
 
 @pytest.mark.parametrize("status", [401, 403, 997])
 async def test_nc_directory_rejection_is_its_own_error(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
-    _fake_nc(monkeypatch, NextcloudException(status, "nein"))
+    app = _fake_nc(monkeypatch, NextcloudException(status, "nein"))
     with pytest.raises(DirectoryRejectedError):
         await NcDirectory().group_members("anna", "admin")
+    assert_closed(app, times=1)
 
 
 @pytest.mark.parametrize("error", [NextcloudException(500), NextcloudException(408), OSError("weg")])
 async def test_nc_directory_outage_is_no_rejection(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
-    _fake_nc(monkeypatch, error)
+    app = _fake_nc(monkeypatch, error)
     with pytest.raises(DirectoryUnavailableError) as info:
         await NcDirectory().group_members("papa", "admin")
     assert not isinstance(info.value, DirectoryRejectedError)
+    assert_closed(app, times=1)

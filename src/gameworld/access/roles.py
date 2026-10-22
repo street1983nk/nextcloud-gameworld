@@ -16,7 +16,8 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
-from nc_py_api import AsyncNextcloudApp
+
+from gameworld.nc import nc_as
 
 ADMIN_GROUP = "admin"
 ROLE_VERWALTER = "verwalter"
@@ -47,10 +48,9 @@ def role_of(profile: Profile) -> str:
 
 
 async def nc_profile(uid: str) -> Profile:
-    """Selbstauskunft im Namen des Nutzers (/ocs/v1.php/cloud/user)."""
-    nc = AsyncNextcloudApp()
-    await nc.set_user(uid)
-    info = await nc.users.get_user()
+    """Selbstauskunft im Namen des Nutzers (/ocs/v1.php/cloud/user); der Client schließt danach (WR-05)."""
+    async with nc_as(uid) as nc:
+        info = await nc.users.get_user()
     return Profile(user_id=uid, display_name=info.display_name or uid, groups=tuple(info.groups))
 
 

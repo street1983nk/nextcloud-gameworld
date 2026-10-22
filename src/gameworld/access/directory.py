@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import quote
 
-from nc_py_api import AsyncNextcloudApp, NextcloudException
+from nc_py_api import NextcloudException
+
+from gameworld.nc import nc_as
 
 LOG = logging.getLogger(__name__)
 
@@ -69,10 +71,9 @@ class NcDirectory:
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
         try:
-            nc = AsyncNextcloudApp()
-            await nc.set_user(acting_uid)
-            # nc_py_api setzt die ID ungeprüft in den Pfad: kodieren, damit "/" oder ".." nichts umlenkt.
-            info = await nc.users.get_user(quote(uid, safe=""))
+            async with nc_as(acting_uid) as nc:
+                # nc_py_api setzt die ID ungeprüft in den Pfad: kodieren, damit "/" oder ".." nichts umlenkt.
+                info = await nc.users.get_user(quote(uid, safe=""))
         except NextcloudException as exc:
             if exc.status_code in _NOT_FOUND_CODES:
                 return None
@@ -86,10 +87,9 @@ class NcDirectory:
 
     async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
         try:
-            nc = AsyncNextcloudApp()
-            await nc.set_user(acting_uid)
-            # Auch die Gruppen-ID setzt nc_py_api roh in den Pfad.
-            members = await nc.users_groups.get_members(quote(gid, safe=""))
+            async with nc_as(acting_uid) as nc:
+                # Auch die Gruppen-ID setzt nc_py_api roh in den Pfad.
+                members = await nc.users_groups.get_members(quote(gid, safe=""))
         except NextcloudException as exc:
             if exc.status_code in _NOT_FOUND_CODES:
                 return None
