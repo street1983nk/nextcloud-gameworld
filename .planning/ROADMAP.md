@@ -293,7 +293,7 @@ Plans:
 **Goal**: Jede Familie und jede Schule mit Nextcloud kann Gameworld direkt aus dem Nextcloud App Store installieren, mit ehrlicher Erklärung der Zusatz-Privilegien
 **Mode:** mvp
 **Depends on**: Phase 1, Phase 2, Phase 3, Phase 4, Phase 5
-**Requirements**: PLATT-01, ROLLE-03
+**Requirements**: PLATT-01, ROLLE-03, ROLLE-04
 **Success Criteria** (what must be TRUE):
 
   1. Gameworld ist über den Nextcloud App Store installierbar (AppAPI/HaRP, Ziel NC 32+); Installation vom Registry-Tag ist auf AIO und Standard-Compose getestet
@@ -301,6 +301,7 @@ Plans:
   3. Deinstallation räumt auf; verwaiste Welt-Container sind per Orphan-Kommando auffindbar und entfernbar
   4. Store-Listing und privacy.md erklären die Zusatz-Privilegien (Socket-Proxy, UDP-Ports) ehrlich und vollständig
   5. Ein NC-Admin kann zusätzliche Verwalter-Gruppen einstellen (z. B. "lehrkraefte" oder "eltern"); Mitglieder dieser Gruppen verwalten Welten, ohne NC-Admins zu sein; Default bleibt die Gruppe admin (Owner-Entscheid 20.10.2026, Schul-/Vereins-Nutzung)
+  6. Verwalter können ein eingeladenes Konto per Schalter als "Erwachsen" markieren; es spielt frei von Pause, Welt-Zeitfenstern und Spielzeitregeln, erscheint nicht im Tagesrückblick, hat aber weder Verwaltungs- noch Luanti-Adminrechte; Negativtests belegen, dass ein Kind sich nicht selbst freistellen kann (Owner-Entscheid 22.10.2026)
 
 **Plans**: TBD
 

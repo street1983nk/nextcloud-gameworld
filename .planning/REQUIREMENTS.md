@@ -25,6 +25,7 @@
 - [x] **ROLLE-01**: Eltern verwalten, Kinder spielen: die Kind-Ansicht zeigt nur eigene Welten und Verbindungsinfo, keine Verwaltungsfunktionen
 - [x] **ROLLE-02**: Rollen werden aus Nextcloud-Gruppen abgeleitet; Gameworld hat keine eigene Benutzerverwaltung
 - [ ] **ROLLE-03**: NC-Admin kann zusätzliche Verwalter-Gruppen einstellen (z. B. "lehrkraefte"); deren Mitglieder verwalten Welten ohne NC-Admin zu sein; Default bleibt Gruppe admin (Owner-Entscheid 20.10.2026 für Schulen/Vereine mit Nextcloud)
+- [ ] **ROLLE-04**: Verwalter können ein eingeladenes Konto per Schalter als "Erwachsen" markieren (bei der Einladung bzw. in der Spielerliste, mit klarem Hinweis gegen versehentliches Markieren eines Kindes); markierte Konten spielen frei von Pause, Welt-Zeitfenstern und Spielzeitregeln und erscheinen nicht im Tagesrückblick, haben aber keine Verwaltungsrechte und nie Luanti-Adminrechte; nur Verwalter können den Schalter setzen; keine Nextcloud-Gruppe nötig; Welten nur für Erwachsene sind nicht Teil davon (Owner-Entscheid 22.10.2026)
 
 ### Spielzeit
 
@@ -115,12 +116,13 @@
 | TALK-01 | Phase 4.1 | Pending |
 | TALK-02 | Phase 4.1 | Pending |
 | ROLLE-03 | Phase 6 | Pending |
+| ROLLE-04 | Phase 6 | Pending |
 | BACKUP-01 | Phase 5 | Pending |
 | BACKUP-02 | Phase 5 | Pending |
 | PLATT-01 | Phase 6 | Pending |
 | PLATT-02 | Phase 2 | Complete |
 
-**Coverage:** 26/26 v1-Requirements gemappt (Stand 2026-10-21; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026, ELTERN-01..03 und TALK-01/02 am 21.10.2026 auf Owner-Wunsch ergänzt)
+**Coverage:** 27/27 v1-Requirements gemappt (Stand 2026-10-22; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026, ELTERN-01..03 und TALK-01/02 am 21.10.2026, ROLLE-04 am 22.10.2026 auf Owner-Wunsch ergänzt)
 
 ---
 *Requirements for: Gameworld v1 (MVP 1, Luanti, Familien)*
