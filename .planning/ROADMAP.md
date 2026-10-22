@@ -302,6 +302,7 @@ Plans:
   4. Store-Listing und privacy.md erklären die Zusatz-Privilegien (Socket-Proxy, UDP-Ports) ehrlich und vollständig
   5. Ein NC-Admin kann zusätzliche Verwalter-Gruppen einstellen (z. B. "lehrkraefte" oder "eltern"); Mitglieder dieser Gruppen verwalten Welten, ohne NC-Admins zu sein; Default bleibt die Gruppe admin (Owner-Entscheid 20.10.2026, Schul-/Vereins-Nutzung)
   6. Verwalter können ein eingeladenes Konto per Schalter als "Erwachsen" markieren; es spielt frei von Pause, Welt-Zeitfenstern und Spielzeitregeln, erscheint nicht im Tagesrückblick, hat aber weder Verwaltungs- noch Luanti-Adminrechte; Negativtests belegen, dass ein Kind sich nicht selbst freistellen kann (Owner-Entscheid 22.10.2026)
+  7. Gehört der Talk-Raum einer Welt einem Konto, das in Nextcloud gelöscht wurde oder kein Verwalter mehr ist, geht der Raum an einen bestätigten Verwalter über (talk_rooms.owner_uid); kein Raum bleibt ohne handlungsfähigen Besitzer (Owner-Entscheid 22.10.2026, Rest aus dem Konten-Fix dabe0c0)
 
 **Plans**: TBD
 
