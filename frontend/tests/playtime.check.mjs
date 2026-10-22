@@ -11,7 +11,9 @@ import {
 	fromApiDays,
 	fromWindowDays,
 	kidPlaytimeText,
+	minutesText,
 	notAppliedText,
+	pauseUntilText,
 	summarize,
 	toApiDays,
 	toWindowDays,
@@ -255,5 +257,14 @@ assert.match(NOT_APPLIED_TEXT, /übernimmt die Änderung beim nächsten Start\.$
 for (const forbidden of ['–', '—', 'uebernimmt', 'Aenderung', 'naechsten']) {
 	assert.ok(!NOT_APPLIED_TEXT.includes(forbidden), forbidden)
 }
+
+// Handy-Seiten (04.1-07): Minuten im Rückblick und Ende der Pause
+assert.equal(minutesText(45), '45 Min.')
+assert.equal(minutesText(0), '0 Min.')
+assert.equal(minutesText(130), '130 Min.')
+assert.equal(pauseUntilText('18:30'), 'Pause bis 18:30 Uhr')
+assert.equal(pauseUntilText('9:05'), 'Pause bis 9:05 Uhr')
+assert.equal(pauseUntilText(null), 'Pause läuft')
+assert.equal(pauseUntilText(''), 'Pause läuft')
 
 console.log('playtime.check: alle Prüfungen bestanden')
