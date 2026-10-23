@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04.2-11-PLAN.md
-last_updated: "2026-10-23T12:06:45.992Z"
+status: ready_to_plan
+stopped_at: Phase 04.2 complete (11/11) — ready to discuss Phase 5
+last_updated: 2026-10-23T12:11:28.584Z
 last_activity: "2026-10-23 -- 04.2-11 complete (Sicherheitsreview ohne Befund hoch/mittel, fuenf niedrig; Go/No-Go-Bericht nach sinnvoll/echter Mehrwert/sicher, alle drei erfuellt; Owner-Entscheid GO: Browser-Weg kommt, eigene Bauphase mit eigenen Requirements folgt, Spike-Code bleibt hinter GAMEWORLD_BROWSER_SPIKE; deep Review und /gsd-secure-phase bleiben Pflicht; Plan-Ebene 11/11, Phasenabschluss macht der Orchestrator)"
 progress:
   total_phases: 8
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 04.2, browser-spike-luanti-wasm
+**Current focus:** Phase 5 — backup und restore
 
 ## Current Position
 
-Phase: 04.2 (browser-spike-luanti-wasm), 11 von 11 complete (Plan-Ebene; Phasenabschluss durch den Orchestrator)
-Plan: 11 von 11 complete (04.2-01 bis 04.2-11; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b; Erfolgskriterium 1+2 live belegt; Variante A SRP-Uebernahme live BELEGT; Praxis iPhone+Laptop-Klasse fluessig; Sicherheitsreview ohne Befund hoch/mittel; Owner-Entscheid GO)
-Status: Plan-Ebene abgeschlossen, Phasenabschluss (phase.complete, Verifier, deep Review, /gsd-secure-phase) steht noch aus
-Last activity: 2026-10-23 -- 04.2-11 complete (Sicherheitsreview, Go/No-Go-Bericht, Owner-Entscheid GO; deep Review und /gsd-secure-phase bleiben Pflicht)
+Phase: 5
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-23
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 13
+- Total plans completed: 24
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -46,6 +46,7 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 01 | 5 | - | - |
 | 4 | 8 | - | - |
+| 04.2 | 11 | - | - |
 
 **Recent Trend:**
 
