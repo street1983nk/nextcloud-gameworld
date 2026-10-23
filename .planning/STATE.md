@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-07-PLAN.md
-last_updated: "2026-10-23T09:52:03.910Z"
-last_activity: "2026-10-23 -- 04.2-07 complete (WS-zu-UDP-Proxy /play/ws, Sitzungen, Relais, Negativtests WebSocket)"
+stopped_at: Completed 04.2-08-PLAN.md
+last_updated: "2026-10-23T10:48:00.000Z"
+last_activity: "2026-10-23 -- 04.2-08 complete (Dev-Front, Knopf Im Browser spielen, Live-e2e gegen echte Welt, Owner-Messlauf: Minetest+VoxeLibre fluessig, Pause greift, Live-Fragen a-c beantwortet)"
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 43
+  completed_plans: 44
   percent: 63
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 7 von 11 complete (04.2-01 bis 04.2-07; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b)
+Plan: 8 von 11 complete (04.2-01 bis 04.2-08; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b; Erfolgskriterium 1+2 live belegt)
 Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-07 complete (WS-zu-UDP-Proxy /play/ws, Sitzungen, Relais, Negativtests WebSocket; naechster Plan 04.2-08)
+Last activity: 2026-10-23 -- 04.2-08 complete (Dev-Front, Knopf Im Browser spielen, Live-e2e gegen echte 5.17.0-Welt, Owner-Messlauf: Minetest+VoxeLibre fluessig, Pause greift, Live-Fragen a-c beantwortet; naechster Plan 04.2-09)
 
-Progress: [█████████░] 91%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -95,6 +95,7 @@ Progress: [█████████░] 91%
 | Phase 04.2 P04 | 180 min | 3 tasks | 5 files |
 | Phase 04.2 P03 | 40 min | 2 tasks | 4 files |
 | Phase 04.2 P07 | 30 min | 3 tasks | 6 files |
+| Phase 04.2 P08 | 2 Sitzungen | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -206,6 +207,10 @@ Recent decisions affecting current work:
 - [Phase ?]: 04.2-03: HaRP reicht COOP/COEP/CSP unveraendert durch und schaltet WS 101 mit Identitaet live durch (KO-STATUS-HEADER GO)
 - [Phase 04.2]: 04.2-07: UDP-Socket je BIND mit remote_addr=session.target, ein ClientGuard je Sitzung, nach Waechter-END kein weiterer BIND
 - [Phase 04.2]: 04.2-07: Abgelehnte Kommandos (PROXY, JOIN, PING) verbrauchen das WS-Ticket nicht; Abschluss 1008 Regelverstoss, 1011 Stoerung, 1000 Leerlauf
+- [Phase 04.2]: 04.2-08: Dev-Front nginx auf 127.0.0.1:8092 loest das WebSocket-Problem des AppAPI-PHP-Proxys (gemeinsamer Origin NC + ExApp); Ticket nur im URL-Fragment mit sofortigem replaceState, Passwort nie in eine URL
+- [Phase 04.2]: 04.2-08: Erfolgskriterium 1+2 live belegt (Entwicklungsrechner, Chrome 156): Minetest Game und VoxeLibre spielen fluessig, VoxeLibre trotz 93 MB Medien; Pause und Spielzeit greifen unveraendert; Netzwerk nur localhost:8092
+- [Phase 04.2]: 04.2-08: Live-Fragen beantwortet: 0 guard_unreadable und 0 guard_split_before_auth (echter 5.17-Client sendet vor AUTH_ACCEPT keine SPLIT-Pakete, Waechter-Regeln brechen keine echten Logins ab); BIND je Sitzung 1, BIND_LIMIT 4 passt
+- [Phase 04.2]: 04.2-08: Befund wasm-Client rendert Pausen-/Kick-Grund nicht lesbar (bleibt bei "Herunterfahren ..."), Kind sieht den Grund nicht; eigene Grund-Anzeige fuer Produktbau (Plan 10/11)
 
 ### Pending Todos
 
@@ -234,6 +239,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T09:52:03.884Z
-Stopped at: Completed 04.2-07-PLAN.md
+Last session: 2026-10-23T10:48:00.000Z
+Stopped at: Completed 04.2-08-PLAN.md
 Resume file: None
