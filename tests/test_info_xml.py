@@ -32,6 +32,8 @@ EXPECTED_ROUTES = [
     ("^/img/.*", "GET", "USER"),
     ("^/api/me$", "GET", "USER"),
     ("^/api/my/.*", "GET", "USER"),
+    ("^/api/my/play-ticket$", "POST", "USER"),
+    ("^/play/.*", "GET,POST", "USER"),
     ("^/talk/bot$", "POST", "USER"),
     ("^/api/.*", "GET,POST,DELETE", "ADMIN"),
 ]
@@ -62,6 +64,16 @@ def test_talk_bot_route_is_anchored_post_before_admin() -> None:
     urls = [url for url, _verb, _level in routes]
     assert ("^/talk/bot$", "POST", "USER") in routes
     assert urls.index("^/talk/bot$") < urls.index("^/api/.*")
+
+
+def test_play_routes_before_admin() -> None:
+    """Browser-Spike 04.2: Ticket (nur POST, verankert) und Spielseite stehen vor dem ADMIN-Auffangmuster."""
+    routes = _routes()
+    urls = [url for url, _verb, _level in routes]
+    assert ("^/api/my/play-ticket$", "POST", "USER") in routes
+    assert ("^/play/.*", "GET,POST", "USER") in routes
+    assert urls.index("^/api/my/play-ticket$") < urls.index("^/api/.*")
+    assert urls.index("^/play/.*") < urls.index("^/api/.*")
 
 
 def test_admin_catch_all_is_last() -> None:
