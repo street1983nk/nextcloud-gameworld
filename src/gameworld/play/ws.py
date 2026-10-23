@@ -33,9 +33,10 @@ from gameworld.access.service import AccessService
 from gameworld.api.invites import AccessDep
 from gameworld.api.worlds import ServiceDep
 from gameworld.play.commands import Bind, NewAddr, format_addr, parse_command
-from gameworld.play.config import allowed_origins, origin_allowed, play_mode, udp_host
+from gameworld.play.config import allowed_origins, auth_variant, origin_allowed, play_mode, udp_host
 from gameworld.play.relay import RelayStats, relay
 from gameworld.play.sessions import SessionError, SessionRegistry, SessionRegistryDep
+from gameworld.play.srp_proxy import SrpTakeover
 from gameworld.play.ticket_api import check_play_access
 from gameworld.play.tickets import TicketError, TicketStore, TicketStoreDep
 from gameworld.worlds.service import WorldService
@@ -107,6 +108,9 @@ async def _newaddr(
     except SessionError as error:
         await _refuse(websocket, f"session_{error.reason}")
         return
+    if auth_variant() == "proxy_srp":
+        # Variante A: Das Passwort stammt nur aus check_play_access(ticket.uid), nie aus dem Client.
+        session.takeover = SrpTakeover(ticket.player_name, granted.entry.password)
     await websocket.send_text(format_addr(session.passcode))
     # Der Client schließt nach ADDR selbst; normaler Abschluss.
     await websocket.close()

@@ -28,6 +28,7 @@ from typing import Annotated
 from fastapi import Depends
 
 from gameworld.play.mtp import ClientGuard
+from gameworld.play.srp_proxy import SrpTakeover
 
 LOG = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class SessionKey:
 class Session:
     """Eine Sitzung: feste Bindung (``key``), Zähler und ein Wächter für alle BINDs."""
 
-    __slots__ = ("active_binds", "binds", "created_at", "guard", "key")
+    __slots__ = ("active_binds", "binds", "created_at", "guard", "key", "takeover")
 
     def __init__(self, key: SessionKey, created_at: float) -> None:
         self.key = key
@@ -64,6 +65,8 @@ class Session:
         self.active_binds = 0
         # Ein Wächter je Sitzung, nicht je BIND: ein zweiter Socket teilt den Namenszustand.
         self.guard = ClientGuard(key.player_name)
+        # Variante A (proxy_srp): ws.py hängt die SRP-Übernahme an, sonst None (Variante B).
+        self.takeover: SrpTakeover | None = None
 
     @property
     def uid(self) -> str:

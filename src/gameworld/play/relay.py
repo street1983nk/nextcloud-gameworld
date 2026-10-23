@@ -30,6 +30,7 @@ from gameworld.play.commands import VIRTUAL_SERVER, target_allowed
 from gameworld.play.framing import EP_HEADER, MAX_PAYLOAD, FrameError, pack, unpack
 from gameworld.play.mtp import Verdict
 from gameworld.play.sessions import Session, SessionRegistry
+from gameworld.play.srp_proxy import SrpTakeoverError
 
 LOG = logging.getLogger(__name__)
 
@@ -45,9 +46,10 @@ END_FRAME_SIZE = "frame_too_large"
 END_FRAME = "bad_frame"
 END_IDLE = "idle"
 END_SOCKET = "socket_closed"
+END_SRP_TAKEOVER = "srp_takeover"
 
 # Gründe, die auf einen fehlerhaften oder böswilligen Client deuten: Abschluss mit 1008.
-_POLICY_ENDS = frozenset({END_TEXT, END_FRAME_SIZE, END_FRAME})
+_POLICY_ENDS = frozenset({END_TEXT, END_FRAME_SIZE, END_FRAME, END_SRP_TAKEOVER})
 
 ProtocolFactory = Callable[[], asyncio.DatagramProtocol]
 EndpointFactory = Callable[[ProtocolFactory, Session], Awaitable[asyncio.DatagramTransport]]
@@ -65,6 +67,7 @@ class RelayStats:
     dropped_rate: int = 0
     dropped_size: int = 0
     dropped_queue: int = 0
+    srp_replaced: int = 0
     end_reason: str = ""
 
 
@@ -145,7 +148,16 @@ async def _to_world(ws: WebSocket, session: Session, transport: asyncio.Datagram
         result = session.guard.check(payload)
         if result.verdict is Verdict.END:
             return f"guard_{result.reason}"
-        transport.sendto(payload)
+        # Variante A: erst der Wächter (Name, FIRST_SRP), dann der SRP-Ersatz, dann sendto.
+        out = payload
+        if session.takeover is not None:
+            try:
+                out = session.takeover.client_packet(payload)
+            except SrpTakeoverError:
+                return END_SRP_TAKEOVER
+            if out is not payload:
+                stats.srp_replaced += 1
+        transport.sendto(out)
 
 
 async def _to_browser(ws: WebSocket, session: Session, queue: asyncio.Queue[bytes | None], stats: RelayStats) -> str:
@@ -159,6 +171,11 @@ async def _to_browser(ws: WebSocket, session: Session, queue: asyncio.Queue[byte
         if data is None:
             return END_SOCKET
         session.guard.observe_server(data)
+        if session.takeover is not None:
+            try:
+                session.takeover.server_packet(data)
+            except SrpTakeoverError:
+                return END_SRP_TAKEOVER
         if len(data) > MAX_PAYLOAD:
             stats.dropped_size += 1
             continue
@@ -202,7 +219,7 @@ async def relay(
         registry.unbind(session.passcode)
         LOG.info(
             "play relay end seconds=%.1f frames_in=%d frames_out=%d bytes_in=%d bytes_out=%d "
-            "dropped_target=%d dropped_rate=%d dropped_size=%d dropped_queue=%d reason=%s",
+            "dropped_target=%d dropped_rate=%d dropped_size=%d dropped_queue=%d srp_replaced=%d reason=%s",
             time.monotonic() - started,
             stats.frames_in,
             stats.frames_out,
@@ -212,6 +229,7 @@ async def relay(
             stats.dropped_rate,
             stats.dropped_size,
             stats.dropped_queue,
+            stats.srp_replaced,
             stats.end_reason or "error",
         )
     if stats.end_reason != END_CLIENT_CLOSED:
