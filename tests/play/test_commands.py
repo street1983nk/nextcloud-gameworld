@@ -88,7 +88,7 @@ def test_real_token_urlsafe_passcode_is_accepted() -> None:
         "BIND abcdEFGH/12345678901 UDP 30000",
         "BIND abcdEFGH=12345678901 UDP 30000",
         "BIND ä UDP 1",
-        f"BIND {PASSCODE} UDP 3٠",  # arabisch-indische Ziffer
+        f"BIND {PASSCODE} UDP 3" + chr(0x0660),  # arabisch-indische Ziffer Null
         "N" * (MAX_COMMAND + 1),
         "BIND " + "a" * 250,
     ],
