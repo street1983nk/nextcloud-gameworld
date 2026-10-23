@@ -103,6 +103,12 @@ RESTORE_INTERRUPTED = (
 )
 # Elternaktion auf einer Welt, die gerade gesichert oder wiederhergestellt wird (HTTP 409).
 WORLD_BUSY = "Die Welt wird gerade gesichert oder wiederhergestellt."
+# Globaler Ein-Job-Schutz (RESEARCH Pattern 7): höchstens ein Auftrag im ganzen Haushalt.
+JOB_RUNNING = "Es läuft schon eine Sicherung oder Wiederherstellung. Bitte kurz warten."
+# Unerwarteter Fehler beim Wiederanlaufen nach dem Offline-Abschnitt; Details nur im Log.
+OFFLINE_RESTART_FAILED = "Die Welt konnte danach nicht wieder gestartet werden. Bitte die Welt starten."
+# So lange kündigt der Zeit-Mod den Halt im Chat an, bevor er alle trennt (D-09).
+HALT_LEAD_SECONDS = 15
 # Unerwarteter Fehler im Boot-Abgleich einer Welt; Details nur im Log (WR-02).
 RECONCILE_FAILED = "Die Welt konnte nach dem Neustart des Servers nicht wiederhergestellt werden."
 # Zeile mit einer Spielart, die diese Version nicht kennt (Preset entfernt oder umbenannt, WR-02).
@@ -133,6 +139,23 @@ class WorldBusyError(ProvisionerError):
 def delete_only(row: WorldRow) -> bool:
     """Darf diese Welt nur noch gelöscht werden? Steht fest an der Zeile, nicht im Text der Oberfläche."""
     return row.op_state == "failed" and row.last_error in DELETE_ONLY_ERRORS
+
+
+@dataclass(frozen=True)
+class OfflineTicket:
+    """Ergebnis von begin_offline: was der Auftrag zum Wiederanlaufen oder Zurücksetzen braucht.
+
+    previous_op_state und previous_error erlauben es, eine vor der Zerstörung
+    abgelehnte Wiederherstellung einer kaputten Welt in ihren alten Zustand
+    zurückzusetzen (Plan 06).
+    """
+
+    world_id: str
+    was_running: bool
+    preset: str
+    name: str
+    previous_op_state: str
+    previous_error: str | None
 
 
 @dataclass(frozen=True)
@@ -602,6 +625,125 @@ class WorldService:
             self._store.update_world(row.id, op_state="ready", last_error=None)
             return PauseWorldResult(world_id=row.id, name=row.name, applied=True, restarted=True)
         return PauseWorldResult(world_id=row.id, name=row.name, applied=self.push_time(row.id), restarted=False)
+
+    # Offline-Abschnitte für Sicherung und Wiederherstellung (Plan 05/06).
+    #
+    # Synchron, aus Worker-Threads per anyio.to_thread aufgerufen und nie
+    # verschachtelt (_LOCK ist nicht reentrant). Jeder Abschnitt hält _LOCK nur
+    # für seine eigene Dauer: Zwischen zwei Abschnitten (Snapshot, Upload,
+    # Wartezeit des Chat-Hinweises) laufen Pause, Einladungen und Zeittakt
+    # weiter (RESEARCH Pitfall 3). Den Busy-Zustand trägt die Datenbank.
+
+    def begin_offline(self, world_id: str, op_state: str, *, allow_failed: bool = False) -> OfflineTicket:
+        """Setzt die Welt in einen Busy-Zustand und liefert das Ticket für den Auftrag.
+
+        Wirft WorldBusyError, wenn diese Welt schon busy ist (WORLD_BUSY) oder
+        irgendwo ein anderer Auftrag läuft (JOB_RUNNING, auch in der Upload-Phase).
+        Eine Welt, die nur noch gelöscht werden kann, lässt sich nicht sichern
+        (DeleteOnlyError); allow_failed=True (Wiederherstellen, D-15) erlaubt sie.
+        """
+        if op_state not in BUSY_OP_STATES:
+            msg = f"Kein Busy-Zustand als op_state: {op_state}"
+            raise ValueError(msg)
+        with self._mutating():
+            row = self._row(world_id)
+            self._refuse_busy(row)
+            if not allow_failed:
+                self._refuse_delete_only(row)
+            others_busy = any(other.op_state in BUSY_OP_STATES for other in self._store.list_worlds())
+            if others_busy or self._store.running_backup_jobs():
+                raise WorldBusyError(JOB_RUNNING)
+            self._store.update_world(world_id, op_state=op_state)
+            return OfflineTicket(
+                world_id=world_id,
+                was_running=row.desired_state == "running",
+                preset=row.preset,
+                name=row.name,
+                previous_op_state=row.op_state,
+                previous_error=row.last_error,
+            )
+
+    def players_online(self, world_id: str) -> int:
+        """Spieler laut Status-Datei dieses Laufs, unabhängig von op_state (D-09, T-05-46).
+
+        Liest bewusst nicht über _status_file oder _view: Die liefern bei
+        Busy-Zuständen nichts, announce_halt läuft aber erst nach begin_offline.
+        Ohne _LOCK (nur Lesen). Gestoppter oder fehlender Container, Welt ohne
+        Status-Mod, Datei aus einem früheren Lauf und jeder Docker-Fehler ergeben 0.
+        """
+        try:
+            container = self._provisioner.list_managed().get(world_id)
+            if container is None or container.status != RUNNING or schema_version(container.schema) < STATUS_MOD_SCHEMA:
+                return 0
+            status_file = self._provisioner.read_status_file(world_id)
+        except ProvisionerError as exc:
+            LOG.warning("Welt %s: Spieler vor dem Halt nicht zählbar (%s)", world_id, type(exc).__name__)
+            return 0
+        if status_file is None:
+            return 0
+        written = parse_docker_time(status_file.mtime)
+        started = parse_docker_time(container.started_at)
+        # Namen aus einem früheren Lauf zählen nie (Pitfall 3 aus Phase 2).
+        if written is None or started is None or written < started:
+            return 0
+        return len(parse_players(status_file.content))
+
+    def announce_halt(self, world_id: str, now: int) -> int | None:
+        """Kündigt den Halt im Chat an, wenn jemand spielt; liefert den Zeitpunkt ``ab`` oder None.
+
+        Setzt den flüchtigen Halt in der Zeit-Rechnung und schreibt die Regeldatei
+        sofort (push_time); der Zeit-Mod warnt, sperrt Beitritte und trennt ab ``ab``.
+        """
+        if self.players_online(world_id) == 0:
+            return None
+        ab = now + HALT_LEAD_SECONDS
+        with self._mutating():
+            self._time.set_halt(world_id, ab)
+            if not self.push_time(world_id):
+                LOG.warning("Welt %s: Halt-Hinweis nicht in die Welt geschrieben", world_id)
+        return ab
+
+    def stop_for_snapshot(self, world_id: str) -> None:
+        """Stoppt den Container für den Snapshot; verbucht nichts und ändert keinen Elternwunsch.
+
+        Ein fehlender Container ist kein Fehler (der Snapshot meldet ihn dann selbst).
+        """
+        with self._mutating():
+            try:
+                self._provisioner.stop(world_id)
+            except WorldNotFoundError:
+                LOG.info("Welt %s: Container fehlt, Stoppen vor dem Snapshot ist ein No-op", world_id)
+
+    def end_offline(self, world_id: str, was_running: bool) -> ProvisionerError | None:
+        """Beendet den Offline-Abschnitt: Halt weg, bei was_running neu starten, Zustand zurück.
+
+        Muster _restart_world_sync ohne Stopp. Der Zustand kehrt IMMER auf ready
+        oder failed zurück (D-11, Pitfall 7); ein Startfehler wird nicht geworfen,
+        sondern zurückgegeben, damit der Auftrag ihn als Job-Fehler meldet.
+        """
+        with self._mutating():
+            self._time.clear_halt(world_id)
+            self._time.forget(world_id)
+            try:
+                row = self._row(world_id)
+                if was_running:
+                    self._launch(row)
+            except ProvisionerError as exc:
+                LOG.warning("Welt %s: Wiederanlauf nach dem Offline-Abschnitt gescheitert (%s)", world_id, exc)
+                self._fail(world_id, exc)
+                return exc
+            except Exception:
+                LOG.exception("Welt %s: Wiederanlauf nach dem Offline-Abschnitt scheiterte unerwartet", world_id)
+                failure = ProvisionerError(OFFLINE_RESTART_FAILED)
+                self._fail(world_id, failure)
+                return failure
+            self._store.update_world(world_id, op_state="ready", last_error=None)
+            return None
+
+    def book_ledger(self, world_id: str) -> None:
+        """Öffentlicher Einstieg für _book_ledger (Wiederherstellen, D-06), unter der Sperre."""
+        with self._mutating():
+            self._book_ledger(world_id)
 
     @contextlib.contextmanager
     def _payload(self, row: WorldRow) -> Iterator[WorldPayload]:
