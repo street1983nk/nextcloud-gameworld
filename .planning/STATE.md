@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.1-09-PLAN.md (Owner-Abnahme approved mit Fixes; grüner Nachlauf offen wegen ExApp-Absturz unter Windows)
-last_updated: "2026-10-22T23:34:33.777Z"
-last_activity: 2026-10-22 -- Phase 04.2 planning complete
+stopped_at: Completed 04.2-02-PLAN.md
+last_updated: "2026-10-23T05:30:07.272Z"
+last_activity: 2026-10-23 -- 04.2-02 complete
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 36
+  completed_plans: 37
   percent: 63
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 04.2 , Browser-Spike luanti-wasm (nächste Phase)
+**Current focus:** Phase 04.2, browser-spike-luanti-wasm
 
 ## Current Position
 
-Phase: 04.1
-Plan: 9 of 9 (04.1-09 complete)
-Status: Ready to execute
-Last activity: 2026-10-22 -- Phase 04.2 planning complete
+Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
+Plan: 2 of 11 (04.2-02 complete; 04.2-01 wartet am Owner-Checkpoint)
+Status: Executing Phase 04.2
+Last activity: 2026-10-23 -- 04.2-02 complete (Spielseite /play/ hinter GAMEWORLD_BROWSER_SPIKE)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 79%
 
 ## Performance Metrics
 
@@ -88,6 +88,7 @@ Progress: [██████████] 100%
 | Phase 04.1 P06 | 40min | 3 tasks | 15 files |
 | Phase 04.1 P07 | 7 min | 2 tasks | 9 files |
 | Phase 04.1 P09 | 5h | 2 tasks | 10 files |
+| Phase 04.2 P02 | 17 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -187,6 +188,8 @@ Recent decisions affecting current work:
 - [Phase 04.1]: 04.1-08: Pause- und Talk-Stand laden im 30-s-Spielzeittakt mit; Rückblick-Uhrzeit 0:15 bis 23:45 im 15-min-Raster, gespeicherte 0 wird 0:15 und ungespeichert
 - [Phase 04.1]: 04.1-09: D-26-Abweichung vom Owner bestätigt ("Kurz (Empfohlen)"): ohne Spieltag morgen nur 'Für heute ist Schluss.'; Bot-Meldung pause_schluss mit Ton ("Mit Ton (Empfohlen)")
 - [Phase 04.1]: 04.1-09: Fremdversuch-Hinweis ohne 'Tippe hier, um nachzusehen.' (Web-Glocke öffnet den Link nur über den Titel); Rückblick behält Spielzeit gelöschter Welten als eine Zeile 'gelöschte Welt'
+- [Phase 04.2]: 04.2-02: luanti-wasm-Release-Ordner (www/<12-hex>/) zusaetzlich unter /play/<release>/ ausgeliefert, weil launcher.js luanti.js, worker.js und packs relativ zur Dokument-URL laedt; Grenze ist der Release-Ordner
+- [Phase 04.2]: 04.2-02: Einzelspieler braucht packs/minetest.pack im Release-Ordner (Basis-Pack ohne Spiele)
 
 ### Pending Todos
 
@@ -215,6 +218,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-22T05:28:52.621Z
-Stopped at: Completed 04.1-09-PLAN.md (Owner-Abnahme approved mit Fixes; grüner Nachlauf offen wegen ExApp-Absturz unter Windows)
+Last session: 2026-10-23T05:29:59.053Z
+Stopped at: Completed 04.2-02-PLAN.md
 Resume file: None
