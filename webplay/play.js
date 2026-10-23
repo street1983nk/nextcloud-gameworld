@@ -141,6 +141,15 @@ async function startSingle() {
     throw new Error('Die Spielseite braucht eine Adresse, die auf / endet.');
   }
   setStatus('Gameworld wird geladen.');
+  // iOS-Safari kennt kein Pointer-Lock-API (nur Maus-Umgebungen haben es); der
+  // Emscripten-Teil von luanti-wasm ruft document.exitPointerLock.bind() ungeprueft
+  // auf und stuerzt sonst nach der Installation ab (Beleg: iPhone, Safari 27.0.1).
+  if (typeof document.exitPointerLock !== 'function') {
+    document.exitPointerLock = function () {};
+  }
+  if (typeof Element.prototype.requestPointerLock !== 'function') {
+    Element.prototype.requestPointerLock = function () {};
+  }
   diag.release = await fetchRelease();
   mark('release_known');
   await loadScript(`static/${build}/${diag.release}/launcher.js`);
