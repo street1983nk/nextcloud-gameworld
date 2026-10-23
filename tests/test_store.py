@@ -1,4 +1,4 @@
-"""Schema-Migration der Welt-Datenbank (Schema 1 bis 5) und Zugangsdaten."""
+"""Schema-Migration der Welt-Datenbank (Schema 1 bis 7), Zugangsdaten und Sicherungsnachweise."""
 
 import pathlib
 import sqlite3
@@ -8,10 +8,13 @@ import pytest
 
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.worlds.store import (
+    BACKUP_TABLES,
     NOTIFY_TABLES,
     OUTBOX_MAX,
     SCHEMA_VERSION,
     TIME_TABLES,
+    BackupJobRow,
+    BackupRow,
     InviteRow,
     OutboxRow,
     PlayerRow,
@@ -598,3 +601,124 @@ def test_delete_notify_data_only_touches_one_world(tmp_path: pathlib.Path) -> No
     assert _world_ids(db, "join_attempts") == ["w2"]
     assert _world_ids(db, "bot_presence") == ["w2"]
     assert _world_ids(db, "talk_rooms") == ["w1", "w2"]
+
+
+# Schema 7 (Phase 5): Sicherungen und Sicherungs-Aufträge.
+
+
+def _schema_6_file(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Echte Schema-6-Datei: heutiges Schema ohne die Tabellen aus Schema 7, mit Daten."""
+    db = tmp_path / "gameworld.sqlite3"
+    store = WorldStore(db)
+    store.migrate()
+    store.insert_world(_row("w1", 30001, "mtg_kreativ"))
+    store.take_events("w1", 4, [])
+    connection = sqlite3.connect(db)
+    try:
+        for table in BACKUP_TABLES:
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
+        connection.commit()
+    finally:
+        connection.close()
+    return db
+
+
+def test_fresh_db_has_backup_tables(tmp_path: pathlib.Path) -> None:
+    db = tmp_path / "gameworld.sqlite3"
+    WorldStore(db).migrate()
+    assert SCHEMA_VERSION == "7"
+    assert _schema_version(db) == "7"
+    assert BACKUP_TABLES.issubset(_tables(db))
+
+
+def test_schema_6_is_migrated_to_7_keeps_data(tmp_path: pathlib.Path) -> None:
+    db = _schema_6_file(tmp_path)
+    assert _schema_version(db) == "6"
+    assert not BACKUP_TABLES & set(_tables(db))
+    store = WorldStore(db)
+    store.migrate()
+    store.migrate()
+    assert _schema_version(db) == "7"
+    assert BACKUP_TABLES.issubset(_tables(db))
+    assert NOTIFY_TABLES.issubset(_tables(db))
+    assert store.get_world("w1") is not None
+    assert store.event_cursor("w1") == 4
+
+
+def _backup(
+    file_id: int, owner: str = "admin", world: str = "w1", created: str = "2026-10-23T14:05:00+00:00"
+) -> BackupRow:
+    return BackupRow(
+        file_id=file_id,
+        owner_uid=owner,
+        world_id=world,
+        path=f"Gameworld/Burg/Burg-{file_id}.tar.gz",
+        name=f"Burg-{file_id}.tar.gz",
+        size=1000 + file_id,
+        sha256="ab" * 32,
+        preset="mtg_kreativ",
+        kind="manual",
+        created_at=created,
+    )
+
+
+def test_backups_for_lists_only_own_world_newest_first(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    older = _backup(1, created="2026-10-23T10:00:00+00:00")
+    newer = _backup(2, created="2026-10-23T12:00:00+00:00")
+    store.add_backup(older)
+    store.add_backup(newer)
+    store.add_backup(_backup(3, world="w2"))
+    store.add_backup(_backup(4, owner="papa"))
+    assert store.backups_for("admin", "w1") == [newer, older]
+    assert store.backups_for("admin", "w2") == [_backup(3, world="w2")]
+    assert store.backups_for("papa", "w1") == [_backup(4, owner="papa")]
+    assert store.backups_for("gw-kind", "w1") == []
+
+
+def test_backup_by_file_is_owner_scoped(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    row = _backup(7)
+    store.add_backup(row)
+    assert store.backup_by_file("admin", 7) == row
+    assert store.backup_by_file("papa", 7) is None
+    assert store.backup_by_file("admin", 8) is None
+
+
+def test_add_backup_same_file_id_replaces(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    store.add_backup(_backup(7))
+    replaced = BackupRow(**{**_backup(7).__dict__, "size": 5, "sha256": "cd" * 32})
+    store.add_backup(replaced)
+    assert store.backups_for("admin", "w1") == [replaced]
+    # Gleiche file_id eines anderen Verwalters ist ein eigener Eintrag.
+    store.add_backup(_backup(7, owner="papa"))
+    assert store.backup_by_file("admin", 7) == replaced
+
+
+def test_backup_job_roundtrip(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    assert store.get_backup_job("w1") is None
+    store.set_backup_job("w1", "backup", "running", None, None, "2026-10-23T14:05:00+00:00", None)
+    store.set_backup_job("w2", "restore", "done", None, "Burg.tar.gz", "t1", "t2")
+    job = store.get_backup_job("w1")
+    assert job == BackupJobRow("w1", "backup", "running", None, None, "2026-10-23T14:05:00+00:00", None)
+    assert store.running_backup_jobs() == [job]
+    store.set_backup_job("w1", "backup", "failed", "Nicht genug Speicherplatz.", "Burg.tar.gz", "t1", "t3")
+    assert store.get_backup_job("w1") == BackupJobRow(
+        "w1", "backup", "failed", "Nicht genug Speicherplatz.", "Burg.tar.gz", "t1", "t3"
+    )
+    assert store.running_backup_jobs() == []
+    store.delete_backup_job("w1")
+    assert store.get_backup_job("w1") is None
+    assert store.get_backup_job("w2") == BackupJobRow("w2", "restore", "done", None, "Burg.tar.gz", "t1", "t2")
+
+
+def test_reset_event_cursor_only_one_world(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    store.take_events("w1", 5, [])
+    store.take_events("w2", 9, [])
+    store.reset_event_cursor("w1")
+    assert store.event_cursor("w1") is None
+    assert store.event_cursor("w2") == 9

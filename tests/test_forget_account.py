@@ -388,8 +388,7 @@ def test_schema_5_is_migrated_to_6_keeps_player_and_password(tmp_path: Path) -> 
     assert _version(db) == "5"
     store = WorldStore(db)
     store.migrate()
-    assert SCHEMA_VERSION == "6"
-    assert _version(db) == "6"
+    assert _version(db) == SCHEMA_VERSION
     assert _player_columns(db) == ["nc_user", "player_name", "rotation", "salt"]
     player = store.get_player("gw-kind")
     assert player is not None
