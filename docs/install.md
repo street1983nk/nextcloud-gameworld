@@ -232,3 +232,30 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 - Gameworld speichert keine Chatinhalte aus Talk.
 - Für Rückblick und Hinweise speichert Gameworld nur Tagessummen der Spielzeit je Kind mit Regeln und Welt sowie Spielernamen und Uhrzeit fremder Beitrittsversuche. Beides wird nach 7 Tagen gelöscht.
 - Für die Drossel der Bot-Meldungen merkt sich Gameworld je Welt und Konto den Zeitpunkt der letzten Meldung, ebenfalls höchstens 7 Tage. Die Rückblick-Einstellung eines Kontos, das kein Verwalter mehr ist, wird beim nächsten Abgleich gelöscht. Wer einen Talk-Raum angelegt hat, bleibt als Besitzer gespeichert, solange es den Raum gibt.
+
+## 11. Sicherungen
+
+### Wo die Sicherungen liegen
+
+- In der Verwaltungsansicht hat jede Welt den Bereich "Sicherungen". "Jetzt sichern" legt eine Datei in den eigenen Nextcloud-Dateien ab: `Gameworld/Sicherungen/<Weltname>/<weltname>-JJJJ-MM-TT-HHMM.tar.gz` (Uhrzeit in der Haushalts-Zeitzone).
+- Die Datei liegt in den Dateien des Verwalters, der gesichert hat. Sie lässt sich wie jede andere Datei herunterladen, teilen oder in eine eigene Datensicherung des Servers aufnehmen.
+- Die Liste zeigt je Sicherung Datum und Größe, darunter die Gesamtgröße. Gameworld löscht nie selbst eine Sicherung, auch nicht beim Löschen der Welt. Alte Sicherungen löscht der Verwalter in Nextcloud Files.
+- Mehrere Verwalter sehen in der Liste nur ihre eigenen Sicherungen. Wiederherstellen kann jeder nur aus seinen eigenen.
+
+### Was gesichert wird und was nicht
+
+- Gesichert wird die ganze Welt: Karte, Spielerdaten, Inventare und Spielstände (die SQLite-Dateien des Weltordners).
+- Nicht gesichert werden die Einladungen, Spielpasswörter, Spielzeitregeln und die Gameworld-Mods. Sie kommen aus Gameworld selbst und werden nach dem Wiederherstellen frisch eingerichtet, ebenso die Welteinstellungen (`world.mt`), die zwar in der Datei stehen, aber nie aus ihr übernommen werden.
+
+### Kurze Pause beim Sichern
+
+- Für eine saubere Sicherung hält Gameworld die Welt kurz an: Kinder lesen im Spiel "Die Welt macht gleich eine kurze Pause." und werden mit "Die Welt macht kurz Pause. Gleich geht es weiter." getrennt. Danach startet die Welt von selbst wieder, meist nach wenigen Sekunden.
+- Spielen gerade Kinder, fragt Gameworld vorher nach, zum Beispiel "In der Welt spielt gerade 1 Kind, es wird kurz getrennt." Erst nach der Bestätigung geht es los.
+- Während der Sicherung zeigt die Weltkarte "Wird gesichert ...", die anderen Knöpfe der Welt sind so lange gesperrt. Scheitert die Sicherung, etwa weil der Platz in den Nextcloud-Dateien nicht reicht, steht der Grund an der Weltkarte, die Welt läuft weiter, und der Verwalter, der gesichert hat, bekommt eine Benachrichtigung. Dasselbe gilt für ein gescheitertes Wiederherstellen.
+
+### Wiederherstellen
+
+- "Wiederherstellen" an einer Sicherung setzt die Welt auf diesen Stand zurück. Die Sicherheitsabfrage nennt die Datei; ohne Bestätigung passiert nichts.
+- Vorher legt Gameworld den aktuellen Stand als eigene Sicherung mit dem Zusatz `vor-restore` daneben ab. Wer sich vertan hat, stellt diese Datei einfach wieder her.
+- Gameworld prüft jede Sicherung vor dem Einspielen: Nur Sicherungen dieser Welt, unverändert seit dem Ablegen, werden eingespielt. Eine veränderte oder fremde Datei lehnt Gameworld ab, die Welt bleibt dann wie sie war.
+- Platzbedarf auf dem Server: Beim Wiederherstellen braucht Gameworld kurzzeitig bis zum Dreifachen der Sicherungsgröße an freiem Speicher (heruntergeladene Sicherung, Sicherung des aktuellen Stands, entpackte Welt). Beim Sichern reicht etwa die einfache Größe.
