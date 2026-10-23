@@ -123,6 +123,10 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     from gameworld.backup import files as files_module
 
     monkeypatch.setattr(files_module, "_files", FakeBackupFiles())
+    # Sicherungsdienst-Singleton beginnt je Test frisch (05-05).
+    from gameworld.backup import service as backup_service
+
+    monkeypatch.setattr(backup_service, "_backup_service", None)
     return tmp_path
 
 
@@ -563,6 +567,12 @@ async def client(app_env: Path) -> AsyncIterator[httpx.AsyncClient]:
     pending = talk_service._talk_service  # pyright: ignore[reportPrivateUsage]
     if pending is not None:
         await pending.drain()
+    # Ebenso laufende Sicherungsaufträge (05-05).
+    from gameworld.backup import service as backup_service
+
+    backups = backup_service._backup_service  # pyright: ignore[reportPrivateUsage]
+    if backups is not None:
+        await backups.drain()
 
 
 def _instance_id(storage: Path) -> str | None:

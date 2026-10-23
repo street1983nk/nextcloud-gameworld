@@ -15,8 +15,9 @@ from fastapi import FastAPI, HTTPException
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
-from gameworld.api import alerts, invites, me, pause, playtime, setup_check, talk, talk_bot, worlds
+from gameworld.api import alerts, backups, invites, me, pause, playtime, setup_check, talk, talk_bot, worlds
 from gameworld.api.csrf import JsonOnlyChangesMiddleware
+from gameworld.backup.service import get_backup_service, shutdown_backups
 from gameworld.lifecycle import enabled_handler
 from gameworld.notify.loop import notify_forever
 from gameworld.play.app import install_play
@@ -68,6 +69,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except HTTPException:
         LOG.exception("Ungültige Konfiguration; /api/setup-check zeigt den Befund")
     else:
+        # Aufträge, die beim letzten Lauf mittendrin endeten, sichtbar beenden (D-11). Vor
+        # yield, also bevor ein Request einen neuen Auftrag starten kann; den Busy-Zustand
+        # der Welt räumt der Boot-Abgleich im Task (CLEAR_BUSY).
+        try:
+            await anyio.to_thread.run_sync(get_backup_service(service).recover_jobs)
+        except Exception as exc:
+            LOG.warning("Unterbrochene Sicherungsaufträge nicht beendet: %s", type(exc).__name__)
         # Als Tasks, nie synchron: AppAPI wartet auf /heartbeat, und der
         # Docker-Proxy ist nach einem Reboot evtl. noch nicht oben (PLATT-02).
         # Zweiter Task: der 15-s-Zeittakt hält die Regeldateien aktuell (O-03).
@@ -91,6 +99,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         else:
             if cancelled:
                 LOG.info("Beim Beenden %d offene Talk-Hooks abgebrochen", cancelled)
+        # Laufende Sicherungen: kurz warten, sonst abbrechen (die Welt startet abgeschirmt neu).
+        try:
+            cancelled = await shutdown_backups()
+        except Exception as exc:
+            LOG.warning("Sicherungsaufträge beim Beenden nicht abgeschlossen: %s", type(exc).__name__)
+        else:
+            if cancelled:
+                LOG.info("Beim Beenden %d laufende Sicherungsaufträge abgebrochen", cancelled)
 
 
 APP = FastAPI(lifespan=lifespan)
@@ -102,6 +118,7 @@ APP.add_middleware(JsonOnlyChangesMiddleware)
 APP.add_middleware(AppAPIAuthMiddleware, disable_for=play_disable_for(play_mode()))
 APP.include_router(me.router)
 APP.include_router(worlds.router)
+APP.include_router(backups.router)
 APP.include_router(setup_check.router)
 APP.include_router(invites.router)
 APP.include_router(playtime.router)
