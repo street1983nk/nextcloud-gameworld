@@ -636,7 +636,10 @@ def test_lua_halt_warns_once_and_disconnects_everyone() -> None:
     assert "halt_warned ~= halt" in tick
     assert "core.chat_send_all(HALT_SOON_TEXT)" in tick
     assert "halt_warned = halt" in tick
-    assert "now() >= halt" in tick
-    assert "core.disconnect_player(name, HALT_TEXT)" in tick
+    assert "local cut = halt and now() >= halt" in tick
+    assert "local p = not cut and paused(name)" in tick
     # Der Halt trennt vor Pause und Regeln, auch frei-Spieler (der Server stoppt gleich).
-    assert tick.index("core.disconnect_player(name, HALT_TEXT)") < tick.index("paused(name)")
+    assert tick.index("if cut then\n      core.disconnect_player(name, HALT_TEXT)") < tick.index(
+        "elseif p and now() >= pause.ab then"
+    )
+    assert tick.index("core.disconnect_player(name, HALT_TEXT)") < tick.index("left(name)")

@@ -70,6 +70,20 @@ Zählbuch bleibt unverändert. Alte Mods überspringen beide Zeilen still; ob de
 laufende Mod sie kann, zeigt der ExApp die Ereignisdatei des Zugangs-Mods
 (gleicher Neustart, kein Fail-open, 04.1-RESEARCH.md Pitfall 1 und Pattern 3).
 
+Seit Phase 5 (Chat-Hinweis vor dem Cold-Backup, D-09) kommt als letzte
+``@``-Zeile vor ``end`` dazu::
+
+    @halt <ab>
+
+``ab`` ist der Epoch, ab dem der Spielserver gleich stoppt (Sicherung). Sieht der
+Mod die Zeile, sendet er genau einmal je ``ab`` an alle "Die Welt macht gleich
+eine kurze Pause.", lässt ab dann niemanden mehr hinein (auch ``frei`` nicht,
+der Server stoppt gleich) und trennt ab ``ab`` alle Verbundenen mit "Die Welt
+macht kurz Pause. Gleich geht es weiter.". Den Halt hält die ExApp nur im
+Speicher; nach dem Snapshot schreibt der Neustart die Datei ohne ``@halt``.
+Alte Mods überspringen die Zeile still, dann gibt es keinen Hinweis, der Ablauf
+bleibt korrekt (05-RESEARCH.md Pattern 6).
+
 Format des Zählbuchs (schreibt nur der Mod)::
 
     gameworld-time-used 1 <os.time beim Schreiben> <geladene Generation>
@@ -144,6 +158,9 @@ WEEKDAY_NAMES = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Sam
 TEXT_PAUSE = "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen."
 TEXT_PAUSE_SOON = "In 30 Sekunden ist Pause."
 TEXT_SCHLUSS = "Für heute ist Schluss."
+# Chat-Hinweis vor dem Cold-Backup (D-09, Phase 5).
+TEXT_HALT_SOON = "Die Welt macht gleich eine kurze Pause."
+TEXT_HALT = "Die Welt macht kurz Pause. Gleich geht es weiter."
 TEXTS = (
     TEXT_LIMIT,
     TEXT_FENSTER,
@@ -166,6 +183,8 @@ TEXTS = (
     TEXT_PAUSE,
     TEXT_PAUSE_SOON,
     TEXT_SCHLUSS,
+    TEXT_HALT_SOON,
+    TEXT_HALT,
 )
 PAUSE_ARTS = frozenset({"pause", "schluss"})
 # Vorlauf der Pause: so lange vor dem Trennen gilt die Beitrittssperre und kommt die Vorwarnung.
@@ -296,6 +315,8 @@ local PAUSE_TEXT = {_lua_string(TEXT_PAUSE)}
 local PAUSE_SOON = {_lua_string(TEXT_PAUSE_SOON)}
 local SCHLUSS = {_lua_string(TEXT_SCHLUSS)}
 local PAUSE_LEAD = {PAUSE_LEAD_SECONDS}
+local HALT_SOON_TEXT = {_lua_string(TEXT_HALT_SOON)}
+local HALT_TEXT = {_lua_string(TEXT_HALT)}
 
 -- valid: nil = noch nie geladen, "missing" = keine Datei (keine Regeln),
 -- "broken" = beim Start nur eine ungueltige Datei (alle zu), "ok" = Regeln da.
@@ -312,6 +333,9 @@ local warned = {{}}  -- je Name die schon gesendeten Vorwarnungen dieser Sitzung
 -- des naechsten Tages (@morgen, -1 = kein Spieltag); pause_warned: je Name das ab
 -- der Pause, fuer die "In 30 Sekunden ist Pause." schon gesendet ist.
 local pause, morgen, pause_warned = nil, {{}}, {{}}
+-- halt: nil oder der Epoch aus @halt, ab dem der Server zur Sicherung stoppt;
+-- halt_warned: das halt, fuer das der Chat-Hinweis an alle schon gesendet ist.
+local halt, halt_warned = nil, nil
 
 local function now()
   return os.time()
@@ -359,13 +383,14 @@ local function load()
     return
   end
   local new, new_world, new_days, new_starts, new_bases = {{}}, nil, nil, {{}}, {{}}
-  local new_pause, new_morgen = nil, {{}}
+  local new_pause, new_morgen, new_halt = nil, {{}}, nil
   for i = 2, #lines - 1 do
     local line = lines[i]
     local sname, sat, smin = line:match("^@start ([%w_%-]+) (%d+) (%d+)$")
     local bname, bsecs = line:match("^@base ([%w_%-]+) (%d+)$")
     local pab, pbis, part = line:match("^@pause (%d+) (%d+) (%a+)$")
     local mname, mmin = line:match("^@morgen ([%w_%-]+) (%-?%d+)$")
+    local hab = line:match("^@halt (%d+)$")
     local wf, wu, wr, wn = line:match("^welt (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$")
     if line:match("^@tage ") then
       -- Genau 10 Zahlen, Wochentag 1..7, Anfaenge streng steigend; sonst Zeile ignorieren.
@@ -396,6 +421,8 @@ local function load()
     elseif mname then
       local m = tonumber(mmin)
       if #mname <= 20 and m >= -1 and m <= 1439 then new_morgen[mname] = m end
+    elseif hab then
+      new_halt = tonumber(hab)
     elseif wf then
       new_world = {{ from = tonumber(wf), until_t = tonumber(wu), reason = wr, next = wn }}
     else
@@ -416,6 +443,7 @@ local function load()
   rules, world_rule, last, valid, generation = new, new_world, content, "ok", tonumber(gen)
   days, starts, shifts = new_days, new_starts, new_shifts
   pause, morgen = new_pause, new_morgen
+  halt = new_halt
 end
 
 -- Restzeit in Sekunden, Grund und Schluessel des naechsten Starts ("welt" oder
@@ -561,6 +589,8 @@ end
 
 core.register_on_prejoinplayer(function(name)
   load()
+  -- Der Server stoppt gleich zur Sicherung: niemand mehr hinein, auch frei nicht.
+  if halt then return HALT_TEXT end
   if paused(name) then return pause_text(name) end
   local l, why, key = left(name)
   if l and l < MIN_LEFT then return text(why, key) end
@@ -583,11 +613,20 @@ local function tick()
   load()
   local now_us = core.get_us_time()
   local players = core.get_connected_players()
+  if halt and halt_warned ~= halt then
+    -- Einmal je Halt an alle, bevor der Server zur Sicherung stoppt (D-09).
+    halt_warned = halt
+    core.chat_send_all(HALT_SOON_TEXT)
+  end
   for _, player in ipairs(players) do
     local name = player:get_player_name()
     if since[name] then credit(name, now_us) else since[name] = now_us end
-    local p = paused(name)
-    if p and now() >= pause.ab then
+    -- Ab dem Halt alle trennen, auch frei: der Server stoppt gleich zur Sicherung.
+    local cut = halt and now() >= halt
+    local p = not cut and paused(name)
+    if cut then
+      core.disconnect_player(name, HALT_TEXT)
+    elseif p and now() >= pause.ab then
       -- Trennen zaehlt nichts mehr: getrennte Kinder verbrauchen keine Zeit (D-05).
       core.disconnect_player(name, pause_text(name))
     else
@@ -738,6 +777,13 @@ def _pause_line(pause: PauseLine) -> str:
     return f"@pause {pause.ab} {pause.bis} {pause.art}"
 
 
+def _halt_line(ab: int) -> str:
+    """Zeile ``@halt``: Epoch, ab dem der Server zur Sicherung stoppt (D-09, T-05-13)."""
+    if not _is_int(ab) or ab < 0:
+        raise ValueError("Ungültiger Halt in der Regeldatei: nur ganze Zahlen, nie negativ.")
+    return f"@halt {ab}"
+
+
 def _morgen_lines(morgen: dict[str, int]) -> list[str]:
     lines: list[str] = []
     for name, minute in sorted(morgen.items()):
@@ -776,14 +822,16 @@ def render_time_file(
     *,
     pause: PauseLine | None = None,
     morgen: dict[str, int] | None = None,
+    halt: int | None = None,
 ) -> bytes:
     """Regeldatei der Welt, sortiert und deterministisch.
 
     Reihenfolge: Kopf, ``@tage``, ``@pause``, ``@morgen`` (sortiert, nur bei Art
     schluss), Welt-Zeile, ``@start welt``, je Spieler (sortiert) seine Zeile und
-    direkt danach ``@start <name>`` und ``@base <name>``, zuletzt ``end``. Ohne
-    ``days``, ``pause``, nächste Starts und Anker sind die Bytes dieselben wie vor
-    den ``@``-Zeilen; alte Mods überspringen ``@pause`` und ``@morgen`` still
+    direkt danach ``@start <name>`` und ``@base <name>``, dann ``@halt`` (nur
+    vor einer Sicherung), zuletzt ``end``. Ohne ``days``, ``pause``, ``halt``,
+    nächste Starts und Anker sind die Bytes dieselben wie vor den ``@``-Zeilen;
+    alte Mods überspringen ``@pause``, ``@morgen`` und ``@halt`` still
     (Pitfall 1: ob der Mod die Pause kann, zeigt die Ereignisdatei).
     Jeder ungültige Eintrag wirft ValueError, nie wird still übersprungen: Ein
     Zeilenumbruch im Namen oder Token könnte sonst fremde Zeilen einschleusen.
@@ -814,6 +862,8 @@ def render_time_file(
         base = _base_line(name, line)
         if base is not None:
             lines.append(base)
+    if halt is not None:
+        lines.append(_halt_line(halt))
     lines.append("end")
     return ("\n".join(lines) + "\n").encode("ascii")
 
