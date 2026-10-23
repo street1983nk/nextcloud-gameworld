@@ -485,22 +485,24 @@ Byte-Gleichheit von `map.sqlite` nach dem Neustart NICHT als Kriterium nehmen: L
 | A8 | Nach Neustart ohne Spieler ändert Luanti `map.sqlite` evtl. trotzdem | Roundtrip-Test | Nur relevant, falls jemand Byte-Gleichheit prüfen will |
 | A9 | Details der NC-Option "Windows-kompatible Dateinamen" (Punkt/Leerzeichen am Ende, reservierte Namen) | Pitfall 4 | Ordner anlegen scheitert; Ausweichname `Welt-<id6>` deckt es ab |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Sicherungen ohne DB-Eintrag (nach Neuinstallation der ExApp oder von Hand abgelegt)**
+Alle fünf Fragen wurden am 23.10.2026 vom Owner entschieden und sind als D-12 bis D-16 in 05-CONTEXT.md festgehalten.
+
+1. **Sicherungen ohne DB-Eintrag (nach Neuinstallation der ExApp oder von Hand abgelegt)** , RESOLVED: D-12 (nicht als Sicherung listen)
    - What we know: Ohne Eintrag gibt es keinen Integritätsnachweis; Restore als neue Welt ist v2 (D-04).
    - What's unclear: Soll v1 solche Dateien zeigen (ohne Knopf) oder ganz verschweigen?
    - Recommendation: v1 zeigt sie nicht als Sicherung, höchstens "weitere Dateien im Ordner: N". Das Manifest im Archiv hält v2 offen. Owner kurz bestätigen lassen.
-2. **Mehrere Verwalter**
+2. **Mehrere Verwalter** , RESOLVED: D-13 (jeder sieht nur eigene)
    - What we know: D-01 legt in die Files des auslösenden Verwalters; Verwalter = Nextcloud-Admins (mehrere möglich).
    - What's unclear: Sieht Verwalter B die Sicherungen von A?
    - Recommendation: v1 listet nur die eigenen (Abfrage als der anfragende Verwalter, Datenschutz, keine fremden Files lesen). Owner bestätigen.
-3. **Ausfallzeit-Modell**
+3. **Ausfallzeit-Modell** , RESOLVED: D-14 (Neustart direkt nach Snapshot, Upload im Hintergrund)
    - What we know: Konsistenz braucht nur während `get_archive` eine stehende Welt.
    - Recommendation: Welt direkt nach dem Snapshot neu starten, Upload danach (Status "Wird gesichert ..." bleibt als Job-Anzeige bis zum Upload-Ende, Kinder sehen die Pause nur während der Ausfallzeit). Weicht leicht von der Lesart "Stopp, Backup, Neustart" in D-09 ab, ist aber für Kinder besser; im Plan als bewusste Auslegung kennzeichnen.
-4. **Restore für Welten mit "Weltdaten fehlen" (delete-only)**
+4. **Restore für Welten mit "Weltdaten fehlen" (delete-only)** , RESOLVED: D-15 (erlaubt, ohne Sicherheits-Backup)
    - Recommendation: erlauben, Sicherheits-Backup dann überspringen (es gibt keinen Stand). Starker Nutzen für den eigentlichen Notfall; Owner bestätigen.
-5. **Abschlussmeldung über den Notify-Weg (optional)**
+5. **Abschlussmeldung über den Notify-Weg (optional)** , RESOLVED: D-16 (nur Fehler melden)
    - Recommendation: nur Fehlermeldungen als Benachrichtigung an den auslösenden Verwalter, wenn die Outbox-Art billig zu ergänzen ist; sonst weglassen, die Weltkarte zeigt das Ergebnis.
 
 ## Environment Availability
