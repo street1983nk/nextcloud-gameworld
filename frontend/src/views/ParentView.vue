@@ -128,6 +128,13 @@
 						<NcNoteCard v-else-if="world.events_restart_needed" type="warning" class="gameworld__restart">
 							Neustart nötig, damit Pause und Hinweise gelten.
 						</NcNoteCard>
+						<!-- D-11: Ein fehlgeschlagener Auftrag bleibt stehen, bis der nächste läuft (auch nach Neuladen). -->
+						<NcNoteCard v-if="world.backup_job?.state === 'failed'" type="error" class="gameworld__restart">
+							{{ jobNote(world.backup_job) }}
+						</NcNoteCard>
+						<div v-else-if="world.backup_job?.state === 'running'" class="gameworld__job">
+							{{ jobNote(world.backup_job) }}
+						</div>
 					</td>
 					<td class="gameworld__invited">
 						{{ invitedText(world) }}
@@ -166,19 +173,23 @@
 							</NcButton>
 						</template>
 						<template v-if="!world.delete_only">
-							<NcButton @click="openInvite(world)">
+							<NcButton :disabled="backupBusy(world)" @click="openInvite(world)">
 								Einladen
 							</NcButton>
-							<NcButton @click="openPlayers(world)">
+							<NcButton :disabled="backupBusy(world)" @click="openPlayers(world)">
 								Spieler
 							</NcButton>
-							<NcButton @click="openWindow(world)">
+							<NcButton :disabled="backupBusy(world)" @click="openWindow(world)">
 								Zeitfenster
 							</NcButton>
 						</template>
+						<!-- Auch bei fehlenden Weltdaten: Wiederherstellen rettet die Welt (D-15). -->
+						<NcButton @click="openBackups(world)">
+							Sicherungen
+						</NcButton>
 						<NcButton
 							variant="error"
-							:disabled="Boolean(busy[world.id])"
+							:disabled="Boolean(busy[world.id]) || backupBusy(world)"
 							@click="pendingDelete = world">
 							Löschen
 						</NcButton>
@@ -214,6 +225,13 @@
 			:world="windowWorld"
 			@saved="refresh"
 			@close="windowWorld = null" />
+		<BackupSection
+			v-if="backupWorld"
+			:key="`backups-${backupWorld.id}`"
+			:world="backupWorld"
+			:backup-job="backupJob"
+			@changed="refresh"
+			@close="backupsWorldId = null" />
 
 		<PlaytimeSection
 			:playtime="playtime"
@@ -245,6 +263,7 @@ import NcProgressBar from '@nextcloud/vue/components/NcProgressBar'
 import NcRadioGroup from '@nextcloud/vue/components/NcRadioGroup'
 import NcRadioGroupButton from '@nextcloud/vue/components/NcRadioGroupButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
+import BackupSection from '../components/BackupSection.vue'
 import ConnectionCard from '../components/ConnectionCard.vue'
 import HolidayList from '../components/HolidayList.vue'
 import InviteDialog from '../components/InviteDialog.vue'
@@ -256,7 +275,7 @@ import SetupCheck from '../components/SetupCheck.vue'
 import TalkRoomStatus from '../components/TalkRoomStatus.vue'
 import TimeZoneSetting from '../components/TimeZoneSetting.vue'
 import WorldWindowDialog from '../components/WorldWindowDialog.vue'
-import { formatBytes } from '../backup.js'
+import { formatBytes, jobNote } from '../backup.js'
 import { pauseUntilText, talkHint, windowSummary } from '../playtime.js'
 import { navigate } from '../route.js'
 import {
@@ -281,7 +300,11 @@ const CHIP_VARIANT = {
 	stopped: 'tertiary',
 	error: 'error',
 	unknown: 'warning',
+	backing_up: 'warning',
+	restoring: 'warning',
 }
+// Phase 5 (D-10): Solange gesichert oder wiederhergestellt wird, sind die Aktionen der Welt gesperrt.
+const BACKUP_BUSY_STATUS = new Set(['backing_up', 'restoring'])
 const POLL_MS = 5000
 // Spielzeit (Verbrauch heute) ändert sich langsam: höchstens alle 30 s neu laden.
 const PLAYTIME_POLL_MS = 30000
@@ -304,6 +327,9 @@ const inviteWorld = ref(null)
 const playersWorld = ref(null)
 // Zeitfenster-Dialog: { id, name, time_window } beim Öffnen kopiert.
 const windowWorld = ref(null)
+// Sicherungsbereich: nur die Welt-ID; Daten und backup_job kommen reaktiv aus der gepollten
+// Liste, sonst sähe der Bereich das Ende eines Auftrags nie (T-05-52).
+const backupsWorldId = ref(null)
 // Fehler einer Aktion: bleibt stehen, bis die nächste Aktion startet.
 const error = ref('')
 // Fehler beim Abfragen der Liste: verschwindet beim nächsten erfolgreichen Abruf.
@@ -326,6 +352,27 @@ const talk = ref(null)
 const pauseText = computed(() => (pause.value?.art === 'schluss'
 	? 'Für heute ist Schluss.'
 	: pauseUntilText(pause.value?.until_clock)))
+
+const backupSource = computed(() => (backupsWorldId.value === null
+	? null
+	: worlds.value.find((world) => world.id === backupsWorldId.value) ?? null))
+
+// Nur die benötigten Felder; verschwindet die Welt aus der Liste, schließt der Bereich.
+const backupWorld = computed(() => {
+	const world = backupSource.value
+	if (!world) {
+		return null
+	}
+	return {
+		id: world.id,
+		name: world.name,
+		players: world.players ?? [],
+		delete_only: Boolean(world.delete_only),
+		status: world.status,
+	}
+})
+
+const backupJob = computed(() => backupSource.value?.backup_job ?? null)
 
 const selectedDescription = computed(() => presets.value.find((preset) => preset.id === selectedPreset.value)?.description ?? '')
 
@@ -370,19 +417,29 @@ function onDialogOpen(open) {
 function openInvite(world) {
 	playersWorld.value = null
 	windowWorld.value = null
+	backupsWorldId.value = null
 	inviteWorld.value = { id: world.id, name: world.name }
 }
 
 function openPlayers(world) {
 	inviteWorld.value = null
 	windowWorld.value = null
+	backupsWorldId.value = null
 	playersWorld.value = { id: world.id, name: world.name }
 }
 
 function openWindow(world) {
 	inviteWorld.value = null
 	playersWorld.value = null
+	backupsWorldId.value = null
 	windowWorld.value = { id: world.id, name: world.name, time_window: world.time_window ?? null }
+}
+
+function openBackups(world) {
+	inviteWorld.value = null
+	playersWorld.value = null
+	windowWorld.value = null
+	backupsWorldId.value = world.id
 }
 
 // Die Zeitzone ändert, welcher Tag heute ist: Spielzeit und Weltenliste neu laden.
@@ -426,13 +483,19 @@ function memoryText(world) {
 	return `Arbeitsspeicher: ${formatBytes(world.memory_used_bytes)} von ${formatBytes(world.memory_limit_bytes)}`
 }
 
+// Sichern oder Wiederherstellen läuft (Status oder Auftrag aus der API, D-10).
+function backupBusy(world) {
+	return BACKUP_BUSY_STATUS.has(world.status) || world.backup_job?.state === 'running'
+}
+
+// Während eines Auftrags gilt die Welt als aktiv: kein Starten-Knopf, Stoppen und Neustarten gesperrt.
 function isActive(world) {
-	return world.status === 'running' || world.status === 'starting'
+	return world.status === 'running' || world.status === 'starting' || BACKUP_BUSY_STATUS.has(world.status)
 }
 
 // Ohne Docker lässt sich nichts starten oder stoppen; Löschen bleibt (eigener Dialog).
 function actionsLocked(world) {
-	return Boolean(busy[world.id]) || world.status === 'unknown'
+	return Boolean(busy[world.id]) || world.status === 'unknown' || backupBusy(world)
 }
 
 // Abrufe können sich überholen (Polling, Aktion, Setup-Check); nur die Antwort
@@ -706,6 +769,12 @@ onUnmounted(() => {
 
 .gameworld__restart {
 	margin-top: 8px;
+}
+
+.gameworld__job {
+	margin-top: 8px;
+	font-size: 0.9em;
+	color: var(--color-text-maxcontrast);
 }
 
 .gameworld__window {
