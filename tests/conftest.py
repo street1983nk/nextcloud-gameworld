@@ -115,6 +115,10 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     from gameworld.talk import bot as talk_bot
 
     monkeypatch.setattr(talk_bot, "_bot", FakeBot())
+    # Ticket-Speicher des Browser-Spikes beginnt je Test leer (04.2-06).
+    from gameworld.play import tickets as tickets_module
+
+    monkeypatch.setattr(tickets_module, "_ticket_store", None)
     return tmp_path
 
 
