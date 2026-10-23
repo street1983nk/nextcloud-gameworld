@@ -582,3 +582,22 @@ async def test_failed_world_keeps_failed_state_after_abort(
     assert row is not None
     assert (row.op_state, row.last_error) == ("failed", "Proxy weg")
     assert _job_state(store, world_id) == ("failed", MSG_NO_SPACE)
+
+
+async def test_abort_offline_writes_rules_without_halt(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Abbruch vor dem Stopp: Die laufende Welt bekommt sofort eine Regeldatei ohne @halt."""
+    world_id = await _world(service, fake, players=b"Mia\n")
+    ticket = service.begin_offline(world_id, "backing_up")
+    assert service.announce_halt(world_id, NOW) is not None
+    fake.written.clear()
+    fake.calls.clear()
+
+    service.abort_offline(ticket)
+
+    assert _op_state(store, world_id) == "ready"
+    rules = [archive for target, archive in fake.written if target == world_id and _rules_in(archive)]
+    assert rules
+    assert not _halt_rules(rules[-1])
+    assert not any(call.startswith(("stop:", "start:")) for call in fake.calls)

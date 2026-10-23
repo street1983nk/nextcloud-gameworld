@@ -330,6 +330,15 @@ class WorldService:
         """Spielzeit-Rechnung für den Spielzeit-Dienst (playtime/service.py): nur lesend genutzt."""
         return self._time
 
+    @property
+    def provisioner(self) -> DockerProvisioner:
+        """Docker-Zugang für den Sicherungsdienst (backup/service.py): nur snapshot_to, ohne Sperre.
+
+        Der Snapshot liest einen gestoppten Container (snapshot_to prüft das selbst);
+        Stopp und Neustart laufen über stop_for_snapshot und end_offline.
+        """
+        return self._provisioner
+
     def _access_file(self, row: WorldRow) -> bytes:
         """Zugangsdatei der Welt, frisch aus Schema 3 (Generation und Verifier je Spielername).
 
@@ -739,6 +748,25 @@ class WorldService:
                 return failure
             self._store.update_world(world_id, op_state="ready", last_error=None)
             return None
+
+    def abort_offline(self, ticket: OfflineTicket) -> None:
+        """Bricht einen Auftrag vor dem Stopp ab: Zustand wie vorher, Halt weg, kein Docker-Aufruf.
+
+        Setzt op_state und last_error auf previous_op_state und previous_error aus
+        dem Ticket zurück (eine vorher fehlgeschlagene Welt bleibt fehlgeschlagen).
+        Die Welt läuft noch: Die Regeldatei wird sofort ohne ``@halt`` geschrieben,
+        sonst trennte der Zeit-Mod die Kinder trotzdem. Fehlt die Welt inzwischen,
+        passiert nichts.
+        """
+        with self._mutating():
+            self._time.clear_halt(ticket.world_id)
+            if self._store.get_world(ticket.world_id) is None:
+                return
+            self._store.update_world(
+                ticket.world_id, op_state=ticket.previous_op_state, last_error=ticket.previous_error
+            )
+            if not self.push_time(ticket.world_id):
+                LOG.warning("Welt %s: Regeldatei ohne Halt nicht geschrieben, der Takt holt es nach", ticket.world_id)
 
     def book_ledger(self, world_id: str) -> None:
         """Öffentlicher Einstieg für _book_ledger (Wiederherstellen, D-06), unter der Sperre."""
