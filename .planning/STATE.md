@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-01-PLAN.md
-last_updated: "2026-10-23T05:33:25.144Z"
-last_activity: 2026-10-23 -- 04.2-01 complete (Spike-Branch gepusht, CI-Lauf 1 laeuft)
+stopped_at: Completed 04.2-05-PLAN.md
+last_updated: "2026-10-23T05:43:31.033Z"
+last_activity: 2026-10-23 -- 04.2-05 complete (Protokollmodule)
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 38
+  completed_plans: 39
   percent: 63
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 3 of 11 (04.2-01 und 04.2-02 complete; CI-Lauf 1 RUN-ID 39906280343 laeuft, Auswertung Plan 04)
+Plan: 3 von 11 complete (04.2-01, 04.2-02, 04.2-05; CI-Lauf 1 RUN-ID 39906280343 laeuft, Auswertung Plan 04)
 Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-01 complete (push-nur-workflow, Lauf 1 angestossen)
+Last activity: 2026-10-23 -- 04.2-05 complete (Protokollmodule framing, commands, mtp mit ClientGuard)
 
-Progress: [████████░░] 81%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -90,6 +90,7 @@ Progress: [████████░░] 81%
 | Phase 04.1 P09 | 5h | 2 tasks | 10 files |
 | Phase 04.2 P02 | 17 min | 3 tasks | 12 files |
 | Phase 04.2 P01 | 22 min | 3 tasks | 1 files |
+| Phase 04.2 P05 | 13min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,8 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-02: luanti-wasm-Release-Ordner (www/<12-hex>/) zusaetzlich unter /play/<release>/ ausgeliefert, weil launcher.js luanti.js, worker.js und packs relativ zur Dokument-URL laedt; Grenze ist der Release-Ordner
 - [Phase 04.2]: 04.2-02: Einzelspieler braucht packs/minetest.pack im Release-Ordner (Basis-Pack ohne Spiele)
 - [Phase 04.2]: 04.2-01: Owner-Entscheid push-nur-workflow; origin/spike/luanti-wasm enthaelt nur dc44db3 (Cherry-Pick von 68cff22), Lauf 1 RUN-ID 39906280343 laeuft, Auswertung in Plan 04 Task 1
+- [Phase 04.2]: 04.2-05: ClientGuard entscheidet nach inner_ptype; SPLIT vor AUTH_ACCEPT und SRP in Split-Chunk 0 beenden die Sitzung; leeres ORIGINAL (Verbindungs-Dummy) wird weitergeleitet
+- [Phase 04.2]: 04.2-05: NEWADDR-Antwort ADDR 10.77.0.2 <passcode> - (vier Tokens laut proxy.js); Ziel nur 10.77.0.1:30000
 
 ### Pending Todos
 
@@ -220,6 +223,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T05:33:18.684Z
-Stopped at: Completed 04.2-01-PLAN.md
+Last session: 2026-10-23T05:43:31.015Z
+Stopped at: Completed 04.2-05-PLAN.md
 Resume file: None
