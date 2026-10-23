@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 5 context gathered
-last_updated: "2026-10-23T14:48:51.285Z"
-last_activity: 2026-10-23 -- Phase 5 planning complete
+last_updated: "2026-10-23T15:23:59.686Z"
+last_activity: 2026-10-23
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 56
-  completed_plans: 47
+  completed_plans: 48
   percent: 75
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 5 , backup und restore
+**Current focus:** Phase 05 — backup-und-restore
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
+Phase: 05 (backup-und-restore) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-10-23 -- Phase 5 planning complete
+Last activity: 2026-10-23
 
-Progress: [██████████] 100%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -100,6 +100,7 @@ Progress: [██████████] 100%
 | Phase 04.2 P09 | 27 min | 3 tasks | 9 files |
 | Phase 04.2 P10 | 11 min | 1 task (Dok) | 1 files |
 | Phase 04.2 P11 | Review+Bericht+Entscheid | 3 tasks | 3 files |
+| Phase 05 P01 | 40 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -222,6 +223,10 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-10: Praxis live belegt auf iPhone (ab iOS 27, Touch, Owner "perfekt und fluessig") und Laptop-Klasse (Chrome, Minetest ~8s+589s fluessig, VoxeLibre fluessig trotz 93 MB); iPad NO-GO (JSPI fehlt); offen fuer Plan 11: formaler 15-Min-Kindertest (D-06), echter alter Laptop (D-05), Android-Tablet (deferred), FPS/RAM/CPU nicht beziffert, OPFS-Zweitbesuch nicht systematisch gemessen; Produktbau-Befund wasm-Client zeigt Pausen-/Kick-Grund nicht lesbar
 - [Phase 04.2]: 04.2-11: Sicherheitsreview (Prüfliste 1 bis 10, 1840 Non-Docker-Tests gruen, vier Qualitaetsgates gruen) ohne Befund hoch/mittel, fuenf niedrig (S-01 CSP-Inline-onclick, S-02 Pausen-/Kick-Grund im wasm-Client nicht lesbar, S-03 HaRP reicht Authorization durch, S-04 Altbibliotheken bei gesperrtem TCP-Pfad, S-05 Rollencache wie nativ); Go/No-Go-Bericht erfuellt sinnvoll, echter Mehrwert, sicher (D-04)
 - [Phase 04.2]: 04.2-11: Owner-Entscheid GO (2026-10-23) , der Browser-Weg kommt; eine eigene Bauphase mit eigenen Requirements folgt spaeter; der Spike-Code bleibt hinter GAMEWORLD_BROWSER_SPIKE (Vorgabe aus) als Grundlage, kein Rueckbau; GO mit Auflagen, deep Review und /gsd-secure-phase bleiben laut Owner-Regel Pflicht; Phasenabschluss auf Orchestrator-Ebene (phase.complete, Verifier) steht noch aus
+- [Phase 05]: 05-01: Restore-Tar ist gzip mit Namen relativ zum Weltordner, Ziel put_archive nach WORLD_PATH
+- [Phase 05]: 05-01: MAX_RATIO 50 greift erst ab RATIO_FLOOR 256 MiB entpackt (kleine, stark packbare Welten)
+- [Phase 05]: 05-01: snapshot_to nur in created/exited/dead (SNAPSHOT_SAFE_STATES), paused/restarting gelten als laufend
+- [Phase 05]: 05-01: backup_file_name mit Keyword zone; naive Zeitpunkte und unbekannte Arten sind ValueError
 
 ### Pending Todos
 
@@ -251,6 +256,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T13:42:31.479Z
+Last session: 2026-10-23T15:23:46.423Z
 Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-backup-und-restore/05-CONTEXT.md
+Resume file: None
