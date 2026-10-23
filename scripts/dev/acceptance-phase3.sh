@@ -339,6 +339,10 @@ for old_id in $(jq -r --arg a "${NAME_WORLD}" '.worlds[]? | select(.name == $a) 
 	remember_world "${old_id}"
 	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
 done
+# Grundlinie: Welt-Container, die schon vor diesem Lauf da waren (andere ExApp-Instanzen,
+# Testreste anderer Sitzungen), bleiben unangetastet und zählen am Ende nicht als Rest.
+BASELINE_CONTAINERS=$(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null | tr '
+' ' ')
 
 printf '\n== K1 Einladen und Provisionieren ==\n'
 # K1 Einladen von Konten und Gruppen; Zugang wird in die Welt geschrieben
@@ -555,8 +559,14 @@ check "Aufräumen Gruppe ${GROUP} gelöscht" \
 	eq "$(occ group:list --output=json 2>/dev/null | jq -r --arg g "${GROUP}" 'has($g)')" false
 check "Aufräumen ${KID} nicht in admin" \
 	eq "$(occ group:list --output=json 2>/dev/null | jq -r --arg u "${KID}" '(.admin // []) | index($u) // "nein"')" nein
-LEFT=$(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null | wc -l | tr -d ' ')
-check "keine Welt-Container übrig (ist ${LEFT})" eq "${LEFT}" 0
+LEFT=0
+for cid in $(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null); do
+	case " ${BASELINE_CONTAINERS} " in
+	*" ${cid} "*) ;;
+	*) LEFT=$((LEFT + 1)) ;;
+	esac
+done
+check "keine Welt-Container übrig (ist ${LEFT}, fremde vor dem Lauf nicht gezählt)" eq "${LEFT}" 0
 
 printf '\n== Regression Phase 1 und Phase 2 ==\n'
 # Nur für schnelle Iterationen: übersprungene Regression zählt als Fehlschlag.
