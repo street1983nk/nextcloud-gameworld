@@ -21,6 +21,7 @@ from gameworld.lifecycle import enabled_handler
 from gameworld.notify.loop import notify_forever
 from gameworld.play.app import install_play
 from gameworld.play.config import play_disable_for, play_mode
+from gameworld.play.log_redact import install_ws_query_redaction
 from gameworld.playtime.ticker import time_forever
 from gameworld.talk.service import shutdown_talk
 from gameworld.worlds.reconciler import reconcile_forever
@@ -49,6 +50,8 @@ def _setup_logging() -> None:
 
 
 _setup_logging()
+# T-04.2-36: Kein WebSocket-Ticket aus /play/ws?t=... in den uvicorn-Logzeilen.
+install_ws_query_redaction()
 
 
 @asynccontextmanager
