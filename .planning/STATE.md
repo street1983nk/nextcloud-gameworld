@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-10-PLAN.md
-last_updated: "2026-10-23T11:41:12.926Z"
-last_activity: "2026-10-23 -- 04.2-10 complete (Praxistest-Beleg aus bereits erbrachten Fakten gefuellt, Owner-Entscheid: nicht erneut live; iPhone ab iOS 27 + Laptop-Klasse fluessig belegt, iPad NO-GO; offen: formaler 15-Min-Kindertest, alter Laptop, Android-Tablet, FPS/RAM/CPU; naechster Plan 04.2-11)"
+stopped_at: Completed 04.2-11-PLAN.md
+last_updated: "2026-10-23T12:06:45.992Z"
+last_activity: "2026-10-23 -- 04.2-11 complete (Sicherheitsreview ohne Befund hoch/mittel, fuenf niedrig; Go/No-Go-Bericht nach sinnvoll/echter Mehrwert/sicher, alle drei erfuellt; Owner-Entscheid GO: Browser-Weg kommt, eigene Bauphase mit eigenen Requirements folgt, Spike-Code bleibt hinter GAMEWORLD_BROWSER_SPIKE; deep Review und /gsd-secure-phase bleiben Pflicht; Plan-Ebene 11/11, Phasenabschluss macht der Orchestrator)"
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 47
-  completed_plans: 46
-  percent: 64
+  completed_plans: 47
+  percent: 75
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 
 ## Current Position
 
-Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 10 von 11 complete (04.2-01 bis 04.2-10; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b; Erfolgskriterium 1+2 live belegt; Variante A SRP-Uebernahme live BELEGT; Praxis auf iPhone+Laptop-Klasse fluessig belegt, offene Punkte fuer Plan 11 markiert)
-Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-10 complete (Praxistest-Beleg aus bereits erbrachten Fakten gefuellt, Owner-Entscheid: nicht erneut live; iPhone ab iOS 27 + Laptop-Klasse fluessig, iPad NO-GO; offen: formaler 15-Min-Kindertest, alter Laptop, Android-Tablet, FPS/RAM/CPU; naechster Plan 04.2-11)
+Phase: 04.2 (browser-spike-luanti-wasm), 11 von 11 complete (Plan-Ebene; Phasenabschluss durch den Orchestrator)
+Plan: 11 von 11 complete (04.2-01 bis 04.2-11; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b; Erfolgskriterium 1+2 live belegt; Variante A SRP-Uebernahme live BELEGT; Praxis iPhone+Laptop-Klasse fluessig; Sicherheitsreview ohne Befund hoch/mittel; Owner-Entscheid GO)
+Status: Plan-Ebene abgeschlossen, Phasenabschluss (phase.complete, Verifier, deep Review, /gsd-secure-phase) steht noch aus
+Last activity: 2026-10-23 -- 04.2-11 complete (Sicherheitsreview, Go/No-Go-Bericht, Owner-Entscheid GO; deep Review und /gsd-secure-phase bleiben Pflicht)
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -98,6 +98,7 @@ Progress: [██████████] 98%
 | Phase 04.2 P08 | 2 Sitzungen | 3 tasks | 10 files |
 | Phase 04.2 P09 | 27 min | 3 tasks | 9 files |
 | Phase 04.2 P10 | 11 min | 1 task (Dok) | 1 files |
+| Phase 04.2 P11 | Review+Bericht+Entscheid | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,8 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-09: Namensvergleich im ClientGuard vor jedem SRP-Ersatz, Passwort nur aus check_play_access(ticket.uid); fremder Name/FIRST_SRP/SPLIT beenden vor der Welt (T-04.2-43/44 live), unabhaengige SRP-Server-Seite plus Gegenprobe anderes Passwort (T-04.2-46)
 - [Phase 04.2]: 04.2-10: Owner-Entscheid "Spaeter, Phase trotzdem abschliessen": Praxistest nicht erneut live, evidence/10-praxistest.md aus bereits erbrachten Belegen (Plan 04/08/09) gefuellt, offene Teile ehrlich als nachzuholen markiert; kein neuer Teststand, keine Geraete-Freigabe, kein Checkpoint, keine erfundenen Messwerte
 - [Phase 04.2]: 04.2-10: Praxis live belegt auf iPhone (ab iOS 27, Touch, Owner "perfekt und fluessig") und Laptop-Klasse (Chrome, Minetest ~8s+589s fluessig, VoxeLibre fluessig trotz 93 MB); iPad NO-GO (JSPI fehlt); offen fuer Plan 11: formaler 15-Min-Kindertest (D-06), echter alter Laptop (D-05), Android-Tablet (deferred), FPS/RAM/CPU nicht beziffert, OPFS-Zweitbesuch nicht systematisch gemessen; Produktbau-Befund wasm-Client zeigt Pausen-/Kick-Grund nicht lesbar
+- [Phase 04.2]: 04.2-11: Sicherheitsreview (Prüfliste 1 bis 10, 1840 Non-Docker-Tests gruen, vier Qualitaetsgates gruen) ohne Befund hoch/mittel, fuenf niedrig (S-01 CSP-Inline-onclick, S-02 Pausen-/Kick-Grund im wasm-Client nicht lesbar, S-03 HaRP reicht Authorization durch, S-04 Altbibliotheken bei gesperrtem TCP-Pfad, S-05 Rollencache wie nativ); Go/No-Go-Bericht erfuellt sinnvoll, echter Mehrwert, sicher (D-04)
+- [Phase 04.2]: 04.2-11: Owner-Entscheid GO (2026-10-23) , der Browser-Weg kommt; eine eigene Bauphase mit eigenen Requirements folgt spaeter; der Spike-Code bleibt hinter GAMEWORLD_BROWSER_SPIKE (Vorgabe aus) als Grundlage, kein Rueckbau; GO mit Auflagen, deep Review und /gsd-secure-phase bleiben laut Owner-Regel Pflicht; Phasenabschluss auf Orchestrator-Ebene (phase.complete, Verifier) steht noch aus
 
 ### Pending Todos
 
@@ -246,6 +249,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T11:41:12.926Z
-Stopped at: Completed 04.2-10-PLAN.md
+Last session: 2026-10-23T12:06:45.992Z
+Stopped at: Completed 04.2-11-PLAN.md (Plan-Ebene; Phasenabschluss durch den Orchestrator)
 Resume file: None
