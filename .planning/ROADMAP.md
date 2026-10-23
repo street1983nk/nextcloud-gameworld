@@ -301,7 +301,7 @@ Plans:
 **Wave 1**
 
 - [x] 05-01-PLAN.md , Archiv-Kern: gefilterter tar.gz-Snapshot mit SHA-256, Restore-Validierung mit Negativtests, sichere Namen (D-01/D-02), Provisioner snapshot_to/put_world_archive
-- [ ] 05-02-PLAN.md , Files-Adapter im Namen des Verwalters (upload_stream, Größenprüfung, 507) und Schema 7 (backups, backup_jobs)
+- [x] 05-02-PLAN.md , Files-Adapter im Namen des Verwalters (upload_stream, Größenprüfung, 507) und Schema 7 (backups, backup_jobs)
 - [ ] 05-03-PLAN.md , Chat-Hinweis @halt im Zeit-Mod und flüchtiger Halt in der TimeEngine (D-09)
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -354,5 +354,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
-| 5. Backup und Restore | 1/9 | In Progress|  |
+| 5. Backup und Restore | 2/9 | In Progress|  |
 | 6. Store-Release | 0/TBD | Not started | - |
