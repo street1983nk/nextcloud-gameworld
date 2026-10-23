@@ -296,7 +296,34 @@ Plans:
   2. Der Snapshot landet als konsistente Datei in Nextcloud Files (SQLite-Backend erzwungen, kein Kopieren laufender map.sqlite)
   3. Elternteil stellt eine Welt aus einem Backup in Nextcloud Files wieder her; ein automatisierter Backup-Restore-Roundtrip-Test besteht als Abschlusskriterium
 
-**Plans**: TBD
+**Plans**: 9 plans
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md , Archiv-Kern: gefilterter tar.gz-Snapshot mit SHA-256, Restore-Validierung mit Negativtests, sichere Namen (D-01/D-02), Provisioner snapshot_to/put_world_archive
+- [ ] 05-02-PLAN.md , Files-Adapter im Namen des Verwalters (upload_stream, Größenprüfung, 507) und Schema 7 (backups, backup_jobs)
+- [ ] 05-03-PLAN.md , Chat-Hinweis @halt im Zeit-Mod und flüchtiger Halt in der TimeEngine (D-09)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-04-PLAN.md , Busy-Zustände backing_up/restoring/restoring_swap: Status, Guards, Reconciler (RESTORE_INTERRUPTED), backup_job in der Weltenliste, Kindertext
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-05-PLAN.md , Vertikaler Schnitt Sichern: POST/GET backups (202), Hintergrund-Job, Cold-Snapshot mit sofortigem Neustart (D-14), Fehlerpfade und Fehler-Benachrichtigung
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 05-06-PLAN.md , Vertikaler Schnitt Wiederherstellen: Integritätsprüfung, vor-restore-Sicherung, Tausch über frisches Volume, Rückfall, POST restore
+- [ ] 05-07-PLAN.md , Oberfläche: Sicherungsbereich, Warndialog, Sicherheitsabfrage, Status-Chips, Fehlerkarte
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 05-08-PLAN.md , e2e-Roundtrip gegen echten Proxy (Mia/Leo, kaputte map.sqlite+Journal, unabhängige Gegenprobe), Negativ- und Absturztests
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 05-09-PLAN.md , Phasenabnahme acceptance-phase5.sh mit WebDAV und Regression plus gemeinsame Playwright-Abnahme mit dem Owner
 
 ### Phase 6: Store-Release
 
