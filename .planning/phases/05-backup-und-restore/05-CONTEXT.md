@@ -34,6 +34,13 @@ Gesetzt durch ROADMAP/Research (nicht verhandelbar): Cold-Backup mit Stopp/Neust
 - **D-10:** Eigene Phasen-Status: Weltkarte zeigt "Wird gesichert..." bzw. "Wird wiederhergestellt..." als eigenen Weltstatus (Muster wie "Startet gerade" aus Phase 2); Kinder-Ansicht kindgerecht "Die Welt macht kurz Pause"; Aktions-Knöpfe währenddessen gesperrt.
 - **D-11:** Fehlerfall: Die Welt startet nach einem Backup-/Upload-Fehler IMMER wieder (Spielbetrieb geht vor); Verwalter sieht eine klare Fehlermeldung mit Grund; unvollständige Backup-Dateien werden aufgeräumt und nie als gültige Sicherung gelistet.
 
+### Nachentscheide aus dem Research (Owner 23.10., auf Researcher-Fragen)
+- **D-12:** Backup-Dateien ohne DB-Eintrag (Neuinstallation, von Hand kopiert) werden NICHT als Sicherung gelistet; nur Einträge mit file_id, Größe und SHA-256. Ein Manifest im Archiv hält v2 (Import fremder Sicherungen) offen.
+- **D-13:** Bei mehreren Verwaltern sieht und nutzt jeder nur die Sicherungen in seinen eigenen Files.
+- **D-14:** Die Welt startet direkt nach dem Snapshot wieder; der Upload nach Nextcloud Files läuft danach im Hintergrund (minimale Pause, bewusste Auslegung von D-09).
+- **D-15:** Restore ist auch für kaputte Welten mit "Weltdaten fehlen" erlaubt, dann ohne vorheriges Sicherheits-Backup.
+- **D-16:** Abschlussmeldung über den Notify-Weg: höchstens Fehler werden gemeldet (Auslegung der Discretion-Zeile unten).
+
 ### Claude's Discretion
 - Technischer Weg des Archiv-Streams (get_archive über Hilfs-/Kurzzeitcontainer vs. direkter Volume-Zugriff), Upload per nc_py_api `files.upload_stream`, Timeouts, maximale Größenbehandlung, tar-Normalisierung.
 - Exakte API-Routen- und Statusmodell-Gestaltung (konsistent zu bestehenden Mustern aus Phase 2).
