@@ -26,7 +26,7 @@ from gameworld.playtime.pause import ART_PAUSE, PauseState
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
-SCHEMA_VERSION = "6"
+SCHEMA_VERSION = "7"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -176,6 +176,29 @@ CREATE TABLE IF NOT EXISTS talk_rooms (
   created_at TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'ok'
 );
+CREATE TABLE IF NOT EXISTS backups (
+  file_id INTEGER NOT NULL,
+  owner_uid TEXT NOT NULL,
+  world_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  preset TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (owner_uid, file_id)
+);
+CREATE INDEX IF NOT EXISTS backups_owner_world ON backups (owner_uid, world_id);
+CREATE TABLE IF NOT EXISTS backup_jobs (
+  world_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  state TEXT NOT NULL,
+  message TEXT,
+  file_name TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
 """
 
 # Namen der sechs Spielzeit-Tabellen aus Schema 4 (Migrationstest, Selbstdokumentation).
@@ -196,6 +219,10 @@ NOTIFY_TABLES = frozenset(
         "talk_rooms",
     }
 )
+# Namen der Tabellen aus Schema 7 (Phase 5: Sicherungsnachweise und Sicherungs-Aufträge).
+BACKUP_TABLES = frozenset({"backups", "backup_jobs"})
+# Zustand eines laufenden Sicherungs- oder Wiederherstellungsauftrags (Boot-Abgleich, D-11).
+BACKUP_JOB_RUNNING = "running"
 # Höchstens so viele Zeilen in der Outbox; die ältesten fallen weg (T-04.1-07).
 OUTBOX_MAX = 1000
 # Eine Outbox-Zeile vor dem Speichern: Art, Spielername (oder leer), Epoch, Zusatz.
@@ -218,7 +245,8 @@ ADD_TIME_GENERATION = "ALTER TABLE worlds ADD COLUMN time_generation INTEGER NOT
 ADD_PLAYER_SALT = "ALTER TABLE players ADD COLUMN salt TEXT NOT NULL DEFAULT ''"
 # Tabellen, deren Zeilen einem Nextcloud-Konto gehören (Spalte nc_user), für forget_account.
 # Nicht dabei: talk_rooms.owner_uid (Raum gehört der Welt), invites.invited_by (wer eingeladen
-# hat) und time_ledger_seen (Spielername je Welt, schützt vor doppelter Verbuchung).
+# hat), time_ledger_seen (Spielername je Welt, schützt vor doppelter Verbuchung) und
+# backups.owner_uid (ein Verwalter, kein Kinderkonto, wie talk_rooms.owner_uid).
 ACCOUNT_TABLES = (
     "players",
     "world_access",
@@ -304,6 +332,44 @@ class TalkRoomRow:
     read_only: bool
     created_at: str
     state: str
+
+
+@dataclass(frozen=True)
+class BackupRow:
+    """Integritätsnachweis einer Sicherung in Nextcloud Files (D-12).
+
+    Nur Dateien mit eigenem Eintrag dürfen zurückgespielt werden (BACKUP-02). Der
+    Eintrag gehört dem Verwalter, in dessen Files die Datei liegt (D-13). Zeilen
+    bleiben beim Löschen der Welt erhalten (D-08): Die Dateien liegen weiter in
+    Files, ein späterer Import (v2) braucht den Nachweis.
+    """
+
+    file_id: int
+    owner_uid: str
+    world_id: str
+    path: str
+    name: str
+    size: int
+    sha256: str
+    preset: str
+    kind: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class BackupJobRow:
+    """Zustand des letzten Sicherungs- oder Wiederherstellungsauftrags einer Welt (D-11).
+
+    Genau eine Zeile je Welt; sie wird beim Löschen der Welt entfernt (Plan 04).
+    """
+
+    world_id: str
+    kind: str
+    state: str
+    message: str | None
+    file_name: str | None
+    started_at: str
+    finished_at: str | None
 
 
 TALK_STATE_OK = "ok"
@@ -1187,6 +1253,115 @@ class WorldStore:
     def delete_talk_room(self, world_id: str) -> None:
         with self._connect() as connection:
             connection.execute("DELETE FROM talk_rooms WHERE world_id = ?", (world_id,))
+
+    # Sicherungen (Schema 7, Phase 5)
+
+    def add_backup(self, row: BackupRow) -> None:
+        """Nachweis speichern; gleiche (owner_uid, file_id) ersetzt den Eintrag (Files vergibt file_id einmalig)."""
+        with self._connect() as connection:
+            connection.execute(
+                f"INSERT OR REPLACE INTO backups ({', '.join(_BACKUP_COLUMNS)}) "  # noqa: S608
+                f"VALUES ({', '.join('?' for _ in _BACKUP_COLUMNS)})",
+                astuple(row),
+            )
+
+    def backups_for(self, owner_uid: str, world_id: str) -> list[BackupRow]:
+        """Sicherungen einer Welt in den Files dieses Verwalters, neueste zuerst (D-13)."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT {', '.join(_BACKUP_COLUMNS)} FROM backups "  # noqa: S608
+                "WHERE owner_uid = ? AND world_id = ? ORDER BY created_at DESC, file_id DESC",
+                (owner_uid, world_id),
+            ).fetchall()
+        return [_backup_row(row) for row in rows]
+
+    def backup_by_file(self, owner_uid: str, file_id: int) -> BackupRow | None:
+        """Nachweis zu einer Datei nur dieses Verwalters; fremde Einträge ergeben None (D-13)."""
+        with self._connect() as connection:
+            row = connection.execute(
+                f"SELECT {', '.join(_BACKUP_COLUMNS)} FROM backups WHERE owner_uid = ? AND file_id = ?",  # noqa: S608
+                (owner_uid, file_id),
+            ).fetchone()
+        return None if row is None else _backup_row(row)
+
+    def set_backup_job(
+        self,
+        world_id: str,
+        kind: str,
+        state: str,
+        message: str | None,
+        file_name: str | None,
+        started_at: str,
+        finished_at: str | None,
+    ) -> None:
+        """Auftragszustand einer Welt setzen; die eine Zeile je Welt wird überschrieben."""
+        with self._connect() as connection:
+            connection.execute(
+                f"INSERT OR REPLACE INTO backup_jobs ({', '.join(_JOB_COLUMNS)}) "  # noqa: S608
+                f"VALUES ({', '.join('?' for _ in _JOB_COLUMNS)})",
+                (world_id, kind, state, message, file_name, started_at, finished_at),
+            )
+
+    def get_backup_job(self, world_id: str) -> BackupJobRow | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                f"SELECT {', '.join(_JOB_COLUMNS)} FROM backup_jobs WHERE world_id = ?",  # noqa: S608
+                (world_id,),
+            ).fetchone()
+        return None if row is None else _job_row(row)
+
+    def running_backup_jobs(self) -> list[BackupJobRow]:
+        """Aufträge im Zustand running (nach einem Neustart unterbrochen, Boot-Abgleich)."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT {', '.join(_JOB_COLUMNS)} FROM backup_jobs WHERE state = ? ORDER BY world_id",  # noqa: S608
+                (BACKUP_JOB_RUNNING,),
+            ).fetchall()
+        return [_job_row(row) for row in rows]
+
+    def delete_backup_job(self, world_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM backup_jobs WHERE world_id = ?", (world_id,))
+
+    def reset_event_cursor(self, world_id: str) -> None:
+        """Cursor der Ereignisdatei nur dieser Welt vergessen (nach Wiederherstellung neu verankern)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM event_cursor WHERE world_id = ?", (world_id,))
+
+
+_BACKUP_COLUMNS = tuple(field.name for field in fields(BackupRow))
+_JOB_COLUMNS = tuple(field.name for field in fields(BackupJobRow))
+
+
+def _optional_text(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _backup_row(row: tuple[object, ...]) -> BackupRow:
+    return BackupRow(
+        file_id=int(str(row[0])),
+        owner_uid=str(row[1]),
+        world_id=str(row[2]),
+        path=str(row[3]),
+        name=str(row[4]),
+        size=int(str(row[5])),
+        sha256=str(row[6]),
+        preset=str(row[7]),
+        kind=str(row[8]),
+        created_at=str(row[9]),
+    )
+
+
+def _job_row(row: tuple[object, ...]) -> BackupJobRow:
+    return BackupJobRow(
+        world_id=str(row[0]),
+        kind=str(row[1]),
+        state=str(row[2]),
+        message=_optional_text(row[3]),
+        file_name=_optional_text(row[4]),
+        started_at=str(row[5]),
+        finished_at=_optional_text(row[6]),
+    )
 
 
 def _talk_row(row: tuple[object, ...]) -> TalkRoomRow:
