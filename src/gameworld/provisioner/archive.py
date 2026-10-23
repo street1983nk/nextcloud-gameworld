@@ -70,8 +70,11 @@ def _verified_zip(preset: Preset) -> pathlib.Path:
     return path
 
 
-def _safe_relative(name: str) -> str | None:
-    """Normalisierter relativer Pfad oder None, wenn er aus dem Ziel ausbrechen würde."""
+def safe_relative(name: str) -> str | None:
+    """Normalisierter relativer Pfad oder None, wenn er aus dem Ziel ausbrechen würde.
+
+    Öffentlich, weil auch die Restore-Prüfung (backup/archive.py) sie nutzt.
+    """
     if not name or name.startswith(("/", "\\")) or "\\" in name or ":" in name:
         return None
     if ".." in name.split("/"):
@@ -80,6 +83,10 @@ def _safe_relative(name: str) -> str | None:
     if cleaned in (".", "") or cleaned.startswith("../"):
         return None
     return cleaned
+
+
+# Alter Name, bestehende Aufrufer und Tests bleiben unverändert.
+_safe_relative = safe_relative
 
 
 def _game_entries(zipped: zipfile.ZipFile) -> list[tuple[str, zipfile.ZipInfo]]:

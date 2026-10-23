@@ -6,6 +6,7 @@ import errno
 import hashlib
 import io
 import json
+import re
 import tarfile
 from collections.abc import Iterator
 from typing import BinaryIO
@@ -217,13 +218,13 @@ def test_snapshot_without_map_is_rejected() -> None:
             yield chunk
         consumed.append(b"ENDE")
 
-    with pytest.raises(BackupError, match=MSG_NO_MAP):
+    with pytest.raises(BackupError, match=re.escape(MSG_NO_MAP)):
         write_snapshot(chunks(), io.BytesIO(), _manifest())
     assert consumed[-1] == b"ENDE"
 
 
 def test_snapshot_with_map_as_directory_is_rejected() -> None:
-    with pytest.raises(BackupError, match=MSG_NO_MAP):
+    with pytest.raises(BackupError, match=re.escape(MSG_NO_MAP)):
         _snapshot([_dir("world"), _dir("world/map.sqlite")])
 
 
@@ -238,14 +239,14 @@ class _FullDisk(io.RawIOBase):
 
 def test_snapshot_enospc_has_fixed_text() -> None:
     sink: BinaryIO = _FullDisk()  # type: ignore[assignment]
-    with pytest.raises(BackupError, match=MSG_NO_SPACE):
+    with pytest.raises(BackupError, match=re.escape(MSG_NO_SPACE)):
         write_snapshot(_chunks(_tar_bytes(VALID)), sink, _manifest())
     assert MSG_NO_SPACE == "Nicht genug freier Speicherplatz auf dem Server."
 
 
 def test_restore_enospc_has_fixed_text() -> None:
     sink: BinaryIO = _FullDisk()  # type: ignore[assignment]
-    with pytest.raises(BackupError, match=MSG_NO_SPACE):
+    with pytest.raises(BackupError, match=re.escape(MSG_NO_SPACE)):
         prepare_restore(io.BytesIO(_backup(VALID, _manifest())), world_id=WORLD_ID, preset=PRESET, sink=sink)
 
 
@@ -263,14 +264,14 @@ def test_verify_own_snapshot() -> None:
 
 def test_verify_rejects_backup_without_map() -> None:
     source = io.BytesIO(_backup([_dir("world"), _file("world/x.dat")], _manifest()))
-    with pytest.raises(RestoreRejected, match=MSG_NO_MAP):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_NO_MAP)):
         verify_snapshot(source, world_id=WORLD_ID, preset=PRESET)
     assert source.tell() == 0
 
 
 def test_verify_rejects_foreign_manifest() -> None:
     raw, _ = _snapshot()
-    with pytest.raises(RestoreRejected, match=MSG_FOREIGN_WORLD):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_FOREIGN_WORLD)):
         verify_snapshot(io.BytesIO(raw), world_id="ffffffffffff", preset=PRESET)
 
 
@@ -371,54 +372,54 @@ def test_sha256_of_reads_whole_file_and_rewinds() -> None:
     ids=lambda entry: f"{entry[0]}-{entry[1]!r}",
 )
 def test_restore_rejects_unsafe_entry(bad: Entry) -> None:
-    with pytest.raises(RestoreRejected, match=MSG_BAD_ENTRY):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_BAD_ENTRY)):
         _restore(_backup([*VALID, bad], _manifest()))
 
 
 def test_restore_rejects_missing_map() -> None:
-    with pytest.raises(RestoreRejected, match=MSG_NO_MAP):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_NO_MAP)):
         _restore(_backup([_dir("world"), _file("world/x.dat")], _manifest()))
 
 
 def test_restore_rejects_missing_manifest() -> None:
-    with pytest.raises(RestoreRejected, match=MSG_NO_MANIFEST):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_NO_MANIFEST)):
         _restore(_backup(VALID))
 
 
 @pytest.mark.parametrize("manifest", [b"kein json", b"[]", json.dumps({"format": 2}).encode()])
 def test_restore_rejects_broken_manifest(manifest: bytes) -> None:
-    with pytest.raises(RestoreRejected, match=MSG_NO_MANIFEST):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_NO_MANIFEST)):
         _restore(_backup(VALID, manifest))
 
 
 def test_restore_rejects_foreign_world_id() -> None:
-    with pytest.raises(RestoreRejected, match=MSG_FOREIGN_WORLD):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_FOREIGN_WORLD)):
         _restore(_backup(VALID, _manifest(world_id="ffffffffffff")))
 
 
 def test_restore_rejects_foreign_preset() -> None:
-    with pytest.raises(RestoreRejected, match=MSG_FOREIGN_WORLD):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_FOREIGN_WORLD)):
         _restore(_backup(VALID, _manifest(preset="voxelibre-sanft")))
     assert MSG_FOREIGN_WORLD == "Diese Sicherung gehört zu einer anderen Welt."
 
 
 def test_restore_rejects_too_many_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(archive, "MAX_RESTORE_BYTES", 100)
-    with pytest.raises(RestoreRejected, match=MSG_TOO_BIG):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_TOO_BIG)):
         _restore(_backup(VALID, _manifest()))
 
 
 def test_restore_rejects_too_many_entries(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(archive, "MAX_RESTORE_ENTRIES", 3)
     entries = [*VALID, _file("world/a"), _file("world/b")]
-    with pytest.raises(RestoreRejected, match=MSG_TOO_BIG):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_TOO_BIG)):
         _restore(_backup(entries, _manifest()))
 
 
 def test_restore_rejects_compression_bomb(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(archive, "RATIO_FLOOR", 0)
     bomb = [_dir("world"), _file("world/map.sqlite", b"\x00" * (4 * 1024 * 1024))]
-    with pytest.raises(RestoreRejected, match=MSG_TOO_BIG):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_TOO_BIG)):
         _restore(_backup(bomb, _manifest()))
 
 
@@ -431,13 +432,13 @@ def test_small_highly_compressible_world_is_accepted() -> None:
 
 @pytest.mark.parametrize("raw", [b"", b"kein gzip", _tar_bytes(VALID)[:700]])
 def test_restore_rejects_broken_archive(raw: bytes) -> None:
-    with pytest.raises(RestoreRejected, match=MSG_BAD_ENTRY):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_BAD_ENTRY)):
         _restore(raw)
 
 
 def test_restore_rejects_truncated_gzip() -> None:
     raw = _backup([*VALID, _file("world/gross", bytes(range(256)) * 4000)], _manifest())
-    with pytest.raises(RestoreRejected, match=MSG_BAD_ENTRY):
+    with pytest.raises(RestoreRejected, match=re.escape(MSG_BAD_ENTRY)):
         _restore(raw[: len(raw) // 2])
 
 
@@ -448,12 +449,12 @@ def test_restore_never_logs_entry_names(caplog: pytest.LogCaptureFixture) -> Non
 
 
 def test_exclusion_lists_come_from_mod_constants() -> None:
-    assert archive.BACKUP_EXCLUDED_FILES == {
+    assert {
         access_mod.ACCESS_FILE_NAME,
         access_mod.STATE_FILE_NAME,
         access_mod.EVENTS_FILE_NAME,
         status_mod.PLAYERS_FILE_NAME,
         time_mod.RULES_FILE_NAME,
         time_mod.LEDGER_FILE_NAME,
-    }
+    } == archive.BACKUP_EXCLUDED_FILES
     assert status_mod.PLAYERS_FILE.endswith(f"/{status_mod.PLAYERS_FILE_NAME}")

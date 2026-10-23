@@ -42,8 +42,9 @@ name = {MOD_NAME}
 description = Meldet verbundene Spieler an das Gameworld-Dashboard
 """
 
+PLAYERS_FILE_NAME = "gameworld_players.txt"
 # Pfad im Container; die ExApp liest ihn per get_archive (02-04, 02-05).
-PLAYERS_FILE = f"{DATA_DIR}/.minetest/worlds/world/gameworld_players.txt"
+PLAYERS_FILE = f"{DATA_DIR}/.minetest/worlds/world/{PLAYERS_FILE_NAME}"
 
 # Gültige Luanti-Spielernamen (T-02-23): Alles andere, auch IP-artige Zeilen,
 # Leerzeichen, Umlaute oder Markup, erreicht das Dashboard nie.
