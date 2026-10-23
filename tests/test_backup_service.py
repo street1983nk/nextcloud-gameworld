@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import re
 import tarfile
 import tempfile
 from collections.abc import Callable
@@ -27,7 +28,7 @@ from gameworld.config import load_settings
 from gameworld.notify.links import EMBED_PATH
 from gameworld.notify.texts import BACKUP_FAILED_SUBJECT
 from gameworld.provisioner.client import DockerProvisioner, ProvisionerError, StatusFile, WorldNotFoundError
-from gameworld.provisioner.time_mod import RULES_FILE_NAME
+from gameworld.provisioner.time_mod import MOD_INIT_LUA, RULES_FILE_NAME
 from gameworld.worlds.service import JOB_RUNNING, WorldBusyError, WorldService
 from gameworld.worlds.store import BackupRow, WorldStore
 from tests.conftest import FakeBackupFiles, FakeNotifier
@@ -218,8 +219,8 @@ async def test_backup_with_player_halts_before_stop(
     halt = _halt_write_index(fake, world_id)
     assert halt is not None
     assert halt < fake.calls.index(f"stop:{world_id}")
-    # Gewartet wird bis ab (jetzt + 15 s) plus 2 s Gnadenfrist.
-    assert sleeps == [pytest.approx(17.0)]
+    # Gewartet wird bis ab (jetzt + 15 s) plus 7 s Gnadenfrist (ein Mod-Takt plus 2 s).
+    assert sleeps == [pytest.approx(22.0)]
     assert _job_state(store, world_id) == ("ok", None)
     # Nach dem Neustart steht kein Halt mehr in der Regeldatei.
     last = [archive for target, archive in fake.written if target == world_id and _rules_in(archive)]
@@ -783,3 +784,12 @@ async def test_list_backups_without_folder_is_empty(
 async def test_list_backups_of_unknown_world_raises(backup: BackupService) -> None:
     with pytest.raises(WorldNotFoundError):
         await backup.list_backups("0123456789ab", ADMIN)
+
+
+def test_halt_grace_covers_a_full_time_mod_tick() -> None:
+    # Der Zeit-Mod trennt erst im nächsten Takt nach ab; stoppt der Server vorher,
+    # sieht das Kind "Server shutting down." statt des Pausentexts (Abnahme 05-09).
+    match = re.search(r"^local TICK = (\d+)$", MOD_INIT_LUA, re.MULTILINE)
+    assert match is not None
+    assert int(match.group(1)) == 5
+    assert int(match.group(1)) + 2 <= backup_module.HALT_GRACE_SECONDS

@@ -114,8 +114,11 @@ STATE_OK = "ok"
 STATE_FAILED = "failed"
 OP_BACKING_UP = "backing_up"
 OP_RESTORING = "restoring"
-# Nach ``ab`` noch so lange warten, bis der Zeit-Mod im 5-s-Takt alle getrennt hat.
-HALT_GRACE_SECONDS = 2
+# Nach ``ab`` noch so lange warten, bis der Zeit-Mod im 5-s-Takt alle getrennt hat:
+# ein voller Takt (der Kick kommt bis zu 5 s nach ``ab``) plus 2 s für Trennen und
+# Speichern. Mit nur 2 s stoppte der Server am Dev-Stack oft vor dem Kick, das Kind
+# las dann "Server shutting down." statt des Pausentexts (Abnahme 05-09).
+HALT_GRACE_SECONDS = 7
 # Platz für den Spool: das Doppelte der letzten Sicherung dieser Welt (Pitfall 10).
 SPACE_FACTOR = 2
 SPOOL_DIR_NAME = "tmp"

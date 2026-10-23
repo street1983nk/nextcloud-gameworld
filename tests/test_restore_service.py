@@ -370,7 +370,7 @@ async def test_restore_with_player_halts_before_stop_while_restoring(
     assert halt is not None
     assert halt < fake.calls.index(f"stop:{world_id}")
     assert states == ["restoring"]
-    assert sleeps == [pytest.approx(17.0)]
+    assert sleeps == [pytest.approx(22.0)]
     last = [archive for target, archive in fake.written if target == world_id and _rules_in(archive)]
     assert last
     assert not _halt_rules(last[-1])
