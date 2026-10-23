@@ -19,8 +19,16 @@ def require_play_enabled() -> None:
 
 
 def install_play(app: FastAPI) -> None:
-    """Bindet die Router des Spikes ein (Plan 06/07 hängen ihre Router hier an)."""
-    # Später Import: pages braucht require_play_enabled aus diesem Modul.
-    from gameworld.play import pages
+    """Bindet die Router des Spikes ein (Plan 07 hängt seinen Router hier an).
+
+    /api/my/play-ticket läuft immer hinter AppAPIAuthMiddleware und
+    JsonOnlyChangesMiddleware (CSRF IN-08); nur /play/launch prüft im Modus dev
+    Origin, Content-Type und Sec-Fetch-Site selbst (ticket_api.py).
+    """
+    # Später Import: pages und ticket_api brauchen require_play_enabled aus diesem Modul.
+    from gameworld.play import pages, ticket_api
 
     app.include_router(pages.router)
+    app.include_router(ticket_api.api_router)
+    app.include_router(ticket_api.status_router)
+    app.include_router(ticket_api.play_router)

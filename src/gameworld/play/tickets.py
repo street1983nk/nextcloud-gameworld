@@ -1,6 +1,6 @@
 """Ein-Mal-Tickets des Browser-Spikes (04.2-06, D-02/D-09/D-10).
 
-Ein Ticket ist ein Zufallswert mit 128 Bit (``secrets.token_urlsafe(16)``), gilt
+Ein Ticket ist ein Zufallswert mit 128 Bit (16 Bytes aus ``secrets``), gilt
 TICKET_SECONDS, ist genau einmal einlösbar und an Zweck, Konto (UID), Welt und
 Spielername gebunden. Zwei Zwecke:
 
