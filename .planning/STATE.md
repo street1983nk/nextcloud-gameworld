@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-05-PLAN.md
-last_updated: "2026-10-23T16:48:56.425Z"
+stopped_at: Completed 05-06-PLAN.md
+last_updated: "2026-10-23T17:21:36.444Z"
 last_activity: 2026-10-23
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 56
-  completed_plans: 52
+  completed_plans: 53
   percent: 75
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 05 (backup-und-restore) — EXECUTING
-Plan: 6 of 9
+Plan: 7 of 9
 Status: Ready to execute
 Last activity: 2026-10-23
 
-Progress: [█████████░] 93%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -104,6 +104,7 @@ Progress: [█████████░] 93%
 | Phase 05 P02 | 35 min | 2 tasks | 9 files |
 | Phase 05 P03 | 20 min | 2 tasks | 4 files |
 | Phase 05 P05 | 70 min | 3 tasks | 9 files |
+| Phase 05 P06 | 75 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -238,6 +239,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-05: abort_offline(ticket) schon in Plan 05 angelegt (previous_op_state/error, clear_halt, Regeldatei sofort ohne @halt); vor dem Stopp abort_offline, ab dem Stopp end_offline im finally, beides abgeschirmt
 - [Phase 05]: 05-05: recover_jobs im Lifespan vor yield; Fehler-Hinweis nur an den auslösenden Verwalter mit Link auf die Übersicht (app_link), Erfolg still (D-16)
 - [Phase 05]: 05-05: Liste = Schnittmenge Files x eigener Nachweis über (file_id, size); POST backups 202 mit WorldOut, GET liefert backups/total_size/other_files
+- [Phase 05]: 05-06: Restore zerstört erst nach Beweis: Phase A (Download, Größe/SHA-256 gegen eigenen Nachweis, prepare_restore) ohne Stopp, Phase B (Halt, Stopp, Zählbuch, geprüfte vor-restore-Sicherung) mit end_offline-Rückweg, Phase C mark_swap, Tausch mit zweitem Versuch, Rückfall auf Sicherheits-Snapshot, sonst RESTORE_INTERRUPTED
+- [Phase 05]: 05-06: Manifest gegen die Spielart der Weltzeile geprüft; Lua/worldmods/world.mt aus Sicherungen verworfen (nicht abgelehnt); Startfehler nach gelungenem Tausch = Auftrag ok, Fehler an der Welt
+- [Phase 05]: 05-06: POST /api/worlds/{id}/restore mit file_id als echter Ganzzahl 1 bis 2^63-1, confirm (sonst 409), fremde/unbekannte Sicherung 404, delete-only erlaubt (D-15)
 
 ### Pending Todos
 
@@ -267,6 +271,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T16:48:50.193Z
-Stopped at: Completed 05-05-PLAN.md
+Last session: 2026-10-23T17:21:36.425Z
+Stopped at: Completed 05-06-PLAN.md
 Resume file: None
