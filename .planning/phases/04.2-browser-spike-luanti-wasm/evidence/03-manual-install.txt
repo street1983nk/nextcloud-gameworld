@@ -1,0 +1,198 @@
+# Plan 04.2-03 Task 1: Header- und WS-Probe unter manual-install
+# Erzeugt von scripts/dev/spike-04.2/probe-headers.sh am 2026-10-23T09:05:32Z
+# Set-Cookie-Werte ersetzt, kein Passwort im Beleg.
+
+=== proxy-play
+>>> http://localhost:8091/index.php/apps/app_api/proxy/gameworld/play/ (Basic-Auth admin: ja)
+HTTP/1.1 200 OK
+Date: Fri, 23 Oct 2026 09:05:27 GMT
+Server: Apache/2.4.68 (Debian)
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-Robots-Tag: noindex, nofollow
+Referrer-Policy: no-referrer
+X-Powered-By: PHP/8.5.9
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ws://localhost:8091; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+X-Request-Id: PUBYgXeKg1yVa2YeoR2v
+Cache-Control: no-store
+Feature-Policy: fullscreen 'self'
+X-User-Id: admin
+cross-origin-opener-policy: same-origin
+cross-origin-embedder-policy: require-corp
+cross-origin-resource-policy: same-origin
+permissions-policy: fullscreen=(self)
+accept-ranges: bytes
+Content-Length: 1262
+last-modified: Fri, 23 Oct 2026 05:25:42 GMT
+etag: "7e92dddcb47bb86df5677afc1173cc4a"
+Vary: Accept-Encoding
+Content-Type: text/html; charset=utf-8
+
+
+=== proxy-wasm
+>>> http://localhost:8091/index.php/apps/app_api/proxy/gameworld/play/static/b/probe.wasm (Basic-Auth admin: ja)
+HTTP/1.1 200 OK
+Date: Fri, 23 Oct 2026 09:05:28 GMT
+Server: Apache/2.4.68 (Debian)
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-Robots-Tag: noindex, nofollow
+Referrer-Policy: no-referrer
+X-Powered-By: PHP/8.5.9
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ws://localhost:8091; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+X-Request-Id: IwV5yRGEcVQollcgl697
+Cache-Control: no-cache
+Feature-Policy: fullscreen 'self'
+X-User-Id: admin
+cross-origin-opener-policy: same-origin
+cross-origin-embedder-policy: require-corp
+cross-origin-resource-policy: same-origin
+permissions-policy: fullscreen=(self)
+accept-ranges: bytes
+Content-Length: 8
+last-modified: Fri, 23 Oct 2026 08:48:54 GMT
+etag: "0e72e16ec8c74c4ed8b4891998700aef"
+Content-Type: application/wasm
+
+
+=== direkt-play
+>>> http://127.0.0.1:10040/play/ (Basic-Auth admin: nein)
+HTTP/1.1 200 OK
+date: Fri, 23 Oct 2026 09:05:29 GMT
+server: uvicorn
+cross-origin-opener-policy: same-origin
+cross-origin-embedder-policy: require-corp
+cross-origin-resource-policy: same-origin
+content-security-policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ws://localhost:8091; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'
+referrer-policy: no-referrer
+x-content-type-options: nosniff
+permissions-policy: fullscreen=(self)
+feature-policy: fullscreen 'self'
+cache-control: no-store
+content-type: text/html; charset=utf-8
+accept-ranges: bytes
+content-length: 1262
+last-modified: Fri, 23 Oct 2026 05:25:42 GMT
+etag: "7e92dddcb47bb86df5677afc1173cc4a"
+
+
+=== direkt-wasm
+>>> http://127.0.0.1:10040/play/static/b/probe.wasm (Basic-Auth admin: nein)
+HTTP/1.1 200 OK
+date: Fri, 23 Oct 2026 09:05:29 GMT
+server: uvicorn
+cross-origin-opener-policy: same-origin
+cross-origin-embedder-policy: require-corp
+cross-origin-resource-policy: same-origin
+content-security-policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ws://localhost:8091; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'
+referrer-policy: no-referrer
+x-content-type-options: nosniff
+permissions-policy: fullscreen=(self)
+feature-policy: fullscreen 'self'
+cache-control: no-cache
+content-type: application/wasm
+accept-ranges: bytes
+content-length: 8
+last-modified: Fri, 23 Oct 2026 08:48:54 GMT
+etag: "0e72e16ec8c74c4ed8b4891998700aef"
+
+
+=== proxy-ws-upgrade
+>>> http://localhost:8091/index.php/apps/app_api/proxy/gameworld/play/ws (Basic-Auth admin: ja)
+HTTP/1.1 403 Forbidden
+Date: Fri, 23 Oct 2026 09:05:30 GMT
+Server: Apache/2.4.68 (Debian)
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-Robots-Tag: noindex, nofollow
+Referrer-Policy: no-referrer
+X-Powered-By: PHP/8.5.9
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Content-Security-Policy: default-src 'none';base-uri 'none';manifest-src 'self';frame-ancestors 'none'
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+X-Request-Id: FDGBvZYxXgPke2yAPzX0
+Cache-Control: private, max-age=3600, must-revalidate
+Feature-Policy: autoplay 'none';camera 'none';fullscreen 'none';geolocation 'none';microphone 'none';payment 'none'
+X-User-Id: admin
+Connection: close
+Content-Length: 0
+Expires: Fri, 23 Oct 2026 10:05:30 GMT
+Content-Type: text/plain; charset=utf-8
+
+
+=== direkt-ws-upgrade
+>>> http://127.0.0.1:10040/play/ws (Basic-Auth admin: nein)
+HTTP/1.1 403 Forbidden
+Date: Fri, 23 Oct 2026 09:05:31 GMT
+Connection: close
+Content-Length: 0
+Content-Type: text/plain; charset=utf-8
+
+
+=== proxy-ws-ohne-upgrade
+>>> http://localhost:8091/index.php/apps/app_api/proxy/gameworld/play/ws (Basic-Auth admin: ja)
+HTTP/1.1 404 Not Found
+Date: Fri, 23 Oct 2026 09:05:31 GMT
+Server: Apache/2.4.68 (Debian)
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-Robots-Tag: noindex, nofollow
+Referrer-Policy: no-referrer
+X-Powered-By: PHP/8.5.9
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Content-Security-Policy: default-src 'none';base-uri 'none';manifest-src 'self';frame-ancestors 'none'
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+Set-Cookie: <entfernt>
+X-Request-Id: EJvNIzWiULvHMDDM7nck
+Cache-Control: no-cache, no-store, must-revalidate
+Feature-Policy: autoplay 'none';camera 'none';fullscreen 'none';geolocation 'none';microphone 'none';payment 'none'
+X-User-Id: admin
+Content-Length: 22
+Content-Type: application/json
+
+
+=== Zaehlung (Zeilen je Antwort, case-insensitiv)
+anfrage                status    csp  coop  coep    fp   xfo    pp
+proxy-play             200         1     1     1     1     1     1
+proxy-wasm             200         1     1     1     1     1     1
+direkt-play            200         1     1     1     1     0     1
+direkt-wasm            200         1     1     1     1     0     1
+proxy-ws-upgrade       403         1     0     0     1     1     0
+direkt-ws-upgrade      403         0     0     0     0     0     0
+proxy-ws-ohne-upgrade  404         1     0     0     1     1     0
+(csp = content-security-policy, fp = feature-policy, xfo = x-frame-options, pp = permissions-policy)
