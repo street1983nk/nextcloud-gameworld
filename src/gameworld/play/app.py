@@ -26,9 +26,11 @@ def install_play(app: FastAPI) -> None:
     Origin, Content-Type und Sec-Fetch-Site selbst (ticket_api.py).
     """
     # Später Import: pages und ticket_api brauchen require_play_enabled aus diesem Modul.
-    from gameworld.play import pages, ticket_api
+    from gameworld.play import pages, ticket_api, ws
 
     app.include_router(pages.router)
     app.include_router(ticket_api.api_router)
     app.include_router(ticket_api.status_router)
     app.include_router(ticket_api.play_router)
+    # WebSocket-Proxy: prüft Schalter, Origin und Identität selbst vor accept.
+    app.include_router(ws.router)
