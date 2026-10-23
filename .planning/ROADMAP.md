@@ -306,7 +306,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-04-PLAN.md , Busy-Zustände backing_up/restoring/restoring_swap: Status, Guards, Reconciler (RESTORE_INTERRUPTED), backup_job in der Weltenliste, Kindertext, Offline-Abschnitte mit kurzen Sperren (players_online auch im Busy-Zustand)
+- [x] 05-04-PLAN.md , Busy-Zustände backing_up/restoring/restoring_swap: Status, Guards, Reconciler (RESTORE_INTERRUPTED), backup_job in der Weltenliste, Kindertext, Offline-Abschnitte mit kurzen Sperren (players_online auch im Busy-Zustand)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -354,5 +354,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
-| 5. Backup und Restore | 3/9 | In Progress|  |
+| 5. Backup und Restore | 4/9 | In Progress|  |
 | 6. Store-Release | 0/TBD | Not started | - |
