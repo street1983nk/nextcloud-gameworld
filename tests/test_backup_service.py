@@ -18,16 +18,19 @@ from gameworld.backup.archive import MSG_BAD_ENTRY, MSG_NO_SPACE, RestoreRejecte
 from gameworld.backup.files import MSG_QUOTA, FilesError
 from gameworld.backup.service import (
     JOB_FAILED,
+    JOB_INTERRUPTED,
     JOB_UNUSABLE,
     BackupService,
     PlayersOnline,
 )
 from gameworld.config import load_settings
-from gameworld.provisioner.client import DockerProvisioner, ProvisionerError, StatusFile
+from gameworld.notify.links import EMBED_PATH
+from gameworld.notify.texts import BACKUP_FAILED_SUBJECT
+from gameworld.provisioner.client import DockerProvisioner, ProvisionerError, StatusFile, WorldNotFoundError
 from gameworld.provisioner.time_mod import RULES_FILE_NAME
 from gameworld.worlds.service import JOB_RUNNING, WorldBusyError, WorldService
 from gameworld.worlds.store import BackupRow, WorldStore
-from tests.conftest import FakeBackupFiles
+from tests.conftest import FakeBackupFiles, FakeNotifier
 from tests.test_service_lifecycle import FRESH, STARTED_AT, FakeProvisioner
 
 # 2026-10-23 12:00 UTC, in Berlin (Sommerzeit) 14:00.
@@ -601,3 +604,182 @@ async def test_abort_offline_writes_rules_without_halt(
     assert rules
     assert not _halt_rules(rules[-1])
     assert not any(call.startswith(("stop:", "start:")) for call in fake.calls)
+
+
+# 05-05 Task 2: Fehler-Benachrichtigung (D-16), Wiederanlauf, Liste (D-07, D-08, D-12, D-13)
+
+
+def _failed_notes(notifier: FakeNotifier) -> list[tuple[str, str, str]]:
+    return [(uid, subject, message) for uid, subject, message, _params, _link in notifier.calls]
+
+
+async def test_upload_error_notifies_triggering_admin(
+    backup: BackupService,
+    service: WorldService,
+    fake: FakeProvisioner,
+    fake_files: FakeBackupFiles,
+    fake_notifier: FakeNotifier,
+) -> None:
+    world_id = await _world(service, fake, name="Burg")
+    fake_files.upload_error = FilesError(MSG_QUOTA)
+
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+
+    assert _failed_notes(fake_notifier) == [(ADMIN, BACKUP_FAILED_SUBJECT, MSG_QUOTA)]
+    _uid, _subject, _message, params, link = fake_notifier.calls[0]
+    assert params == {"world": {"type": "highlight", "id": world_id, "name": "Burg"}}
+    assert link == f"http://localhost:8091{EMBED_PATH}"
+    assert BACKUP_FAILED_SUBJECT == "Sicherung von {world} fehlgeschlagen"
+
+
+async def test_every_failed_exit_notifies_once(
+    backup: BackupService,
+    service: WorldService,
+    fake: FakeProvisioner,
+    store: WorldStore,
+    fake_notifier: FakeNotifier,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world_id = await _world(service, fake)
+
+    fake.snapshot_errors = [ProvisionerError("Docker hat die Anfrage abgelehnt: kaputt")]
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+    assert len(fake_notifier.calls) == 1
+
+    fake.snapshots[world_id] = world_tar(with_map=False)
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+    assert len(fake_notifier.calls) == 2
+    assert fake_notifier.calls[-1][2] == JOB_UNUSABLE
+
+    fake.snapshots[world_id] = world_tar()
+    store.add_backup(
+        BackupRow(7, ADMIN, world_id, "p/alt.tar.gz", "alt.tar.gz", 10, "0" * 64, "mtg_kreativ", "backup", "2026-10-22")
+    )
+    monkeypatch.setattr(backup_module, "disk_free", lambda path: 0)
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+    assert len(fake_notifier.calls) == 3
+    assert fake_notifier.calls[-1][2] == MSG_NO_SPACE
+    assert {call[0] for call in fake_notifier.calls} == {ADMIN}
+
+
+async def test_success_sends_no_notification(
+    backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_notifier: FakeNotifier
+) -> None:
+    world_id = await _world(service, fake)
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+    assert fake_notifier.calls == []
+
+
+async def test_notifier_error_keeps_job_failed(
+    backup: BackupService,
+    service: WorldService,
+    fake: FakeProvisioner,
+    fake_files: FakeBackupFiles,
+    fake_notifier: FakeNotifier,
+    store: WorldStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world_id = await _world(service, fake)
+    fake_files.upload_error = FilesError(MSG_QUOTA)
+
+    async def broken(*args: object) -> bool:
+        del args
+        raise RuntimeError("Nextcloud weg")
+
+    monkeypatch.setattr(fake_notifier, "notify", broken)
+
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+
+    assert _job_state(store, world_id) == ("failed", MSG_QUOTA)
+
+
+async def test_recover_jobs_marks_running_as_interrupted(backup: BackupService, store: WorldStore) -> None:
+    store.set_backup_job("aaaaaaaaaaa1", "backup", "running", None, None, "2026-10-23T10:00:00+00:00", None)
+    store.set_backup_job("aaaaaaaaaaa2", "backup", "ok", None, "x.tar.gz", "2026-10-23T09:00:00+00:00", "t")
+
+    assert backup.recover_jobs() == 1
+
+    assert _job_state(store, "aaaaaaaaaaa1") == ("failed", JOB_INTERRUPTED)
+    assert _job_state(store, "aaaaaaaaaaa2") == ("ok", None)
+    assert store.running_backup_jobs() == []
+    assert JOB_INTERRUPTED == "Die Sicherung wurde durch einen Neustart des Servers unterbrochen."
+
+
+def _proof(
+    world_id: str, file_id: int, path: str, size: int, *, owner: str = ADMIN, created: str = "2026-10-23"
+) -> BackupRow:
+    return BackupRow(
+        file_id=file_id,
+        owner_uid=owner,
+        world_id=world_id,
+        path=path,
+        name=path.rsplit("/", 1)[-1],
+        size=size,
+        sha256="0" * 64,
+        preset="mtg_kreativ",
+        kind="backup",
+        created_at=created,
+    )
+
+
+async def test_list_backups_is_intersection_of_files_and_proofs(
+    backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
+) -> None:
+    world_id = await _world(service, fake, name="Burg")
+    folder = "Gameworld/Sicherungen/Burg"
+    good_old = fake_files.put(ADMIN, f"{folder}/Burg-2026-10-22-1000.tar.gz", b"a" * 10)
+    good_new = fake_files.put(ADMIN, f"{folder}/Burg-2026-10-23-1000.tar.gz", b"b" * 20)
+    resized = fake_files.put(ADMIN, f"{folder}/Burg-2026-10-21-1000.tar.gz", b"c" * 30)
+    fake_files.put(ADMIN, f"{folder}/fremd.tar.gz", b"d" * 40)
+    store.add_backup(_proof(world_id, good_old, f"{folder}/Burg-2026-10-22-1000.tar.gz", 10, created="2026-10-22"))
+    store.add_backup(_proof(world_id, good_new, f"{folder}/Burg-2026-10-23-1000.tar.gz", 20, created="2026-10-23"))
+    # Gleiche file_id, aber andere Größe als im Nachweis: zählt nicht als Sicherung.
+    store.add_backup(_proof(world_id, resized, f"{folder}/Burg-2026-10-21-1000.tar.gz", 31, created="2026-10-21"))
+    # Nachweis ohne Datei (in Files gelöscht): erscheint nicht.
+    store.add_backup(_proof(world_id, 999, f"{folder}/weg.tar.gz", 5, created="2026-10-20"))
+
+    listing = await backup.list_backups(world_id, ADMIN)
+
+    assert [entry.file_id for entry in listing.entries] == [good_new, good_old]
+    assert [entry.name for entry in listing.entries] == ["Burg-2026-10-23-1000.tar.gz", "Burg-2026-10-22-1000.tar.gz"]
+    assert listing.entries[0].size == 20
+    assert listing.entries[0].kind == "backup"
+    assert listing.entries[0].created_at == "2026-10-23"
+    assert listing.total_size == 30
+    assert listing.other_files == 2
+
+
+async def test_list_backups_only_own_files(
+    backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
+) -> None:
+    """D-13: Datei und Nachweis eines anderen Verwalters bleiben unsichtbar."""
+    world_id = await _world(service, fake, name="Burg")
+    path = "Gameworld/Sicherungen/Burg/Burg-2026-10-23-1000.tar.gz"
+    other = fake_files.put("papa", path, b"x" * 10)
+    store.add_backup(_proof(world_id, other, path, 10, owner="papa"))
+
+    listing = await backup.list_backups(world_id, ADMIN)
+
+    assert listing.entries == []
+    assert listing.total_size == 0
+    assert listing.other_files == 0
+    assert ("listdir", ADMIN, "Gameworld/Sicherungen/Burg") in fake_files.calls
+
+
+async def test_list_backups_without_folder_is_empty(
+    backup: BackupService, service: WorldService, fake: FakeProvisioner
+) -> None:
+    world_id = await _world(service, fake)
+    listing = await backup.list_backups(world_id, ADMIN)
+    assert (listing.entries, listing.total_size, listing.other_files) == ([], 0, 0)
+
+
+async def test_list_backups_of_unknown_world_raises(backup: BackupService) -> None:
+    with pytest.raises(WorldNotFoundError):
+        await backup.list_backups("0123456789ab", ADMIN)
