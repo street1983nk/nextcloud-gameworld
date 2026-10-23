@@ -23,7 +23,14 @@ from gameworld.provisioner.client import (
     WorldNotFoundError,
 )
 from gameworld.worlds import service as service_module
-from gameworld.worlds.reconciler import ReconcileAction, decide_boot, decide_periodic, reconcile_forever
+from gameworld.worlds.reconciler import (
+    BUSY_OP_STATES,
+    ReconcileAction,
+    decide_boot,
+    decide_periodic,
+    needs_volume_check,
+    reconcile_forever,
+)
 from gameworld.worlds.service import (
     RECONCILE_DATA_MISSING,
     RECONCILE_FAILED,
@@ -81,7 +88,53 @@ BOOT_TABLE = [
     pytest.param(_row(), _container("created"), True, A.START, id="running-created"),
     pytest.param(_row(op_state="failed"), _container("exited", exit_code=1), True, A.NONE, id="failed-exited"),
     pytest.param(_row(op_state="failed"), None, True, A.NONE, id="failed-missing"),
+    # Busy-Zustände aus Phase 5 (RESEARCH Pattern 7, Pitfall 2)
+    pytest.param(
+        _row(op_state="restoring_swap"), None, False, A.MARK_RESTORE_INTERRUPTED, id="swap-no-container-no-volume"
+    ),
+    pytest.param(
+        _row(op_state="restoring_swap"), _container("exited"), True, A.MARK_RESTORE_INTERRUPTED, id="swap-exited"
+    ),
+    pytest.param(
+        _row("stopped", op_state="restoring_swap"),
+        _container("running"),
+        True,
+        A.MARK_RESTORE_INTERRUPTED,
+        id="swap-stopped-running",
+    ),
+    pytest.param(_row(op_state="backing_up"), _container("exited"), True, A.CLEAR_BUSY, id="backing-up-exited"),
+    pytest.param(_row(op_state="backing_up"), None, False, A.CLEAR_BUSY, id="backing-up-missing"),
+    pytest.param(_row(op_state="restoring"), _container("exited"), True, A.CLEAR_BUSY, id="restoring-exited"),
+    pytest.param(
+        _row("stopped", op_state="restoring"), _container("running"), True, A.CLEAR_BUSY, id="restoring-stopped-running"
+    ),
+    pytest.param(_row("deleted", op_state="backing_up"), None, False, A.RETRY_DELETE, id="deleted-backing-up"),
 ]
+
+BUSY = sorted(BUSY_OP_STATES)
+
+
+def test_busy_op_states_constant() -> None:
+    assert frozenset({"backing_up", "restoring", "restoring_swap"}) == BUSY_OP_STATES
+
+
+@pytest.mark.parametrize("op_state", BUSY)
+def test_busy_rows_need_no_volume_check(op_state: str) -> None:
+    assert needs_volume_check(_row(op_state=op_state), None) is False
+
+
+@pytest.mark.parametrize("op_state", BUSY)
+@pytest.mark.parametrize("desired", ["running", "stopped"])
+@pytest.mark.parametrize("container", [None, _container("running"), _container("exited")])
+def test_decide_periodic_never_touches_busy_rows(op_state: str, desired: str, container: ContainerInfo | None) -> None:
+    assert decide_periodic(_row(desired, op_state=op_state), container) is A.NONE
+
+
+def test_restoring_swap_is_never_start_or_data_missing() -> None:
+    for container in (None, _container("exited"), _container("created")):
+        for volume in (True, False):
+            action = decide_boot(_row(op_state="restoring_swap"), container, volume)
+            assert action not in {A.START, A.MARK_DATA_MISSING, A.RECREATE}
 
 
 @pytest.mark.parametrize(("row", "container", "volume", "expected"), BOOT_TABLE)

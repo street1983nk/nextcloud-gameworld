@@ -8,10 +8,14 @@ import pytest
 
 from gameworld.provisioner.client import ContainerInfo
 from gameworld.worlds.status import (
+    BACKING_UP,
     ERROR,
+    RESTORING,
     RUNNING,
     STARTING,
     STOPPED,
+    TEXT_BACKING_UP,
+    TEXT_RESTORING,
     UNKNOWN,
     WorldStatus,
     derive_status,
@@ -71,6 +75,30 @@ def test_unreachable_docker_is_unknown() -> None:
 
 def test_creating_is_starting() -> None:
     assert _derive(None, op_state="creating") == WorldStatus(STARTING, "Wird erstellt")
+
+
+@pytest.mark.parametrize(
+    "container",
+    [None, ContainerInfo("cid", "n", "w", "exited", 30015), ContainerInfo("cid", "n", "w", "running", 30015)],
+)
+def test_backing_up_wins_over_container_state(container: ContainerInfo | None) -> None:
+    """D-10: Während der Sicherung ist der gestoppte Container kein Fehler."""
+    status = _derive(container, op_state="backing_up")
+    assert status == WorldStatus(BACKING_UP, TEXT_BACKING_UP)
+    assert status.text == "Wird gesichert ..."
+
+
+@pytest.mark.parametrize("op_state", ["restoring", "restoring_swap"])
+@pytest.mark.parametrize("container", [None, ContainerInfo("cid", "n", "w", "exited", 30015)])
+def test_restoring_states_show_restoring(op_state: str, container: ContainerInfo | None) -> None:
+    status = _derive(container, op_state=op_state)
+    assert status == WorldStatus(RESTORING, TEXT_RESTORING)
+    assert status.text == "Wird wiederhergestellt ..."
+
+
+@pytest.mark.parametrize("op_state", ["backing_up", "restoring", "restoring_swap"])
+def test_unreachable_wins_over_busy(op_state: str) -> None:
+    assert _derive(None, reachable=False, op_state=op_state).code == UNKNOWN
 
 
 def test_failed_shows_last_error() -> None:
