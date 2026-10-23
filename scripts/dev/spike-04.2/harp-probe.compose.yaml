@@ -1,0 +1,106 @@
+# HaRP-Probe für den Browser-Spike 04.2 (Plan 03, Task 2), nur Dev-Stack und nur
+# für die Dauer der Probe. Prüft, ob HaRP die Antwort-Header einer ExApp
+# unverändert durchreicht und ein WebSocket-Upgrade mit Identität zulässt
+# (live mit nextcloud/app-skeleton-python).
+#
+# Ohne Docker-Socket: HaRP bekommt keinen Zugriff auf die Docker-Engine. Der
+# Daemon wird als "manual-install" mit --harp registriert (Vorlage "Harp Manual
+# Install" aus occ app_api:daemon:register --help), das Skeleton startet hier als
+# zweiter Dienst und meldet sich per frpc beim FRP-Server von HaRP an. HaRP
+# leitet dann an 127.0.0.1:<APP_PORT> im eigenen Container weiter
+# (AppAPI HarpService::getExAppHost).
+#
+# Start (Werte nur in .dev/, nie im Repository):
+#   HARP_PROBE_KEY=$(cat .dev/harp-probe.key) \
+#   HARP_PROBE_APP_SECRET=$(cat .dev/harp-probe-app.secret) \
+#     docker compose -f scripts/dev/spike-04.2/harp-probe.compose.yaml up -d
+# Rückbau:
+#   docker compose -f scripts/dev/spike-04.2/harp-probe.compose.yaml down -v
+name: gameworld-harp-probe
+
+services:
+  harp:
+    image: ghcr.io/nextcloud/nextcloud-appapi-harp:release
+    container_name: appapi-harp-probe
+    hostname: appapi-harp-probe
+    environment:
+      HP_SHARED_KEY: ${HARP_PROBE_KEY:?HARP_PROBE_KEY fehlt}
+      # Die Dev-Nextcloud vertraut nur localhost und host.docker.internal.
+      NC_INSTANCE_URL: http://host.docker.internal:8091
+      # Negativkontrollen erzeugen 401; ohne höhere Schwelle sperrt HaRP nach
+      # 10 Fehlversuchen in 5 Minuten die Adresse des Prüfers.
+      HP_BLACKLIST_COUNT: "1000"
+      # Das Skeleton bekommt hier keine FRP-Zertifikate (die kopiert HaRP sonst
+      # beim Deploy über die Docker-Engine hinein); nur im Probe-Netz ohne TLS.
+      HP_FRP_DISABLE_TLS: "true"
+      HP_LOG_LEVEL: info
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8780:8780"
+      - "127.0.0.1:8782:8782"
+    networks:
+      - devstack
+
+  skeleton:
+    image: ghcr.io/nextcloud/app-skeleton-python:latest
+    container_name: app-skeleton-python-probe
+    depends_on:
+      - harp
+    environment:
+      APP_ID: app-skeleton-python
+      APP_DISPLAY_NAME: App Skeleton
+      APP_VERSION: "3.0.3"
+      APP_SECRET: ${HARP_PROBE_APP_SECRET:?HARP_PROBE_APP_SECRET fehlt}
+      APP_PORT: "23000"
+      APP_HOST: 127.0.0.1
+      APP_PERSISTENT_STORAGE: /tmp/storage
+      NEXTCLOUD_URL: http://host.docker.internal:8091
+      # frpc im Skeleton meldet sich mit diesem Wert an (start.sh des Skeletons).
+      HP_SHARED_KEY: ${HARP_PROBE_KEY:?HARP_PROBE_KEY fehlt}
+      HP_FRP_ADDRESS: appapi-harp-probe
+      HP_FRP_PORT: "8782"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - devstack
+
+  # Nur mit --profile gameworld: Tunnel vom FRP-Server in HaRP zum Gameworld-
+  # Host-Prozess auf Port 10040, damit die echte Spielseite /play/ hinter HaRP
+  # gemessen werden kann (das Skeleton sendet selbst kein COOP/COEP). Gameworld
+  # wird dafür vorübergehend auf dem Daemon harp_probe mit Port 23001 registriert.
+  gameworld-tunnel:
+    image: ghcr.io/nextcloud/app-skeleton-python:latest
+    container_name: gameworld-harp-tunnel-probe
+    profiles: ["gameworld"]
+    depends_on:
+      - harp
+    environment:
+      HP_SHARED_KEY: ${HARP_PROBE_KEY:?HARP_PROBE_KEY fehlt}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        umask 077
+        cat > /tmp/frpc.toml <<EOF
+        serverAddr = "appapi-harp-probe"
+        serverPort = 8782
+        loginFailExit = false
+        transport.tls.enable = false
+        metadatas.token = "$${HP_SHARED_KEY}"
+        [[proxies]]
+        name = "gameworld"
+        type = "tcp"
+        localIP = "host.docker.internal"
+        localPort = 10040
+        remotePort = 23001
+        EOF
+        exec frpc -c /tmp/frpc.toml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - devstack
+
+networks:
+  devstack:
+    name: gameworld-dev_default
+    external: true

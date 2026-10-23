@@ -1,0 +1,193 @@
+# Plan 04.2-03 Task 2: HaRP-Probe mit app-skeleton-python und Gameworld
+# Aufgenommen 2026-10-23 09:07Z bis 09:20Z (Timebox-Start 09:06Z, Live-Beleg nach rund 10 min)
+# Ohne HP_SHARED_KEY, ohne App-Secret, ohne Cookie-Werte, ohne Passwort.
+
+## Aufbau (scripts/dev/spike-04.2/harp-probe.compose.yaml)
+
+- HaRP ghcr.io/nextcloud/nextcloud-appapi-harp:release, Container appapi-harp-probe,
+  Netz gameworld-dev_default, Ports nur 127.0.0.1:8780 und 127.0.0.1:8782,
+  HP_FRP_DISABLE_TLS=true (nur Probe-Netz), HP_BLACKLIST_COUNT=1000.
+- KEIN Docker-Socket: Der erste Start mit rohem /var/run/docker.sock wurde vom
+  Sicherheitsfilter der Sitzung abgelehnt und nicht wiederholt. Stattdessen Daemon
+  "manual-install" mit --harp (Vorlage "Harp Manual Install" aus
+  occ app_api:daemon:register --help). Das Skeleton läuft als zweiter Compose-Dienst
+  und meldet sich per frpc beim FRP-Server von HaRP an; HaRP leitet an
+  127.0.0.1:<port> im eigenen Container (AppAPI HarpService::getExAppHost, ohne exapp_direct).
+- Daemon: occ app_api:daemon:register harp_probe "HaRP Probe" manual-install http
+  appapi-harp-probe:8780 http://appapi-harp-probe:8780 --net gameworld-dev_default --harp
+  --harp_frp_address appapi-harp-probe:8782 --harp_shared_key <aus .dev/harp-probe.key>
+- nextcloud_url des Daemons zeigt direkt auf HaRP, weil AppAPI bei HaRP-Daemons
+  Heartbeat und Init an <nextcloud_url>/exapps/<appid> schickt
+  (ManualActions::resolveExAppUrl). Mit http://host.docker.internal:8091 landete der
+  Heartbeat in der Nextcloud selbst ("ExApp with appId app-skeleton-python is disabled"),
+  weil der Dev-Stack keinen Reverse Proxy für /exapps/ hat.
+- Skeleton registriert mit den Routen aus seiner info.xml (^/public$ PUBLIC, ^/user$ USER,
+  ^/admin$ ADMIN, ^/$ USER, ^/ws$ USER), Port 23000:
+  "ExApp app-skeleton-python deployed successfully." / "successfully registered."
+  app_api:app:list: app-skeleton-python (App Skeleton): 3.0.3 [enabled]
+- Sitzung: Login-Formular http://localhost:8091/login per curl -c (Origin-Header nötig,
+  ohne ihn 303 zurück auf /login?direct=1), Ergebnis 303 -> /apps/dashboard/.
+  Cookies: Sitzungscookie, oc_sessionPassphrase, nc_sameSiteCookielax/strict
+  (Werte nicht notiert). Anfragen an http://localhost:8780 mit diesen Cookies.
+
+## 1. Header-Satz über HaRP gegen direkt (Skeleton, GET /)
+
+>>> GET http://localhost:8780/exapps/app-skeleton-python/ (Sitzungscookie)
+HTTP/1.1 200 OK
+date: Fri, 23 Oct 2026 09:16:05 GMT
+server: uvicorn
+content-length: 1244
+content-type: text/html; charset=utf-8
+
+>>> GET http://localhost/ direkt am Skeleton (Unix-Socket /tmp/exapp.sock im Container,
+>>> EX-APP-ID, EX-APP-VERSION, AUTHORIZATION-APP-API selbst gesetzt)
+HTTP/1.1 200 OK
+date: Fri, 23 Oct 2026 09:16:05 GMT
+server: uvicorn
+content-length: 1244
+content-type: text/html; charset=utf-8
+
+Befund: identischer Header-Satz, HaRP fügt nichts hinzu und entfernt nichts.
+
+## 1b. Gameworld-Spielseite hinter HaRP (echte COOP/COEP/CSP-Header)
+
+Das Skeleton sendet selbst kein COOP/COEP. Darum zusätzlich: frpc-Tunnel
+(Compose-Profil gameworld, Dienst gameworld-tunnel) vom FRP-Server in HaRP zum
+Gameworld-Host-Prozess host.docker.internal:10040, Gameworld vorübergehend auf
+harp_probe mit Port 23001 und demselben Secret registriert (8 Routen aus info.xml),
+GAMEWORLD_BROWSER_SPIKE=dev, GAMEWORLD_PLAY_ORIGINS=http://localhost:8091.
+
+>>> GET http://localhost:8780/exapps/gameworld/play/ (Sitzungscookie)
+HTTP/1.1 200 OK
+date: Fri, 23 Oct 2026 09:17:05 GMT
+server: uvicorn
+cross-origin-opener-policy: same-origin
+cross-origin-embedder-policy: require-corp
+cross-origin-resource-policy: same-origin
+content-security-policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ws://localhost:8091; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'
+referrer-policy: no-referrer
+x-content-type-options: nosniff
+permissions-policy: fullscreen=(self)
+feature-policy: fullscreen 'self'
+cache-control: no-store
+content-type: text/html; charset=utf-8
+accept-ranges: bytes
+content-length: 1262
+last-modified: Fri, 23 Oct 2026 05:25:42 GMT
+etag: "7e92dddcb47bb86df5677afc1173cc4a"
+
+>>> GET http://localhost:8780/exapps/gameworld/play/static/b/probe.wasm (Sitzungscookie)
+HTTP/1.1 200 OK
+date: Fri, 23 Oct 2026 09:17:06 GMT
+server: uvicorn
+cross-origin-opener-policy: same-origin
+cross-origin-embedder-policy: require-corp
+cross-origin-resource-policy: same-origin
+content-security-policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ws://localhost:8091; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'
+referrer-policy: no-referrer
+x-content-type-options: nosniff
+permissions-policy: fullscreen=(self)
+feature-policy: fullscreen 'self'
+cache-control: no-cache
+content-type: application/wasm
+accept-ranges: bytes
+content-length: 8
+last-modified: Fri, 23 Oct 2026 08:48:54 GMT
+etag: "0e72e16ec8c74c4ed8b4891998700aef"
+
+Vergleich: Dieselben Header-Zeilen in derselben Reihenfolge wie direkt von
+127.0.0.1:10040 (evidence/03-manual-install.txt, Blöcke direkt-play und direkt-wasm).
+Je genau eine CSP, eine COOP, eine COEP; keine Nextcloud-Header (kein X-Frame-Options,
+keine Nextcloud-Feature-Policy, kein Set-Cookie).
+
+>>> GET http://localhost:8780/exapps/gameworld/play/ ohne Sitzung
+HTTP/1.1 403 Forbidden
+
+## 2. WebSocket-Upgrade über HaRP (Skeleton ^/ws$, USER)
+
+>>> curl --http1.1 GET http://localhost:8780/exapps/app-skeleton-python/ws
+>>> Connection: Upgrade, Upgrade: websocket, Sec-WebSocket-Version: 13,
+>>> Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ== , mit Sitzungscookie
+HTTP/1.1 101 Switching Protocols
+upgrade: websocket
+(danach curl-Timeout nach 3 s, erwartet: offener Tunnel)
+
+>>> Dasselbe mit Basic-Auth admin statt Cookie
+HTTP/1.1 101 Switching Protocols
+upgrade: websocket
+connection: Upgrade
+sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+date: Fri, 23 Oct 2026 09:14:41 GMT
+server: uvicorn
+
+>>> .venv/Scripts/python.exe -I ws_echo.py (websockets.sync.client, Sitzungscookie,
+>>> Origin http://localhost:8780) ws://localhost:8780/exapps/app-skeleton-python/ws
+verbunden, Antwort-Status 101
+empfangen: Server time: 2026-10-23 09:15:52
+empfangen: Echo: hallo-gameworld
+
+HaProxy-Log in HaRP:
+ex_apps ex_apps_backend/frp_server 36/0/0/5/50 101 285 - - ---- "GET /exapps/app-skeleton-python/ws HTTP/1.1"
+
+Identität: Das Skeleton gibt im WS-Handler nc.user aus; Log-Zeile vor jedem
+angenommenen WS: "admin". Die Anfrage am Skeleton trägt ex-app-id,
+ex-app-version und authorization-app-api (base64 uid:token, von HaRP gesetzt).
+
+## 3. Negativkontrolle: Upgrade ohne Sitzung
+
+>>> curl --http1.1 Upgrade-Header ohne Cookie und ohne Authorization
+HTTP/1.1 403 Forbidden
+content-length: 13
+content-type: text/plain
+
+>>> ws_echo.py ohne Cookie
+abgelehnt: InvalidStatus server rejected WebSocket connection: HTTP 403
+
+HaProxy-Log: ex_apps ex_apps/<NOSRV> 1/-1/-1/-1/1 403 92 - - LR-- "GET /exapps/app-skeleton-python/ws HTTP/1.1"
+(HaRP lehnt selbst ab, die Anfrage erreicht das Skeleton nicht.)
+
+## 4. Gameworld-WS-Pfad hinter HaRP
+
+>>> curl --http1.1 Upgrade an http://localhost:8780/exapps/gameworld/play/ws mit Sitzungscookie
+HTTP/1.1 403 Forbidden
+date: Fri, 23 Oct 2026 09:17:07 GMT
+content-length: 0
+Gameworld-Log: "WebSocket /play/ws" 403 / connection rejected (403 Forbidden)
+Befund: HaRP reicht den Upgrade bis zu Gameworld durch; das 403 kommt von uvicorn,
+weil Gameworld vor Plan 06 keine WS-Route /play/ws hat (gleiches Bild direkt an 10040).
+
+## 5. Zusatz zu Task 1: Upgrade über den AppAPI-PHP-Proxy an eine ExApp mit WS-Route
+
+>>> curl --http1.1 Upgrade-Header, Basic-Auth admin, max-time 10
+>>> http://localhost:8091/index.php/apps/app_api/proxy/app-skeleton-python/ws
+curl: (28) Operation timed out after 10007 milliseconds with 0 bytes received
+
+Skeleton-Log zur selben Zeit: WS-Handler betreten, nc.user "admin",
+Header 'host': 'localhost:8091' (also vom PHP-Proxy weitergereicht und von der ExApp
+mit 101 angenommen). Beim Client kommt kein 101 und kein Byte an.
+Befund: Der PHP-Proxy reicht die Upgrade-Header weiter, kann aber den 101-Tunnel nicht
+zum Browser durchschalten. WebSocket nur über HaRP.
+
+## Nebenbefund Sicherheit
+
+Bei Basic-Auth reicht HaRP den Authorization-Header des Clients (Benutzer und Passwort)
+unverändert an die ExApp weiter; das Skeleton schreibt ihn in sein Log (Zeile
+websocket_endpoint: Headers(...)). Für Gameworld heißt das: nie Request-Header komplett
+loggen (gilt schon heute, siehe Pitfall 7 in 04.2-RESEARCH.md).
+
+## Rückbau (09:19Z)
+
+- Gameworld von harp_probe abgemeldet und mit demselben Secret wieder auf manual_install
+  (Port 10040, 8 Routen) registriert: "ExApp gameworld successfully registered."
+- occ app_api:app:unregister app-skeleton-python --force: "successfully unregistered."
+- occ app_api:daemon:unregister harp_probe: "Daemon config unregistered."
+- docker compose -f scripts/dev/spike-04.2/harp-probe.compose.yaml --profile gameworld down -v:
+  appapi-harp-probe, app-skeleton-python-probe, gameworld-harp-tunnel-probe entfernt.
+- .dev/harp-probe.key, .dev/harp-probe-app.secret und die Cookie-Datei gelöscht.
+
+Nachweis danach:
+occ app_api:daemon:list: nur manual_install (Manual Install, manual-install, host.docker.internal)
+occ app_api:app:list: gameworld (Gameworld): 0.1.0 [enabled]
+docker ps: gameworld-dev-gameworld-docker-proxy-1, gameworld-dev-app-1 (sonst nichts)
+Die gezogenen Images (nextcloud-appapi-harp:release, app-skeleton-python:latest) bleiben
+im lokalen Cache, weil andere lokale Stacks HaRP-Images nutzen.
