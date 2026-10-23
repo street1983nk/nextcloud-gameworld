@@ -1,6 +1,9 @@
-// Browser-Spike 04.2: Diagnose und Einzelspieler-Start auf der eigenen Spielseite.
+// Browser-Spike 04.2: Diagnose, Einzelspieler- und Mehrspieler-Start auf der eigenen Spielseite.
 //
-// Die Seite liest aus der Adresse nur zwei Werte (Whitelist): mode und build.
+// Die Seite liest aus der Adresse nur zwei Werte (Whitelist): mode und build, dazu im
+// Mehrspieler-Modus das Ein-Mal-Ticket aus dem Fragment (#t=...). Das Fragment geht nie
+// an einen Server und wird sofort aus Adresszeile und Verlauf entfernt (T-04.2-38).
+// Ticket, WS-Ticket und Passwort landen nie in console oder Diagnose (T-04.2-39).
 // Nie die Argument-Helfer von launcher.js für die Adresse benutzen: Sie würden
 // Name und Passwort aus der Adresse übernehmen (RESEARCH Pitfall 6).
 //
@@ -18,7 +21,19 @@ const diagNode = document.getElementById('diag');
 const statusNode = document.getElementById('status');
 
 const query = new URLSearchParams(location.search); // nur mode und build
-const mode = query.get('mode') === 'single' ? 'single' : null;
+// Ticket aus dem Fragment lesen und sofort aus Adresszeile und Verlauf löschen, vor allem anderen.
+const TICKET_PREFIX = '#t=';
+let launchTicket = null;
+if (location.hash.startsWith(TICKET_PREFIX)) {
+  try {
+    launchTicket = decodeURIComponent(location.hash.slice(TICKET_PREFIX.length));
+  } catch {
+    launchTicket = '';
+  }
+  history.replaceState(null, '', location.pathname + location.search);
+}
+// Mehrspieler (Ticket im Fragment) hat Vorrang vor mode=single.
+const mode = launchTicket !== null ? 'multi' : query.get('mode') === 'single' ? 'single' : null;
 const requestedBuild = query.get('build');
 const build = BUILDS.has(requestedBuild) ? requestedBuild : DEFAULT_BUILD;
 
@@ -136,7 +151,11 @@ async function fetchRelease() {
   return body.release;
 }
 
-async function startSingle() {
+// Text für Kinder, wenn der Start scheitert; Einzelheiten nur in der Diagnose.
+const TEXT_START_FAILED = 'Der Start hat nicht geklappt. Frag deine Eltern.';
+
+// Gemeinsamer Teil beider Modi: Shim, Release, launcher.js, Launcher mit eigenem Proxy.
+async function prepareLauncher(proxy) {
   if (!location.pathname.endsWith('/')) {
     throw new Error('Die Spielseite braucht eine Adresse, die auf / endet.');
   }
@@ -156,7 +175,8 @@ async function startSingle() {
   mark('launcher_loaded');
 
   const launcher = new LuantiLauncher();
-  launcher.setProxy(proxyUrl());
+  // Eigener Proxy direkt nach dem Anlegen, vor allem anderen (D-01).
+  launcher.setProxy(proxy);
   launcher.setConf('touch_controls', navigator.maxTouchPoints > 0 ? 'true' : 'auto');
 
   let firstOutput = false;
@@ -184,6 +204,11 @@ async function startSingle() {
   launcher.onerror = (message) => {
     showError({ name: 'LuantiError', message: message });
   };
+  return launcher;
+}
+
+async function startSingle() {
+  const launcher = await prepareLauncher(proxyUrl());
   launcher.onready = () => {
     mark('ready');
     const args = new LuantiArgs();
@@ -191,6 +216,61 @@ async function startSingle() {
     args.gameid = GAME_ID;
     args.world = WORLD_PATH;
     args.name = 'gameworld';
+    launcher.launch(args);
+    mark('started');
+  };
+}
+
+// Ticket gegen Spielername, Passwort (Variante B) und WS-Ticket tauschen.
+async function redeemLaunchTicket(ticket) {
+  const response = await fetch('launch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket: ticket }),
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    // Nur der Status, nie der Body der Anfrage.
+    throw new Error(`Spielstart abgelehnt (HTTP ${response.status}).`);
+  }
+  const body = await response.json();
+  const valid =
+    typeof body.player_name === 'string' &&
+    typeof body.ws_ticket === 'string' &&
+    typeof body.ws_path === 'string' &&
+    body.ws_path.startsWith('/') &&
+    typeof body.address === 'string' &&
+    Number.isInteger(body.port);
+  if (!valid) {
+    throw new Error('Unerwartete Antwort zum Spielstart.');
+  }
+  return body;
+}
+
+// Proxy-Adresse am eigenen Host; das WS-Ticket steht nur in dieser Adresse.
+function multiProxyUrl(wsPath, wsTicket) {
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${scheme}//${location.host}${wsPath}?t=${encodeURIComponent(wsTicket)}`;
+}
+
+async function startMulti(ticket) {
+  if (!ticket) {
+    throw new Error('Kein Spielstart in der Adresse.');
+  }
+  let start = await redeemLaunchTicket(ticket);
+  mark('launch_ok');
+  const launcher = await prepareLauncher(multiProxyUrl(start.ws_path, start.ws_ticket));
+  const args = new LuantiArgs();
+  args.go = true;
+  args.name = start.player_name;
+  // Variante A ersetzt das Passwort am Proxy; Variante B bringt das eigene mit.
+  args.password = start.password ?? 'gameworld';
+  args.address = start.address;
+  args.port = start.port;
+  start = null;
+  launcher.onready = () => {
+    mark('ready');
     launcher.launch(args);
     mark('started');
   };
@@ -208,7 +288,14 @@ logLine('diag', {
 });
 mark('page_start');
 
-if (mode === 'single') {
+if (mode === 'multi') {
+  const ticket = launchTicket;
+  launchTicket = null;
+  startMulti(ticket).catch((err) => {
+    showError(err);
+    setStatus(TEXT_START_FAILED);
+  });
+} else if (mode === 'single') {
   startSingle().catch(showError);
 } else {
   setStatus('Diese Seite öffnet Gameworld für dich.');

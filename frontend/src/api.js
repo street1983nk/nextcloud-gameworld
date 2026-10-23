@@ -74,6 +74,26 @@ export async function getMyPlaytime() {
 	return response.data
 }
 
+// Browser-Spike 04.2: Ist "Im Browser spielen" eingeschaltet? Einmal je Seitenaufruf
+// gefragt (alle Karten teilen das Ergebnis); bei Fehler gilt aus.
+let playStatusPromise = null
+
+export function getPlayStatus() {
+	if (playStatusPromise === null) {
+		playStatusPromise = axios.get(`${apiBase}/api/my/play-status`)
+			.then((response) => response.data?.enabled === true)
+			.catch(() => false)
+	}
+	return playStatusPromise
+}
+
+// Ein-Mal-Ticket (60 s) für die eigene, laufende Welt: { ticket, play_path }. Das
+// Ticket wandert nur im URL-Fragment zur Spielseite, nie in Pfad oder Query.
+export async function getPlayTicket(worldId) {
+	const response = await post(`${apiBase}/api/my/play-ticket`, { world_id: worldId })
+	return response.data
+}
+
 // Spieler-Adresse (nur Verwalter); leer heißt: Hostname des Browsers.
 export async function getSettings() {
 	const response = await axios.get(`${apiBase}/api/settings`)

@@ -1,0 +1,19 @@
+# Dev-Front des Browser-Spikes 04.2 (Plan 08): gemeinsamer Origin für Nextcloud und
+# Spielseite mit WebSocket. Start:
+#   docker compose -f scripts/dev/spike-04.2/devfront.compose.yaml up -d
+# Voraussetzung: Dev-Nextcloud auf 127.0.0.1:8091 (scripts/dev/compose.yaml) und die
+# ExApp als Host-Prozess auf 10040 (GAMEWORLD_BROWSER_SPIKE=dev,
+# GAMEWORLD_PLAY_ORIGINS=http://localhost:8092, GAMEWORLD_PLAY_BASE=/exapps/gameworld).
+# Nextcloud braucht localhost:8092 in trusted_domains (occ config:system:set).
+name: gameworld-devfront
+
+services:
+  devfront:
+    image: nginx:1.29-alpine
+    ports:
+      # Nur Loopback (T-04.2-42); Geräte erreichen die Dev-Front erst in Plan 10 per Tailscale Serve.
+      - "127.0.0.1:8092:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./devfront.nginx.conf:/etc/nginx/conf.d/default.conf:ro

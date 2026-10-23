@@ -21,4 +21,13 @@ assert.match(source, /axios\.post\(url, data, \{ headers:/)
 assert.ok((source.match(/await post\(/g) ?? []).length >= 15)
 assert.ok((source.match(/await del\(/g) ?? []).length >= 4)
 
+// Browser-Spike 04.2: Status und Ticket sind exportiert, das Ticket läuft über post()
+// (JSON-Pflicht, IN-08) an /api/my/play-ticket, kein eigener fetch.
+assert.match(source, /export function getPlayStatus\(/)
+assert.match(source, /export async function getPlayTicket\(worldId\)/)
+const ticketFn = source.slice(source.indexOf('export async function getPlayTicket('))
+const ticketBody = ticketFn.slice(0, ticketFn.indexOf('\n}\n'))
+assert.match(ticketBody, /await post\(`\$\{apiBase\}\/api\/my\/play-ticket`/)
+assert.doesNotMatch(source, /\bfetch\(/, 'kein eigener fetch in api.js')
+
 console.log('api.check: alle Prüfungen bestanden')

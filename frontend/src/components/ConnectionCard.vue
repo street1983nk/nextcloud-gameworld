@@ -15,6 +15,16 @@
 				no-close />
 		</header>
 
+		<!-- Browser-Spike 04.2: nur bei laufender Welt und eingeschaltetem Spike. Neuer Tab, keine Einbettung. -->
+		<div v-if="showPlay" class="connection-card__play">
+			<NcButton variant="primary" :disabled="playStarting" @click="playInBrowser">
+				Im Browser spielen
+			</NcButton>
+		</div>
+		<NcNoteCard v-if="playError" type="error">
+			Das Spiel im Browser konnte nicht starten. {{ playError }}
+		</NcNoteCard>
+
 		<NcFormBox>
 			<NcFormBoxCopyButton label="Adresse" :value="host" />
 			<NcFormBoxCopyButton label="Port" :value="String(world.port)" />
@@ -43,13 +53,14 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcChip from '@nextcloud/vue/components/NcChip'
 import NcFormBox from '@nextcloud/vue/components/NcFormBox'
 import NcFormBoxCopyButton from '@nextcloud/vue/components/NcFormBoxCopyButton'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import JoinGuide from './JoinGuide.vue'
+import { errorText, getPlayStatus, getPlayTicket } from '../api.js'
 import { windowText } from '../playtime.js'
 
 const props = defineProps({
@@ -77,6 +88,15 @@ const CHIP_VARIANT = {
 const revealed = ref(false)
 const copied = ref(false)
 const copyError = ref('')
+const playEnabled = ref(false)
+const playStarting = ref(false)
+const playError = ref('')
+
+onMounted(async () => {
+	playEnabled.value = await getPlayStatus()
+})
+
+const showPlay = computed(() => playEnabled.value && props.world.status === 'running')
 
 const host = computed(() => props.world.host || props.fallbackHost)
 // "Heute offen, 10 bis 12 Uhr" bzw. "Diese Welt ist gerade zu. ..."; null ohne Zeitfenster.
@@ -84,6 +104,23 @@ const windowHint = computed(() => windowText(props.world))
 
 function chipVariant(status) {
 	return CHIP_VARIANT[status] ?? 'warning'
+}
+
+// Ticket holen und die Spielseite in einem neuen Tab öffnen. Das Ticket steht nur im
+// Fragment (geht nie an einen Server, die Spielseite löscht es sofort); das Passwort
+// holt die Spielseite selbst per POST, es steht nie in einer Adresse.
+async function playInBrowser() {
+	playError.value = ''
+	playStarting.value = true
+	try {
+		const ticket = await getPlayTicket(props.world.id)
+		const url = window.location.origin + ticket.play_path + '#t=' + encodeURIComponent(ticket.ticket)
+		window.open(url, '_blank', 'noopener')
+	} catch (err) {
+		playError.value = errorText(err)
+	} finally {
+		playStarting.value = false
+	}
 }
 
 async function copyPassword() {
@@ -118,6 +155,10 @@ async function copyPassword() {
 
 .connection-card__head h3 {
 	margin: 0;
+}
+
+.connection-card__play {
+	margin-bottom: 12px;
 }
 
 .connection-card__password {
