@@ -291,6 +291,30 @@ async def test_failed_world_shows_fixed_text_to_child(
     assert last_error in admin.text
 
 
+@pytest.mark.parametrize("op_state", ["backing_up", "restoring", "restoring_swap"])
+async def test_busy_world_shows_pause_text_without_job_data(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, op_state: str
+) -> None:
+    """D-10, T-05-17: Kinder sehen nur den festen Text, nie Auftrag oder Dateinamen."""
+    del service
+    await _invite(client, W1, "user", "gw-kind")
+    store.update_world(W1, op_state=op_state)
+    store.set_backup_job(W1, "backup", "running", "Geheimgrund", "Waldwelt-geheim.tar.gz", "2026-10-23T10:00:00", None)
+
+    response = await _mine(client)
+
+    assert response.status_code == 200
+    [world] = response.json()["worlds"]
+    assert world["status_text"] == "Die Welt macht kurz Pause"
+    assert "backup_job" not in world
+    for secret in ("Geheimgrund", "Waldwelt-geheim", "Wird gesichert", "Wird wiederhergestellt"):
+        assert secret not in response.text
+
+    # Positivkontrolle: Die Verwalter-Ansicht trägt den Auftrag.
+    admin = await client.get("/api/worlds", headers=appapi_headers())
+    assert "Waldwelt-geheim.tar.gz" in admin.text
+
+
 def _fixed_clock(service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch) -> None:
     """Mittwoch, 21.10.2026, 15:00 Uhr in Berlin."""
     now = datetime(2026, 10, 21, 15, 0, tzinfo=ZoneInfo("Europe/Berlin")).timestamp()

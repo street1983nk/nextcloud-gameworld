@@ -36,10 +36,12 @@ from gameworld.worlds.service import (
     RECONCILE_FAILED,
     RECONCILE_INTERRUPTED,
     RECONCILE_OOM,
+    RESTORE_INTERRUPTED,
     TEXT_UNKNOWN_PRESET,
     UNKNOWN_PRESET_TITLE,
     DeleteOnlyError,
     WorldService,
+    delete_only,
 )
 from gameworld.worlds.store import WorldRow, WorldStore
 from tests.test_service_lifecycle import FakeProvisioner
@@ -287,6 +289,69 @@ async def test_boot_marks_interrupted_creation(service: WorldService, fake: Reco
     row = _get(store, "a")
     assert (row.op_state, row.last_error) == ("failed", RECONCILE_INTERRUPTED)
     assert fake.started == []
+
+
+@pytest.mark.parametrize(
+    ("containers", "volumes"), [({}, set()), ({"a": (30015, "exited")}, {"a"})], ids=["ohne-container", "exited"]
+)
+async def test_boot_marks_interrupted_restore_swap(
+    service: WorldService,
+    fake: ReconcileFake,
+    store: WorldStore,
+    containers: dict[str, tuple[int, str]],
+    volumes: set[str],
+) -> None:
+    """Pitfall 2: Ein unterbrochener Tausch wird nie gestartet und nie delete-only."""
+    _insert(store, "a", op_state="restoring_swap", port=30015)
+    fake.containers = dict(containers)
+    fake.volumes = volumes
+
+    assert await service.boot_reconcile() is True
+
+    row = _get(store, "a")
+    assert (row.op_state, row.last_error) == ("failed", RESTORE_INTERRUPTED)
+    assert delete_only(row) is False
+    assert fake.started == []
+    assert fake.created == []
+    assert fake.volume_checks == []
+
+
+async def test_boot_clears_backing_up_and_starts_world(
+    service: WorldService, fake: ReconcileFake, store: WorldStore
+) -> None:
+    """D-11: Nach Abbruch der Sicherung startet die Welt wieder, wenn sie laufen soll."""
+    _insert(store, "a", op_state="backing_up", port=30015)
+    _insert(store, "b", desired="stopped", op_state="restoring", port=30016)
+    fake.containers = {"a": (30015, "exited"), "b": (30016, "exited")}
+
+    assert await service.boot_reconcile() is True
+
+    assert fake.started == ["a"]
+    assert "start:a" in fake.calls
+    assert _get(store, "a").op_state == "ready"
+    assert _get(store, "b").op_state == "ready"
+    assert fake.containers["b"] == (30016, "exited")
+
+
+async def test_periodic_never_touches_busy_world(service: WorldService, fake: ReconcileFake, store: WorldStore) -> None:
+    _insert(store, "a", desired="stopped", op_state="backing_up", port=30015)
+    fake.containers = {"a": (30015, "running")}
+
+    await service.periodic_reconcile()
+
+    row = _get(store, "a")
+    assert (row.desired_state, row.op_state) == ("stopped", "backing_up")
+
+
+async def test_restore_interrupted_world_stays_startable(
+    service: WorldService, fake: ReconcileFake, store: WorldStore
+) -> None:
+    """RESTORE_INTERRUPTED ist kein delete-only-Fehler (D-15): Starten bleibt erlaubt."""
+    _insert(store, "a", op_state="restoring_swap", port=30015)
+    fake.containers = {"a": (30015, "exited")}
+    assert await service.boot_reconcile() is True
+    view = (await service.list_worlds())[0]
+    assert (view.status, view.status_text, view.delete_only) == ("error", RESTORE_INTERRUPTED, False)
 
 
 async def test_boot_retries_delete(service: WorldService, fake: ReconcileFake, store: WorldStore) -> None:

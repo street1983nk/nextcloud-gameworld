@@ -16,6 +16,7 @@ import pytest
 
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
+from gameworld.playtime.pause import ART_PAUSE, OUTBOX_PAUSE_START, PauseState
 from gameworld.playtime.plan import DayRule, WeekPlan
 from gameworld.provisioner.access_mod import ACCESS_FILE_NAME, render_access_file
 from gameworld.provisioner.client import (
@@ -38,11 +39,13 @@ from gameworld.worlds.service import (
     PAYLOAD_FAILED,
     RECONCILE_DATA_MISSING,
     RECONCILE_INTERRUPTED,
+    WORLD_BUSY,
     DeleteOnlyError,
+    WorldBusyError,
     WorldService,
     WorldView,
 )
-from gameworld.worlds.store import WorldStore
+from gameworld.worlds.store import BackupRow, WorldStore
 from tests.conftest import appapi_headers
 
 
@@ -1834,3 +1837,221 @@ async def test_api_world_carries_events_restart_needed(client: httpx.AsyncClient
     assert isinstance(created.json()["events_restart_needed"], bool)
     listing = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
     assert "events_restart_needed" in listing
+
+
+# Phase 5 (05-04): Busy-Zustände sperren Elternaktionen, ohne Pause und Takt zu blockieren.
+
+BUSY_STATES = ["backing_up", "restoring", "restoring_swap"]
+
+
+def _job(store: WorldStore, world_id: str, state: str, message: str | None = None) -> None:
+    store.set_backup_job(world_id, "backup", state, message, "Welt 2026-10-23.tar.gz", "2026-10-23T10:00:00+00:00", None)
+
+
+@pytest.mark.parametrize("op_state", BUSY_STATES)
+@pytest.mark.parametrize("operation", ["start_world", "stop_world", "restart_world", "delete_world"])
+async def test_busy_world_refuses_parent_actions(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, op_state: str, operation: str
+) -> None:
+    created = await service.create_world("Welt")
+    store.update_world(created.id, op_state=op_state)
+    fake.calls.clear()
+    fake.removed.clear()
+
+    with pytest.raises(WorldBusyError, match="gerade gesichert oder wiederhergestellt"):
+        await getattr(service, operation)(created.id)
+
+    assert fake.calls == []
+    assert fake.removed == []
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.desired_state, row.op_state) == ("running", op_state)
+
+
+async def test_delete_refused_while_job_runs_in_upload_phase(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Upload-Phase: op_state ist wieder ready, der Job steht noch auf running (T-05-45)."""
+    created = await service.create_world("Welt")
+    _job(store, created.id, "running")
+    fake.calls.clear()
+
+    with pytest.raises(WorldBusyError):
+        await service.delete_world(created.id)
+
+    assert fake.calls == []
+    assert fake.removed == []
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.desired_state, row.op_state) == ("running", "ready")
+    job = store.get_backup_job(created.id)
+    assert job is not None
+    assert job.state == "running"
+
+
+@pytest.mark.parametrize("state", ["ok", "failed"])
+async def test_delete_with_finished_job_removes_job_but_keeps_backups(
+    service: WorldService, store: WorldStore, state: str
+) -> None:
+    created = await service.create_world("Welt")
+    _job(store, created.id, state)
+    store.add_backup(
+        BackupRow(
+            file_id=42,
+            owner_uid="eltern",
+            world_id=created.id,
+            path="/Gameworld/Welt/Welt.tar.gz",
+            name="Welt.tar.gz",
+            size=10,
+            sha256="0" * 64,
+            preset="mtg_kreativ",
+            kind="backup",
+            created_at="2026-10-23T10:00:00+00:00",
+        )
+    )
+
+    await service.delete_world(created.id)
+
+    assert store.get_world(created.id) is None
+    assert store.get_backup_job(created.id) is None
+    assert [row.file_id for row in store.backups_for("eltern", created.id)] == [42]
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_busy_world_answers_409(client: httpx.AsyncClient, fake: FakeProvisioner, store: WorldStore) -> None:
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    world_id = created.json()["id"]
+    store.update_world(world_id, op_state="backing_up")
+    fake.calls.clear()
+
+    for method, suffix in (("POST", "/start"), ("POST", "/stop"), ("POST", "/restart"), ("DELETE", "")):
+        response = await client.request(method, f"/api/worlds/{world_id}{suffix}", headers=appapi_headers())
+        assert response.status_code == 409
+        assert response.json() == {"detail": "Die Welt wird gerade gesichert oder wiederhergestellt."}
+    assert fake.calls == []
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_delete_with_running_job_answers_409(client: httpx.AsyncClient, store: WorldStore) -> None:
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    world_id = created.json()["id"]
+    _job(store, world_id, "running")
+
+    response = await client.delete(f"/api/worlds/{world_id}", headers=appapi_headers())
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": WORLD_BUSY}
+    assert store.get_world(world_id) is not None
+
+
+def _pause_now(current: PauseState | None, now: int) -> PauseState:
+    del current
+    return PauseState(started_by="eltern", ab=now, bis=now + 600, art=ART_PAUSE)
+
+
+async def test_pause_writes_rules_but_never_restarts_busy_world(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Alter Mod (keine Ereignisdatei) würde neu starten; busy Welten bekommen nur die Regeldatei."""
+    busy = await _running_world(service, fake, "Busy")
+    ready = await _running_world(service, fake, "Bereit")
+    store.update_world(busy, op_state="backing_up")
+    fake.calls.clear()
+
+    result = service.apply_pause_sync(_pause_now, OUTBOX_PAUSE_START)
+
+    assert f"stop:{busy}" not in fake.calls
+    assert f"start:{busy}" not in fake.calls
+    assert f"files:{busy}" in fake.calls
+    # Gegenprobe: Die bereite Welt mit altem Mod startet neu.
+    assert f"stop:{ready}" in fake.calls
+    by_id = {world.world_id: world for world in result.worlds}
+    assert (by_id[busy].applied, by_id[busy].restarted) == (True, False)
+    assert by_id[ready].restarted is True
+    row = store.get_world(busy)
+    assert row is not None
+    assert row.op_state == "backing_up"
+
+
+@pytest.mark.parametrize("op_state", BUSY_STATES)
+async def test_tick_reports_no_stop_or_start_for_busy_world(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, op_state: str
+) -> None:
+    created = await service.create_world("Welt")
+    service.tick_time()
+    assert store.run_state(created.id) is True
+    store.update_world(created.id, op_state=op_state)
+    port, _ = fake.containers[created.id]
+    fake.containers[created.id] = (port, "exited")
+
+    service.tick_time()
+    fake.containers[created.id] = (port, "running")
+    store.update_world(created.id, op_state="ready")
+    service.tick_time()
+
+    assert _outbox(store) == []
+
+
+@pytest.mark.parametrize("op_state", BUSY_STATES)
+async def test_busy_world_reads_no_status_file(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, op_state: str
+) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    store.update_world(world_id, op_state=op_state)
+    fake.status_reads.clear()
+
+    view = await _view_of(service, world_id)
+
+    assert world_id not in fake.status_reads
+    assert view.players == []
+    expected = "backing_up" if op_state == "backing_up" else "restoring"
+    assert view.status == expected
+
+
+async def test_list_carries_backup_job(service: WorldService, fake: FakeProvisioner, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    assert (await _view_of(service, created.id)).backup_job is None
+
+    store.set_backup_job(
+        created.id,
+        "backup",
+        "failed",
+        "Kein Platz",
+        "Welt.tar.gz",
+        "2026-10-23T10:00:00+00:00",
+        "2026-10-23T10:01:00+00:00",
+    )
+    job = (await _view_of(service, created.id)).backup_job
+    assert job is not None
+    assert (job.kind, job.state, job.message, job.file_name, job.finished_at) == (
+        "backup",
+        "failed",
+        "Kein Platz",
+        "Welt.tar.gz",
+        "2026-10-23T10:01:00+00:00",
+    )
+
+    # Auch ohne Docker bleibt der Fehler sichtbar (D-11).
+    fake.list_error = DockerUnavailableError("Proxy weg")
+    unknown = await _view_of(service, created.id)
+    assert unknown.status == "unknown"
+    assert unknown.backup_job is not None
+    assert unknown.backup_job.state == "failed"
+
+
+@pytest.mark.usefixtures("_override")
+async def test_api_world_carries_backup_job(client: httpx.AsyncClient, store: WorldStore) -> None:
+    created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
+    world_id = created.json()["id"]
+    assert created.json()["backup_job"] is None
+    store.set_backup_job(world_id, "restore", "failed", "Kaputt", "x.tar.gz", "2026-10-23T10:00:00+00:00", None)
+
+    world = (await client.get("/api/worlds", headers=appapi_headers())).json()["worlds"][0]
+
+    assert world["backup_job"] == {
+        "kind": "restore",
+        "state": "failed",
+        "message": "Kaputt",
+        "file_name": "x.tar.gz",
+        "finished_at": None,
+    }
