@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-10-23T16:21:08.775Z"
+stopped_at: Completed 05-05-PLAN.md
+last_updated: "2026-10-23T16:48:56.425Z"
 last_activity: 2026-10-23
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 56
-  completed_plans: 51
+  completed_plans: 52
   percent: 75
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 05 (backup-und-restore) — EXECUTING
-Plan: 5 of 9
+Plan: 6 of 9
 Status: Ready to execute
 Last activity: 2026-10-23
 
-Progress: [█████████░] 91%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -103,6 +103,7 @@ Progress: [█████████░] 91%
 | Phase 05 P01 | 40 min | 2 tasks | 9 files |
 | Phase 05 P02 | 35 min | 2 tasks | 9 files |
 | Phase 05 P03 | 20 min | 2 tasks | 4 files |
+| Phase 05 P05 | 70 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -234,6 +235,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-02: Aufräumen der eigenen Zieldatei auch bei Abbruch (shield, höchstens 30 s); alle Namen bis -99 belegt ergibt MSG_NAME_EXHAUSTED
 - [Phase 05]: 05-03: @halt ist letzte @-Zeile vor end; Prejoin sperrt jeden Namen (auch frei) vor Pause und Regeln, Takt trennt ab halt alle, Chat-Hinweis einmal je halt
 - [Phase 05]: 05-03: Halt nur im Speicher der TimeEngine (set_halt/clear_halt), Teil des Render-Cache-Schlüssels; forget lässt ihn stehen
+- [Phase 05]: 05-05: abort_offline(ticket) schon in Plan 05 angelegt (previous_op_state/error, clear_halt, Regeldatei sofort ohne @halt); vor dem Stopp abort_offline, ab dem Stopp end_offline im finally, beides abgeschirmt
+- [Phase 05]: 05-05: recover_jobs im Lifespan vor yield; Fehler-Hinweis nur an den auslösenden Verwalter mit Link auf die Übersicht (app_link), Erfolg still (D-16)
+- [Phase 05]: 05-05: Liste = Schnittmenge Files x eigener Nachweis über (file_id, size); POST backups 202 mit WorldOut, GET liefert backups/total_size/other_files
 
 ### Pending Todos
 
@@ -263,6 +267,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T16:21:08.755Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-10-23T16:48:50.193Z
+Stopped at: Completed 05-05-PLAN.md
 Resume file: None

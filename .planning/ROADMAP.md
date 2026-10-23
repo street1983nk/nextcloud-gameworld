@@ -310,7 +310,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-05-PLAN.md , Vertikaler Schnitt Sichern: POST/GET backups (202), Hintergrund-Job, Cold-Snapshot mit sofortigem Neustart (D-14), Fehlerpfade und Fehler-Benachrichtigung
+- [x] 05-05-PLAN.md , Vertikaler Schnitt Sichern: POST/GET backups (202), Hintergrund-Job, Cold-Snapshot mit sofortigem Neustart (D-14), Fehlerpfade und Fehler-Benachrichtigung
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -354,5 +354,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
-| 5. Backup und Restore | 4/9 | In Progress|  |
+| 5. Backup und Restore | 5/9 | In Progress|  |
 | 6. Store-Release | 0/TBD | Not started | - |
