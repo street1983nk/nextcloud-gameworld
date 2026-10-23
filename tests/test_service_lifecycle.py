@@ -5,11 +5,12 @@ from __future__ import annotations
 import io
 import sqlite3
 import tarfile
+import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import cast
+from typing import BinaryIO, cast
 
 import httpx
 import pytest
@@ -20,6 +21,7 @@ from gameworld.playtime.pause import ART_PAUSE, OUTBOX_PAUSE_START, PauseState
 from gameworld.playtime.plan import DayRule, WeekPlan
 from gameworld.provisioner.access_mod import ACCESS_FILE_NAME, render_access_file
 from gameworld.provisioner.client import (
+    SNAPSHOT_CHUNK,
     ContainerInfo,
     DockerProvisioner,
     DockerUnavailableError,
@@ -38,9 +40,12 @@ from gameworld.worlds.service import (
     LIST_CACHE_SECONDS,
     PAYLOAD_FAILED,
     RECONCILE_DATA_MISSING,
+    HALT_LEAD_SECONDS,
+    JOB_RUNNING,
     RECONCILE_INTERRUPTED,
     WORLD_BUSY,
     DeleteOnlyError,
+    OfflineTicket,
     WorldBusyError,
     WorldService,
     WorldView,
@@ -90,6 +95,10 @@ class FakeProvisioner:
     events: dict[str, StatusFile] = field(default_factory=dict)
     events_error: ProvisionerError | None = None
     event_reads: list[str] = field(default_factory=list)
+    # Snapshots (Tar-Bytes des Weltordners) pro Welt, Fehlerinjektion und eingespielte Restore-Tars.
+    snapshots: dict[str, bytes] = field(default_factory=dict)
+    snapshot_errors: list[Exception] = field(default_factory=list)
+    put_archives: list[tuple[str, bytes]] = field(default_factory=list)
 
     def ensure_image(self) -> None:
         return None
@@ -185,6 +194,22 @@ class FakeProvisioner:
         if self.events_error is not None:
             raise self.events_error
         return self.events.get(world_id)
+
+    def snapshot_to[T](self, world_id: str, write: Callable[[Iterator[bytes]], T]) -> T:
+        """Wie DockerProvisioner.snapshot_to: nur bei gestopptem Container, Strom in Stücken."""
+        _, status = self._known(world_id)
+        self.calls.append(f"snapshot:{world_id}")
+        if self.snapshot_errors:
+            raise self.snapshot_errors.pop(0)
+        if status == "running":
+            raise ProvisionerError("Die Welt läuft noch; eine Sicherung braucht eine gestoppte Welt.")
+        data = self.snapshots.get(world_id, b"")
+        return write(iter([data[index : index + SNAPSHOT_CHUNK] for index in range(0, len(data), SNAPSHOT_CHUNK)]))
+
+    def put_world_archive(self, world_id: str, archive: BinaryIO) -> None:
+        self._known(world_id)
+        self.put_archives.append((world_id, archive.read()))
+        self.calls.append(f"put_archive:{world_id}")
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:
         _, status = self._known(world_id)
@@ -2061,3 +2086,339 @@ async def test_api_world_carries_backup_job(client: httpx.AsyncClient, store: Wo
         "file_name": "x.tar.gz",
         "finished_at": None,
     }
+
+
+# 05-04 Task 3: kurze Offline-Abschnitte, die der Hintergrund-Job aneinanderreiht.
+
+
+def _rules_written(fake: FakeProvisioner, world_id: str) -> list[bytes]:
+    """Regeldateien aus allen Tars, die an diese Welt gingen, in Schreibreihenfolge."""
+    result: list[bytes] = []
+    for target, archive in fake.written:
+        if target != world_id:
+            continue
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
+            if RULES_FILE_NAME in tar.getnames():
+                handle = tar.extractfile(RULES_FILE_NAME)
+                assert handle is not None
+                result.append(handle.read())
+    return result
+
+
+async def test_begin_offline_sets_busy_state_and_returns_ticket(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    fake.calls.clear()
+
+    ticket = service.begin_offline(created.id, "backing_up")
+
+    assert ticket == OfflineTicket(
+        world_id=created.id,
+        was_running=True,
+        preset="mtg_kreativ",
+        name="Welt",
+        previous_op_state="ready",
+        previous_error=None,
+    )
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "backing_up"
+    assert fake.calls == []
+    assert (await _view_of(service, created.id)).status == "backing_up"
+
+
+async def test_begin_offline_of_stopped_world_was_not_running(service: WorldService) -> None:
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+    assert service.begin_offline(created.id, "backing_up").was_running is False
+
+
+async def test_begin_offline_refuses_busy_world(service: WorldService, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    service.begin_offline(created.id, "backing_up")
+    with pytest.raises(WorldBusyError, match=WORLD_BUSY):
+        service.begin_offline(created.id, "restoring")
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "backing_up"
+
+
+async def test_begin_offline_allows_only_one_job_at_a_time(service: WorldService, store: WorldStore) -> None:
+    first = await service.create_world("Erste")
+    second = await service.create_world("Zweite")
+    service.begin_offline(first.id, "backing_up")
+
+    with pytest.raises(WorldBusyError, match=JOB_RUNNING):
+        service.begin_offline(second.id, "backing_up")
+
+    row = store.get_world(second.id)
+    assert row is not None
+    assert row.op_state == "ready"
+
+
+async def test_begin_offline_refuses_while_job_uploads(service: WorldService, store: WorldStore) -> None:
+    """Upload-Phase einer anderen Welt (op_state ready, Job running) sperrt ebenfalls."""
+    first = await service.create_world("Erste")
+    second = await service.create_world("Zweite")
+    _job(store, first.id, "running")
+
+    with pytest.raises(WorldBusyError, match=JOB_RUNNING):
+        service.begin_offline(second.id, "backing_up")
+
+
+async def test_begin_offline_refuses_delete_only_unless_allowed(service: WorldService, store: WorldStore) -> None:
+    created = await service.create_world("Welt")
+    store.update_world(created.id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
+
+    with pytest.raises(DeleteOnlyError):
+        service.begin_offline(created.id, "backing_up")
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "failed"
+
+    ticket = service.begin_offline(created.id, "restoring", allow_failed=True)
+    assert (ticket.previous_op_state, ticket.previous_error) == ("failed", RECONCILE_DATA_MISSING)
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "restoring"
+
+
+async def test_begin_offline_rejects_non_busy_state(service: WorldService) -> None:
+    created = await service.create_world("Welt")
+    with pytest.raises(ValueError, match="op_state"):
+        service.begin_offline(created.id, "ready")
+
+
+async def test_players_online_reads_status_file_while_busy(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """D-09, T-05-46: Auch im Busy-Zustand zählt die Status-Datei, sonst fehlte der Chat-Hinweis."""
+    world_id = await _running_world(service, fake, "Welt")
+    service.begin_offline(world_id, "backing_up")
+
+    assert service.players_online(world_id) == 2
+
+    # Die Ansicht bleibt bei Busy-Zuständen ohne Spieler (Task 2).
+    view = await _view_of(service, world_id)
+    assert view.players == []
+    assert view.status == "backing_up"
+    row = store.get_world(world_id)
+    assert row is not None
+    assert row.op_state == "backing_up"
+
+
+async def test_players_online_is_zero_without_live_players(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    port, _ = fake.containers[world_id]
+
+    fake.containers[world_id] = (port, "exited")
+    assert service.players_online(world_id) == 0
+
+    fake.containers[world_id] = (port, "running")
+    fake.status_files[world_id] = StatusFile(STALE, b"Mia\n")
+    assert service.players_online(world_id) == 0
+
+    fake.status_files.pop(world_id)
+    assert service.players_online(world_id) == 0
+
+    fake.status_files[world_id] = StatusFile(FRESH, b"Mia\n")
+    fake.status_error = DockerUnavailableError("Proxy weg")
+    assert service.players_online(world_id) == 0
+
+    fake.status_error = None
+    assert service.players_online(world_id) == 1
+
+    fake.containers.pop(world_id)
+    assert service.players_online(world_id) == 0
+
+    fake.list_error = DockerUnavailableError("Proxy weg")
+    assert service.players_online(world_id) == 0
+
+
+async def test_announce_halt_writes_halt_line_while_busy(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.status_files[world_id] = StatusFile(FRESH, b"Mia\n")
+    service.begin_offline(world_id, "backing_up")
+    fake.written.clear()
+    now = int(time.time())
+
+    ab = service.announce_halt(world_id, now)
+
+    assert ab == now + HALT_LEAD_SECONDS
+    rules = _rules_written(fake, world_id)
+    assert rules
+    assert f"@halt {ab}" in rules[-1].decode("ascii").split("\n")
+
+
+async def test_announce_halt_without_players_changes_nothing(service: WorldService, fake: FakeProvisioner) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    fake.status_files[world_id] = StatusFile(FRESH, b"")
+    service.begin_offline(world_id, "backing_up")
+    fake.written.clear()
+
+    assert service.announce_halt(world_id, int(time.time())) is None
+    assert fake.written == []
+
+
+async def test_stop_for_snapshot_stops_without_booking(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    service.begin_offline(created.id, "backing_up")
+    fake.calls.clear()
+    fake.ledger_reads.clear()
+
+    service.stop_for_snapshot(created.id)
+
+    assert fake.calls == [f"stop:{created.id}"]
+    assert fake.ledger_reads == []
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.op_state, row.desired_state) == ("backing_up", "running")
+
+    # Fehlender Container ist kein Fehler.
+    fake.containers.pop(created.id)
+    service.stop_for_snapshot(created.id)
+
+
+async def test_end_offline_restarts_running_world_and_clears_halt(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    world_id = await _running_world(service, fake, "Welt")
+    service.begin_offline(world_id, "backing_up")
+    assert service.announce_halt(world_id, int(time.time())) is not None
+    service.stop_for_snapshot(world_id)
+    fake.calls.clear()
+    fake.written.clear()
+
+    assert service.end_offline(world_id, was_running=True) is None
+
+    assert f"start:{world_id}" in fake.calls
+    row = store.get_world(world_id)
+    assert row is not None
+    assert (row.op_state, row.last_error) == ("ready", None)
+    rules = _rules_written(fake, world_id)
+    assert rules
+    assert not any(line.startswith("@halt") for line in rules[-1].decode("ascii").split("\n"))
+
+
+async def test_end_offline_keeps_stopped_world_stopped(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+    ticket = service.begin_offline(created.id, "backing_up")
+    fake.calls.clear()
+
+    assert service.end_offline(created.id, ticket.was_running) is None
+
+    assert fake.calls == []
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "ready"
+
+
+async def test_end_offline_reports_launch_failure_without_raising(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Pitfall 7: Der Zustand kehrt immer auf ready oder failed zurück."""
+    created = await service.create_world("Welt")
+    service.begin_offline(created.id, "backing_up")
+    service.stop_for_snapshot(created.id)
+    fake.start_errors = [ProvisionerError("Docker hat den Start der Welt abgelehnt: kaputt")]
+
+    error = service.end_offline(created.id, was_running=True)
+
+    assert isinstance(error, ProvisionerError)
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "failed"
+    assert row.last_error is not None
+    assert "kaputt" in row.last_error
+
+
+async def test_end_offline_reports_unexpected_error_without_raising(
+    service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = await service.create_world("Welt")
+    service.begin_offline(created.id, "backing_up")
+
+    def broken(row: object) -> None:
+        del row
+        raise ValueError("kaputt")
+
+    monkeypatch.setattr(service, "_launch", broken)
+
+    error = service.end_offline(created.id, was_running=True)
+
+    assert isinstance(error, ProvisionerError)
+    row = store.get_world(created.id)
+    assert row is not None
+    assert row.op_state == "failed"
+
+
+async def test_book_ledger_is_public_entry(service: WorldService, fake: FakeProvisioner) -> None:
+    created = await service.create_world("Welt")
+    fake.ledger_reads.clear()
+    service.book_ledger(created.id)
+    assert fake.ledger_reads == [created.id]
+
+
+async def test_offline_sections_hold_lock_only_briefly(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """T-05-16: Zwischen stop_for_snapshot und end_offline läuft eine Pause ohne Warten durch."""
+    world_id = await _running_world(service, fake, "Welt")
+    stopped = threading.Event()
+    release = threading.Event()
+    errors: list[BaseException] = []
+
+    def job() -> None:
+        try:
+            ticket = service.begin_offline(world_id, "backing_up")
+            service.stop_for_snapshot(world_id)
+            stopped.set()
+            release.wait(5)
+            service.end_offline(world_id, ticket.was_running)
+        except BaseException as exc:
+            errors.append(exc)
+            stopped.set()
+
+    worker = threading.Thread(target=job)
+    worker.start()
+    try:
+        assert stopped.wait(5)
+        begin = time.monotonic()
+        result = service.apply_pause_sync(_pause_now, OUTBOX_PAUSE_START)
+        elapsed = time.monotonic() - begin
+    finally:
+        release.set()
+        worker.join(5)
+
+    assert errors == []
+    assert elapsed < 1.0
+    assert [(world.world_id, world.restarted) for world in result.worlds] == [(world_id, False)]
+    row = store.get_world(world_id)
+    assert row is not None
+    assert row.op_state == "ready"
+    assert f"start:{world_id}" in fake.calls
+
+
+async def test_fake_snapshot_streams_chunks_and_refuses_running(fake: FakeProvisioner) -> None:
+    fake.containers["w"] = (30015, "running")
+    fake.snapshots["w"] = b"x" * (2 * SNAPSHOT_CHUNK + 5)
+    with pytest.raises(ProvisionerError):
+        fake.snapshot_to("w", lambda chunks: list(chunks))
+
+    fake.containers["w"] = (30015, "exited")
+    sizes = fake.snapshot_to("w", lambda chunks: [len(chunk) for chunk in chunks])
+    assert sizes == [SNAPSHOT_CHUNK, SNAPSHOT_CHUNK, 5]
+
+    fake.snapshot_errors = [DockerUnavailableError("Proxy weg")]
+    with pytest.raises(DockerUnavailableError):
+        fake.snapshot_to("w", lambda chunks: list(chunks))
+
+    fake.put_world_archive("w", io.BytesIO(b"tar"))
+    assert fake.put_archives == [("w", b"tar")]
+    assert fake.calls[-1] == "put_archive:w"
