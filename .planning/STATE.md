@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-06-PLAN.md
-last_updated: "2026-10-23T17:57:31.435Z"
+stopped_at: "05-09 Checkpoint Task 2: Owner-Playwright-Abnahme offen"
+last_updated: "2026-10-23T19:55:01.236Z"
 last_activity: 2026-10-23
 progress:
   total_phases: 8
@@ -271,6 +271,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T17:57:31.413Z
-Stopped at: Completed 05-06-PLAN.md
+Last session: 2026-10-23T19:55:01.219Z
+Stopped at: 05-09 Checkpoint Task 2 (Owner-Playwright-Abnahme); Task 1 committet (19ffbc4, 772ff0f, Fixes 7cf5972, 82871f5); 3 veraltete Regressionsprüfungen siehe phases/05-backup-und-restore/deferred-items.md
 Resume file: None
