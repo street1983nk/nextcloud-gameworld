@@ -9,6 +9,7 @@ Weltschlüssel wird nie protokolliert.
 from __future__ import annotations
 
 import contextlib
+import io
 import logging
 import secrets
 import sqlite3
@@ -20,9 +21,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from time import monotonic
+from typing import BinaryIO
 
 import anyio.to_thread
 
+from gameworld.backup.archive import ledger_tar
 from gameworld.config import Settings
 from gameworld.events.parse import new_events, parse_events, plausible
 from gameworld.playtime.engine import TimeEngine
@@ -732,22 +735,7 @@ class WorldService:
         """
         with self._mutating():
             self._time.clear_halt(world_id)
-            self._time.forget(world_id)
-            try:
-                row = self._row(world_id)
-                if was_running:
-                    self._launch(row)
-            except ProvisionerError as exc:
-                LOG.warning("Welt %s: Wiederanlauf nach dem Offline-Abschnitt gescheitert (%s)", world_id, exc)
-                self._fail(world_id, exc)
-                return exc
-            except Exception:
-                LOG.exception("Welt %s: Wiederanlauf nach dem Offline-Abschnitt scheiterte unerwartet", world_id)
-                failure = ProvisionerError(OFFLINE_RESTART_FAILED)
-                self._fail(world_id, failure)
-                return failure
-            self._store.update_world(world_id, op_state="ready", last_error=None)
-            return None
+            return self._relaunch(world_id, was_running)
 
     def abort_offline(self, ticket: OfflineTicket) -> None:
         """Bricht einen Auftrag vor dem Stopp ab: Zustand wie vorher, Halt weg, kein Docker-Aufruf.
@@ -772,6 +760,85 @@ class WorldService:
         """Öffentlicher Einstieg für _book_ledger (Wiederherstellen, D-06), unter der Sperre."""
         with self._mutating():
             self._book_ledger(world_id)
+
+    # Tausch der Weltdaten beim Wiederherstellen (Plan 06, RESEARCH Pattern 5).
+
+    def mark_swap(self, world_id: str) -> None:
+        """Persistiert restoring_swap, bevor irgendetwas zerstört wird (T-05-33).
+
+        Stirbt der Prozess danach, macht der Boot-Abgleich daraus RESTORE_INTERRUPTED
+        (wiederholbar, nicht delete-only) statt die Welt mit halbem Volume zu starten.
+        """
+        with self._mutating():
+            self._row(world_id)
+            self._store.update_world(world_id, op_state="restoring_swap")
+
+    def restore_swap(self, world_id: str, restore_tar: BinaryIO, ledger: bytes | None) -> None:
+        """Baut die Welt über ein frisches Volume neu auf und spielt den Weltinhalt ein.
+
+        Der Phase-1-Erzeugungspfad (_payload) liefert Preset-world.mt, Mods und
+        frische Zugangs- und Regeldatei mit den Einladungen und Regeln von heute
+        (D-06); darüber kommt der gefilterte Weltinhalt, danach das bewahrte
+        Zählbuch. Das alte Volume samt heißem SQLite-Journal fällt weg (T-05-32).
+        Die Docker-Schritte laufen ohne _LOCK, den Busy-Zustand trägt die
+        Datenbank. Fehler gehen an den Aufrufer, der den Tausch wiederholt.
+        """
+        # Vor _payload: Sonst rendert die neue Regeldatei den Halt mit (T-05-50).
+        self._time.clear_halt(world_id)
+        row = self._row(world_id)
+        try:
+            self._provisioner.remove_world(world_id, keep_volume=False)
+        except WorldNotFoundError:
+            LOG.info("Welt %s: kein Container vor dem Tausch", world_id)
+        self._provisioner.ensure_image()
+        with self._payload(row) as payload:
+            self._provisioner.create_world_container(row.id, row.port, payload, reuse_volume=False)
+        restore_tar.seek(0)
+        self._provisioner.put_world_archive(world_id, restore_tar)
+        if ledger is not None:
+            self._provisioner.put_world_archive(world_id, io.BytesIO(ledger_tar(ledger)))
+        # Neue Ereignisdatei im frischen Volume: Erstkontakt verankert neu, keine Altmeldungen.
+        self._store.reset_event_cursor(world_id)
+        self._time.forget(world_id)
+        self._invalidate_cache()
+
+    def finish_swap(self, world_id: str, was_running: bool) -> ProvisionerError | None:
+        """Schluss des Tauschs: Halt weg, bei was_running starten, Zustand ready (Muster end_offline).
+
+        Der Elternwunsch (desired_state) bleibt unverändert. Ein Startfehler wird
+        zurückgegeben, nicht geworfen; die Welt steht dann auf failed.
+        """
+        with self._mutating():
+            self._time.clear_halt(world_id)
+            return self._relaunch(world_id, was_running)
+
+    def mark_restore_interrupted(self, world_id: str) -> None:
+        """Tausch endgültig gescheitert: failed mit RESTORE_INTERRUPTED, wiederholbar (D-15)."""
+        with self._mutating():
+            self._time.clear_halt(world_id)
+            self._time.forget(world_id)
+            if self._store.get_world(world_id) is None:
+                return
+            self._store.update_world(world_id, op_state="failed", last_error=RESTORE_INTERRUPTED)
+
+    def _relaunch(self, world_id: str, was_running: bool) -> ProvisionerError | None:
+        """Gemeinsamer Wiederanlauf; nur unter _mutating(), nachdem der Halt entfernt wurde."""
+        self._time.forget(world_id)
+        try:
+            row = self._row(world_id)
+            if was_running:
+                self._launch(row)
+        except ProvisionerError as exc:
+            LOG.warning("Welt %s: Wiederanlauf nach dem Offline-Abschnitt gescheitert (%s)", world_id, exc)
+            self._fail(world_id, exc)
+            return exc
+        except Exception:
+            LOG.exception("Welt %s: Wiederanlauf nach dem Offline-Abschnitt scheiterte unerwartet", world_id)
+            failure = ProvisionerError(OFFLINE_RESTART_FAILED)
+            self._fail(world_id, failure)
+            return failure
+        self._store.update_world(world_id, op_state="ready", last_error=None)
+        return None
 
     @contextlib.contextmanager
     def _payload(self, row: WorldRow) -> Iterator[WorldPayload]:
