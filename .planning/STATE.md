@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready_to_plan
-stopped_at: Phase 04.2 complete (11/11) — ready to discuss Phase 5
+stopped_at: Phase 04.2 complete (11/11) , ready to discuss Phase 5
 last_updated: 2026-10-23T12:11:28.584Z
 last_activity: "2026-10-23 -- 04.2-11 complete (Sicherheitsreview ohne Befund hoch/mittel, fuenf niedrig; Go/No-Go-Bericht nach sinnvoll/echter Mehrwert/sicher, alle drei erfuellt; Owner-Entscheid GO: Browser-Weg kommt, eigene Bauphase mit eigenen Requirements folgt, Spike-Code bleibt hinter GAMEWORLD_BROWSER_SPIKE; deep Review und /gsd-secure-phase bleiben Pflicht; Plan-Ebene 11/11, Phasenabschluss macht der Orchestrator)"
 progress:
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 5 — backup und restore
+**Current focus:** Phase 5 , backup und restore
 
 ## Current Position
 
 Phase: 5
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-23
+Last activity: 2026-10-23 - Completed quick task 261023-kq1: Phase 04.2 Security-Fixes (CR-01, T-04.2-36, REPORT)
 
 Progress: [██████████] 100%
 
@@ -239,6 +239,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 261021-481 | Kindertexte ohne 0 Uhr und Mitternacht | 2026-10-21 | d328457 | [261021-481-kindertexte-ohne-0-uhr-und-mitternacht](./quick/261021-481-kindertexte-ohne-0-uhr-und-mitternacht/) |
+| 261023-kq1 | Phase 04.2 Security-Fixes: CR-01 Body-Limit, T-04.2-36 uvicorn-Logfilter, REPORT-Update | 2026-10-23 | 6e68d3a | [261023-kq1-phase-04-2-security-fixes-cr-01-body-lim](./quick/261023-kq1-phase-04-2-security-fixes-cr-01-body-lim/) |
 
 ## Deferred Items
 
