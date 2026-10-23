@@ -757,3 +757,68 @@ def test_render_pause_change_changes_cache_key(engine: TimeEngine, store: WorldS
     data, changed = engine.render("w1")
     assert changed is True
     assert _pause_lines(data) == []
+
+
+# Halt vor dem Cold-Backup (05-03, D-09)
+
+
+def _halt_lines(data: bytes) -> list[str]:
+    return [line for line in _lines(data) if line.startswith("@halt")]
+
+
+def test_set_halt_writes_halt_line_only_for_that_world(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _world(store, "w2", 30016)
+    engine.render("w1")
+    engine.render("w2")
+    assert engine.render("w1")[1] is False
+
+    engine.set_halt("w1", FIXED + 15)
+
+    data, changed = engine.render("w1")
+    assert changed is True
+    assert _halt_lines(data) == [f"@halt {FIXED + 15}"]
+    assert _lines(data)[-2:] == ["end", ""]
+    assert _lines(data)[-3] == f"@halt {FIXED + 15}"
+    assert engine.render("w1")[1] is False
+    other, other_changed = engine.render("w2")
+    assert other_changed is False
+    assert _halt_lines(other) == []
+
+
+def test_clear_halt_renders_without_halt(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    without, _ = engine.render("w1")
+    engine.set_halt("w1", FIXED + 15)
+    halted, _ = engine.render("w1")
+
+    engine.clear_halt("w1")
+
+    data, changed = engine.render("w1")
+    assert changed is True
+    assert _halt_lines(data) == []
+    assert _generation(data) > _generation(halted)
+    assert _lines(data)[1:] == _lines(without)[1:]
+    # Ohne Halt ist clear_halt folgenlos.
+    engine.clear_halt("w1")
+    assert engine.render("w1")[1] is False
+
+
+def test_forget_keeps_halt(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    engine.set_halt("w1", FIXED + 15)
+    engine.render("w1")
+
+    engine.forget("w1")
+
+    data, changed = engine.render("w1")
+    assert changed is True
+    assert _halt_lines(data) == [f"@halt {FIXED + 15}"]
+
+
+def test_halt_is_not_persisted(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    engine.set_halt("w1", FIXED + 15)
+    fresh = TimeEngine(store, clock=_clock)
+    data, _ = fresh.render("w1")
+    assert _halt_lines(data) == []
