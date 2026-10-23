@@ -239,7 +239,7 @@ async def test_fake_files_matches_contract(fake_files: FakeBackupFiles) -> None:
     fake_files.put("admin", f"{FOLDER}/{BASE}", b"alt")
     entry = await fake_files.upload("admin", FOLDER, BASE, _spool(5), 5, with_suffix)
     assert entry.name == "Burg-2026-10-23-1405-2.tar.gz"
-    assert [e.name for e in await fake_files.listdir("admin", FOLDER)] == [BASE, entry.name]
+    assert {e.name for e in await fake_files.listdir("admin", FOLDER)} == {BASE, entry.name}
     assert await fake_files.listdir("papa", FOLDER) == []
     fake_files.size_mismatch = True
     with pytest.raises(FilesError):

@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from nc_py_api import AsyncNextcloudApp
 
@@ -48,11 +49,16 @@ async def close_nc(nc: object) -> None:
 
 
 @asynccontextmanager
-async def nc_as(uid: str) -> AsyncIterator[AsyncNextcloudApp]:
-    """Client im Namen von ``uid``; schließt seine Sessions auch im Fehlerfall."""
+async def nc_as(uid: str, **options: Any) -> AsyncIterator[AsyncNextcloudApp]:
+    """Client im Namen von ``uid``; schließt seine Sessions auch im Fehlerfall.
+
+    ``options`` gehen unverändert an ``AsyncNextcloudApp``. Backup-Clients setzen
+    ``npa_timeout_dav=600`` (MOVE großer Dateien) und ``chunked_upload_v2=False``
+    (Upload v1, backup/files.py).
+    """
     if not uid:
         raise ValueError(MSG_NO_USER)
-    nc = AsyncNextcloudApp(user=uid)
+    nc = AsyncNextcloudApp(user=uid, **options)
     try:
         yield nc
     finally:
