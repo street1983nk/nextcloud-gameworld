@@ -146,3 +146,29 @@ def test_module_builds_clients_only_here() -> None:
         if path.name != "nc.py" and "AsyncNextcloudApp(" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+async def test_nc_as_passes_backup_options_and_closes_on_error(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backup-Clients: Timeout 600 s und Upload v1 kommen beim Konstruktor an; Sessions auch nach Ausnahme zu."""
+    del app_env
+    app = MagicMock()
+    recorder = install_fake_nc(monkeypatch, app)
+    with pytest.raises(RuntimeError, match="kaputt"):
+        async with nc_as("verwalter", npa_timeout_dav=600, chunked_upload_v2=False):
+            raise RuntimeError("kaputt")
+    async with nc_as("verwalter"):
+        pass
+    assert recorder.users == ["verwalter", "verwalter"]
+    assert recorder.options == [{"npa_timeout_dav": 600, "chunked_upload_v2": False}, {}]
+    assert_closed(app, times=2)
+
+
+async def test_nc_as_options_reach_real_session(app_env: Path) -> None:
+    del app_env
+    async with nc_as("mama", npa_timeout_dav=600, chunked_upload_v2=False) as nc:
+        spies = _spy_close(nc)
+        session: Any = nc._session  # pyright: ignore[reportPrivateUsage]
+        assert session.cfg.options.timeout_dav == 600
+        assert session.cfg.options.upload_chunk_v2 is False
+    for spy in spies:
+        spy.assert_awaited_once()

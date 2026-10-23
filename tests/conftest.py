@@ -119,6 +119,10 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     from gameworld.play import tickets as tickets_module
 
     monkeypatch.setattr(tickets_module, "_ticket_store", None)
+    # Sicherungen ohne Nextcloud Files (05-02).
+    from gameworld.backup import files as files_module
+
+    monkeypatch.setattr(files_module, "_files", FakeBackupFiles())
     return tmp_path
 
 
@@ -131,17 +135,22 @@ def give_rules(store: Any, nc_user: str) -> None:
 
 
 class NcRecorder:
-    """Ersatz für AsyncNextcloudApp in gameworld.nc: merkt das Konto je Client, ``error`` lässt den Bau scheitern."""
+    """Ersatz für AsyncNextcloudApp in gameworld.nc: merkt Konto und Optionen je Client.
+
+    ``error`` lässt den Bau scheitern; ``options`` hält je Aufruf alle übrigen Argumente.
+    """
 
     def __init__(self, instance: Any) -> None:
         self.instance = instance
         self.users: list[str | None] = []
+        self.options: list[dict[str, Any]] = []
         self.error: Exception | None = None
 
     def __call__(self, **kwargs: Any) -> Any:
         if self.error is not None:
             raise self.error
         self.users.append(kwargs.get("user"))
+        self.options.append({key: value for key, value in kwargs.items() if key != "user"})
         return self.instance
 
 
@@ -165,6 +174,93 @@ def assert_closed(instance: Any, times: int | None = None) -> None:
             assert adapter.close.await_count >= 1
         else:
             assert adapter.close.await_count == times
+
+
+class FakeBackupFiles:
+    """Nextcloud Files im Speicher je Konto; gleiche Methoden wie backup.files.BackupFiles.
+
+    ``files`` bildet (uid, Pfad) auf (file_id, Inhalt) ab. ``upload_error`` lässt den
+    Upload mit dieser Ausnahme scheitern, ``size_mismatch`` simuliert eine
+    unvollständige Datei (FilesError MSG_UPLOAD_INCOMPLETE, nichts bleibt liegen).
+    ``calls`` protokolliert (Methode, Konto, Pfad).
+    """
+
+    def __init__(self) -> None:
+        self.files: dict[tuple[str, str], tuple[int, bytes]] = {}
+        self.upload_error: Exception | None = None
+        self.download_error: Exception | None = None
+        self.size_mismatch = False
+        self.calls: list[tuple[str, str, str]] = []
+        self._next_id = 100
+
+    def put(self, uid: str, path: str, data: bytes) -> int:
+        """Legt eine Datei direkt ab (Testvorbereitung) und gibt ihre file_id zurück."""
+        self._next_id += 1
+        self.files[(uid, path)] = (self._next_id, data)
+        return self._next_id
+
+    def _entry(self, uid: str, path: str) -> Any:
+        from gameworld.backup.files import FilesEntry
+
+        file_id, data = self.files[(uid, path)]
+        return FilesEntry(file_id=file_id, path=path, name=path.rsplit("/", 1)[-1], size=len(data), modified=None)
+
+    async def upload(self, uid: str, folder_path: str, base_name: str, spool: Any, size: int, suffix: Any) -> Any:
+        from gameworld.backup.files import MAX_SUFFIX, MSG_NAME_EXHAUSTED, MSG_UPLOAD_INCOMPLETE, FilesError
+
+        for n in range(1, MAX_SUFFIX + 1):
+            target = f"{folder_path}/{suffix(base_name, n)}"
+            if (uid, target) not in self.files:
+                break
+        else:
+            raise FilesError(MSG_NAME_EXHAUSTED)
+        self.calls.append(("upload", uid, target))
+        if self.upload_error is not None:
+            raise self.upload_error
+        if self.size_mismatch:
+            raise FilesError(MSG_UPLOAD_INCOMPLETE)
+        spool.seek(0)
+        data = spool.read()
+        if len(data) != size:
+            raise FilesError(MSG_UPLOAD_INCOMPLETE)
+        self.put(uid, target, data)
+        return self._entry(uid, target)
+
+    async def listdir(self, uid: str, folder_path: str) -> list[Any]:
+        self.calls.append(("listdir", uid, folder_path))
+        prefix = f"{folder_path}/"
+        return [
+            self._entry(owner, path)
+            for owner, path in sorted(self.files)
+            if owner == uid and path.startswith(prefix) and "/" not in path[len(prefix) :]
+        ]
+
+    async def stat(self, uid: str, path: str) -> Any:
+        self.calls.append(("stat", uid, path))
+        return self._entry(uid, path) if (uid, path) in self.files else None
+
+    async def download_to(self, uid: str, path: str, fp: Any) -> None:
+        from gameworld.backup.files import MSG_FILE_GONE, FilesError
+
+        self.calls.append(("download_to", uid, path))
+        if self.download_error is not None:
+            raise self.download_error
+        if (uid, path) not in self.files:
+            raise FilesError(MSG_FILE_GONE)
+        fp.write(self.files[(uid, path)][1])
+
+    async def delete_own(self, uid: str, path: str) -> None:
+        self.calls.append(("delete_own", uid, path))
+        self.files.pop((uid, path), None)
+
+
+@pytest.fixture
+def fake_files(app_env: Path) -> FakeBackupFiles:
+    del app_env
+    from gameworld.backup import files as files_module
+
+    assert isinstance(files_module._files, FakeBackupFiles)  # pyright: ignore[reportPrivateUsage]
+    return files_module._files  # pyright: ignore[reportPrivateUsage]
 
 
 class FakeBot:
