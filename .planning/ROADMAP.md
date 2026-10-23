@@ -269,7 +269,7 @@ Plans:
   2. Der Proxy lässt nur Verbindungen zu Welten zu, für die das angemeldete Nextcloud-Konto eingeladen ist; Whitelist, Spielzeit und Prejoin-Sperren greifen unverändert
   3. Bewertet und belegt sind: Versionspassung Client/Server (wasm-Build vs. 5.17.0), COOP/COEP unter Nextcloud/AppAPI, Leistung auf einem Kinder-Laptop und einem Tablet, Download-Größe, Lizenz und Pflegezustand von luanti-wasm
   4. Der Bericht entscheidet anhand der drei Owner-Kriterien sinnvoll, echter Mehrwert und sicher; gebaut wird nur, wenn alle drei erfüllt sind (Owner-Entscheid 21.10.2026)
-**Plans:** 9/11 plans executed
+**Plans:** 10/11 plans executed
 
 Plans:
 - [x] 04.2-01-PLAN.md , CI-Workflow luanti-wasm bc0a515 in zwei Speichervarianten, Push nur nach Owner-Wort, Lauf 1 anstoßen, Spike-Startzeit
@@ -281,7 +281,7 @@ Plans:
 - [x] 04.2-07-PLAN.md , WebSocket-zu-UDP-Proxy (Sitzungen, Relais, Grenzen), Negativtests WebSocket
 - [x] 04.2-08-PLAN.md , Dev-Front, Knopf Im Browser spielen, e2e gegen echte Welt, Laptop-Lauf (Variante B)
 - [x] 04.2-09-PLAN.md , Variante A: SRP-Übernahme am Proxy (Timebox 4 h) mit Gegenproben
-- [ ] 04.2-10-PLAN.md , 15-Minuten-Praxistest auf den Owner-Geräten über den Proxy, Rückbau
+- [x] 04.2-10-PLAN.md , Praxistest-Beleg aus bereits erbrachten Fakten (Owner-Entscheid: nicht erneut live); iPhone+Laptop-Klasse flüssig belegt, iPad NO-GO, offene Punkte (15-Min-Kindertest, alter Laptop, Android-Tablet, FPS/RAM/CPU) für Plan 11 markiert
 - [ ] 04.2-11-PLAN.md , Sicherheitsreview mit Befehlsbelegen, Go/No-Go-Bericht mit Aufwand und Budget (D-13), Owner-Entscheid
 
 ### Phase 5: Backup und Restore

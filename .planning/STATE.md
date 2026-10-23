@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-09-PLAN.md
-last_updated: "2026-10-23T11:24:26.535Z"
-last_activity: "2026-10-23 -- 04.2-09 complete (Variante A SRP-Uebernahme am Proxy live BELEGT gegen echte 5.17.0-Welt, Timebox 27 min; A1/A2 bestaetigt; Vorgabe bleibt password, proxy_srp schaltbar; naechster Plan 04.2-10)"
+stopped_at: Completed 04.2-10-PLAN.md
+last_updated: "2026-10-23T11:41:12.926Z"
+last_activity: "2026-10-23 -- 04.2-10 complete (Praxistest-Beleg aus bereits erbrachten Fakten gefuellt, Owner-Entscheid: nicht erneut live; iPhone ab iOS 27 + Laptop-Klasse fluessig belegt, iPad NO-GO; offen: formaler 15-Min-Kindertest, alter Laptop, Android-Tablet, FPS/RAM/CPU; naechster Plan 04.2-11)"
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 45
-  percent: 63
+  completed_plans: 46
+  percent: 64
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 9 von 11 complete (04.2-01 bis 04.2-09; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b; Erfolgskriterium 1+2 live belegt; Variante A SRP-Uebernahme live BELEGT)
+Plan: 10 von 11 complete (04.2-01 bis 04.2-10; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b; Erfolgskriterium 1+2 live belegt; Variante A SRP-Uebernahme live BELEGT; Praxis auf iPhone+Laptop-Klasse fluessig belegt, offene Punkte fuer Plan 11 markiert)
 Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-09 complete (Variante A SRP-Uebernahme am Proxy live BELEGT gegen echte 5.17.0-Welt, Timebox 27 min; A1/A2 bestaetigt; Vorgabe bleibt password, proxy_srp schaltbar; naechster Plan 04.2-10)
+Last activity: 2026-10-23 -- 04.2-10 complete (Praxistest-Beleg aus bereits erbrachten Fakten gefuellt, Owner-Entscheid: nicht erneut live; iPhone ab iOS 27 + Laptop-Klasse fluessig, iPad NO-GO; offen: formaler 15-Min-Kindertest, alter Laptop, Android-Tablet, FPS/RAM/CPU; naechster Plan 04.2-11)
 
-Progress: [██████████] 96%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -97,6 +97,7 @@ Progress: [██████████] 96%
 | Phase 04.2 P07 | 30 min | 3 tasks | 6 files |
 | Phase 04.2 P08 | 2 Sitzungen | 3 tasks | 10 files |
 | Phase 04.2 P09 | 27 min | 3 tasks | 9 files |
+| Phase 04.2 P10 | 11 min | 1 task (Dok) | 1 files |
 
 ## Accumulated Context
 
@@ -215,6 +216,8 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-09: Variante A (D-10) live BELEGT: Proxy uebernimmt SRP (A/M gleicher seqnum ersetzen, M mit echtem Passwort rechnen), Kind bekommt nur Platzhalter "gameworld"; Vorgabe bleibt password, proxy_srp schaltbar, Variante B unberuehrt
 - [Phase 04.2]: 04.2-09: A1 (keine Verschluesselung nach SRP) und A2 (SRP-Pakete nicht gesplittet) live bestaetigt; server_packet beendet bei Parse-Fehler (eigene Welt sendet kein fehlerhaftes MTP); SrpClient aus luanti_probe nach srp_proxy verschoben (eine Wahrheit, secret injizierbar)
 - [Phase 04.2]: 04.2-09: Namensvergleich im ClientGuard vor jedem SRP-Ersatz, Passwort nur aus check_play_access(ticket.uid); fremder Name/FIRST_SRP/SPLIT beenden vor der Welt (T-04.2-43/44 live), unabhaengige SRP-Server-Seite plus Gegenprobe anderes Passwort (T-04.2-46)
+- [Phase 04.2]: 04.2-10: Owner-Entscheid "Spaeter, Phase trotzdem abschliessen": Praxistest nicht erneut live, evidence/10-praxistest.md aus bereits erbrachten Belegen (Plan 04/08/09) gefuellt, offene Teile ehrlich als nachzuholen markiert; kein neuer Teststand, keine Geraete-Freigabe, kein Checkpoint, keine erfundenen Messwerte
+- [Phase 04.2]: 04.2-10: Praxis live belegt auf iPhone (ab iOS 27, Touch, Owner "perfekt und fluessig") und Laptop-Klasse (Chrome, Minetest ~8s+589s fluessig, VoxeLibre fluessig trotz 93 MB); iPad NO-GO (JSPI fehlt); offen fuer Plan 11: formaler 15-Min-Kindertest (D-06), echter alter Laptop (D-05), Android-Tablet (deferred), FPS/RAM/CPU nicht beziffert, OPFS-Zweitbesuch nicht systematisch gemessen; Produktbau-Befund wasm-Client zeigt Pausen-/Kick-Grund nicht lesbar
 
 ### Pending Todos
 
@@ -243,6 +246,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T11:24:26.502Z
-Stopped at: Completed 04.2-09-PLAN.md
+Last session: 2026-10-23T11:41:12.926Z
+Stopped at: Completed 04.2-10-PLAN.md
 Resume file: None
