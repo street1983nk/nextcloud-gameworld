@@ -44,7 +44,7 @@ def test_reserved_prefix_is_not_reserved() -> None:
     assert folder_name("Console", WORLD_ID) == "Console"
 
 
-@pytest.mark.parametrize("name", ["a/b", "a\\b", "../x", "/", "\\", "a:b", "x*?|<>\""])
+@pytest.mark.parametrize("name", ["a/b", "a\\b", "../x", "/", "\\", "a:b", 'x*?|<>"'])
 def test_never_a_separator(name: str) -> None:
     result = folder_name(name, WORLD_ID)
     assert "/" not in result
@@ -84,9 +84,9 @@ def test_file_name_of_unusable_world_name() -> None:
 
 
 def test_file_name_rejects_naive_time_and_unknown_kind() -> None:
-    with pytest.raises(ValueError):
-        backup_file_name("Burg", datetime(2026, 1, 2, 3, 4), "backup", zone=BERLIN)  # noqa: DTZ001
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="ohne Zeitzone"):
+        backup_file_name("Burg", datetime(2026, 1, 2, 3, 4), "backup", zone=BERLIN)
+    with pytest.raises(ValueError, match="Unbekannte Art"):
         backup_file_name("Burg", datetime(2026, 1, 2, 3, 4, tzinfo=BERLIN), "irgendwas")
 
 

@@ -561,17 +561,28 @@ class SnapshotContainer(FakeContainer):
         self.chunk_sizes.append(kwargs.get("chunk_size"))
         owner = self
 
+        def chunks() -> Iterator[bytes]:
+            for chunk in owner._chunks:
+                if isinstance(chunk, BaseException):
+                    raise chunk
+                yield chunk
+
         class Stream:
-            def __iter__(self) -> Iterator[bytes]:
-                for chunk in owner._chunks:
-                    if isinstance(chunk, BaseException):
-                        raise chunk
-                    yield chunk
+            """Wie der Generator von docker-py: iterierbar und schließbar."""
+
+            def __init__(self) -> None:
+                self._inner = chunks()
+
+            def __iter__(self) -> Stream:
+                return self
+
+            def __next__(self) -> bytes:
+                return next(self._inner)
 
             def close(self) -> None:
                 owner.closed = True
 
-        return iter(Stream()), {}
+        return Stream(), {}
 
 
 def _collect(stream: Iterator[bytes]) -> bytes:
@@ -665,5 +676,5 @@ def test_put_world_archive_passes_file_object(prov: DockerProvisioner, fake: Fak
 
 def test_put_world_archive_refused(prov: DockerProvisioner, fake: FakeClient) -> None:
     fake.containers.list = _listing(PutContainer(False))
-    with pytest.raises(ProvisionerError, match="Docker hat die Sicherung nicht angenommen."):
+    with pytest.raises(ProvisionerError, match=r"Docker hat die Sicherung nicht angenommen\."):
         prov.put_world_archive(WORLD, io.BytesIO(b"tar"))

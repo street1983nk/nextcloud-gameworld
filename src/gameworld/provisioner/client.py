@@ -15,7 +15,7 @@ import logging
 import tarfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, BinaryIO, cast
 
 import docker
 import docker.errors
@@ -50,6 +50,12 @@ LEDGER_ARCHIVE_MAX = LEDGER_FILE_MAX + STATUS_ARCHIVE_MAX
 # 16 KiB reichen mit Reserve, mehr schreibt nur fremder Lua-Code (T-04.1-07).
 EVENTS_FILE_MAX = 16 * 1024
 EVENTS_ARCHIVE_MAX = EVENTS_FILE_MAX + STATUS_ARCHIVE_MAX
+# Docker-Strom des Weltordners in Stücken dieser Größe (Speicher bleibt konstant).
+SNAPSHOT_CHUNK = 2 * 1024 * 1024
+# Nur in diesen Zuständen ist map.sqlite konsistent: Der Server-Prozess läuft
+# nicht und ist auch nicht eingefroren oder im Neustart (Erfolgskriterium 2).
+SNAPSHOT_SAFE_STATES = frozenset({"created", "exited", "dead"})
+SNAPSHOT_RUNNING = "Die Welt läuft noch; eine Sicherung braucht eine gestoppte Welt."
 # Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
 # Leseversuch heilt (Pitfall 4). Timeouts werden nie wiederholt; Achtung:
 # ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
@@ -351,6 +357,39 @@ class DockerProvisioner:
             container = self._owned(world_id)
             if not container.put_archive(WORLD_PATH, archive):
                 raise ProvisionerError("Docker hat die Zugangsliste der Welt nicht angenommen.")
+
+    def snapshot_to[T](self, world_id: str, write: Callable[[Iterator[bytes]], T]) -> T:
+        """Reicht den Tar-Strom des Weltordners an ``write`` und gibt dessen Ergebnis zurück.
+
+        Nur bei gestopptem Container (nach ``reload``): Aus einer laufenden Welt
+        wäre map.sqlite inkonsistent (T-05-04), get_archive wird dann nie
+        aufgerufen. Gelesen wird innerhalb desselben _guarded-Blocks, damit auch
+        ein Abbruch mitten im Strom als DockerUnavailableError ankommt
+        (Pitfall 8); kein _read und kein zweiter Versuch, ein halb gelesener
+        Strom darf nie still neu beginnen. Der Strom wird immer geschlossen.
+        """
+        with self._guarded():
+            container = self._owned(world_id)
+            container.reload()
+            if container.status not in SNAPSHOT_SAFE_STATES:
+                raise ProvisionerError(SNAPSHOT_RUNNING)
+            stream, _stat = container.get_archive(WORLD_PATH, chunk_size=SNAPSHOT_CHUNK)
+            try:
+                return write(stream)
+            finally:
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    close()
+
+    def put_world_archive(self, world_id: str, archive: BinaryIO) -> None:
+        """Spielt ein Restore-Tar (Datei-Objekt, auch gzip) in den Weltordner ein.
+
+        Namen im Tar sind relativ zum Weltordner. Schließen muss der Aufrufer.
+        """
+        with self._guarded():
+            container = self._owned(world_id)
+            if not container.put_archive(WORLD_PATH, archive):
+                raise ProvisionerError("Docker hat die Sicherung nicht angenommen.")
 
     def stop(self, world_id: str) -> None:
         with self._guarded():
