@@ -126,7 +126,8 @@ async def test_static_js(client: httpx.AsyncClient, dev: Path) -> None:
 )
 async def test_static_rejects(client: httpx.AsyncClient, dev: Path, path: str) -> None:
     del dev
-    response = await client.get(path, headers=appapi_headers("gw-kind"))
+    # Starlette leitet /play/static/a nach /play/static/a/ um; maßgeblich ist das Ende der Kette.
+    response = await client.get(path, headers=appapi_headers("gw-kind"), follow_redirects=True)
     assert response.status_code == 404
     assert b"geheim" not in response.content
     assert b"asm" not in response.content

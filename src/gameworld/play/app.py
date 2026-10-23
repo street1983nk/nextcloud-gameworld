@@ -20,4 +20,7 @@ def require_play_enabled() -> None:
 
 def install_play(app: FastAPI) -> None:
     """Bindet die Router des Spikes ein (Plan 06/07 hängen ihre Router hier an)."""
-    del app  # Die Spielseite (pages.router) folgt im nächsten Schritt.
+    # Später Import: pages braucht require_play_enabled aus diesem Modul.
+    from gameworld.play import pages
+
+    app.include_router(pages.router)

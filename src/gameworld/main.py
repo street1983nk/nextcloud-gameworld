@@ -19,6 +19,8 @@ from gameworld.api import alerts, invites, me, pause, playtime, setup_check, tal
 from gameworld.api.csrf import JsonOnlyChangesMiddleware
 from gameworld.lifecycle import enabled_handler
 from gameworld.notify.loop import notify_forever
+from gameworld.play.app import install_play
+from gameworld.play.config import play_disable_for, play_mode
 from gameworld.playtime.ticker import time_forever
 from gameworld.talk.service import shutdown_talk
 from gameworld.worlds.reconciler import reconcile_forever
@@ -92,7 +94,9 @@ APP = FastAPI(lifespan=lifespan)
 # Reihenfolge zählt: Zuerst hinzugefügt heißt innen. Die JSON-Pflicht für Änderungen
 # (IN-08) läuft so nach AppAPIAuthMiddleware, die scope["username"] setzt.
 APP.add_middleware(JsonOnlyChangesMiddleware)
-APP.add_middleware(AppAPIAuthMiddleware)
+# Browser-Spike 04.2: Der Modus wird beim Start gelesen. Nur dev (Dev-Stack, PHP-Proxy
+# ohne WebSocket-Upgrade) nimmt play und play/* aus; api/* bleibt immer geschützt.
+APP.add_middleware(AppAPIAuthMiddleware, disable_for=play_disable_for(play_mode()))
 APP.include_router(me.router)
 APP.include_router(worlds.router)
 APP.include_router(setup_check.router)
@@ -102,6 +106,7 @@ APP.include_router(pause.router)
 APP.include_router(alerts.router)
 APP.include_router(talk.router)
 APP.include_router(talk_bot.router)
+install_play(APP)
 
 
 def _uvicorn_loop() -> str:

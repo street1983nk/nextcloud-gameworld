@@ -23,6 +23,11 @@
 	Stufe für angemeldete Nutzer, damit ein strengerer Proxy (HaRP) sie kennt.
 	Prüfpunkt für Phase 6. Der Handler verwirft jeden Inhalt ungelesen.
 
+	Browser-Spike 04.2: ^/api/my/play-ticket$ (nur POST) und ^/play/.* sind die
+	Ticket-Route und die Spielseite samt Artefakten und WebSocket. Ohne
+	GAMEWORLD_BROWSER_SPIKE antworten sie mit 404. HaRP prüft ^/play/.* auch
+	beim WebSocket-Upgrade.
+
 	Es gibt bewusst keine Einstellung, die eine Welt im Internet sichtbar macht
 	(ZUGANG-01).
 -->
@@ -78,6 +83,18 @@ Requirements:
 			<route>
 				<url>^/api/my/.*</url>
 				<verb>GET</verb>
+				<access_level>USER</access_level>
+				<headers_to_exclude>[]</headers_to_exclude>
+			</route>
+			<route>
+				<url>^/api/my/play-ticket$</url>
+				<verb>POST</verb>
+				<access_level>USER</access_level>
+				<headers_to_exclude>[]</headers_to_exclude>
+			</route>
+			<route>
+				<url>^/play/.*</url>
+				<verb>GET,POST</verb>
 				<access_level>USER</access_level>
 				<headers_to_exclude>[]</headers_to_exclude>
 			</route>
