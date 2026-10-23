@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from gameworld.access.roles import MSG_UNAVAILABLE, RoleService, RolesDep, RoleUnavailableError, UserDep
+from gameworld.access.roles import MSG_UNAVAILABLE, RolesDep, RoleService, RoleUnavailableError, UserDep
 from gameworld.access.secret import SecretUnavailableError
 from gameworld.access.service import AccessService, MyWorld
 from gameworld.api.csrf import FOREIGN_FETCH_SITES, JSON_TYPE
@@ -215,9 +215,7 @@ async def launch(
     if granted.entry.player_name != ticket.player_name:
         LOG.info("Spielstart abgelehnt: renamed")
         raise HTTPException(status.HTTP_409_CONFLICT, detail=TEXT_NAME_NEU)
-    ws_token = tickets.issue(
-        "ws", uid=ticket.uid, world_id=ticket.world_id, player_name=granted.entry.player_name
-    )
+    ws_token = tickets.issue("ws", uid=ticket.uid, world_id=ticket.world_id, player_name=granted.entry.player_name)
     LOG.info("Spielstart freigegeben")
     response.headers.update({**NO_STORE, "Referrer-Policy": "no-referrer"})
     return LaunchOut(
