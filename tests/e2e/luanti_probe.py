@@ -239,6 +239,7 @@ def session(
     password: str,
     hold: float,
     timeout: float = 8.0,
+    sock_factory: SocketFactory = udp_socket,
 ) -> dict[str, object]:
     """Vollständiger Join bis ``on_joinplayer``, dann bis ``hold`` Sekunden halten oder bis zum Kick.
 
@@ -250,7 +251,7 @@ def session(
     von ``{"t": Sekunden seit CLIENT_READY, "kind": "chat" | "kick", "text": ...}``.
     ``timeout`` gilt für die Anmeldung bis AUTH_ACCEPT, ``hold`` danach.
     """
-    probe = Probe(host, port)
+    probe = Probe(host, port, sock_factory=sock_factory)
     events: list[dict[str, object]] = []
     deadline = time.monotonic() + timeout
     try:
