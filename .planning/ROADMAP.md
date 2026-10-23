@@ -269,13 +269,13 @@ Plans:
   2. Der Proxy lässt nur Verbindungen zu Welten zu, für die das angemeldete Nextcloud-Konto eingeladen ist; Whitelist, Spielzeit und Prejoin-Sperren greifen unverändert
   3. Bewertet und belegt sind: Versionspassung Client/Server (wasm-Build vs. 5.17.0), COOP/COEP unter Nextcloud/AppAPI, Leistung auf einem Kinder-Laptop und einem Tablet, Download-Größe, Lizenz und Pflegezustand von luanti-wasm
   4. Der Bericht entscheidet anhand der drei Owner-Kriterien sinnvoll, echter Mehrwert und sicher; gebaut wird nur, wenn alle drei erfüllt sind (Owner-Entscheid 21.10.2026)
-**Plans:** 4/11 plans executed
+**Plans:** 5/11 plans executed
 
 Plans:
 - [x] 04.2-01-PLAN.md , CI-Workflow luanti-wasm bc0a515 in zwei Speichervarianten, Push nur nach Owner-Wort, Lauf 1 anstoßen, Spike-Startzeit
 - [x] 04.2-02-PLAN.md , Spielseite /play/ mit COOP/COEP/CSP hinter GAMEWORLD_BROWSER_SPIKE, info.xml-Routen
 - [ ] 04.2-03-PLAN.md , Header- und WS-Proben unter manual-install und HaRP (Timebox), K.-o. Header
-- [ ] 04.2-04-PLAN.md , CI-Lauf abwarten (max. 2 Läufe), Artefakte messen, K.-o. Build; Gerätetest Einzelspieler mit Owner (iPhone, iPad, Laptop, Touch), Build-Wahl
+- [x] 04.2-04-PLAN.md , CI-Lauf abwarten (max. 2 Läufe), Artefakte messen, K.-o. Build; Gerätetest Einzelspieler mit Owner (iPhone, iPad, Laptop, Touch), Build-Wahl
 - [x] 04.2-05-PLAN.md , Reine Protokollmodule: 24-Byte-Kopf, NEWADDR/BIND, MTP-Wächter (Name, FIRST_SRP, RELIABLE(SPLIT))
 - [x] 04.2-06-PLAN.md , Ein-Mal-Tickets, POST /api/my/play-ticket und /play/launch, Negativtests Ticket
 - [ ] 04.2-07-PLAN.md , WebSocket-zu-UDP-Proxy (Sitzungen, Relais, Grenzen), Negativtests WebSocket

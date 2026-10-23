@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-06-PLAN.md
-last_updated: "2026-10-23T06:00:11.898Z"
-last_activity: 2026-10-23 -- 04.2-06 complete (Ticket-Ausgabe und Spielstart)
+stopped_at: Completed 04.2-04-PLAN.md
+last_updated: "2026-10-23T08:39:58.732Z"
+last_activity: 2026-10-23 -- 04.2-04 complete (CI-Build GO, Geraetetest Einzelspieler, BUILD-WAHL b)
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 40
-  percent: 63
+  completed_plans: 41
+  percent: 87
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 4 von 11 complete (04.2-01, 04.2-02, 04.2-05, 04.2-06; CI-Lauf 1 RUN-ID 39906280343 laeuft, Auswertung Plan 04)
+Plan: 5 von 11 complete (04.2-01, 04.2-02, 04.2-04, 04.2-05, 04.2-06; KO-STATUS-BUILD GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b)
 Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-06 complete (Ein-Mal-Tickets, play-ticket, play-status, launch, Negativtest-Matrix)
+Last activity: 2026-10-23 -- 04.2-04 complete (iPhone ab iOS 27 mit Pointer-Lock-Shim GO, iPad ohne JSPI NO-GO, Laptop-Test vor Plan 10)
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 87%
 
 ## Performance Metrics
 
@@ -92,6 +92,7 @@ Progress: [█████████░] 85%
 | Phase 04.2 P01 | 22 min | 3 tasks | 1 files |
 | Phase 04.2 P05 | 13min | 2 tasks | 6 files |
 | Phase 04.2 P06 | 16 min | 3 tasks | 6 files |
+| Phase 04.2 P04 | 180 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -198,6 +199,7 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-05: NEWADDR-Antwort ADDR 10.77.0.2 <passcode> - (vier Tokens laut proxy.js); Ziel nur 10.77.0.1:30000
 - [Phase 04.2]: 04.2-06: Ticket-Bodies werden im Handler nach den Herkunftsprüfungen gelesen (max. 1024 Bytes); Herkunfts-Ablehnung verbraucht kein Ticket, jede Ticket-Ablehnung ist eine 403 mit Grund nur als Log-Konstante
 - [Phase 04.2]: 04.2-06: Tickets nur für Welten aus my_worlds, auch für Verwalter (D-11); /play/launch prüft Einladung und Spielername erneut, Passwort nur in Variante B
+- [Phase 04.2]: 04.2-04: BUILD-WAHL b für alle weiteren Pläne; KO-STATUS-TABLETS TEILWEISE (iPhone GO ab iOS 27 mit Pointer-Lock-Shim, iPad NO-GO bis iPadOS 27, Laptop vor Plan 10)
 
 ### Pending Todos
 
@@ -226,6 +228,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T06:00:05.088Z
-Stopped at: Completed 04.2-06-PLAN.md
+Last session: 2026-10-23T08:39:50.184Z
+Stopped at: Completed 04.2-04-PLAN.md
 Resume file: None
