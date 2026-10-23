@@ -6,10 +6,31 @@ Builds aus Lauf 39909473743 (bc0a515, Luanti 5.17.0): a = Release 0083d7819fd7 (
 
 | Gerät | Browser und Version | Build | crossOriginIsolated | JSPI | Zeit bis Menü in s | Zeit bis Welt in s | RAM | FPS | Touch | Fehler |
 |-------|---------------------|-------|---------------------|------|--------------------|--------------------|-----|-----|-------|--------|
-| Entwicklungsrechner | ausstehend (Owner) | a | ausstehend | ausstehend | ausstehend | ausstehend | ausstehend | ausstehend | nicht zutreffend | ausstehend |
-| Entwicklungsrechner | ausstehend (Owner) | b | ausstehend | ausstehend | ausstehend | ausstehend | ausstehend | ausstehend | nicht zutreffend | ausstehend |
+| Entwicklungsrechner | Chrome (Windows, Playwright der Hauptsitzung), localhost und Tailscale-URL | a | true | true | nicht gemessen (Menü erreicht) | nicht gemessen | nicht gemessen | nicht gemessen | nicht zutreffend | keiner im Spiel; 6x CSP Inline-onclick aus der launcher.js-Einstellungsleiste (bekannt aus Plan 02), favicon 401 (kosmetisch) |
+| Entwicklungsrechner | Chrome (Windows, Playwright der Hauptsitzung), localhost und Tailscale-URL | b | true | true | nicht gemessen (Menü erreicht) | nicht gemessen | nicht gemessen | nicht gemessen | nicht zutreffend | wie a; Screenshot Hauptmenü Luanti 5.17.0: `.playwright-mcp/spike-single-b-menu.png` (Hauptsitzung, nicht im Repo) |
+| iPhone (iOS 26.5.2, vor Update) | Safari 26 | b | true (SharedArrayBuffer vorhanden) | false | kein Start | kein Start | nicht messbar | nicht zutreffend | nicht testbar | `TypeError: undefined is not a constructor (new WebAssembly.Suspending)`; Beleg `04-iphone-ios26-jspi-false.png` |
+| iPhone (iOS 27.0.1, vor Shim) | Safari 27.0.1 | b | true | true | kein Menü | kein Start | nicht messbar | nicht zutreffend | nicht testbar | Downloads und Installation certs, base, minetest je 100 %, dann `LuantiError: TypeError: undefined is not an object (evaluating 'document.exitPointerLock.bind')`; Ursache: kein Pointer-Lock-API in iOS-Safari, Emscripten-Code von bc0a515 prüft nicht; Fix 5d9085f (Shim in webplay/play.js) |
+| iPhone (iOS 27.0.1, mit Shim 5d9085f) | Safari 27.0.1 und Chrome iOS (WebKit) | b | true | true | nicht gemessen (Menü erreicht) | nicht gemessen (Welt erreicht) | nicht messbar (kein Mac mit Web Inspector) | Owner-Eindruck flüssig | ja: Laufen, Bauen, Abbauen per Finger | keiner; Owner-Urteil wörtlich "ja es laeuft perfekt und fluessig" |
+| iPhone (iOS 27.0.1) | Safari 27.0.1 | a | nicht getestet | nicht getestet | nicht getestet | nicht getestet | nicht getestet | nicht getestet | nicht getestet | Build a nicht geöffnet, b lief einwandfrei |
+| iPad (iPadOS 26.7.1, iPadOS 27 für das Gerät noch nicht verfügbar) | Safari 26 und Chrome iPadOS | b | wie iPhone vor Update | false | kein Start | kein Start | nicht messbar | nicht zutreffend | nicht testbar (zählt als geht nicht, D-07) | startet nicht, gleiches Bild wie iPhone unter iOS 26 (JSPI fehlt) |
+| iPad (iPadOS 26.7.1) | Safari 26 | a | nicht getestet | false | kein Start | kein Start | nicht messbar | nicht zutreffend | nicht testbar | ohne JSPI startet keiner der beiden Builds (beide brauchen WebAssembly.Suspending) |
+| Laptop (älterer) | nicht getestet | a, b | ausstehend | ausstehend | ausstehend | ausstehend | ausstehend | ausstehend | nicht zutreffend | heute nicht getestet; Owner-Entscheid: wird vor Plan 10 nachgeholt |
 
-Laptop, iPad und iPhone folgen im gemeinsamen Gerätetest (Task 3, D-05, D-08).
+Test am 2026-10-23 vormittags gemeinsam mit dem Owner (D-05, D-08) über Tailscale Serve `https://md-43700650276.tail817485.ts.net`, Backend direkt auf 127.0.0.1:10040 ohne Docker, `GAMEWORLD_BROWSER_SPIKE=dev`. Zeiten bis Menü und Welt wurden nicht mit Stoppuhr gemessen; Bildrate auf dem iPhone nur als Owner-Eindruck.
+
+## Befunde
+
+- JSPI ist die harte Grenze: unter iOS/iPadOS 26 bricht der Start mit `new WebAssembly.Suspending` ab, crossOriginIsolated und SharedArrayBuffer sind dort schon vorhanden. Ab iOS 27 (Safari 27.0.1) läuft der Client.
+- iOS-Safari hat kein Pointer-Lock-API; luanti-wasm bc0a515 ruft `document.exitPointerLock.bind` ungeprüft auf. Der Shim in webplay/play.js (5d9085f) setzt leere Funktionen, wenn das API fehlt; danach läuft der Client in Safari und Chrome auf iOS (gleiche WebKit-Engine).
+- Touch (D-07) auf dem iPhone erfüllt: Bewegen, Bauen und Abbauen per Finger funktionieren.
+- Das iPad (iPadOS 26.7.1) bekommt iPadOS 27 derzeit nicht angeboten; bis Apple liefert, kann es den Browser-Client nicht starten.
+- Nebenbefund: Das Diagnosefeld `#diag` ist auf Touch nicht scrollbar (pointer-events none); 77069e7 scrollt es automatisch auf die neueste Zeile.
+- Freigabe: Tailscale Serve vom Owner gestartet; Beenden (`tailscale serve --https=443 off`) liegt beim Owner.
+
+## Urteil
+
+KO-STATUS-TABLETS: TEILWEISE (iPhone: GO ab iOS 27 mit Pointer-Lock-Shim, Touch erfüllt; iPad: NO-GO derzeit, iPadOS 27 für das Gerät nicht verfügbar; Laptop: OFFEN, vor Plan 10)
+BUILD-WAHL: b
 
 ## Serverseitige Vorprüfung (ohne Browser, 2026-10-23)
 
