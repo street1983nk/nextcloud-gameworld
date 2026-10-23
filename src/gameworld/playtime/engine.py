@@ -117,6 +117,10 @@ class TimeEngine:
         # Zuletzt gerenderter Stand je Welt (Speicher): verhindert, dass sich die
         # Bytes in jedem Takt ändern (nur bei echter Änderung neue Generation).
         self._cache: dict[str, _Rendered] = {}
+        # Halt-Zeitpunkt je Welt vor dem Cold-Backup (D-09): nur im Speicher, nie in
+        # SQLite. Nach einem Prozessneustart rendert der Start die Datei ohne Halt
+        # (T-05-14). Aufrufer halten die Welt-Sperre beim push_time.
+        self._halts: dict[str, int] = {}
         self._last_prune: int | None = None
 
     def _now(self) -> int:
@@ -236,9 +240,24 @@ class TimeEngine:
         morgen = None
         if pause is not None and pause.art == ART_SCHLUSS:
             morgen = morgen_minutes(now, tz, plans, holidays, names_by_user)
-        rendered = self._render_cached(world_id, world_line, players, now, days, pause, morgen)
+        rendered = self._render_cached(
+            world_id, world_line, players, now, days, pause, morgen, halt=self._halts.get(world_id)
+        )
         self._maybe_prune(now, tz)
         return rendered
+
+    def set_halt(self, world_id: str, ab: int) -> None:
+        """Merkt den Halt der Welt (Epoch ``ab``); der nächste ``render`` schreibt ``@halt``.
+
+        Der Zeit-Mod kündigt den Halt im Chat an, sperrt Beitritte und trennt ab
+        ``ab`` alle Spieler (05-RESEARCH.md Pattern 6). Der Halt ist Ablaufzustand,
+        kein Cache: ``forget`` lässt ihn stehen, nur ``clear_halt`` nimmt ihn weg.
+        """
+        self._halts[world_id] = ab
+
+    def clear_halt(self, world_id: str) -> None:
+        """Nimmt den Halt der Welt weg; der nächste ``render`` schreibt die Datei ohne ``@halt``."""
+        self._halts.pop(world_id, None)
 
     def forget(self, world_id: str) -> None:
         """Verwirft den gerenderten Stand der Welt (CR-01).
@@ -285,18 +304,22 @@ class TimeEngine:
         days: DayGrid | None,
         pause: PauseLine | None = None,
         morgen: dict[str, int] | None = None,
+        *,
+        halt: int | None = None,
     ) -> tuple[bytes, bool]:
-        # Pause und Morgen-Minuten gehören in den Schlüssel, sonst schreibt der Takt die Pause nie.
+        # Pause, Morgen-Minuten und Halt gehören in den Schlüssel, sonst schreibt der
+        # Takt sie nie (der Halt kommt beim nächsten push_time in die Regeldatei).
         key = (
             *self._body_key(world_line, players, days),
             pause,
             None if morgen is None else tuple(sorted(morgen.items())),
+            halt,
         )
         cached = self._cache.get(world_id)
         if cached is not None and cached.key == key:
             return cached.data, False
         generation = self._store.bump_time_generation(world_id)
-        data = render_time_file(generation, now, world_line, players, days=days, pause=pause, morgen=morgen)
+        data = render_time_file(generation, now, world_line, players, days=days, pause=pause, morgen=morgen, halt=halt)
         bases = {name: (line.cap, line.base) for name, line in players.items() if line.base >= 0}
         self._cache[world_id] = _Rendered(key=key, generation=generation, issued_at=now, data=data, bases=bases)
         return data, True
