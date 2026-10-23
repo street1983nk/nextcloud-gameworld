@@ -315,7 +315,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 05-06-PLAN.md , Vertikaler Schnitt Wiederherstellen: Integritätsprüfung, vor-restore-Sicherung, Tausch über frisches Volume, Rückfall, POST restore
-- [ ] 05-07-PLAN.md , Oberfläche: Sicherungsbereich, Warndialog, Sicherheitsabfrage, Status-Chips, Fehlerkarte
+- [x] 05-07-PLAN.md , Oberfläche: Sicherungsbereich, Warndialog, Sicherheitsabfrage, Status-Chips, Fehlerkarte
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -354,5 +354,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
-| 5. Backup und Restore | 6/9 | In Progress|  |
+| 5. Backup und Restore | 7/9 | In Progress|  |
 | 6. Store-Release | 0/TBD | Not started | - |
