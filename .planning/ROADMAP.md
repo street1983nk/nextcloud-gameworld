@@ -306,7 +306,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-04-PLAN.md , Busy-Zustände backing_up/restoring/restoring_swap: Status, Guards, Reconciler (RESTORE_INTERRUPTED), backup_job in der Weltenliste, Kindertext
+- [ ] 05-04-PLAN.md , Busy-Zustände backing_up/restoring/restoring_swap: Status, Guards, Reconciler (RESTORE_INTERRUPTED), backup_job in der Weltenliste, Kindertext, Offline-Abschnitte mit kurzen Sperren (players_online auch im Busy-Zustand)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
