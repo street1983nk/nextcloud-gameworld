@@ -574,3 +574,69 @@ def test_lua_warn10_event() -> None:
     assert 'gameworld_access.event("warn10", name)' in body
     assert "hit == 600" in body
     assert "gameworld_access and gameworld_access.event" in body
+
+
+# Phase 5: Chat-Hinweis vor dem Cold-Backup (D-09, 05-RESEARCH.md Pattern 6).
+
+
+def test_halt_texts() -> None:
+    assert time_mod.TEXT_HALT_SOON == "Die Welt macht gleich eine kurze Pause."
+    assert time_mod.TEXT_HALT == "Die Welt macht kurz Pause. Gleich geht es weiter."
+    for text in (time_mod.TEXT_HALT_SOON, time_mod.TEXT_HALT):
+        assert text in time_mod.TEXTS
+        assert _lua_string(text) in MOD_INIT_LUA
+        assert not re.search(r"\u2013|\u2014", text)
+
+
+def test_rules_file_without_halt_is_unchanged() -> None:
+    plain = render_time_file(4, ISSUED, WORLD, {"Mia": OK, "Papa": FREI}, days=DAYS, pause=SCHLUSS, morgen={"Mia": 540})
+    with_none = render_time_file(
+        4, ISSUED, WORLD, {"Mia": OK, "Papa": FREI}, days=DAYS, pause=SCHLUSS, morgen={"Mia": 540}, halt=None
+    )
+    assert plain == with_none
+    assert b"@halt" not in plain
+
+
+def test_halt_line_is_last_before_end() -> None:
+    lines = (
+        render_time_file(4, ISSUED, WORLD, {"Mia": OK}, days=DAYS, pause=SCHLUSS, morgen={"Mia": 540}, halt=1700000015)
+        .decode("ascii")
+        .split("\n")
+    )
+    assert lines[-3:] == ["@halt 1700000015", "end", ""]
+    assert lines.count("@halt 1700000015") == 1
+    assert lines.index("@pause 1000 2800 schluss") < lines.index("@halt 1700000015")
+    assert lines.index("@morgen Mia 540") < lines.index("@halt 1700000015")
+
+
+def test_halt_line_without_other_lines() -> None:
+    assert render_time_file(0, ISSUED, None, {}, halt=0) == b"gameworld-time 1 0 1792792800\n@halt 0\nend\n"
+
+
+@pytest.mark.parametrize("halt", [-1, True, False, 1700000015.0, "1700000015", "1\nend"])
+def test_invalid_halt_raises(halt: object) -> None:
+    with pytest.raises(ValueError, match="Halt"):
+        render_time_file(1, ISSUED, None, {}, halt=halt)  # pyright: ignore[reportArgumentType]
+
+
+def test_lua_parses_halt_line() -> None:
+    assert "^@halt (%d+)$" in MOD_INIT_LUA
+    assert "halt = new_halt" in _lua_function("local function load()")
+
+
+def test_lua_halt_rejects_join_before_pause_and_rules() -> None:
+    prejoin = MOD_INIT_LUA[MOD_INIT_LUA.index("core.register_on_prejoinplayer") :]
+    assert "if halt then return HALT_TEXT end" in prejoin
+    assert prejoin.index("if halt then return HALT_TEXT end") < prejoin.index("paused(name)")
+    assert prejoin.index("if halt then return HALT_TEXT end") < prejoin.index("left(name)")
+
+
+def test_lua_halt_warns_once_and_disconnects_everyone() -> None:
+    tick = MOD_INIT_LUA[MOD_INIT_LUA.index("local function tick()") :]
+    assert "halt_warned ~= halt" in tick
+    assert "core.chat_send_all(HALT_SOON_TEXT)" in tick
+    assert "halt_warned = halt" in tick
+    assert "now() >= halt" in tick
+    assert "core.disconnect_player(name, HALT_TEXT)" in tick
+    # Der Halt trennt vor Pause und Regeln, auch frei-Spieler (der Server stoppt gleich).
+    assert tick.index("core.disconnect_player(name, HALT_TEXT)") < tick.index("paused(name)")
