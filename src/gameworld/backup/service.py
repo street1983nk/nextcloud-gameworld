@@ -14,6 +14,18 @@ antwortet die API 202. Der Ablauf selbst läuft als verfolgter Task:
 4. Upload in die Files des auslösenden Verwalters, Nachweis in ``backups``,
    Auftrag ``ok``.
 
+Wiederherstellen (BACKUP-02, D-04, D-05, D-06, D-13, D-15) zerstört erst, wenn
+Sicherung und Rückweg bewiesen sind:
+
+A. Ohne Stopp: Download, Größe und SHA-256 gegen den eigenen Nachweis,
+   vollständige Prüfung und Filterung (``prepare_restore``). Scheitert etwas,
+   läuft die Welt unverändert weiter (``abort_offline``).
+B. Halt, Stopp, Zählbuch verbuchen und bewahren, geprüfte vor-restore-Sicherung
+   in Files. Scheitert etwas, startet die alte Welt wieder (``end_offline``).
+C. ``mark_swap``, Tausch über ein frisches Volume mit einem zweiten Versuch,
+   sonst Rückfall auf den lokalen Sicherheits-Snapshot, sonst
+   ``RESTORE_INTERRUPTED`` (wiederholbar).
+
 Die Welt-Sperre hält jeder Schritt nur kurz (Abschnitte aus worlds/service.py);
 Snapshot, Probelauf und Upload laufen ohne Sperre (Pitfall 3). Alle
 fehlgeschlagenen Ausgänge laufen über ``_finish_failed`` mit festem deutschem
@@ -23,6 +35,7 @@ Text; ins Log kommen nur Welt-ID und Fehlertyp, nie Pfade, Konten oder Namen.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import shutil
 import tempfile
@@ -38,12 +51,15 @@ import anyio.to_thread
 
 from gameworld.backup.archive import (
     KIND_BACKUP,
+    KIND_VOR_RESTORE,
     MSG_NO_MAP,
     MSG_NO_SPACE,
     BackupError,
     RestoreRejected,
     SnapshotInfo,
     build_manifest,
+    prepare_restore,
+    sha256_of,
     verify_snapshot,
     write_snapshot,
 )
@@ -56,7 +72,14 @@ from gameworld.notify.service import Notifier, get_notifier
 from gameworld.notify.texts import BACKUP_FAILED_SUBJECT, RESTORE_FAILED_SUBJECT, job_failed_message
 from gameworld.provisioner.client import ProvisionerError, WorldNotFoundError
 from gameworld.provisioner.spec import LUANTI_VERSION
-from gameworld.worlds.service import NOT_FOUND, OfflineTicket, WorldService
+from gameworld.provisioner.time_mod import parse_ledger
+from gameworld.worlds.service import (
+    NOT_FOUND,
+    RECONCILE_DATA_MISSING,
+    RESTORE_INTERRUPTED,
+    OfflineTicket,
+    WorldService,
+)
 from gameworld.worlds.store import BACKUP_JOB_RUNNING, BackupRow
 
 LOG = logging.getLogger(__name__)
@@ -73,9 +96,24 @@ RESTORE_JOB_INTERRUPTED = "Das Wiederherstellen wurde durch einen Neustart des S
 KIND_RESTORE = "restore"
 FAILED_SUBJECTS = {KIND_BACKUP: BACKUP_FAILED_SUBJECT, KIND_RESTORE: RESTORE_FAILED_SUBJECT}
 
+# Wiederherstellen (BACKUP-02, D-04, D-05, D-13, D-15).
+RESTORE_NOT_CONFIRMED = "Bitte das Wiederherstellen bestätigen."
+BACKUP_NOT_FOUND = "Diese Sicherung gibt es nicht (mehr)."
+RESTORE_TAMPERED = "Die Sicherung wurde verändert und wird nicht eingespielt."
+RESTORE_FAILED = "Das Wiederherstellen ist fehlgeschlagen. Die Welt läuft weiter."
+RESTORE_FALLBACK = "Das Wiederherstellen ist fehlgeschlagen. Die alte Welt wurde wiederhergestellt."
+RESTORE_SWAP_FAILED = "Das Wiederherstellen ist fehlgeschlagen. Bitte erneut wiederherstellen."
+# So oft wird der Tausch mit der gewählten Sicherung versucht, bevor der Rückfall greift.
+SWAP_ATTEMPTS = 2
+# Platz für Download, Restore-Tar und Sicherheits-Snapshot (Pitfall 10, T-05-35).
+RESTORE_SPACE_FACTOR = 3
+# Für diese kaputten Welten gibt es keinen Stand, den eine vor-restore-Sicherung retten könnte (D-15).
+NO_SAFETY_ERRORS = frozenset({RECONCILE_DATA_MISSING, RESTORE_INTERRUPTED})
+
 STATE_OK = "ok"
 STATE_FAILED = "failed"
 OP_BACKING_UP = "backing_up"
+OP_RESTORING = "restoring"
 # Nach ``ab`` noch so lange warten, bis der Zeit-Mod im 5-s-Takt alle getrennt hat.
 HALT_GRACE_SECONDS = 2
 # Platz für den Spool: das Doppelte der letzten Sicherung dieser Welt (Pitfall 10).
@@ -94,6 +132,31 @@ class PlayersOnline(Exception):
         text = PLAYERS_ONLINE_ONE if count == 1 else PLAYERS_ONLINE_MANY.format(count=count)
         super().__init__(text)
         self.count = count
+
+
+class RestoreNotConfirmed(Exception):
+    """Wiederherstellen ohne ausdrückliche Bestätigung (HTTP 409, D-04)."""
+
+    def __init__(self) -> None:
+        super().__init__(RESTORE_NOT_CONFIRMED)
+
+
+class BackupNotFound(Exception):
+    """Kein eigener Nachweis zu dieser Datei und Welt (HTTP 404, D-13)."""
+
+    def __init__(self) -> None:
+        super().__init__(BACKUP_NOT_FOUND)
+
+
+class RestoreTampered(BackupError):
+    """Größe oder SHA-256 der heruntergeladenen Datei weichen vom eigenen Nachweis ab (T-05-29)."""
+
+    def __init__(self) -> None:
+        super().__init__(RESTORE_TAMPERED)
+
+
+class _RestoreOutcome(Exception):
+    """Fester Ausgang des Tauschs (Rückfall oder unterbrochen); der Text geht an die Auftragszeile."""
 
 
 @dataclass(frozen=True)
@@ -136,6 +199,15 @@ def user_text(exc: BaseException, world_id: str) -> str:
     return JOB_FAILED
 
 
+def restore_text(exc: BaseException, world_id: str) -> str:
+    """Fester deutscher Text zu einer Ausnahme des Wiederherstellens; Unbekanntes nur mit Typ ins Log."""
+    if isinstance(exc, (_RestoreOutcome, BackupError, FilesError, ProvisionerError)):
+        LOG.warning("Wiederherstellen von Welt %s gescheitert: %s", world_id, type(exc).__name__)
+        return str(exc)
+    LOG.error("Wiederherstellen von Welt %s scheiterte unerwartet: %s", world_id, type(exc).__name__)
+    return RESTORE_FAILED
+
+
 class BackupService:
     """Startet und verfolgt Sicherungsaufträge; höchstens einer läuft im ganzen Haushalt."""
 
@@ -172,7 +244,7 @@ class BackupService:
             self._spawn(world_id, work)
         except BaseException:
             work.close()
-            await anyio.to_thread.run_sync(self._abort_start, ticket, started_at)
+            await anyio.to_thread.run_sync(self._abort_start, ticket, KIND_BACKUP, JOB_FAILED, started_at)
             raise
 
     def _prepare(self, world_id: str, confirm_disconnect: bool, started_at: str) -> OfflineTicket:
@@ -187,11 +259,11 @@ class BackupService:
             raise
         return ticket
 
-    def _abort_start(self, ticket: OfflineTicket, started_at: str) -> None:
+    def _abort_start(self, ticket: OfflineTicket, kind: str, message: str, started_at: str) -> None:
         """Der Task kam nicht zustande: Welt zurück, Auftrag nicht mehr running."""
         self.worlds.abort_offline(ticket)
         self.worlds.store.set_backup_job(
-            ticket.world_id, KIND_BACKUP, STATE_FAILED, JOB_FAILED, None, started_at, _iso(self._clock())
+            ticket.world_id, kind, STATE_FAILED, message, None, started_at, _iso(self._clock())
         )
 
     # Ablauf (Hintergrund)
@@ -240,7 +312,7 @@ class BackupService:
                 await self._sleep(max(0.0, ab + HALT_GRACE_SECONDS - self._clock()))
             stopping = True
             await anyio.to_thread.run_sync(self.worlds.stop_for_snapshot, world_id)
-            return await anyio.to_thread.run_sync(self._snapshot, ticket, spool)
+            return await anyio.to_thread.run_sync(self._snapshot, ticket, spool, KIND_BACKUP)
         finally:
             if stopping:
                 restart_error = await self._shielded(self.worlds.end_offline, world_id, ticket.was_running)
@@ -265,8 +337,8 @@ class BackupService:
         if disk_free(self._spool_dir) < SPACE_FACTOR * previous[0].size:
             raise BackupError(MSG_NO_SPACE)
 
-    def _snapshot(self, ticket: OfflineTicket, spool: IO[bytes]) -> SnapshotInfo:
-        manifest = build_manifest(ticket.world_id, ticket.preset, LUANTI_VERSION, _iso(self._clock()), KIND_BACKUP)
+    def _snapshot(self, ticket: OfflineTicket, spool: IO[bytes], kind: str) -> SnapshotInfo:
+        manifest = build_manifest(ticket.world_id, ticket.preset, LUANTI_VERSION, _iso(self._clock()), kind)
         sink = cast(BinaryIO, spool)
         return self.worlds.provisioner.snapshot_to(
             ticket.world_id, lambda chunks: write_snapshot(chunks, sink, manifest)
@@ -279,8 +351,17 @@ class BackupService:
     def _finish_ok(
         self, ticket: OfflineTicket, uid: str, entry: FilesEntry, info: SnapshotInfo, started_at: str, created_at: str
     ) -> None:
-        store = self.worlds.store
-        store.add_backup(
+        self._add_proof(ticket, uid, entry, info, KIND_BACKUP, created_at)
+        self.worlds.store.set_backup_job(
+            ticket.world_id, KIND_BACKUP, STATE_OK, None, entry.name, started_at, _iso(self._clock())
+        )
+        LOG.info("Welt %s gesichert: %d Bytes", ticket.world_id, entry.size)
+
+    def _add_proof(
+        self, ticket: OfflineTicket, uid: str, entry: FilesEntry, info: SnapshotInfo, kind: str, created_at: str
+    ) -> None:
+        """Integritätsnachweis der hochgeladenen Datei (D-12): nur damit ist sie wiederherstellbar."""
+        self.worlds.store.add_backup(
             BackupRow(
                 file_id=entry.file_id,
                 owner_uid=uid,
@@ -290,12 +371,10 @@ class BackupService:
                 size=entry.size,
                 sha256=info.sha256,
                 preset=ticket.preset,
-                kind=KIND_BACKUP,
+                kind=kind,
                 created_at=created_at,
             )
         )
-        store.set_backup_job(ticket.world_id, KIND_BACKUP, STATE_OK, None, entry.name, started_at, _iso(self._clock()))
-        LOG.info("Welt %s gesichert: %d Bytes", ticket.world_id, entry.size)
 
     async def _finish_failed(self, world_id: str, uid: str, kind: str, message: str, started_at: str) -> None:
         """Einziger Ausgang für fehlgeschlagene Aufträge: Zeile failed, dann Hinweis an ``uid`` (D-16).
@@ -325,6 +404,252 @@ class BackupService:
             return None
         store.set_backup_job(world_id, kind, STATE_FAILED, message, None, started_at, _iso(self._clock()))
         return row.name, link_origin(store)
+
+    # Wiederherstellen (BACKUP-02): Eltern-Request
+
+    async def start_restore(
+        self, world_id: str, uid: str, file_id: int, *, confirm: bool, confirm_disconnect: bool
+    ) -> None:
+        """Prüft, setzt die Welt auf restoring und startet den Ablauf im Hintergrund (D-04).
+
+        Wirft RestoreNotConfirmed, WorldNotFoundError, BackupNotFound (unbekannte,
+        fremde oder zu einer anderen Welt gehörende Datei, vor jedem Docker- oder
+        Files-Aufruf, D-13), PlayersOnline oder WorldBusyError; dann ist nichts
+        verändert. Eine kaputte Welt (failed, auch delete-only) ist erlaubt (D-15).
+        """
+        if not confirm:
+            raise RestoreNotConfirmed
+        started_at = _iso(self._clock())
+        ticket, proof = await anyio.to_thread.run_sync(
+            self._prepare_restore, world_id, uid, file_id, confirm_disconnect, started_at
+        )
+        work = self._run_restore(ticket, proof, uid, started_at)
+        try:
+            self._spawn(world_id, work)
+        except BaseException:
+            work.close()
+            await anyio.to_thread.run_sync(self._abort_start, ticket, KIND_RESTORE, RESTORE_FAILED, started_at)
+            raise
+
+    def _prepare_restore(
+        self, world_id: str, uid: str, file_id: int, confirm_disconnect: bool, started_at: str
+    ) -> tuple[OfflineTicket, BackupRow]:
+        store = self.worlds.store
+        if store.get_world(world_id) is None:
+            raise WorldNotFoundError(NOT_FOUND)
+        # Nur der eigene Nachweis zu genau dieser Welt macht eine Datei vertrauenswürdig (T-05-28).
+        proof = store.backup_by_file(uid, file_id)
+        if proof is None or proof.world_id != world_id:
+            raise BackupNotFound
+        players = self.worlds.players_online(world_id)
+        if players and not confirm_disconnect:
+            raise PlayersOnline(players)
+        ticket = self.worlds.begin_offline(world_id, OP_RESTORING, allow_failed=True)
+        try:
+            store.set_backup_job(world_id, KIND_RESTORE, BACKUP_JOB_RUNNING, None, proof.name, started_at, None)
+        except BaseException:
+            self.worlds.abort_offline(ticket)
+            raise
+        return ticket, proof
+
+    # Wiederherstellen: Ablauf (Hintergrund)
+
+    async def _run_restore(self, ticket: OfflineTicket, proof: BackupRow, uid: str, started_at: str) -> None:
+        spools: list[IO[bytes]] = []
+        try:
+            await self._restore_steps(ticket, proof, uid, started_at, spools)
+        except Exception as exc:
+            text = restore_text(exc, ticket.world_id)
+            await self._finish_failed(ticket.world_id, uid, KIND_RESTORE, text, started_at)
+        finally:
+            for spool in spools:
+                spool.close()
+
+    async def _restore_steps(
+        self, ticket: OfflineTicket, proof: BackupRow, uid: str, started_at: str, spools: list[IO[bytes]]
+    ) -> None:
+        """A: holen und prüfen (Welt läuft), B: Stopp und vor-restore, C: Tausch (RESEARCH Pattern 4/5)."""
+        try:
+            restore = await self._fetch_and_check(ticket, proof, uid, spools)
+        except BaseException:
+            # Noch nichts gestoppt: Welt in ihren alten Zustand zurück, auch eine kaputte bleibt kaputt.
+            await self._shielded(self.worlds.abort_offline, ticket)
+            raise
+        ledger, safety = await self._offline_safety(ticket, uid, spools)
+        await self._swap(ticket, restore, ledger, safety, spools)
+        await anyio.to_thread.run_sync(self._finish_restore_ok, ticket.world_id, proof, started_at)
+
+    async def _new_spool(self, spools: list[IO[bytes]]) -> IO[bytes]:
+        spool = await anyio.to_thread.run_sync(self._open_spool)
+        spools.append(spool)
+        return spool
+
+    async def _fetch_and_check(
+        self, ticket: OfflineTicket, proof: BackupRow, uid: str, spools: list[IO[bytes]]
+    ) -> IO[bytes]:
+        """Phase A: Platz, Download, Größe und SHA-256 gegen den Nachweis, Restore-Tar bauen."""
+        await anyio.to_thread.run_sync(self._check_restore_space, proof)
+        download = await self._new_spool(spools)
+        await self._files().download_to(uid, proof.path, cast(BinaryIO, download))
+        await anyio.to_thread.run_sync(self._check_integrity, download, proof)
+        restore = await self._new_spool(spools)
+        await anyio.to_thread.run_sync(self._restore_tar, ticket, download, restore)
+        return restore
+
+    def _check_restore_space(self, proof: BackupRow) -> None:
+        self._spool_dir.mkdir(parents=True, exist_ok=True)
+        if disk_free(self._spool_dir) < RESTORE_SPACE_FACTOR * proof.size:
+            raise BackupError(MSG_NO_SPACE)
+
+    @staticmethod
+    def _check_integrity(download: IO[bytes], proof: BackupRow) -> None:
+        """Files ist für Verwalter beschreibbar: nur exakt die nachgewiesene Datei wird eingespielt."""
+        download.seek(0, io.SEEK_END)
+        size = download.tell()
+        if size != proof.size or sha256_of(cast(BinaryIO, download)) != proof.sha256:
+            raise RestoreTampered
+
+    @staticmethod
+    def _restore_tar(ticket: OfflineTicket, source: IO[bytes], sink: IO[bytes]) -> None:
+        """Volle Prüfung und Filterung (Plan 01); Manifest muss zu Welt und Spielart der Zeile passen."""
+        source.seek(0)
+        prepare_restore(
+            cast(BinaryIO, source), world_id=ticket.world_id, preset=ticket.preset, sink=cast(BinaryIO, sink)
+        )
+
+    async def _offline_safety(
+        self, ticket: OfflineTicket, uid: str, spools: list[IO[bytes]]
+    ) -> tuple[bytes | None, IO[bytes] | None]:
+        """Phase B: Halt, Stopp, Zählbuch, vor-restore-Sicherung; scheitert etwas, startet die alte Welt."""
+        world_id = ticket.world_id
+        stopping = False
+        try:
+            needs_safety = await anyio.to_thread.run_sync(self._needs_safety, ticket)
+            ab = await anyio.to_thread.run_sync(self.worlds.announce_halt, world_id, int(self._clock()))
+            if ab is not None:
+                await self._sleep(max(0.0, ab + HALT_GRACE_SECONDS - self._clock()))
+            stopping = True
+            await anyio.to_thread.run_sync(self.worlds.stop_for_snapshot, world_id)
+            ledger = await anyio.to_thread.run_sync(self._take_ledger, world_id)
+            safety = await self._safety_backup(ticket, uid, spools) if needs_safety else None
+        except BaseException:
+            if stopping:
+                await self._shielded(self.worlds.end_offline, world_id, ticket.was_running)
+            else:
+                await self._shielded(self.worlds.abort_offline, ticket)
+            raise
+        return ledger, safety
+
+    def _needs_safety(self, ticket: OfflineTicket) -> bool:
+        """Gibt es einen Stand, den eine vor-restore-Sicherung retten kann (D-05, D-15)?"""
+        if ticket.previous_op_state == "failed" and ticket.previous_error in NO_SAFETY_ERRORS:
+            return False
+        return ticket.world_id in self.worlds.provisioner.list_managed()
+
+    def _take_ledger(self, world_id: str) -> bytes | None:
+        """Zählbuch verbuchen und unverändert bewahren (D-06); fehlt oder ist es kaputt, None."""
+        self.worlds.book_ledger(world_id)
+        try:
+            status_file = self.worlds.provisioner.read_time_ledger(world_id)
+        except WorldNotFoundError:
+            return None
+        if status_file is None or parse_ledger(status_file.content) is None:
+            return None
+        return status_file.content
+
+    async def _safety_backup(self, ticket: OfflineTicket, uid: str, spools: list[IO[bytes]]) -> IO[bytes] | None:
+        """Geprüfte vor-restore-Sicherung in Files mit eigenem Nachweis; der Spool bleibt für den Rückfall.
+
+        Hat die Welt noch keinen Spielstand (MSG_NO_MAP), gibt es nichts zu bewahren:
+        None, der Tausch läuft weiter. Jeder andere Fehler bricht vor der Zerstörung ab.
+        """
+        spool = await self._new_spool(spools)
+        try:
+            info = await anyio.to_thread.run_sync(self._snapshot, ticket, spool, KIND_VOR_RESTORE)
+        except BackupError as exc:
+            if str(exc) != MSG_NO_MAP:
+                raise
+            LOG.info("Welt %s ohne Spielstand, keine Sicherung vor dem Wiederherstellen", ticket.world_id)
+            return None
+        await anyio.to_thread.run_sync(self._verify, ticket, spool)
+        now = self._clock()
+        zone = await anyio.to_thread.run_sync(self.worlds.time.zone)
+        base_name = backup_file_name(ticket.name, datetime.fromtimestamp(now, UTC), KIND_VOR_RESTORE, zone=zone)
+        folder = folder_path(folder_name(ticket.name, ticket.world_id))
+        entry = await self._files().upload(uid, folder, base_name, cast(BinaryIO, spool), info.size, with_suffix)
+        await anyio.to_thread.run_sync(self._add_proof, ticket, uid, entry, info, KIND_VOR_RESTORE, _iso(now))
+        return spool
+
+    async def _swap(
+        self,
+        ticket: OfflineTicket,
+        restore: IO[bytes],
+        ledger: bytes | None,
+        safety: IO[bytes] | None,
+        spools: list[IO[bytes]],
+    ) -> None:
+        """Phase C: Tausch mit einem zweiten Versuch, sonst Rückfall auf den Sicherheits-Snapshot.
+
+        Ab mark_swap ist die alte Welt nicht mehr sicher vorhanden: Jeder Ausgang
+        endet in ready (Erfolg oder Rückfall) oder failed mit RESTORE_INTERRUPTED.
+        """
+        world_id = ticket.world_id
+        try:
+            await anyio.to_thread.run_sync(self.worlds.mark_swap, world_id)
+        except BaseException:
+            await self._shielded(self.worlds.end_offline, world_id, ticket.was_running)
+            raise
+        settled = False
+        try:
+            if await self._try_swap(world_id, restore, ledger, SWAP_ATTEMPTS):
+                settled = True
+                await self._finish_swap(ticket)
+                return
+            if safety is not None and await self._fallback(ticket, safety, ledger, spools):
+                settled = True
+                await self._finish_swap(ticket)
+                raise _RestoreOutcome(RESTORE_FALLBACK)
+            settled = True
+            await self._shielded(self.worlds.mark_restore_interrupted, world_id)
+            raise _RestoreOutcome(RESTORE_SWAP_FAILED)
+        except BaseException:
+            if not settled:
+                await self._shielded(self.worlds.mark_restore_interrupted, world_id)
+            raise
+
+    async def _try_swap(self, world_id: str, tar: IO[bytes], ledger: bytes | None, attempts: int) -> bool:
+        for attempt in range(1, attempts + 1):
+            try:
+                await anyio.to_thread.run_sync(self.worlds.restore_swap, world_id, cast(BinaryIO, tar), ledger)
+            except Exception as exc:
+                LOG.warning("Welt %s: Tausch Versuch %d gescheitert (%s)", world_id, attempt, type(exc).__name__)
+                continue
+            return True
+        return False
+
+    async def _fallback(
+        self, ticket: OfflineTicket, safety: IO[bytes], ledger: bytes | None, spools: list[IO[bytes]]
+    ) -> bool:
+        """Den lokalen Sicherheits-Snapshot auf demselben Weg einspielen (Pattern 5 "Fehler im Tausch")."""
+        fallback = await self._new_spool(spools)
+        try:
+            await anyio.to_thread.run_sync(self._restore_tar, ticket, safety, fallback)
+        except Exception as exc:
+            LOG.warning("Welt %s: Rückfall nicht vorbereitet (%s)", ticket.world_id, type(exc).__name__)
+            return False
+        return await self._try_swap(ticket.world_id, fallback, ledger, 1)
+
+    async def _finish_swap(self, ticket: OfflineTicket) -> None:
+        error = await self._shielded(self.worlds.finish_swap, ticket.world_id, ticket.was_running)
+        if error is not None:
+            # Die Weltdaten sind eingespielt; den Startfehler zeigt die Welt selbst.
+            LOG.warning("Welt %s: nach dem Wiederherstellen nicht gestartet", ticket.world_id)
+
+    def _finish_restore_ok(self, world_id: str, proof: BackupRow, started_at: str) -> None:
+        self.worlds.store.set_backup_job(
+            world_id, KIND_RESTORE, STATE_OK, None, proof.name, started_at, _iso(self._clock())
+        )
+        LOG.info("Welt %s wiederhergestellt", world_id)
 
     # Wiederanlauf und Liste
 
