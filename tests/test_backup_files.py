@@ -51,6 +51,7 @@ class FakeDav:
         self.deleted: list[str] = []
         self.uploaded: list[tuple[str, int]] = []
         self.short_by = 0
+        self.mkdirs: list[str] = []
         self.upload_exc: Exception | None = None
         self._next = 500
 
@@ -59,9 +60,16 @@ class FakeDav:
         self.sizes[path] = size
         self.ids[path] = self._next
 
-    async def makedirs(self, path: str, exist_ok: bool = False) -> None:
-        assert exist_ok
-        self.sizes.setdefault(path + "/", 0)
+    async def mkdir(self, path: str) -> None:
+        # Wie WebDAV: Pfade nur mit "/", vorhandener Ordner 405, fehlende Elternstufe 409.
+        assert "\\" not in path
+        self.mkdirs.append(path)
+        if path + "/" in self.sizes:
+            raise NextcloudException(405, "Method Not Allowed")
+        parent = path.rsplit("/", 1)[0] if "/" in path else ""
+        if parent and parent + "/" not in self.sizes:
+            raise NextcloudException(409, "Conflict")
+        self.sizes[path + "/"] = 0
 
     async def by_path(self, path: str) -> Any:
         if path not in self.sizes:
@@ -127,6 +135,18 @@ async def test_upload_uses_backup_client_options_and_proves_size(dav: tuple[Fake
     assert_closed(app, times=1)
 
 
+async def test_upload_creates_folder_stages_with_slashes_only(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
+    # nc_py_api makedirs setzt Stufen mit os.path.join zusammen (Backslash unter Windows, 400).
+    fake, _recorder, _app = dav
+    await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
+    assert fake.mkdirs == ["Gameworld", "Gameworld/Sicherungen", "Gameworld/Sicherungen/Burg"]
+    # Zweiter Upload: alle Stufen gibt es schon (405), das ist kein Fehler.
+    fake.mkdirs.clear()
+    entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
+    assert entry.name == "Burg-2026-10-23-1405-2.tar.gz"
+    assert fake.mkdirs == ["Gameworld", "Gameworld/Sicherungen", "Gameworld/Sicherungen/Burg"]
+
+
 async def test_upload_picks_free_suffix_and_never_deletes_existing(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
     fake, _recorder, _app = dav
     fake.add(f"{FOLDER}/{BASE}", 99)
@@ -175,9 +195,9 @@ async def test_other_errors_are_fixed_text(dav: tuple[FakeDav, NcRecorder, Magic
     assert fake.deleted == [f"{FOLDER}/{BASE}"]
 
 
-async def test_client_closed_when_makedirs_fails(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
+async def test_client_closed_when_mkdir_fails(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
     fake, recorder, app = dav
-    fake.makedirs = AsyncMock(side_effect=NextcloudException(503, "weg"))  # type: ignore[method-assign]
+    fake.mkdir = AsyncMock(side_effect=NextcloudException(503, "weg"))  # type: ignore[method-assign]
     with pytest.raises(FilesError) as caught:
         await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert str(caught.value) == MSG_FILES_FAILED
@@ -191,7 +211,7 @@ async def test_listdir_lists_files_and_missing_folder_is_empty(dav: tuple[FakeDa
     fake, recorder, app = dav
     files = NcBackupFiles()
     assert await files.listdir("admin", FOLDER) == []
-    await fake.makedirs(FOLDER, exist_ok=True)
+    await files_module._makedirs(app, FOLDER)  # pyright: ignore[reportPrivateUsage]
     fake.add(f"{FOLDER}/{BASE}", 10)
     entries = await files.listdir("admin", FOLDER)
     assert [(e.name, e.size) for e in entries] == [(BASE, 10)]

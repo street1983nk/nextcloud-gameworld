@@ -37,6 +37,8 @@ MAX_SUFFIX = 99
 # Höchstens so lange wird nach einem Fehler oder Abbruch aufgeräumt (eigene Zieldatei).
 CLEANUP_TIMEOUT = 30
 STATUS_NOT_FOUND = 404
+# MKCOL auf einen vorhandenen Ordner antwortet 405 Method Not Allowed.
+STATUS_EXISTS = 405
 STATUS_QUOTA = 507
 
 MSG_QUOTA = "Nicht genug Speicherplatz in deinen Nextcloud-Dateien."
@@ -120,6 +122,23 @@ async def _by_path(nc: Any, path: str) -> Any | None:
         raise
 
 
+async def _makedirs(nc: Any, folder_path: str) -> None:
+    """Legt ``folder_path`` Stufe für Stufe an; vorhandene Stufen (405) sind in Ordnung.
+
+    Bewusst nicht ``nc.files.makedirs``: Es setzt die Stufen mit ``os.path.join``
+    zusammen, unter Windows entsteht so ``Gameworld\\Sicherungen`` und Nextcloud
+    lehnt den Backslash mit 400 ab (am Dev-Stack belegt). WebDAV-Pfade trennt
+    immer ``/``.
+    """
+    parts = [part for part in folder_path.split("/") if part]
+    for depth in range(1, len(parts) + 1):
+        try:
+            await nc.files.mkdir("/".join(parts[:depth]))
+        except NextcloudException as exc:
+            if exc.status_code != STATUS_EXISTS:
+                raise
+
+
 def _client(uid: str) -> contextlib.AbstractAsyncContextManager[Any]:
     return nc_as(uid, npa_timeout_dav=DAV_TIMEOUT, chunked_upload_v2=False)
 
@@ -132,7 +151,7 @@ class NcBackupFiles:
     ) -> FilesEntry:
         try:
             async with _client(uid) as nc:
-                await nc.files.makedirs(folder_path, exist_ok=True)
+                await _makedirs(nc, folder_path)
                 target = await self._free_target(nc, folder_path, base_name, suffix)
                 try:
                     spool.seek(0)
