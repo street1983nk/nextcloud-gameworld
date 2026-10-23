@@ -145,6 +145,31 @@ export async function deleteWorld(id) {
 	await del(`${apiBase}/api/worlds/${id}`)
 }
 
+// Sicherungen (Phase 5, nur Verwalter): Liste nur eigener, geprüfter Sicherungen
+// ({ backups, total_size, other_files }); Löschen gibt es bewusst nicht (D-08).
+export async function listBackups(worldId) {
+	const response = await axios.get(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/backups`)
+	return response.data
+}
+
+// 202 mit der Welt; 409 mit Text, wenn Kinder spielen und confirmDisconnect fehlt (D-09).
+export async function startBackup(worldId, confirmDisconnect = false) {
+	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/backups`, {
+		confirm_disconnect: Boolean(confirmDisconnect),
+	})
+	return response.data
+}
+
+// Nur die Datei-ID aus der eigenen Liste; confirm true ist die Sicherheitsabfrage (D-04).
+export async function restoreBackup(worldId, fileId, confirmDisconnect = false) {
+	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/restore`, {
+		file_id: fileId,
+		confirm: true,
+		confirm_disconnect: Boolean(confirmDisconnect),
+	})
+	return response.data
+}
+
 // Einladungen und Spieler (03-03/03-04). Passwörter kommen abgeleitet aus der
 // API und werden im Frontend nie gespeichert, nur angezeigt.
 export async function listPlayers(worldId) {

@@ -256,6 +256,7 @@ import SetupCheck from '../components/SetupCheck.vue'
 import TalkRoomStatus from '../components/TalkRoomStatus.vue'
 import TimeZoneSetting from '../components/TimeZoneSetting.vue'
 import WorldWindowDialog from '../components/WorldWindowDialog.vue'
+import { formatBytes } from '../backup.js'
 import { pauseUntilText, talkHint, windowSummary } from '../playtime.js'
 import { navigate } from '../route.js'
 import {
@@ -286,8 +287,6 @@ const POLL_MS = 5000
 const PLAYTIME_POLL_MS = 30000
 // Ab diesem Anteil am Limit wird der RAM-Balken als Fehler markiert.
 const MEMORY_WARN_PERCENT = 90
-const MIB = 1048576
-const GIB = 1073741824
 
 const worlds = ref([])
 const loading = ref(true)
@@ -416,15 +415,6 @@ function playersText(world) {
 		return 'Niemand online'
 	}
 	return `Gerade online: ${players.join(', ')}`
-}
-
-// Unter 1 GiB ganze MB, ab 1 GiB GB mit höchstens einer Nachkommastelle ("1 GB", "1,5 GB").
-function formatBytes(bytes) {
-	if (bytes < GIB) {
-		return `${Math.round(bytes / MIB)} MB`
-	}
-	const gb = (Math.round((bytes / GIB) * 10) / 10).toString().replace('.', ',')
-	return `${gb} GB`
 }
 
 function memoryPercent(world) {
