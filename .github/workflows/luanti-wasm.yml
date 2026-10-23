@@ -90,6 +90,21 @@ jobs:
           fi
           grep -n "INITIAL_MEMORY\|PTHREAD_POOL_SIZE" build_luanti.sh common.sh || true
 
+      - name: zstd nur statisch bauen
+        working-directory: luanti-wasm
+        run: |
+          set -euo pipefail
+          # Lauf 1 (39906280343): cmake auf dem Runner baut libzstd.so als echtes
+          # Wasm-Side-Module. Im libarchive-configure findet -lzstd diese Datei, emcc
+          # schaltet dann auf MAIN_MODULE=2 und die Laufprobe "size of wchar_t"
+          # scheitert (exit 77). Luanti selbst linkt ohnehin libzstd.a.
+          sed -i -E 's|^emcmake cmake \\$|emcmake cmake -DZSTD_BUILD_SHARED=OFF \\|' build_zstd.sh
+          grep -q "ZSTD_BUILD_SHARED=OFF" build_zstd.sh || { echo "::error::ZSTD_BUILD_SHARED=OFF nicht gesetzt"; exit 1; }
+          # Absicherung: wasm32 hat 4 Byte wchar_t, configure braucht dafür keine Laufprobe.
+          sed -i -E 's|^emconfigure \./configure \\$|ac_cv_sizeof_wchar_t=4 emconfigure ./configure \\|' build_libarchive.sh
+          grep -q "ac_cv_sizeof_wchar_t=4 emconfigure" build_libarchive.sh || { echo "::error::ac_cv_sizeof_wchar_t nicht gesetzt"; exit 1; }
+          grep -n "emcmake cmake\|emconfigure" build_zstd.sh build_libarchive.sh
+
       - name: Emscripten installieren und bauen
         working-directory: luanti-wasm
         run: |
@@ -140,5 +155,6 @@ jobs:
             luanti-wasm/www
             luanti-wasm/www-sizes.txt
             luanti-wasm/build-tail.log
+            luanti-wasm/build/libarchive/config.log
           if-no-files-found: warn
           retention-days: 7
