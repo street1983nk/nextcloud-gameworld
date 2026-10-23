@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-05-PLAN.md
-last_updated: "2026-10-23T05:43:31.033Z"
-last_activity: 2026-10-23 -- 04.2-05 complete (Protokollmodule)
+stopped_at: Completed 04.2-06-PLAN.md
+last_updated: "2026-10-23T06:00:11.898Z"
+last_activity: 2026-10-23 -- 04.2-06 complete (Ticket-Ausgabe und Spielstart)
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 39
+  completed_plans: 40
   percent: 63
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 3 von 11 complete (04.2-01, 04.2-02, 04.2-05; CI-Lauf 1 RUN-ID 39906280343 laeuft, Auswertung Plan 04)
+Plan: 4 von 11 complete (04.2-01, 04.2-02, 04.2-05, 04.2-06; CI-Lauf 1 RUN-ID 39906280343 laeuft, Auswertung Plan 04)
 Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-05 complete (Protokollmodule framing, commands, mtp mit ClientGuard)
+Last activity: 2026-10-23 -- 04.2-06 complete (Ein-Mal-Tickets, play-ticket, play-status, launch, Negativtest-Matrix)
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -91,6 +91,7 @@ Progress: [████████░░] 83%
 | Phase 04.2 P02 | 17 min | 3 tasks | 12 files |
 | Phase 04.2 P01 | 22 min | 3 tasks | 1 files |
 | Phase 04.2 P05 | 13min | 2 tasks | 6 files |
+| Phase 04.2 P06 | 16 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,8 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-01: Owner-Entscheid push-nur-workflow; origin/spike/luanti-wasm enthaelt nur dc44db3 (Cherry-Pick von 68cff22), Lauf 1 RUN-ID 39906280343 laeuft, Auswertung in Plan 04 Task 1
 - [Phase 04.2]: 04.2-05: ClientGuard entscheidet nach inner_ptype; SPLIT vor AUTH_ACCEPT und SRP in Split-Chunk 0 beenden die Sitzung; leeres ORIGINAL (Verbindungs-Dummy) wird weitergeleitet
 - [Phase 04.2]: 04.2-05: NEWADDR-Antwort ADDR 10.77.0.2 <passcode> - (vier Tokens laut proxy.js); Ziel nur 10.77.0.1:30000
+- [Phase 04.2]: 04.2-06: Ticket-Bodies werden im Handler nach den Herkunftsprüfungen gelesen (max. 1024 Bytes); Herkunfts-Ablehnung verbraucht kein Ticket, jede Ticket-Ablehnung ist eine 403 mit Grund nur als Log-Konstante
+- [Phase 04.2]: 04.2-06: Tickets nur für Welten aus my_worlds, auch für Verwalter (D-11); /play/launch prüft Einladung und Spielername erneut, Passwort nur in Variante B
 
 ### Pending Todos
 
@@ -223,6 +226,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T05:43:31.015Z
-Stopped at: Completed 04.2-05-PLAN.md
+Last session: 2026-10-23T06:00:05.088Z
+Stopped at: Completed 04.2-06-PLAN.md
 Resume file: None
