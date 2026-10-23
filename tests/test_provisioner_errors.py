@@ -536,3 +536,134 @@ def test_broken_access_state_is_provisioner_error(prov: DockerProvisioner, fake:
     with pytest.raises(ProvisionerError, match="Zugangsstand") as info:
         prov.read_access_state(WORLD)
     assert not isinstance(info.value, DockerUnavailableError)
+
+
+# Phase 5: Snapshot am gestoppten Container und Einspielen als Datei-Objekt (T-05-04)
+
+
+class SnapshotContainer(FakeContainer):
+    def __init__(self, status: str, chunks: list[bytes | BaseException]) -> None:
+        super().__init__()
+        self.status = status
+        self._chunks = chunks
+        self.get_archive_calls = 0
+        self.reloads = 0
+        self.closed = False
+        self.paths: list[str] = []
+        self.chunk_sizes: list[object] = []
+
+    def reload(self) -> None:
+        self.reloads += 1
+
+    def get_archive(self, path: str, **kwargs: object) -> tuple[Iterator[bytes], dict[str, object]]:
+        self.get_archive_calls += 1
+        self.paths.append(path)
+        self.chunk_sizes.append(kwargs.get("chunk_size"))
+        owner = self
+
+        class Stream:
+            def __iter__(self) -> Iterator[bytes]:
+                for chunk in owner._chunks:
+                    if isinstance(chunk, BaseException):
+                        raise chunk
+                    yield chunk
+
+            def close(self) -> None:
+                owner.closed = True
+
+        return iter(Stream()), {}
+
+
+def _collect(stream: Iterator[bytes]) -> bytes:
+    return b"".join(stream)
+
+
+@pytest.mark.parametrize("status", ["running", "restarting", "paused"])
+def test_snapshot_of_running_world_is_refused(prov: DockerProvisioner, fake: FakeClient, status: str) -> None:
+    container = SnapshotContainer(status, [b"x"])
+    fake.containers.list = _listing(container)
+    with pytest.raises(ProvisionerError, match="Die Welt läuft noch"):
+        prov.snapshot_to(WORLD, _collect)
+    assert container.reloads == 1
+    assert container.get_archive_calls == 0
+
+
+def test_snapshot_of_stopped_world_streams_all_chunks(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = SnapshotContainer("exited", [b"ab", b"", b"cd"])
+    fake.containers.list = _listing(container)
+    assert prov.snapshot_to(WORLD, _collect) == b"abcd"
+    assert container.paths == ["/var/lib/minetest/.minetest/worlds/world"]
+    assert container.chunk_sizes == [2 * 1024 * 1024]
+    assert container.closed
+
+
+def test_snapshot_transport_error_mid_stream_is_not_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = SnapshotContainer("exited", [b"ab", requests.exceptions.ConnectionError("weg")])
+    fake.containers.list = _listing(container)
+    with pytest.raises(ProvisionerError):
+        prov.snapshot_to(WORLD, _collect)
+    assert container.get_archive_calls == 1
+    assert container.closed
+
+
+def test_snapshot_protocol_error_mid_stream(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = SnapshotContainer("created", [urllib3.exceptions.ProtocolError("abgerissen")])
+    fake.containers.list = _listing(container)
+    with pytest.raises(DockerUnavailableError):
+        prov.snapshot_to(WORLD, _collect)
+    assert container.get_archive_calls == 1
+
+
+def test_snapshot_writer_error_closes_stream(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = SnapshotContainer("exited", [b"ab"])
+    fake.containers.list = _listing(container)
+
+    def broken(stream: Iterator[bytes]) -> None:
+        del stream
+        raise ValueError("Senke kaputt")
+
+    with pytest.raises(ValueError, match="Senke kaputt"):
+        prov.snapshot_to(WORLD, broken)
+    assert container.closed
+
+
+def test_snapshot_of_foreign_container_is_not_found(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = SnapshotContainer("exited", [b"x"])
+    container.labels["gameworld.instance"] = "fremd000"
+    fake.containers.list = _listing(container)
+    with pytest.raises(WorldNotFoundError):
+        prov.snapshot_to(WORLD, _collect)
+    assert container.get_archive_calls == 0
+
+
+def test_snapshot_missing_path_is_not_found(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = SnapshotContainer("exited", [])
+    container.get_archive = _raise(docker.errors.NotFound("Could not find the file"))
+    fake.containers.list = _listing(container)
+    with pytest.raises(WorldNotFoundError):
+        prov.snapshot_to(WORLD, _collect)
+
+
+class PutContainer(FakeContainer):
+    def __init__(self, accepted: bool) -> None:
+        super().__init__()
+        self.accepted = accepted
+        self.uploads: list[tuple[str, object]] = []
+
+    def put_archive(self, path: str, data: object) -> bool:
+        self.uploads.append((path, data))
+        return self.accepted
+
+
+def test_put_world_archive_passes_file_object(prov: DockerProvisioner, fake: FakeClient) -> None:
+    container = PutContainer(True)
+    fake.containers.list = _listing(container)
+    archive = io.BytesIO(b"tar")
+    prov.put_world_archive(WORLD, archive)
+    assert container.uploads == [("/var/lib/minetest/.minetest/worlds/world", archive)]
+
+
+def test_put_world_archive_refused(prov: DockerProvisioner, fake: FakeClient) -> None:
+    fake.containers.list = _listing(PutContainer(False))
+    with pytest.raises(ProvisionerError, match="Docker hat die Sicherung nicht angenommen."):
+        prov.put_world_archive(WORLD, io.BytesIO(b"tar"))
