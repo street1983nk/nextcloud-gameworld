@@ -1,0 +1,144 @@
+# Browser-Spike Phase 04.2: CI-Build des Luanti-Web-Clients (paradust7/luanti-wasm).
+# Pin bc0a515 = Fork paradust7/luanti@038b341 (Luanti 5.17.0), webshims 70653a9.
+# Variante a: unverändert (1,875 GiB fester Shared Memory).
+# Variante b: kleinerer Speicher mit Wachstum (768 MiB Start, 1 GiB Maximum, Pool 12),
+# weil iOS-Safari bei großem Shared Memory abbricht.
+name: luanti-wasm
+
+on:
+  push:
+    branches:
+      - spike/luanti-wasm
+    paths:
+      - .github/workflows/luanti-wasm.yml
+  # Hinweis: workflow_dispatch startet GitHub nur für Workflow-Dateien auf dem
+  # Default-Branch. Im Spike liegt die Datei nur auf spike/luanti-wasm, daher wird
+  # dieser Auslöser im Spike nicht verwendet. Ein Rückfall-Ref läuft per Commit,
+  # der LUANTI_WASM_REF unten ändert, und Push auf den Spike-Branch.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit von paradust7/luanti-wasm"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [a, b]
+    env:
+      # Einzige Stelle mit dem Quell-Ref. Erlaubter Rückfall: 5bfae52 (main, 5.18.0-dev).
+      LUANTI_WASM_REF: ${{ inputs.ref || 'bc0a515' }}
+    steps:
+      - name: Quellen holen und Pins prüfen
+        run: |
+          set -euo pipefail
+          git clone https://github.com/paradust7/luanti-wasm.git luanti-wasm
+          cd luanti-wasm
+          git checkout "$LUANTI_WASM_REF"
+          git log -1 --format='luanti-wasm HEAD: %H %cs %s'
+          if grep -q "038b341fe861370433aea8eb6317f0bbd87303ba" fetch_sources.sh \
+             && grep -q "70653a91c974aa2b20df09a39f858d92e663c1a7" fetch_sources.sh; then
+            echo "Pins in fetch_sources.sh bestätigt (Fork 038b341, webshims 70653a9)"
+          elif [ "$LUANTI_WASM_REF" = "5bfae52" ]; then
+            echo "::notice::Rückfall-Ref 5bfae52: Fork- oder webshims-Pin weicht ab (erwartet bei 5.18.0-dev)"
+            grep -n "getrepo" fetch_sources.sh || true
+          else
+            echo "::error::fetch_sources.sh enthält nicht die erwarteten Pins 038b341 und 70653a9"
+            grep -n "getrepo" fetch_sources.sh || true
+            exit 1
+          fi
+
+      - name: Node 24 einrichten
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Build-Pakete installieren
+        run: |
+          set -euo pipefail
+          node --version
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake tclsh zip zstd gettext wget python3 brotli
+
+      - name: Variante b, Speicher anpassen
+        if: matrix.variant == 'b'
+        working-directory: luanti-wasm
+        run: |
+          set -euo pipefail
+          f=build_luanti.sh
+          if ! grep -q "PTHREAD_POOL_SIZE" "$f"; then
+            f=common.sh
+          fi
+          sed -i -E 's/PTHREAD_POOL_SIZE=[0-9]+/PTHREAD_POOL_SIZE=12/' "$f"
+          sed -i -E 's/INITIAL_MEMORY=[0-9]+/INITIAL_MEMORY=805306368 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=1073741824/' build_luanti.sh
+          # Pflichtprüfung: Build B darf nie unbemerkt gleich Build A sein.
+          grep -q "INITIAL_MEMORY=805306368" build_luanti.sh || { echo "::error::INITIAL_MEMORY nicht gesetzt"; exit 1; }
+          grep -q "ALLOW_MEMORY_GROWTH=1" build_luanti.sh || { echo "::error::ALLOW_MEMORY_GROWTH nicht gesetzt"; exit 1; }
+          grep -q "MAXIMUM_MEMORY=1073741824" build_luanti.sh || { echo "::error::MAXIMUM_MEMORY nicht gesetzt"; exit 1; }
+          grep -q "PTHREAD_POOL_SIZE=12" "$f" || { echo "::error::PTHREAD_POOL_SIZE nicht gesetzt"; exit 1; }
+          if grep -q "INITIAL_MEMORY=2013265920" build_luanti.sh; then
+            echo "::error::alter Wert INITIAL_MEMORY=2013265920 noch vorhanden"
+            exit 1
+          fi
+          grep -n "INITIAL_MEMORY\|PTHREAD_POOL_SIZE" build_luanti.sh common.sh || true
+
+      - name: Emscripten installieren und bauen
+        working-directory: luanti-wasm
+        run: |
+          set -euo pipefail
+          ./install_emsdk.sh 2>&1 | tee build.log
+          ./build_all.sh 2>&1 | tee -a build.log
+
+      - name: Größen messen
+        working-directory: luanti-wasm
+        run: |
+          set -euo pipefail
+          out=www-sizes.txt
+          {
+            echo "REF: $LUANTI_WASM_REF"
+            echo "VARIANT: ${{ matrix.variant }}"
+            echo "== du -ab www (Top 30) =="
+            du -ab www | sort -n -r | head -n 30
+            echo "== roh, gzip -9, brotli -q 11 (Dateien über 100 kB) =="
+            find www -type f -size +100k -print0 | sort -z | while IFS= read -r -d '' file; do
+              raw=$(stat -c %s "$file")
+              gz=$(gzip -9 -c "$file" | wc -c)
+              br=$(brotli -q 11 -c "$file" | wc -c)
+              echo "$file raw=$raw gzip=$gz brotli=$br"
+            done
+            echo "== Versionsbeleg 5.17.0 in .wasm =="
+            find www -type f -name '*.wasm' -print0 | while IFS= read -r -d '' file; do
+              echo "$file: $(grep -a -c "5.17.0" "$file" || true)"
+            done
+          } > "$out"
+          cat "$out"
+
+      - name: Log kürzen
+        if: always()
+        working-directory: luanti-wasm
+        run: |
+          if [ -f build.log ]; then
+            tail -n 400 build.log > build-tail.log
+          else
+            echo "kein build.log" > build-tail.log
+          fi
+
+      - name: Artefakt hochladen
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: luanti-wasm-www-${{ matrix.variant }}
+          path: |
+            luanti-wasm/www
+            luanti-wasm/www-sizes.txt
+            luanti-wasm/build-tail.log
+          if-no-files-found: warn
+          retention-days: 7
