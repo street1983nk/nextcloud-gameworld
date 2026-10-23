@@ -52,7 +52,13 @@ from gameworld.provisioner.spec import LUANTI_VERSION, WorldPayload, resource_na
 from gameworld.provisioner.status_mod import parse_players
 from gameworld.provisioner.time_mod import parse_ledger
 from gameworld.worlds.ports import NoFreePortError, allocate_port
-from gameworld.worlds.reconciler import ReconcileAction, decide_boot, decide_periodic, needs_volume_check
+from gameworld.worlds.reconciler import (
+    BUSY_OP_STATES,
+    ReconcileAction,
+    decide_boot,
+    decide_periodic,
+    needs_volume_check,
+)
 from gameworld.worlds.status import (
     ERROR,
     RUNNING,
@@ -62,7 +68,7 @@ from gameworld.worlds.status import (
     parse_docker_time,
     schema_version,
 )
-from gameworld.worlds.store import WorldRow, WorldStore
+from gameworld.worlds.store import BACKUP_JOB_RUNNING, BackupJobRow, WorldRow, WorldStore
 
 LOG = logging.getLogger(__name__)
 
@@ -88,6 +94,15 @@ CREATE_FAILED = "Die Welt konnte nicht erstellt werden. Bitte es später erneut 
 RECONCILE_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
 RECONCILE_DATA_MISSING = "Die Weltdaten fehlen. Die Welt kann nur gelöscht werden."
 RECONCILE_INTERRUPTED = "Das Erstellen wurde unterbrochen. Bitte die Welt löschen und neu erstellen."
+# Prozess starb mitten im Tausch der Weltdaten (op_state restoring_swap, RESEARCH Pitfall 2).
+# Bewusst NICHT in DELETE_ONLY_ERRORS: Wiederherstellen bleibt im Zustand failed erlaubt (D-15),
+# und die Sicherung vor dem Wiederherstellen liegt in Files.
+RESTORE_INTERRUPTED = (
+    "Das Wiederherstellen wurde unterbrochen. Bitte erneut wiederherstellen; "
+    "die Sicherung vor dem Wiederherstellen liegt in Files."
+)
+# Elternaktion auf einer Welt, die gerade gesichert oder wiederhergestellt wird (HTTP 409).
+WORLD_BUSY = "Die Welt wird gerade gesichert oder wiederhergestellt."
 # Unerwarteter Fehler im Boot-Abgleich einer Welt; Details nur im Log (WR-02).
 RECONCILE_FAILED = "Die Welt konnte nach dem Neustart des Servers nicht wiederhergestellt werden."
 # Zeile mit einer Spielart, die diese Version nicht kennt (Preset entfernt oder umbenannt, WR-02).
@@ -111,9 +126,32 @@ class DeleteOnlyError(ProvisionerError):
     """Die Welt lässt sich nicht mehr starten, nur noch löschen (HTTP 409)."""
 
 
+class WorldBusyError(ProvisionerError):
+    """Die Welt wird gerade gesichert oder wiederhergestellt (HTTP 409)."""
+
+
 def delete_only(row: WorldRow) -> bool:
     """Darf diese Welt nur noch gelöscht werden? Steht fest an der Zeile, nicht im Text der Oberfläche."""
     return row.op_state == "failed" and row.last_error in DELETE_ONLY_ERRORS
+
+
+@dataclass(frozen=True)
+class BackupJobView:
+    """Letzter Sicherungs- oder Wiederherstellungsauftrag einer Welt (D-11), nur für Verwalter."""
+
+    kind: str
+    state: str
+    message: str | None
+    file_name: str | None
+    finished_at: str | None
+
+
+def _job_view(job: BackupJobRow | None) -> BackupJobView | None:
+    if job is None:
+        return None
+    return BackupJobView(
+        kind=job.kind, state=job.state, message=job.message, file_name=job.file_name, finished_at=job.finished_at
+    )
 
 
 @dataclass
@@ -147,6 +185,8 @@ class WorldView:
     events_restart_needed: bool
     # Welt-Zeitfenster (ZEIT-05): sieben Wochentage oder None (immer offen).
     time_window: list[WindowDay] | None = None
+    # Letzter Auftrag (D-11): Fehler bleiben nach Neuladen sichtbar. Nie an Kinder (AR-24).
+    backup_job: BackupJobView | None = None
 
 
 def _view(
@@ -161,6 +201,7 @@ def _view(
     time_restart_needed: bool = False,
     events_restart_needed: bool = False,
     time_window: list[WindowDay] | None = None,
+    backup_job: BackupJobView | None = None,
 ) -> WorldView:
     preset = PRESETS.get(row.preset)
     # UNKNOWN (Docker nicht erreichbar) behält Vorrang vor dem Preset-Fehler.
@@ -193,6 +234,7 @@ def _view(
         time_restart_needed=time_restart_needed,
         events_restart_needed=events_restart_needed,
         time_window=time_window,
+        backup_job=backup_job,
     )
 
 
@@ -428,7 +470,9 @@ class WorldService:
         Takten erscheint nicht (gewollt ruhig). Welten im Löschen zählen nicht.
         """
         for row in rows:
-            if row.desired_state == "deleted":
+            # Busy Welten stoppen gewollt (Sicherung, Wiederherstellung): kein "Welt aus/an" an Talk
+            # (Pitfall 9). Der Laufzustand bleibt stehen; danach meldet nur eine echte Änderung.
+            if row.desired_state == "deleted" or row.op_state in BUSY_OP_STATES:
                 continue
             info = managed.get(row.id)
             running = info is not None and info.status == RUNNING
@@ -529,9 +573,14 @@ class WorldService:
             return PauseResult(state=state, worlds=results)
 
     def _pause_world(self, row: WorldRow, container: ContainerInfo | None, *, restart: bool) -> PauseWorldResult:
-        """Regeldatei mit dem neuen Pause-Stand in eine Welt; alte Mods laufender Welten neu starten (D-25)."""
+        """Regeldatei mit dem neuen Pause-Stand in eine Welt; alte Mods laufender Welten neu starten (D-25).
+
+        Busy Welten (Sicherung, Wiederherstellung) bekommen nur die Regeldatei: Den
+        Container besitzt gerade der Auftrag, er startet die Welt danach selbst.
+        """
         if (
             restart
+            and row.op_state not in BUSY_OP_STATES
             and not delete_only(row)
             and container is not None
             and container.status == RUNNING
@@ -639,6 +688,7 @@ class WorldService:
                     ),
                     invited_players=self._invited(row),
                     time_window=self._time_window(row),
+                    backup_job=self._backup_job(row),
                 )
                 for row in rows
             ]
@@ -651,6 +701,9 @@ class WorldService:
             container is None
             or container.status != "running"
             or row.op_state in {"creating", "failed"}
+            # Busy: Status und Text kommen allein aus op_state (D-10); die Spielerzählung
+            # für den Chat-Hinweis liest direkt (players_online).
+            or row.op_state in BUSY_OP_STATES
             or schema_version(container.schema) < STATUS_MOD_SCHEMA
         ):
             return None
@@ -669,6 +722,10 @@ class WorldService:
     def _time_window(self, row: WorldRow) -> list[WindowDay] | None:
         """Welt-Zeitfenster aus der Datenbank (ZEIT-05); None heißt: immer offen."""
         return window_days(self._store.world_window(row.id))
+
+    def _backup_job(self, row: WorldRow) -> BackupJobView | None:
+        """Letzter Auftrag der Welt aus der Datenbank (D-11), unabhängig von Docker."""
+        return _job_view(self._store.get_backup_job(row.id))
 
     def _access_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
         """Läuft die Welt noch ohne geladenen Zugangsschutz (03-RESEARCH.md Pitfall 4)?
@@ -778,6 +835,7 @@ class WorldService:
             time_restart_needed=self._time_restart_needed(row, container, status),
             events_restart_needed=self._events_restart_needed(row, container, status),
             time_window=self._time_window(row),
+            backup_job=self._backup_job(row),
         )
 
     def _launch(self, row: WorldRow) -> None:
@@ -875,6 +933,23 @@ class WorldService:
         if delete_only(row):
             raise DeleteOnlyError(row.last_error or RECONCILE_DATA_MISSING)
 
+    @staticmethod
+    def _refuse_busy(row: WorldRow) -> None:
+        """Während Sicherung oder Wiederherstellung gehört der Container dem Auftrag (T-05-15)."""
+        if row.op_state in BUSY_OP_STATES:
+            raise WorldBusyError(WORLD_BUSY)
+
+    def _refuse_job_running(self, world_id: str) -> None:
+        """Löschen während der Upload-Phase sperren (T-05-45).
+
+        Nach end_offline steht op_state wieder auf ready, der Auftrag läuft aber
+        noch. Ohne diese Sperre entfernte das Löschen die Auftragszeile, der
+        Ein-Job-Schutz fiele weg und der Abschluss schriebe eine verwaiste Zeile.
+        """
+        job = self._store.get_backup_job(world_id)
+        if job is not None and job.state == BACKUP_JOB_RUNNING:
+            raise WorldBusyError(WORLD_BUSY)
+
     # Abläufe
 
     def _create_world_sync(self, name: str, preset_id: str) -> WorldView:
@@ -943,6 +1018,7 @@ class WorldService:
     def _start_world_sync(self, world_id: str) -> WorldView:
         with self._mutating():
             row = self._row(world_id)
+            self._refuse_busy(row)
             self._refuse_delete_only(row)
             self._store.update_world(world_id, desired_state="running")
             try:
@@ -955,7 +1031,8 @@ class WorldService:
 
     def _stop_world_sync(self, world_id: str) -> WorldView:
         with self._mutating():
-            self._row(world_id)
+            row = self._row(world_id)
+            self._refuse_busy(row)
             self._store.update_world(world_id, desired_state="stopped")
             try:
                 self._provisioner.stop(world_id)
@@ -976,6 +1053,7 @@ class WorldService:
         """
         with self._mutating():
             row = self._row(world_id)
+            self._refuse_busy(row)
             self._refuse_delete_only(row)
             self._store.update_world(world_id, desired_state="running")
             try:
@@ -1016,6 +1094,15 @@ class WorldService:
         try:
             volume = needs_volume_check(row, container) and self._provisioner.volume_exists(row.id)
             action = decide_boot(row, container, volume)
+            if action is ReconcileAction.CLEAR_BUSY:
+                # Abgebrochene Sicherung oder Wiederherstellung vor dem Tausch: Die Weltdaten
+                # sind unverändert. Zurück auf ready, dann die frische Zeile wie jede andere
+                # behandeln (D-11: Die Welt startet wieder, wenn sie laufen soll).
+                LOG.info("Abgleich Welt %s: %s", row.id, action.value)
+                self._apply(row, action)
+                row = self._row(row.id)
+                volume = needs_volume_check(row, container) and self._provisioner.volume_exists(row.id)
+                action = decide_boot(row, container, volume)
             if action is ReconcileAction.NONE:
                 return
             LOG.info("Abgleich Welt %s: %s", row.id, action.value)
@@ -1050,6 +1137,12 @@ class WorldService:
                 self._store.delete_access_data(row.id)
                 self._store.delete_time_data(row.id)
                 self._store.delete_notify_data(row.id)
+                self._store.delete_backup_job(row.id)
+            case ReconcileAction.CLEAR_BUSY:
+                # Danach wertet _reconcile_row die frische Zeile nach den normalen Regeln aus.
+                self._store.update_world(row.id, op_state="ready")
+            case ReconcileAction.MARK_RESTORE_INTERRUPTED:
+                self._store.update_world(row.id, op_state="failed", last_error=RESTORE_INTERRUPTED)
             case ReconcileAction.ADOPT_RUNNING:
                 self._store.update_world(row.id, desired_state="running")
             case ReconcileAction.NONE:
@@ -1073,7 +1166,9 @@ class WorldService:
 
     def _delete_world_sync(self, world_id: str) -> None:
         with self._mutating():
-            self._row(world_id)
+            row = self._row(world_id)
+            self._refuse_busy(row)
+            self._refuse_job_running(world_id)
             self._store.update_world(world_id, desired_state="deleted")
             try:
                 self._provisioner.remove_world(world_id, keep_volume=False)
@@ -1090,3 +1185,5 @@ class WorldService:
             self._store.delete_access_data(world_id)
             self._store.delete_time_data(world_id)
             self._store.delete_notify_data(world_id)
+            # Nur der Auftragszustand; die Sicherungsnachweise (backups) bleiben (D-08, Plan 02).
+            self._store.delete_backup_job(world_id)

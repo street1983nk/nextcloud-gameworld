@@ -29,6 +29,7 @@ from gameworld.api.invites import JOIN_HOST_KEY, AccessDep
 from gameworld.api.playtime import TimeDep
 from gameworld.api.worlds import ServiceDep
 from gameworld.playtime.service import MyPlaytime, MyWorldWindow, PlaytimeUnavailableError
+from gameworld.worlds.status import BACKING_UP, RESTORING
 
 router = APIRouter(prefix="/api")
 
@@ -37,6 +38,10 @@ router = APIRouter(prefix="/api")
 # Port). Die Kind-Ansicht bekommt stattdessen diesen festen Text; die
 # Verwalter-Ansicht (/api/worlds) behält last_error unverändert.
 TEXT_WELT_PROBLEM = "Diese Welt hat gerade ein Problem. Sag deinen Eltern Bescheid."
+# D-10: Während Sicherung oder Wiederherstellung sehen Kinder nur diesen festen
+# Text; Auftrag, Dateinamen und Fehlergründe bleiben in der Verwalter-Ansicht (T-05-17).
+TEXT_WELT_PAUSE = "Die Welt macht kurz Pause"
+_BUSY_STATUS = frozenset({BACKING_UP, RESTORING})
 
 
 class MeOut(BaseModel):
@@ -60,7 +65,7 @@ class MyWorldOut(BaseModel):
 
     id: str
     name: str
-    # running | starting | stopped | error | unknown (aus Docker)
+    # running | starting | stopped | error | unknown (aus Docker), backing_up | restoring (Phase 5)
     status: str
     status_text: str
     # Spieler-Adresse aus der Verwalter-Einstellung; None heißt: Hostname des Browsers.
@@ -151,7 +156,12 @@ async def my_worlds(
             continue
         # Nur bei failed fließt last_error in status_text (worlds/status.py);
         # dieser eine Pfad bekommt hier den festen Kindertext (AR-24).
-        status_text = TEXT_WELT_PROBLEM if view.op_state == "failed" else view.status_text
+        if view.op_state == "failed":
+            status_text = TEXT_WELT_PROBLEM
+        elif view.status in _BUSY_STATUS:
+            status_text = TEXT_WELT_PAUSE
+        else:
+            status_text = view.status_text
         window = windows.get(entry.world_id)
         worlds.append(
             MyWorldOut(

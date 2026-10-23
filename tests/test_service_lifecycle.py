@@ -1845,7 +1845,9 @@ BUSY_STATES = ["backing_up", "restoring", "restoring_swap"]
 
 
 def _job(store: WorldStore, world_id: str, state: str, message: str | None = None) -> None:
-    store.set_backup_job(world_id, "backup", state, message, "Welt 2026-10-23.tar.gz", "2026-10-23T10:00:00+00:00", None)
+    store.set_backup_job(
+        world_id, "backup", state, message, "Welt 2026-10-23.tar.gz", "2026-10-23T10:00:00+00:00", None
+    )
 
 
 @pytest.mark.parametrize("op_state", BUSY_STATES)
@@ -2008,9 +2010,12 @@ async def test_busy_world_reads_no_status_file(
     assert view.status == expected
 
 
-async def test_list_carries_backup_job(service: WorldService, fake: FakeProvisioner, store: WorldStore) -> None:
+async def test_list_carries_backup_job(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore, clock: Clock
+) -> None:
     created = await service.create_world("Welt")
     assert (await _view_of(service, created.id)).backup_job is None
+    clock.advance(LIST_CACHE_SECONDS)
 
     store.set_backup_job(
         created.id,
@@ -2033,6 +2038,7 @@ async def test_list_carries_backup_job(service: WorldService, fake: FakeProvisio
 
     # Auch ohne Docker bleibt der Fehler sichtbar (D-11).
     fake.list_error = DockerUnavailableError("Proxy weg")
+    clock.advance(LIST_CACHE_SECONDS)
     unknown = await _view_of(service, created.id)
     assert unknown.status == "unknown"
     assert unknown.backup_job is not None

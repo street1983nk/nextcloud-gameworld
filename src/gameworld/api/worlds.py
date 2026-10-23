@@ -31,7 +31,7 @@ from gameworld.provisioner.luanti_conf import normalize_world_name
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID, PRESETS, validate_preset_id
 from gameworld.talk.service import get_talk_service
 from gameworld.worlds.ports import NoFreePortError
-from gameworld.worlds.service import NOT_FOUND, DeleteOnlyError, WorldService, WorldView
+from gameworld.worlds.service import NOT_FOUND, DeleteOnlyError, WorldBusyError, WorldService, WorldView
 from gameworld.worlds.store import WorldStore
 
 LOG = logging.getLogger(__name__)
@@ -101,6 +101,16 @@ class WindowDayOut(BaseModel):
     window_end: int | None
 
 
+class BackupJobOut(BaseModel):
+    """Letzter Sicherungs- oder Wiederherstellungsauftrag (D-11); nur in der Verwalter-Ansicht."""
+
+    kind: str
+    state: str
+    message: str | None
+    file_name: str | None
+    finished_at: str | None
+
+
 class WorldOut(BaseModel):
     id: str
     name: str
@@ -131,6 +141,8 @@ class WorldOut(BaseModel):
     events_restart_needed: bool
     # Welt-Zeitfenster (ZEIT-05): sieben Wochentage oder null (immer offen).
     time_window: list[WindowDayOut] | None
+    # Letzter Auftrag (Sicherung oder Wiederherstellung) oder null; Fehler bleiben nach Neuladen sichtbar.
+    backup_job: BackupJobOut | None = None
 
 
 class WorldListOut(BaseModel):
@@ -212,7 +224,7 @@ def _http_error(exc: ProvisionerError) -> HTTPException:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     if isinstance(exc, DockerUnavailableError):
         return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
-    if isinstance(exc, (NoFreePortError, DeleteOnlyError)):
+    if isinstance(exc, (NoFreePortError, DeleteOnlyError, WorldBusyError)):
         return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
