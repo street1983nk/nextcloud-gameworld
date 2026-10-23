@@ -73,6 +73,8 @@ function render() {
   }
   diagNode.textContent = lines.join('\n');
   diagNode.classList.toggle('error', diag.error !== null);
+  // pointer-events ist aus, Touch kann nicht scrollen: immer ans Ende springen.
+  diagNode.scrollTop = diagNode.scrollHeight;
 }
 
 function mark(event, extra = {}) {
