@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-03-PLAN.md
-last_updated: "2026-10-23T09:21:49.293Z"
-last_activity: 2026-10-23 -- 04.2-03 complete (KO-STATUS-HEADER GO, HaRP WS 101 live)
+stopped_at: Completed 04.2-07-PLAN.md
+last_updated: "2026-10-23T09:52:03.910Z"
+last_activity: "2026-10-23 -- 04.2-07 complete (WS-zu-UDP-Proxy /play/ws, Sitzungen, Relais, Negativtests WebSocket)"
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 42
+  completed_plans: 43
   percent: 63
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 6 von 11 complete (04.2-01 bis 04.2-06; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b)
+Plan: 7 von 11 complete (04.2-01 bis 04.2-07; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b)
 Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-03 complete (manual-install: eine CSP der ExApp, kein WS-101; HaRP: Header unverändert, WS 101 mit Identität live, KO-STATUS-HEADER GO)
+Last activity: 2026-10-23 -- 04.2-07 complete (WS-zu-UDP-Proxy /play/ws, Sitzungen, Relais, Negativtests WebSocket; naechster Plan 04.2-08)
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -94,6 +94,7 @@ Progress: [█████████░] 89%
 | Phase 04.2 P06 | 16 min | 3 tasks | 6 files |
 | Phase 04.2 P04 | 180 min | 3 tasks | 5 files |
 | Phase 04.2 P03 | 40 min | 2 tasks | 4 files |
+| Phase 04.2 P07 | 30 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,8 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-04: BUILD-WAHL b für alle weiteren Pläne; KO-STATUS-TABLETS TEILWEISE (iPhone GO ab iOS 27 mit Pointer-Lock-Shim, iPad NO-GO bis iPadOS 27, Laptop vor Plan 10)
 - [Phase ?]: 04.2-03: manual-install liefert genau eine CSP (die der ExApp) plus COOP/COEP, aber nie ein WS-101; Browser-Spiel produktiv nur unter HaRP
 - [Phase ?]: 04.2-03: HaRP reicht COOP/COEP/CSP unveraendert durch und schaltet WS 101 mit Identitaet live durch (KO-STATUS-HEADER GO)
+- [Phase 04.2]: 04.2-07: UDP-Socket je BIND mit remote_addr=session.target, ein ClientGuard je Sitzung, nach Waechter-END kein weiterer BIND
+- [Phase 04.2]: 04.2-07: Abgelehnte Kommandos (PROXY, JOIN, PING) verbrauchen das WS-Ticket nicht; Abschluss 1008 Regelverstoss, 1011 Stoerung, 1000 Leerlauf
 
 ### Pending Todos
 
@@ -231,6 +234,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T09:21:31.381Z
-Stopped at: Completed 04.2-04-PLAN.md
+Last session: 2026-10-23T09:52:03.884Z
+Stopped at: Completed 04.2-07-PLAN.md
 Resume file: None
