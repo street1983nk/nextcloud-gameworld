@@ -1,9 +1,10 @@
 """Statusmodell einer Welt, abgeleitet aus Docker (RESEARCH Pattern 3).
 
-Rein und ohne Docker testbar. Die Datenbank liefert nur die
-Operationszustände ``creating`` und ``failed`` sowie den Elternwunsch
-``desired_state``; alles andere kommt aus ``docker inspect`` (State,
-ExitCode, OOMKilled, StartedAt) und der mtime der Status-Datei des
+Rein und ohne Docker testbar. Die Datenbank liefert die
+Operationszustände ``creating`` und ``failed``, die Busy-Zustände
+``backing_up``, ``restoring`` und ``restoring_swap`` (Phase 5, D-10) sowie
+den Elternwunsch ``desired_state``; alles andere kommt aus ``docker inspect``
+(State, ExitCode, OOMKilled, StartedAt) und der mtime der Status-Datei des
 Welt-Mods. Die Elterntexte stehen hier als feste Konstanten.
 """
 
@@ -21,9 +22,13 @@ STARTING = "starting"
 STOPPED = "stopped"
 ERROR = "error"
 UNKNOWN = "unknown"
+BACKING_UP = "backing_up"
+RESTORING = "restoring"
 
 TEXT_UNREACHABLE = "Docker nicht erreichbar"
 TEXT_CREATING = "Wird erstellt"
+TEXT_BACKING_UP = "Wird gesichert ..."
+TEXT_RESTORING = "Wird wiederhergestellt ..."
 TEXT_UNKNOWN_ERROR = "Unbekannter Fehler"
 # Neutral: Ob das Volume noch da ist, prüft erst der Start (CR-01); fehlt es,
 # wird die Welt zu "Weltdaten fehlen, nur Löschen".
@@ -95,6 +100,11 @@ def derive_status(
 ) -> WorldStatus:
     if not reachable:
         return WorldStatus(UNKNOWN, TEXT_UNREACHABLE)
+    # Busy-Zustände vor dem Container: Der Container ist dabei absichtlich gestoppt.
+    if op_state == "backing_up":
+        return WorldStatus(BACKING_UP, TEXT_BACKING_UP)
+    if op_state in {"restoring", "restoring_swap"}:
+        return WorldStatus(RESTORING, TEXT_RESTORING)
     if op_state == "creating":
         return WorldStatus(STARTING, TEXT_CREATING)
     if op_state == "failed":

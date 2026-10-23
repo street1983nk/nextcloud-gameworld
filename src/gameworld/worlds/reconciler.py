@@ -11,6 +11,9 @@ Regeltabelle (RESEARCH Pattern 4):
 | desired stopped, Container läuft (von Hand)       | ADOPT_RUNNING     | ADOPT_RUNNING |
 | op_state creating (Prozess starb beim Erzeugen)   | MARK_INTERRUPTED  | NONE          |
 | desired deleted (Löschen brach ab)                | RETRY_DELETE      | NONE          |
+| op_state restoring_swap (Tausch brach ab)         | MARK_RESTORE_INTERRUPTED | NONE   |
+| op_state backing_up (Sicherung brach ab)          | CLEAR_BUSY, dann normal | NONE    |
+| op_state restoring (vor dem Tausch abgebrochen)   | CLEAR_BUSY, dann normal | NONE    |
 | op_state failed                                   | NONE              | NONE          |
 | eigener Container ohne Zeile                      | nur melden        | nur melden    |
 | Container fremder Instanz                         | nie gelistet      | nie gelistet  |
@@ -22,6 +25,12 @@ erzeugt: Ein Reconciler, der abgestürzte oder per OOM beendete Welten alle
 die, die restart_policy "no" an den Welten verhindert. Neustart nach einem
 Absturz bleibt ein Elternklick. Fehlgeschlagene Welten (op_state failed)
 fasst der Abgleich ebenfalls nicht an; sie warten auf Starten oder Löschen.
+
+Busy Welten (BUSY_OP_STATES) gehören dem laufenden Sicherungs- oder
+Wiederherstellungs-Job; der periodische Abgleich fasst sie nie an. Ein
+unterbrochener Tausch (restoring_swap) wird nie gestartet und nie als
+"Weltdaten fehlen" markiert, sondern zum erneuten Wiederherstellen
+freigegeben (RESEARCH Pitfall 2).
 """
 
 from __future__ import annotations
@@ -45,6 +54,9 @@ BOOT_RETRY_SECONDS = 5.0
 # Nie exakt 10 s: Der HAProxy im Docker-Proxy schließt Keep-Alive nach 10 s (Pitfall 4).
 INTERVAL_SECONDS = 30.0
 
+# Einzige Quelle der Busy-Zustände; alle anderen Module importieren sie von hier.
+BUSY_OP_STATES = frozenset({"backing_up", "restoring", "restoring_swap"})
+
 
 class ReconcileAction(StrEnum):
     NONE = "none"
@@ -55,16 +67,27 @@ class ReconcileAction(StrEnum):
     MARK_INTERRUPTED = "mark_interrupted"
     RETRY_DELETE = "retry_delete"
     MARK_DATA_MISSING = "mark_data_missing"
+    CLEAR_BUSY = "clear_busy"
+    MARK_RESTORE_INTERRUPTED = "mark_restore_interrupted"
 
 
 def needs_volume_check(row: WorldRow, container: ContainerInfo | None) -> bool:
     """Nur hier entscheidet das Volume zwischen RECREATE und MARK_DATA_MISSING."""
-    return container is None and row.desired_state == "running" and row.op_state not in {"creating", "failed"}
+    return (
+        container is None
+        and row.desired_state == "running"
+        and row.op_state not in {"creating", "failed"}
+        and row.op_state not in BUSY_OP_STATES
+    )
 
 
 def decide_boot(row: WorldRow, container: ContainerInfo | None, volume_exists: bool) -> ReconcileAction:
     if row.desired_state == "deleted":
         return ReconcileAction.RETRY_DELETE
+    if row.op_state == "restoring_swap":
+        return ReconcileAction.MARK_RESTORE_INTERRUPTED
+    if row.op_state in BUSY_OP_STATES:
+        return ReconcileAction.CLEAR_BUSY
     if row.op_state == "creating":
         return ReconcileAction.MARK_INTERRUPTED
     if row.op_state == "failed":
@@ -87,6 +110,7 @@ def decide_periodic(row: WorldRow, container: ContainerInfo | None) -> Reconcile
     if (
         row.desired_state == "stopped"
         and row.op_state not in {"creating", "failed"}
+        and row.op_state not in BUSY_OP_STATES
         and container is not None
         and container.status == "running"
     ):
