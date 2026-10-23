@@ -22,9 +22,7 @@ S = (B - k*g^x)^(a + u*x) mod N, K = H(S), M = H(H(N) xor H(g), H(Name), Salz, A
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import secrets
 import socket
 import struct
 import sys
@@ -32,11 +30,10 @@ import time
 from collections.abc import Callable
 from typing import Protocol
 
-from gameworld.provisioner.luanti_auth import G, N
+from gameworld.play.srp_proxy import SrpClient
 
 PROTO = 0x4F457403
 SEQ_INITIAL = 65500
-N_LEN = (N.bit_length() + 7) // 8
 ACCESS_DENIED_CODES = {
     0: "WRONG_PASSWORD",
     1: "UNEXPECTED_DATA",
@@ -52,50 +49,6 @@ ACCESS_DENIED_CODES = {
     11: "SHUTDOWN",
     12: "CRASH",
 }
-
-
-def _bin(n: int) -> bytes:
-    """Big-Endian ohne führende Nullen (mpz_to_bin)."""
-    return n.to_bytes((n.bit_length() + 7) // 8, "big")
-
-
-def _h(*parts: bytes) -> bytes:
-    digest = hashlib.sha256()
-    for part in parts:
-        digest.update(part)
-    return digest.digest()
-
-
-def _x(salt: bytes, name: str, password: str) -> int:
-    inner = _h(name.lower().encode("utf-8"), b":", password.encode("utf-8"))
-    return int.from_bytes(_h(salt, inner), "big")
-
-
-def _h_nn(a: int, b: int) -> int:
-    return int.from_bytes(_h(_bin(a).rjust(N_LEN, b"\0"), _bin(b).rjust(N_LEN, b"\0")), "big")
-
-
-class SrpClient:
-    """Client-Seite von SRP-6a, wie Luanti sie erwartet."""
-
-    def __init__(self, name: str, password: str) -> None:
-        self.name = name  # Originalschreibweise für M, kleingeschrieben nur in x
-        self.password = password
-        self.secret = secrets.randbits(256)
-        self.public = pow(G, self.secret, N)
-
-    def bytes_a(self) -> bytes:
-        return _bin(self.public)
-
-    def process(self, salt: bytes, bytes_b: bytes) -> bytes:
-        server_public = int.from_bytes(bytes_b, "big")
-        u = _h_nn(self.public, server_public)
-        x = _x(salt, self.name, self.password)
-        k = _h_nn(N, G)
-        shared = pow((server_public - k * pow(G, x, N)) % N, self.secret + u * x, N)
-        key = _h(_bin(shared))
-        h_xor = bytes(i ^ j for i, j in zip(_h(_bin(N)), _h(_bin(G)), strict=True))
-        return _h(h_xor, _h(self.name.encode("utf-8")), salt, _bin(self.public), _bin(server_public), key)
 
 
 def _str16(data: bytes) -> bytes:

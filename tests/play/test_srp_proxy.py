@@ -70,8 +70,9 @@ def _reliable_split(chunk0: bytes, seq: int, chunk_num: int = 0, chunk_count: in
     return _head() + struct.pack(">BH", 3, seq) + split
 
 
-def _naked_split(chunk0: bytes, chunk_num: int = 0, chunk_count: int = 2, split_seq: int = 7) -> bytes:
-    """Nacktes SPLIT ohne RELIABLE-Huelle."""
+def _naked_split(chunk0: bytes, seq: int = 0, chunk_num: int = 0, chunk_count: int = 2, split_seq: int = 7) -> bytes:
+    """Nacktes SPLIT ohne RELIABLE-Huelle; ``seq`` wird ignoriert (kein RELIABLE-seqnum)."""
+    del seq
     return _head() + struct.pack(">BHHH", 2, split_seq, chunk_count, chunk_num) + chunk0
 
 

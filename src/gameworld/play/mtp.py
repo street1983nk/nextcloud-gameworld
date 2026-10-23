@@ -130,6 +130,21 @@ def parse(datagram: bytes) -> Parsed:
     )
 
 
+def rewrite_payload(datagram: bytes, new_payload: bytes) -> bytes:
+    """Ersetzt nur die Nutzlast eines RELIABLE(ORIGINAL)-Kommandopakets.
+
+    Kopf (7 Byte), RELIABLE-Typ samt seqnum, ORIGINAL-Typ und Kommando bleiben erhalten;
+    jede andere Struktur (nacktes ORIGINAL, SPLIT, CONTROL, ORIGINAL ohne Kommando) wirft MtpError.
+    """
+    parsed = parse(datagram)
+    if parsed.ptype != PT_RELIABLE or parsed.inner_ptype != PT_ORIGINAL or parsed.command is None:
+        raise MtpError("rewrite nur fuer RELIABLE(ORIGINAL) mit Kommando")
+    head = datagram[: HEADER.size]
+    reliable = struct.pack(">BH", PT_RELIABLE, parsed.reliable_seq)
+    original = struct.pack(">BH", PT_ORIGINAL, parsed.command)
+    return head + reliable + original + new_payload
+
+
 def init_player_name(payload: bytes) -> str:
     """Spielername aus der Nutzlast von TOSERVER_INIT (nach dem Kommando): str16 ab Offset 7."""
     length = _u16(payload, INIT_NAME_OFFSET)
