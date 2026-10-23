@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04.2-04-PLAN.md
-last_updated: "2026-10-23T08:39:58.732Z"
-last_activity: 2026-10-23 -- 04.2-04 complete (CI-Build GO, Geraetetest Einzelspieler, BUILD-WAHL b)
+stopped_at: Completed 04.2-03-PLAN.md
+last_updated: "2026-10-23T09:21:49.293Z"
+last_activity: 2026-10-23 -- 04.2-03 complete (KO-STATUS-HEADER GO, HaRP WS 101 live)
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 47
-  completed_plans: 41
-  percent: 87
+  completed_plans: 42
+  percent: 63
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 04.2 (browser-spike-luanti-wasm), EXECUTING
-Plan: 5 von 11 complete (04.2-01, 04.2-02, 04.2-04, 04.2-05, 04.2-06; KO-STATUS-BUILD GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b)
+Plan: 6 von 11 complete (04.2-01 bis 04.2-06; KO-STATUS-BUILD GO, KO-STATUS-HEADER GO, KO-STATUS-TABLETS TEILWEISE, BUILD-WAHL b)
 Status: Ready to execute
-Last activity: 2026-10-23 -- 04.2-04 complete (iPhone ab iOS 27 mit Pointer-Lock-Shim GO, iPad ohne JSPI NO-GO, Laptop-Test vor Plan 10)
+Last activity: 2026-10-23 -- 04.2-03 complete (manual-install: eine CSP der ExApp, kein WS-101; HaRP: Header unverändert, WS 101 mit Identität live, KO-STATUS-HEADER GO)
 
-Progress: [█████████░] 87%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -93,6 +93,7 @@ Progress: [█████████░] 87%
 | Phase 04.2 P05 | 13min | 2 tasks | 6 files |
 | Phase 04.2 P06 | 16 min | 3 tasks | 6 files |
 | Phase 04.2 P04 | 180 min | 3 tasks | 5 files |
+| Phase 04.2 P03 | 40 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,8 @@ Recent decisions affecting current work:
 - [Phase 04.2]: 04.2-06: Ticket-Bodies werden im Handler nach den Herkunftsprüfungen gelesen (max. 1024 Bytes); Herkunfts-Ablehnung verbraucht kein Ticket, jede Ticket-Ablehnung ist eine 403 mit Grund nur als Log-Konstante
 - [Phase 04.2]: 04.2-06: Tickets nur für Welten aus my_worlds, auch für Verwalter (D-11); /play/launch prüft Einladung und Spielername erneut, Passwort nur in Variante B
 - [Phase 04.2]: 04.2-04: BUILD-WAHL b für alle weiteren Pläne; KO-STATUS-TABLETS TEILWEISE (iPhone GO ab iOS 27 mit Pointer-Lock-Shim, iPad NO-GO bis iPadOS 27, Laptop vor Plan 10)
+- [Phase ?]: 04.2-03: manual-install liefert genau eine CSP (die der ExApp) plus COOP/COEP, aber nie ein WS-101; Browser-Spiel produktiv nur unter HaRP
+- [Phase ?]: 04.2-03: HaRP reicht COOP/COEP/CSP unveraendert durch und schaltet WS 101 mit Identitaet live durch (KO-STATUS-HEADER GO)
 
 ### Pending Todos
 
@@ -228,6 +231,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T08:39:50.184Z
+Last session: 2026-10-23T09:21:31.381Z
 Stopped at: Completed 04.2-04-PLAN.md
 Resume file: None
