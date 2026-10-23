@@ -29,6 +29,8 @@ import socket
 import struct
 import sys
 import time
+from collections.abc import Callable
+from typing import Protocol
 
 from gameworld.provisioner.luanti_auth import G, N
 
@@ -100,12 +102,32 @@ def _str16(data: bytes) -> bytes:
     return struct.pack(">H", len(data)) + data
 
 
+class DatagramSocket(Protocol):
+    """Was Probe von einem Socket braucht; UDP oder das WebSocket-Relais (tests/e2e/ws_datagram.py)."""
+
+    def sendto(self, data: bytes, address: tuple[str, int], /) -> int: ...
+
+    def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[str, int]]: ...
+
+    def settimeout(self, value: float | None, /) -> None: ...
+
+    def close(self) -> None: ...
+
+
+SocketFactory = Callable[[], DatagramSocket]
+
+
+def udp_socket() -> DatagramSocket:
+    """Vorgabe: echter UDP-Socket wie bisher."""
+    return socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+
 class Probe:
     """Eine UDP-Verbindung im MTP-Protokoll, gerade genug für Init und SRP."""
 
-    def __init__(self, host: str, port: int, timeout: float = 3.0) -> None:
+    def __init__(self, host: str, port: int, timeout: float = 3.0, sock_factory: SocketFactory = udp_socket) -> None:
         self.addr = (host, port)
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock = sock_factory()
         self.sock.settimeout(timeout)
         self.peer_id = 0
         self.seq = {0: SEQ_INITIAL, 1: SEQ_INITIAL, 2: SEQ_INITIAL}
@@ -169,12 +191,20 @@ def _parse_denied(data: bytes) -> dict[str, object]:
     return {"result": "denied", "code": ACCESS_DENIED_CODES.get(code, code), "reason": reason}
 
 
-def join(host: str, port: int, name: str, password: str | None = None, timeout: float = 6.0) -> dict[str, object]:
+def join(
+    host: str,
+    port: int,
+    name: str,
+    password: str | None = None,
+    timeout: float = 6.0,
+    sock_factory: SocketFactory = udp_socket,
+) -> dict[str, object]:
     """Ein Join-Versuch; ``result`` ist denied, hello, auth_accept, no_peer_id oder unexpected.
 
     Ohne Passwort endet der Versuch nach HELLO (``auth_mechs`` 2 heißt: SRP-Konto vorhanden).
+    ``sock_factory`` tauscht nur den Transport (Vorgabe UDP), die Protokoll-Logik bleibt gleich.
     """
-    probe = Probe(host, port)
+    probe = Probe(host, port, sock_factory=sock_factory)
     deadline = time.monotonic() + timeout
     try:
         probe.send_reliable(0, 0)  # Dummy, der Server vergibt die peer_id
