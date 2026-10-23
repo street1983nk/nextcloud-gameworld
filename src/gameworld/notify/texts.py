@@ -21,8 +21,13 @@ SUMMARY_MESSAGE = "Heute gab es weitere Beitrittsversuche, siehe Gameworld."
 REVIEW_SUBJECT = "Tagesrückblick"
 REVIEW_MESSAGE = "Heute gespielt: {kids}"
 REVIEW_LIMIT_SUFFIX = " (Limit erreicht)"
+# Sicherung und Wiederherstellen (Phase 5, D-16): nur Fehler, nur an den auslösenden Verwalter.
+BACKUP_FAILED_SUBJECT = "Sicherung von {world} fehlgeschlagen"
+RESTORE_FAILED_SUBJECT = "Wiederherstellen von {world} fehlgeschlagen"
 
 MAX_PLAYER = 20
+# Grund eines fehlgeschlagenen Auftrags (fester Text, trotzdem bereinigt und gekappt).
+MAX_REASON = 300
 MAX_WORLD = 40
 MAX_DISPLAY = 64
 # Die Rückblick-Zeile selbst (viele Kinder) bleibt unter dieser Länge.
@@ -62,6 +67,16 @@ def attempt_message(world_id: str, world_name: str, player: str, clock: str) -> 
         "time": highlight("time", clean_value(clock, 5)),
     }
     return NotifyText(ATTEMPT_SUBJECT, ATTEMPT_MESSAGE, params)
+
+
+def job_failed_message(subject: str, world_id: str, world_name: str, reason: str) -> NotifyText:
+    """Fehler eines Sicherungs- oder Wiederherstellungsauftrags; Weltname nur als Parameter.
+
+    Der Grund ist ein fester Text des Ablaufs; er wird trotzdem von Format- und
+    Steuerzeichen befreit, weil Docker-Meldungen darin vorkommen können.
+    """
+    params = {"world": highlight(world_id, clean_value(world_name, MAX_WORLD))}
+    return NotifyText(subject, clean_value(reason, MAX_REASON), params)
 
 
 def summary_message() -> NotifyText:

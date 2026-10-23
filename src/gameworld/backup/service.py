@@ -28,6 +28,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Awaitable, Callable, Coroutine
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any, BinaryIO, cast
@@ -49,9 +50,13 @@ from gameworld.backup.archive import (
 from gameworld.backup.files import BackupFiles, FilesEntry, FilesError, get_backup_files
 from gameworld.backup.naming import backup_file_name, folder_name, folder_path, with_suffix
 from gameworld.config import load_settings
-from gameworld.provisioner.client import ProvisionerError
+from gameworld.notify.links import app_link
+from gameworld.notify.loop import link_origin
+from gameworld.notify.service import Notifier, get_notifier
+from gameworld.notify.texts import BACKUP_FAILED_SUBJECT, RESTORE_FAILED_SUBJECT, job_failed_message
+from gameworld.provisioner.client import ProvisionerError, WorldNotFoundError
 from gameworld.provisioner.spec import LUANTI_VERSION
-from gameworld.worlds.service import OfflineTicket, WorldService
+from gameworld.worlds.service import NOT_FOUND, OfflineTicket, WorldService
 from gameworld.worlds.store import BACKUP_JOB_RUNNING, BackupRow
 
 LOG = logging.getLogger(__name__)
@@ -62,6 +67,11 @@ JOB_UNUSABLE = "Die Sicherung war unvollständig und wurde verworfen. Die Welt l
 # D-09: Bestätigung, bevor spielende Kinder kurz getrennt werden.
 PLAYERS_ONLINE_ONE = "In der Welt spielt gerade 1 Kind, es wird kurz getrennt."
 PLAYERS_ONLINE_MANY = "In der Welt spielen gerade {count} Kinder, sie werden kurz getrennt."
+# Beim Start gefundene Aufträge im Zustand running (Prozess starb mittendrin).
+JOB_INTERRUPTED = "Die Sicherung wurde durch einen Neustart des Servers unterbrochen."
+RESTORE_JOB_INTERRUPTED = "Das Wiederherstellen wurde durch einen Neustart des Servers unterbrochen."
+KIND_RESTORE = "restore"
+FAILED_SUBJECTS = {KIND_BACKUP: BACKUP_FAILED_SUBJECT, KIND_RESTORE: RESTORE_FAILED_SUBJECT}
 
 STATE_OK = "ok"
 STATE_FAILED = "failed"
@@ -84,6 +94,25 @@ class PlayersOnline(Exception):
         text = PLAYERS_ONLINE_ONE if count == 1 else PLAYERS_ONLINE_MANY.format(count=count)
         super().__init__(text)
         self.count = count
+
+
+@dataclass(frozen=True)
+class BackupItem:
+    """Eine gültige Sicherung in der Liste; ohne Pfad (der liegt nur im Nachweis)."""
+
+    file_id: int
+    name: str
+    size: int
+    created_at: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class BackupList:
+    entries: list[BackupItem]
+    total_size: int
+    # Dateien im Ordner ohne passenden eigenen Nachweis (fremd, verändert, unvollständig).
+    other_files: int
 
 
 def disk_free(path: Path) -> int:
@@ -116,12 +145,14 @@ class BackupService:
         spool_dir: Path,
         *,
         files: Callable[[], BackupFiles] = get_backup_files,
+        notifier: Callable[[], Notifier] = get_notifier,
         clock: Clock = time.time,
         sleep: Sleep = asyncio.sleep,
     ) -> None:
         self.worlds = worlds
         self._spool_dir = spool_dir
         self._files = files
+        self._notifier = notifier
         self._clock = clock
         self._sleep = sleep
         self._tasks: set[asyncio.Task[None]] = set()
@@ -267,14 +298,82 @@ class BackupService:
         LOG.info("Welt %s gesichert: %d Bytes", ticket.world_id, entry.size)
 
     async def _finish_failed(self, world_id: str, uid: str, kind: str, message: str, started_at: str) -> None:
-        """Einziger Ausgang für fehlgeschlagene Aufträge: Zeile failed mit festem Text."""
-        del uid  # Task 2: Benachrichtigung an den auslösenden Verwalter (D-16)
-        await self._shielded(self._mark_failed, world_id, kind, message, started_at)
+        """Einziger Ausgang für fehlgeschlagene Aufträge: Zeile failed, dann Hinweis an ``uid`` (D-16).
 
-    def _mark_failed(self, world_id: str, kind: str, message: str, started_at: str) -> None:
-        if self.worlds.store.get_world(world_id) is None:
+        Nur der auslösende Verwalter bekommt die Benachrichtigung, Erfolg bleibt
+        still. Ein Fehler beim Benachrichtigen ändert den Auftrag nicht.
+        """
+        target = await self._shielded(self._mark_failed, world_id, kind, message, started_at)
+        if target is None:
             return
-        self.worlds.store.set_backup_job(world_id, kind, STATE_FAILED, message, None, started_at, _iso(self._clock()))
+        world_name, origin = target
+        text = job_failed_message(FAILED_SUBJECTS.get(kind, BACKUP_FAILED_SUBJECT), world_id, world_name, message)
+        link = app_link(origin) if origin is not None else ""
+        try:
+            delivered = await self._notifier().notify(uid, text.subject, text.message, text.params, link)
+        except Exception as exc:
+            LOG.warning("Fehler-Hinweis zu Welt %s nicht gesendet: %s", world_id, type(exc).__name__)
+            return
+        if not delivered:
+            LOG.info("Fehler-Hinweis zu Welt %s nicht zugestellt", world_id)
+
+    def _mark_failed(self, world_id: str, kind: str, message: str, started_at: str) -> tuple[str, str | None] | None:
+        """Zeile auf failed; liefert Weltname und Link-Basis, oder None ohne Welt."""
+        store = self.worlds.store
+        row = store.get_world(world_id)
+        if row is None:
+            return None
+        store.set_backup_job(world_id, kind, STATE_FAILED, message, None, started_at, _iso(self._clock()))
+        return row.name, link_origin(store)
+
+    # Wiederanlauf und Liste
+
+    def recover_jobs(self) -> int:
+        """Nach dem Start: Aufträge im Zustand running wurden unterbrochen (D-11); Anzahl.
+
+        Synchron im Lifespan, bevor ein Request einen neuen Auftrag starten kann.
+        """
+        store = self.worlds.store
+        jobs = store.running_backup_jobs()
+        finished = _iso(self._clock())
+        for job in jobs:
+            text = RESTORE_JOB_INTERRUPTED if job.kind == KIND_RESTORE else JOB_INTERRUPTED
+            store.set_backup_job(job.world_id, job.kind, STATE_FAILED, text, job.file_name, job.started_at, finished)
+            LOG.warning("Auftrag für Welt %s durch Neustart unterbrochen", job.world_id)
+        return len(jobs)
+
+    async def list_backups(self, world_id: str, uid: str) -> BackupList:
+        """Gültige Sicherungen dieser Welt in den Files von ``uid`` (D-07, D-08, D-12, D-13).
+
+        Nur Dateien, deren (file_id, Größe) auch ein eigener Nachweis hat; alles
+        andere im Ordner zählt ``other_files``. Reihenfolge wie der Nachweis
+        (neueste zuerst). Wirft WorldNotFoundError oder FilesError.
+        """
+        row = await anyio.to_thread.run_sync(self.worlds.store.get_world, world_id)
+        if row is None:
+            raise WorldNotFoundError(NOT_FOUND)
+        proofs = await anyio.to_thread.run_sync(self.worlds.store.backups_for, uid, world_id)
+        files = await self._files().listdir(uid, folder_path(folder_name(row.name, world_id)))
+        present = {(entry.file_id, entry.size): entry for entry in files}
+        entries: list[BackupItem] = []
+        for proof in proofs:
+            entry = present.get((proof.file_id, proof.size))
+            if entry is None:
+                continue
+            entries.append(
+                BackupItem(
+                    file_id=proof.file_id,
+                    name=entry.name,
+                    size=proof.size,
+                    created_at=proof.created_at,
+                    kind=proof.kind,
+                )
+            )
+        return BackupList(
+            entries=entries,
+            total_size=sum(entry.size for entry in entries),
+            other_files=len(files) - len(entries),
+        )
 
     # Verfolgte Tasks (Muster talk/service.py)
 

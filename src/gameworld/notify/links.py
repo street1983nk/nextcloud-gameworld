@@ -97,6 +97,11 @@ def page_link(origin: str, page: str, params: dict[str, str]) -> str:
     return link
 
 
+def app_link(origin: str) -> str:
+    """Absoluter Link auf die Übersicht der Gameworld-Seite (Welten, Sicherungen)."""
+    return f"{origin}{EMBED_PATH}"
+
+
 @dataclass(frozen=True)
 class OriginDecision:
     """Ergebnis von decide_origin: speichern ja/nein, Rückfrage nötig ja/nein."""
