@@ -319,7 +319,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 05-08-PLAN.md , e2e-Roundtrip gegen echten Proxy (Mia/Leo, kaputte map.sqlite+Journal, unabhängige Gegenprobe), Negativ- und Absturztests
+- [x] 05-08-PLAN.md , e2e-Roundtrip gegen echten Proxy (Mia/Leo, kaputte map.sqlite+Journal, unabhängige Gegenprobe), Negativ- und Absturztests
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -354,5 +354,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
-| 5. Backup und Restore | 7/9 | In Progress|  |
+| 5. Backup und Restore | 8/9 | In Progress|  |
 | 6. Store-Release | 0/TBD | Not started | - |
