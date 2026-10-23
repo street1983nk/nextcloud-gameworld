@@ -89,3 +89,7 @@ Keine neue Angriffsfläche über das Threat-Register hinaus (T-05-13 per `_halt_
 ## TDD Gate Compliance
 
 RED (test) vor GREEN (feat) für beide Tasks im git log vorhanden.
+
+## Self-Check: PASSED
+
+Alle vier Commits und die geänderten Dateien vorhanden.

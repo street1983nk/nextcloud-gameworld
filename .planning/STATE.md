@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-10-23T15:34:22.500Z"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-10-23T15:54:22.596Z"
 last_activity: 2026-10-23
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 56
-  completed_plans: 49
+  completed_plans: 50
   percent: 75
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 05 (backup-und-restore) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
 Last activity: 2026-10-23
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -102,6 +102,7 @@ Progress: [█████████░] 88%
 | Phase 04.2 P11 | Review+Bericht+Entscheid | 3 tasks | 3 files |
 | Phase 05 P01 | 40 min | 2 tasks | 9 files |
 | Phase 05 P02 | 35 min | 2 tasks | 9 files |
+| Phase 05 P03 | 20 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -231,6 +232,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-02: backups-Zeilen bleiben beim Welt-Löschen (D-08), backup_jobs wird mit der Welt entfernt (Plan 04)
 - [Phase 05]: 05-02: Nachweis-file_id ist FsNode.info.fileid (int); by_path-404 gilt als frei bzw. None
 - [Phase 05]: 05-02: Aufräumen der eigenen Zieldatei auch bei Abbruch (shield, höchstens 30 s); alle Namen bis -99 belegt ergibt MSG_NAME_EXHAUSTED
+- [Phase 05]: 05-03: @halt ist letzte @-Zeile vor end; Prejoin sperrt jeden Namen (auch frei) vor Pause und Regeln, Takt trennt ab halt alle, Chat-Hinweis einmal je halt
+- [Phase 05]: 05-03: Halt nur im Speicher der TimeEngine (set_halt/clear_halt), Teil des Render-Cache-Schlüssels; forget lässt ihn stehen
 
 ### Pending Todos
 
@@ -260,6 +263,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T15:34:22.481Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-10-23T15:54:22.577Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
