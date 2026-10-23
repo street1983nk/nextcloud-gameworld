@@ -11,6 +11,8 @@ from gameworld.play.config import allowed_origins, security_headers
 from tests.conftest import appapi_headers
 
 ORIGINS = "http://test,https://host.ts.net"
+RELEASE_A = "0123456789ab"
+RELEASE_B = "ba9876543210"
 
 
 @pytest.fixture
@@ -21,6 +23,12 @@ def www(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         (root / build).mkdir(parents=True)
         (root / build / "x.wasm").write_bytes(b"\0asm\1\0\0\0")
         (root / build / "launcher.js").write_text("// launcher\n", encoding="utf-8")
+    for build, release in (("a", RELEASE_A), ("b", RELEASE_B)):
+        (root / build / release / "packs").mkdir(parents=True)
+        (root / build / release / "luanti.wasm").write_bytes(f"wasm-{build}".encode())
+        (root / build / release / "worker.js").write_bytes(f"// worker {build}\n".encode())
+        (root / build / release / "packs" / "base.pack").write_bytes(f"pack-{build}".encode())
+        (root / build / release / ".htaccess").write_text("Header set x\n", encoding="utf-8")
     (root / "a" / "x.exe").write_bytes(b"MZ")
     (root / "c").mkdir()
     (root / "c" / "x.wasm").write_bytes(b"\0asm")
@@ -153,3 +161,84 @@ async def test_api_stays_protected_in_dev(client: httpx.AsyncClient, dev: Path) 
     assert response.status_code in (401, 403)
     response = await client.post("/api/my/play-ticket", json={})
     assert response.status_code in (401, 403)
+
+
+@pytest.mark.parametrize(("build", "release"), [("a", RELEASE_A), ("b", RELEASE_B)])
+async def test_release_name(client: httpx.AsyncClient, dev: Path, build: str, release: str) -> None:
+    del dev
+    response = await client.get(f"/play/release/{build}", headers=appapi_headers("gw-kind"))
+    assert response.status_code == 200
+    assert response.json() == {"release": release}
+    assert response.headers["cache-control"] == "no-store"
+    _assert_security_headers(response)
+
+
+@pytest.mark.parametrize("build", ["c", "A", "%2e%2e", "a%2F..", ".htaccess"])
+async def test_release_name_rejects_foreign_build(client: httpx.AsyncClient, dev: Path, build: str) -> None:
+    del dev
+    response = await client.get(f"/play/release/{build}", headers=appapi_headers("gw-kind"))
+    assert response.status_code == 404
+
+
+async def test_release_name_needs_exactly_one(client: httpx.AsyncClient, dev: Path) -> None:
+    # Zwei Release-Ordner in a: unklar, welcher gilt, also keiner.
+    (dev / "a" / "cccccccccccc").mkdir()
+    response = await client.get("/play/release/a", headers=appapi_headers("gw-kind"))
+    assert response.status_code == 404
+    # Positivkontrolle im selben Aufbau: b hat genau einen.
+    response = await client.get("/play/release/b", headers=appapi_headers("gw-kind"))
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("path", "content", "media_type"),
+    [
+        # Positivkontrollen: Der Release-Name wählt den Build.
+        (f"/play/{RELEASE_A}/luanti.wasm", b"wasm-a", "application/wasm"),
+        (f"/play/{RELEASE_B}/luanti.wasm", b"wasm-b", "application/wasm"),
+        (f"/play/{RELEASE_B}/worker.js", b"// worker b\n", "text/javascript"),
+        (f"/play/{RELEASE_A}/packs/base.pack", b"pack-a", "application/octet-stream"),
+    ],
+)
+async def test_release_files(client: httpx.AsyncClient, dev: Path, path: str, content: bytes, media_type: str) -> None:
+    del dev
+    response = await client.get(path, headers=appapi_headers("gw-kind"))
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-type"].startswith(media_type)
+    assert response.headers["cache-control"] == "no-cache"
+    _assert_security_headers(response)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # Manipulierte Pfade: fremder Release, Großschreibung, falsche Länge, Ausbruch, Endung.
+        "/play/cccccccccccc/luanti.wasm",
+        "/play/0123456789AB/luanti.wasm",
+        "/play/0123456789a/luanti.wasm",
+        "/play/0123456789abc/luanti.wasm",
+        f"/play/{RELEASE_A}/.htaccess",
+        f"/play/{RELEASE_A}/..%2F..%2Fescape.wasm",
+        f"/play/{RELEASE_A}/..%2F..%2Fb%2F{RELEASE_B}%2Fluanti.wasm",
+        f"/play/{RELEASE_A}/..%2Fx.wasm",
+        f"/play/{RELEASE_A}/",
+    ],
+)
+async def test_release_files_reject(client: httpx.AsyncClient, dev: Path, path: str) -> None:
+    del dev
+    response = await client.get(path, headers=appapi_headers("gw-kind"), follow_redirects=True)
+    assert response.status_code == 404
+    assert b"wasm-" not in response.content
+    assert b"asm" not in response.content
+    assert b"Header" not in response.content
+
+
+@pytest.mark.parametrize("path", ["/play/release/a", f"/play/{RELEASE_A}/luanti.wasm"])
+async def test_release_routes_off(
+    client: httpx.AsyncClient, www: Path, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    del www
+    monkeypatch.setenv("GAMEWORLD_BROWSER_SPIKE", "off")
+    response = await client.get(path, headers=appapi_headers("gw-kind"))
+    assert response.status_code == 404
