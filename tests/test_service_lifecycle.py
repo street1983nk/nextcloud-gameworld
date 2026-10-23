@@ -140,6 +140,7 @@ class FakeProvisioner:
 
     def remove_world(self, world_id: str, *, keep_volume: bool) -> None:
         self.removed.append((world_id, keep_volume))
+        self.calls.append(f"remove:{world_id}")
         if self.remove_error is not None:
             raise self.remove_error
         self.containers.pop(world_id, None)
@@ -2422,3 +2423,278 @@ async def test_fake_snapshot_streams_chunks_and_refuses_running(fake: FakeProvis
     fake.put_world_archive("w", io.BytesIO(b"tar"))
     assert fake.put_archives == [("w", b"tar")]
     assert fake.calls[-1] == "put_archive:w"
+
+
+# 05-06 Task 1: Tausch über frisches Volume (restore_swap, D-06, T-05-32, T-05-33, T-05-50)
+
+
+def _record_creates(fake: FakeProvisioner) -> None:
+    """Schreibt jedes create_world_container zusätzlich als "create:<id>" in calls."""
+    original = fake.create_world_container
+
+    def recording(world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False) -> str:
+        fake.calls.append(f"create:{world_id}")
+        return original(world_id, host_port, payload, reuse_volume=reuse_volume)
+
+    fake.create_world_container = recording  # type: ignore[method-assign]
+
+
+def _halt_lines(data: bytes) -> list[str]:
+    return [line for line in data.decode("ascii").split("\n") if line.startswith("@halt")]
+
+
+async def _swap_ready(service: WorldService, fake: FakeProvisioner, name: str = "Welt") -> OfflineTicket:
+    """Welt im Zustand restoring, gestoppt, Aufrufprotokoll geleert."""
+    world_id = await _running_world(service, fake, name)
+    ticket = service.begin_offline(world_id, "restoring", allow_failed=True)
+    service.stop_for_snapshot(world_id)
+    fake.calls.clear()
+    fake.written.clear()
+    fake.put_archives.clear()
+    return ticket
+
+
+async def test_mark_swap_persists_before_remove(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """T-05-33: Beim remove steht restoring_swap schon in der Datenbank (Boot-Abgleich, Plan 04)."""
+    ticket = await _swap_ready(service, fake)
+    world_id = ticket.world_id
+    seen: list[str] = []
+    original = fake.remove_world
+
+    def recording(target: str, *, keep_volume: bool) -> None:
+        row = store.get_world(target)
+        assert row is not None
+        seen.append(row.op_state)
+        original(target, keep_volume=keep_volume)
+
+    fake.remove_world = recording  # type: ignore[method-assign]
+
+    service.mark_swap(world_id)
+    assert fake.calls == []
+    service.restore_swap(world_id, io.BytesIO(b"restore-tar"), None)
+
+    assert seen == ["restoring_swap"]
+
+
+async def test_restore_swap_rebuilds_on_fresh_volume_in_order(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    ticket = await _swap_ready(service, fake)
+    world_id = ticket.world_id
+    before = store.get_world(world_id)
+    assert before is not None
+    _record_creates(fake)
+    restore = io.BytesIO(b"restore-tar")
+    restore.read()  # Position am Ende: restore_swap muss selbst zurückspulen.
+
+    service.mark_swap(world_id)
+    service.restore_swap(world_id, restore, b"zaehlbuch")
+    assert service.finish_swap(world_id, was_running=True) is None
+
+    remove = fake.calls.index(f"remove:{world_id}")
+    create = fake.calls.index(f"create:{world_id}")
+    puts = [index for index, call in enumerate(fake.calls) if call == f"put_archive:{world_id}"]
+    start = fake.calls.index(f"start:{world_id}")
+    assert len(puts) == 2
+    assert remove < create < puts[0] < puts[1] < start
+    # Frisches Volume (T-05-32): Ein heißes Journal der kaputten Welt überlebt nicht.
+    assert fake.removed[-1] == (world_id, False)
+    assert fake.created[-1] == (world_id, before.port, False)
+    assert fake.put_archives[0] == (world_id, b"restore-tar")
+    with tarfile.open(fileobj=io.BytesIO(fake.put_archives[1][1]), mode="r:") as tar:
+        assert tar.getnames() == [LEDGER_FILE_NAME]
+        handle = tar.extractfile(LEDGER_FILE_NAME)
+        assert handle is not None
+        assert handle.read() == b"zaehlbuch"
+    row = store.get_world(world_id)
+    assert row is not None
+    assert (row.op_state, row.last_error, row.desired_state) == ("ready", None, "running")
+
+
+async def test_restore_swap_without_ledger_puts_only_world(service: WorldService, fake: FakeProvisioner) -> None:
+    ticket = await _swap_ready(service, fake)
+    service.mark_swap(ticket.world_id)
+    service.restore_swap(ticket.world_id, io.BytesIO(b"restore-tar"), None)
+    assert fake.put_archives == [(ticket.world_id, b"restore-tar")]
+
+
+async def test_restore_swap_renders_rules_without_halt(
+    service: WorldService, fake: FakeProvisioner, payload_args: list[tuple[object, ...]]
+) -> None:
+    """T-05-50: Die frisch angelegte Welt bekommt eine Regeldatei ohne @halt."""
+    ticket = await _swap_ready(service, fake)
+    world_id = ticket.world_id
+    service.time.set_halt(world_id, int(time.time()) + HALT_LEAD_SECONDS)
+    data, _changed = service.time.render(world_id)
+    assert _halt_lines(data)  # Positivkontrolle: Ohne clear_halt stünde der Halt drin.
+    payload_args.clear()
+
+    service.mark_swap(world_id)
+    service.restore_swap(world_id, io.BytesIO(b"restore-tar"), None)
+
+    assert len(payload_args) == 1
+    rules = payload_args[0][4]
+    assert isinstance(rules, bytes)
+    assert _halt_lines(rules) == []
+
+
+async def test_restore_swap_resets_event_cursor(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    ticket = await _swap_ready(service, fake)
+    store.take_events(ticket.world_id, 41, [])
+    assert store.event_cursor(ticket.world_id) == 41
+
+    service.mark_swap(ticket.world_id)
+    service.restore_swap(ticket.world_id, io.BytesIO(b"restore-tar"), None)
+
+    assert store.event_cursor(ticket.world_id) is None
+
+
+async def test_restore_swap_tolerates_missing_container(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """D-15: Eine kaputte Welt ohne Container lässt sich trotzdem neu aufbauen."""
+    created = await service.create_world("Kaputt")
+    store.update_world(created.id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
+    fake.containers.pop(created.id)
+    service.begin_offline(created.id, "restoring", allow_failed=True)
+    fake.remove_error = WorldNotFoundError("Diese Welt gibt es nicht (mehr).")
+
+    service.mark_swap(created.id)
+    service.restore_swap(created.id, io.BytesIO(b"restore-tar"), None)
+    fake.remove_error = None
+    assert service.finish_swap(created.id, was_running=True) is None
+
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.op_state, row.last_error) == ("ready", None)
+    assert not service_module.delete_only(row)
+
+
+async def test_restore_swap_passes_errors_to_caller(service: WorldService, fake: FakeProvisioner) -> None:
+    ticket = await _swap_ready(service, fake)
+    fake.create_errors = [ProvisionerError("Docker hat die Anfrage abgelehnt: kaputt")]
+    service.mark_swap(ticket.world_id)
+    with pytest.raises(ProvisionerError, match="kaputt"):
+        service.restore_swap(ticket.world_id, io.BytesIO(b"restore-tar"), None)
+
+
+async def test_finish_swap_keeps_stopped_world_stopped_and_without_halt(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    created = await service.create_world("Welt")
+    await service.stop_world(created.id)
+    ticket = service.begin_offline(created.id, "restoring", allow_failed=True)
+    assert not ticket.was_running
+    service.mark_swap(created.id)
+    service.restore_swap(created.id, io.BytesIO(b"restore-tar"), None)
+    service.time.set_halt(created.id, int(time.time()) + HALT_LEAD_SECONDS)
+    fake.calls.clear()
+
+    assert service.finish_swap(created.id, was_running=False) is None
+
+    assert not any(call.startswith("start:") for call in fake.calls)
+    row = store.get_world(created.id)
+    assert row is not None
+    assert (row.op_state, row.last_error, row.desired_state) == ("ready", None, "stopped")
+    data, _changed = service.time.render(created.id)
+    assert _halt_lines(data) == []
+
+
+async def test_finish_swap_reports_launch_failure_without_raising(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    ticket = await _swap_ready(service, fake)
+    service.mark_swap(ticket.world_id)
+    service.restore_swap(ticket.world_id, io.BytesIO(b"restore-tar"), None)
+    fake.start_errors = [ProvisionerError("Docker hat den Start der Welt abgelehnt: kaputt")]
+
+    error = service.finish_swap(ticket.world_id, was_running=True)
+
+    assert isinstance(error, ProvisionerError)
+    row = store.get_world(ticket.world_id)
+    assert row is not None
+    assert row.op_state == "failed"
+
+
+async def test_restore_swap_runs_without_lock(service: WorldService, fake: FakeProvisioner, store: WorldStore) -> None:
+    """Pitfall 3: Während der Docker-Schritte des Tauschs läuft eine Pause ohne Warten durch."""
+    ticket = await _swap_ready(service, fake)
+    world_id = ticket.world_id
+    inside = threading.Event()
+    release = threading.Event()
+    errors: list[BaseException] = []
+    original = fake.put_world_archive
+
+    def blocking(target: str, archive: BinaryIO) -> None:
+        inside.set()
+        release.wait(5)
+        original(target, archive)
+
+    fake.put_world_archive = blocking  # type: ignore[method-assign]
+
+    def job() -> None:
+        try:
+            service.mark_swap(world_id)
+            service.restore_swap(world_id, io.BytesIO(b"restore-tar"), None)
+        except BaseException as exc:
+            errors.append(exc)
+            inside.set()
+
+    worker = threading.Thread(target=job)
+    worker.start()
+    try:
+        assert inside.wait(5)
+        begin = time.monotonic()
+        result = service.apply_pause_sync(_pause_now, OUTBOX_PAUSE_START)
+        elapsed = time.monotonic() - begin
+    finally:
+        release.set()
+        worker.join(5)
+
+    assert errors == []
+    assert elapsed < 1.0
+    assert [(world.world_id, world.restarted) for world in result.worlds] == [(world_id, False)]
+    row = store.get_world(world_id)
+    assert row is not None
+    assert row.op_state == "restoring_swap"
+
+
+async def test_mark_restore_interrupted_is_repeatable_failed_without_halt(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    ticket = await _swap_ready(service, fake)
+    service.time.set_halt(ticket.world_id, int(time.time()) + HALT_LEAD_SECONDS)
+    service.mark_swap(ticket.world_id)
+
+    service.mark_restore_interrupted(ticket.world_id)
+
+    row = store.get_world(ticket.world_id)
+    assert row is not None
+    assert (row.op_state, row.last_error) == ("failed", service_module.RESTORE_INTERRUPTED)
+    assert not service_module.delete_only(row)
+    data, _changed = service.time.render(ticket.world_id)
+    assert _halt_lines(data) == []
+
+
+async def test_abort_offline_restores_failed_world_without_halt(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Abbruch vor der Zerstörung: Eine kaputte Welt bleibt kaputt, kein Docker-Stopp, kein Halt."""
+    world_id = await _running_world(service, fake, "Welt")
+    store.update_world(world_id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
+    ticket = service.begin_offline(world_id, "restoring", allow_failed=True)
+    service.time.set_halt(world_id, int(time.time()) + HALT_LEAD_SECONDS)
+    fake.calls.clear()
+
+    service.abort_offline(ticket)
+
+    row = store.get_world(world_id)
+    assert row is not None
+    assert (row.op_state, row.last_error) == ("failed", RECONCILE_DATA_MISSING)
+    assert not any(call.startswith(("stop:", "start:", "remove:")) for call in fake.calls)
+    data, _changed = service.time.render(world_id)
+    assert _halt_lines(data) == []
