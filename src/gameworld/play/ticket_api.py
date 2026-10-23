@@ -45,7 +45,8 @@ LOG = logging.getLogger(__name__)
 ENV_BUILD = "GAMEWORLD_PLAY_BUILD"
 _BUILDS: dict[str, Literal["a", "b"]] = {"a": "a", "b": "b"}
 
-# Größer ist kein gültiger Body dieser Routen; gelesen wird erst nach den Herkunftsprüfungen.
+# Größer ist kein gültiger Body dieser Routen. Größere Bodys werden schon am Content-Length bzw.
+# beim Streamen abgebrochen, nie komplett gepuffert (CR-01); gelesen wird erst nach den Herkunftsprüfungen.
 MAX_BODY = 1024
 # Ziel des Spiels im Browser: der Proxy (Plan 07) leitet nur dorthin weiter.
 PLAY_ADDRESS = "10.77.0.1"
@@ -124,12 +125,38 @@ async def check_play_access(
     return PlayAccess(entry=entry, port=view.port)
 
 
+def _declared_too_large(value: str | None) -> bool:
+    """True, wenn ein gültiger Content-Length schon mehr als MAX_BODY ankündigt.
+
+    Nur reine ASCII-Ziffern zählen; ein fehlender oder unsinniger Wert ist kein Fehler,
+    dann entscheidet allein der Stream-Weg. Mehr als 9 Ziffern sind sicher zu groß und
+    gehen gar nicht erst in int().
+    """
+    if value is None:
+        return False
+    value = value.strip()
+    if not (value.isascii() and value.isdigit()):
+        return False
+    return len(value) > 9 or int(value) > MAX_BODY
+
+
 async def _read_body[T: BaseModel](request: Request, model: type[T]) -> T:
-    raw = await request.body()
-    if len(raw) > MAX_BODY:
+    """Body höchstens bis MAX_BODY lesen und als ``model`` prüfen (CR-01).
+
+    Zuerst lehnt ein zu großer Content-Length ohne gelesenes Byte ab; danach wird
+    chunkweise gestreamt und sofort abgebrochen, sobald mehr als MAX_BODY Bytes da
+    sind. So puffert weder ein falscher noch ein fehlender Content-Length den
+    ganzen Body. Beide Fälle antworten mit 413 ohne Detail.
+    """
+    if _declared_too_large(request.headers.get("content-length")):
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > MAX_BODY:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE)
     try:
-        return model.model_validate_json(raw)
+        return model.model_validate_json(bytes(raw))
     except ValidationError as exc:
         raise RequestValidationError(exc.errors(include_url=False, include_input=False)) from None
 

@@ -33,7 +33,7 @@ from gameworld.config import load_settings
 from gameworld.play import tickets
 from gameworld.play.app import install_play
 from gameworld.play.config import PlayMode, play_disable_for
-from gameworld.play.ticket_api import TEXT_NICHT_EINGELADEN
+from gameworld.play.ticket_api import MAX_BODY, TEXT_NICHT_EINGELADEN
 from gameworld.play.tickets import TicketStore
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds.service import WorldService
@@ -487,6 +487,88 @@ async def test_neg_launch_zu_grosser_body(dev_client: httpx.AsyncClient, service
     del service
     response = await dev_client.post("/play/launch", content=b'{"ticket": "' + b"a" * 4000 + b'"}', headers=GOOD)
     assert response.status_code == 413
+
+
+class _CountingBody:
+    """Gestreamter Body, der mitzählt, wie viele Chunks der Server tatsächlich gezogen hat."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+        self.chunks = 0
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._chunks:
+            self.chunks += 1
+            yield chunk
+
+
+def _huge_body() -> _CountingBody:
+    # 1000 Chunks zu je 1024 Bytes: komplett gelesen wären es 1000 gezogene Chunks.
+    return _CountingBody([b"a" * 1024] * 1000)
+
+
+@pytest.mark.parametrize("length", [str(MAX_BODY + 1), "100000000"])
+async def test_neg_launch_content_length_zu_gross(
+    dev_client: httpx.AsyncClient, service: WorldService, length: str
+) -> None:
+    """CR-01: Ein zu großer Content-Length wird abgelehnt, bevor ein Byte des Bodys gelesen wird."""
+    del service
+    body = _CountingBody([b'{"ticket": "x"}'])
+    response = await dev_client.post("/play/launch", content=body, headers={**GOOD, "Content-Length": length})
+    assert response.status_code == 413
+    assert body.chunks == 0
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [None, b"10", b"abc", b"\xb2"],
+    # Das Byte 0xB2 kommt bei Starlette (latin-1) als "²" an: Unicode-Ziffer, die isdigit() bejaht.
+    ids=["chunked", "zu_klein", "nicht_numerisch", "unicode_ziffer"],
+)
+async def test_neg_launch_stream_zu_gross(
+    dev_client: httpx.AsyncClient, service: WorldService, extra: bytes | None
+) -> None:
+    """CR-01: Ohne verlässlichen Content-Length bricht der Stream nach wenigen Chunks ab, statt alles zu puffern."""
+    del service
+    body = _huge_body()
+    headers = [(name.encode(), value.encode()) for name, value in GOOD.items()]
+    if extra is not None:
+        headers.append((b"Content-Length", extra))
+    response = await dev_client.post("/play/launch", content=body, headers=headers)
+    assert response.status_code == 413
+    assert body.chunks <= 3
+
+
+async def test_neg_play_ticket_stream_zu_gross(client: httpx.AsyncClient, service: WorldService) -> None:
+    """CR-01: Derselbe Abbruch gilt für die Ticket-Ausgabe hinter der AppAPI-Signatur."""
+    del service
+    await _invite(client, W1, "gw-kind")
+    body = _huge_body()
+    headers = {**appapi_headers("gw-kind"), "Content-Type": "application/json"}
+    response = await client.post("/api/my/play-ticket", content=body, headers=headers)
+    assert response.status_code == 413
+    assert body.chunks <= 3
+
+
+def _padded(token: str, size: int) -> bytes:
+    raw = json.dumps({"ticket": token}).encode()
+    return b" " * (size - len(raw)) + raw
+
+
+async def test_pos_launch_body_genau_max(
+    client: httpx.AsyncClient, dev_client: httpx.AsyncClient, service: WorldService
+) -> None:
+    """Grenze inklusive: genau MAX_BODY Bytes starten, ein Byte mehr nicht, und das Ticket bleibt dann unverbraucht."""
+    del service
+    await _invite(client, W1, "gw-kind")
+    exact = await _token(client)
+    ok = await dev_client.post("/play/launch", content=_padded(exact, MAX_BODY), headers=GOOD)
+    assert ok.status_code == 200, ok.text
+    kept = await _token(client)
+    too_big = await dev_client.post("/play/launch", content=_padded(kept, MAX_BODY + 1), headers=GOOD)
+    assert too_big.status_code == 413
+    # Positivkontrolle: Der Abbruch lag vor redeem, das Ticket ist weiter einlösbar.
+    assert (await _launch(dev_client, kept)).status_code == 200
 
 
 async def test_neg_launch_nach_ausladen(
