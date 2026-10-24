@@ -27,6 +27,7 @@ from typing import Any, BinaryIO, Protocol
 import anyio
 from nc_py_api import NextcloudException
 
+from gameworld.backup.archive import BackupError
 from gameworld.nc import nc_as
 
 LOG = logging.getLogger(__name__)
@@ -200,6 +201,9 @@ class NcBackupFiles:
         try:
             async with _client(uid) as nc:
                 await nc.files.download2stream(path, fp, chunk_size=UPLOAD_CHUNK)
+        except BackupError:
+            # Vom Schreibziel selbst (z. B. Größen-Deckel des Restores): unverändert durchreichen.
+            raise
         except NextcloudException as exc:
             if exc.status_code == STATUS_NOT_FOUND:
                 raise FilesError(MSG_FILE_GONE) from exc

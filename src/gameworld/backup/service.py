@@ -40,7 +40,7 @@ import logging
 import shutil
 import tempfile
 import time
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Buffer, Callable, Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -160,6 +160,30 @@ class RestoreTampered(BackupError):
 
 class _RestoreOutcome(Exception):
     """Fester Ausgang des Tauschs (Rückfall oder unterbrochen); der Text geht an die Auftragszeile."""
+
+
+class _CappedWriter(io.RawIOBase):
+    """Deckelt den Restore-Download auf die nachgewiesene Größe (T-05-35).
+
+    Mehr Bytes als ``proof.size`` sind eine getauschte Datei: sofort
+    ``RestoreTampered``, statt beliebig viel in den Spool zu puffern und erst
+    danach zu prüfen (gleiche Fehlerklasse wie der Body-Deckel aus Phase 04.2).
+    """
+
+    def __init__(self, sink: BinaryIO, limit: int) -> None:
+        super().__init__()
+        self._sink = sink
+        self._left = limit
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, b: Buffer, /) -> int:
+        data = memoryview(b).cast("B")
+        if len(data) > self._left:
+            raise RestoreTampered
+        self._left -= len(data)
+        return self._sink.write(data)
 
 
 @dataclass(frozen=True)
@@ -490,10 +514,11 @@ class BackupService:
     async def _fetch_and_check(
         self, ticket: OfflineTicket, proof: BackupRow, uid: str, spools: list[IO[bytes]]
     ) -> IO[bytes]:
-        """Phase A: Platz, Download, Größe und SHA-256 gegen den Nachweis, Restore-Tar bauen."""
+        """Phase A: Platz, gedeckelter Download, Größe und SHA-256 gegen den Nachweis, Restore-Tar bauen."""
         await anyio.to_thread.run_sync(self._check_restore_space, proof)
         download = await self._new_spool(spools)
-        await self._files().download_to(uid, proof.path, cast(BinaryIO, download))
+        capped = _CappedWriter(cast(BinaryIO, download), proof.size)
+        await self._files().download_to(uid, proof.path, cast(BinaryIO, capped))
         await anyio.to_thread.run_sync(self._check_integrity, download, proof)
         restore = await self._new_spool(spools)
         await anyio.to_thread.run_sync(self._restore_tar, ticket, download, restore)

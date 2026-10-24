@@ -6,13 +6,14 @@ import io
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from nc_py_api import NextcloudException
 
 from gameworld.backup import files as files_module
+from gameworld.backup.archive import BackupError
 from gameworld.backup.files import (
     DAV_TIMEOUT,
     MSG_FILE_GONE,
@@ -234,6 +235,20 @@ async def test_stat_and_download(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> 
         await files.download_to("admin", f"{FOLDER}/fehlt.tar.gz", io.BytesIO())
     assert str(caught.value) == MSG_FILE_GONE
     assert_closed(app, times=4)
+
+
+async def test_download_passes_sink_errors_through_unchanged(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
+    """WR-01: Ein Fehler des Schreibziels (Größen-Deckel des Restores) wird nicht zu MSG_FILES_FAILED umgedeutet."""
+    fake, _recorder, app = dav
+    fake.add(f"{FOLDER}/{BASE}", 7)
+
+    class CappedSink:
+        def write(self, data: bytes) -> int:
+            raise BackupError("Deckel erreicht")
+
+    with pytest.raises(BackupError, match="Deckel erreicht"):
+        await NcBackupFiles().download_to("admin", f"{FOLDER}/{BASE}", cast(Any, CappedSink()))
+    assert_closed(app, times=1)
 
 
 async def test_delete_own(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:

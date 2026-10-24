@@ -423,6 +423,49 @@ async def test_tampered_file_is_rejected_before_stop(
     ]
 
 
+async def test_oversized_swapped_file_aborts_download_early(
+    backup: BackupService,
+    service: WorldService,
+    fake: FakeProvisioner,
+    fake_files: FakeBackupFiles,
+    store: WorldStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-01: Eine getauschte, viel größere Datei wird nie voll gepuffert (Deckel ist proof.size)."""
+    world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
+    file_id, data = fake_files.files[(ADMIN, proof.path)]
+    fake_files.files[(ADMIN, proof.path)] = (file_id, data + b"x" * (64 * proof.size))
+    written: list[int] = []
+
+    async def chunked_download(uid: str, path: str, fp: Any) -> None:
+        payload = fake_files.files[(uid, path)][1]
+        for i in range(0, len(payload), 512):
+            written.append(fp.write(payload[i : i + 512]))
+
+    monkeypatch.setattr(fake_files, "download_to", chunked_download)
+    spools: list[Any] = []
+    real: Callable[..., Any] = tempfile.TemporaryFile
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        handle = real(*args, **kwargs)
+        spools.append(handle)
+        return handle
+
+    monkeypatch.setattr(backup_module.tempfile, "TemporaryFile", recording)
+
+    await _restore(backup, world_id, proof)
+
+    assert _job_state(store, world_id) == ("failed", RESTORE_TAMPERED)
+    # Abbruch am Deckel: höchstens die nachgewiesene Größe landet im Spool, nie die ganze Datei.
+    assert sum(written) <= proof.size
+    # Der Spool ist aufgeräumt (TemporaryFile verschwindet mit dem Schließen).
+    assert spools
+    assert all(handle.closed for handle in spools)
+    assert not _destroyed(fake)
+    assert fake.put_archives == []
+    assert _op_state(store, world_id) == "ready"
+
+
 def _traversal() -> tarfile.TarInfo:
     return tarfile.TarInfo("world/../../etc/cron.d/x")
 
