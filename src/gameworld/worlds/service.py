@@ -18,6 +18,7 @@ import threading
 import uuid
 import zipfile
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from time import monotonic
@@ -126,6 +127,16 @@ DELETE_ONLY_ERRORS = frozenset({RECONCILE_DATA_MISSING, RECONCILE_INTERRUPTED})
 # Fehler, die im Zeittakt nur die betroffene Welt treffen (WR-06): gesperrte oder kaputte
 # Datenbank, ungültige Zeile beim Rendern. Programmfehler anderer Art bleiben sichtbar.
 _TICK_ERRORS: tuple[type[Exception], ...] = (sqlite3.Error, ValueError, KeyError)
+
+# Aufräumen beim Deaktivieren (D-17 Option A, P-07): AppAPI wartet 60 s auf die
+# Antwort von /enabled. Stopp je Container kurz, alle parallel, Gesamtfrist mit
+# Puffer unter dem Zeitlimit des Handlers (50 s, lifecycle.py).
+TEARDOWN_STOP_TIMEOUT = 5
+TEARDOWN_LOCK_WAIT = 10.0
+TEARDOWN_DEADLINE = 45.0
+TEARDOWN_WORKERS = 8
+# In diesen Zuständen läuft kein Server-Prozess mehr, Stoppen ist dann unnötig.
+_STOPPED_STATES = frozenset({"created", "exited", "dead"})
 
 UNKNOWN = "unknown"
 MISSING = "missing"
@@ -320,6 +331,72 @@ class WorldService:
     async def periodic_reconcile(self) -> None:
         """Zustandspflege ohne Start oder Neuerzeugung; übersprungen, wenn _LOCK belegt ist."""
         await anyio.to_thread.run_sync(self._periodic_reconcile_sync, abandon_on_cancel=True)
+
+    async def teardown(self) -> int:
+        """Alle eigenen Welt-Container entfernen (Deaktivieren); Anzahl Fehler, nie eine Ausnahme."""
+        return await anyio.to_thread.run_sync(self.teardown_all, abandon_on_cancel=True)
+
+    def teardown_all(self) -> int:
+        """Stoppt und entfernt alle Welt-Container dieser Instanz; Volumes und Soll-Zustand bleiben.
+
+        D-17 Option A: AppAPI ruft /enabled mit 0 vor Deaktivieren, Update und
+        Deinstallation gleich auf (RESEARCH F-02). Ohne Aufräumen liefen Welten
+        nach einer Deinstallation ohne Regeln weiter (T-06-33). Weltzeilen und
+        desired_state bleiben unverändert, damit der Boot-Abgleich beim nächsten
+        Start jede Soll-laufende Welt aus ihrem Volume neu baut (RECREATE).
+
+        Wartet höchstens TEARDOWN_LOCK_WAIT auf _LOCK und räumt danach auch ohne
+        ihn auf: AppAPI beendet den Prozess ohnehin, ein Abbruch hinterließe
+        unverwaltete Welten. Die Welten laufen parallel ab (P-07), eine Welt mit
+        Fehler hält die anderen nicht auf. Ins Log nur Welt-ID und Typname.
+        """
+        held = _LOCK.acquire(timeout=TEARDOWN_LOCK_WAIT)
+        if not held:
+            LOG.warning("Aufräumen beim Deaktivieren ohne Sperre: Eine Elternaktion läuft noch")
+        try:
+            try:
+                managed = self._provisioner.list_managed()
+            except Exception as exc:
+                LOG.warning("Aufräumen beim Deaktivieren: Welt-Container nicht abrufbar (%s)", type(exc).__name__)
+                return 1
+            if not managed:
+                return 0
+            return self._teardown_parallel(managed)
+        finally:
+            if held:
+                _LOCK.release()
+            self._invalidate_cache()
+
+    def _teardown_parallel(self, managed: dict[str, ContainerInfo]) -> int:
+        pool = ThreadPoolExecutor(max_workers=TEARDOWN_WORKERS, thread_name_prefix="gameworld-teardown")
+        try:
+            futures = {pool.submit(self._teardown_one, info): world_id for world_id, info in managed.items()}
+            done, pending = wait(futures, timeout=TEARDOWN_DEADLINE)
+            errors = len(pending) + sum(1 for future in done if not future.result())
+            for future in pending:
+                LOG.warning("Aufräumen Welt %s: Frist überschritten", futures[future])
+        finally:
+            # Nicht auf hängende Docker-Aufrufe warten; die Frist zählt mehr als ein sauberes Ende.
+            pool.shutdown(wait=False, cancel_futures=True)
+        LOG.info("Aufräumen beim Deaktivieren: %d Welten, %d Fehler", len(managed), errors)
+        return errors
+
+    def _teardown_one(self, info: ContainerInfo) -> bool:
+        """Eine Welt stoppen und ihren Container entfernen; True ohne jeden Fehler."""
+        ok = True
+        if info.status not in _STOPPED_STATES:
+            try:
+                self._provisioner.stop(info.world_id, timeout=TEARDOWN_STOP_TIMEOUT)
+            except Exception as exc:
+                # Weiter zum Entfernen: force beendet den Prozess auch ohne Stopp.
+                LOG.warning("Aufräumen Welt %s: Stoppen gescheitert (%s)", info.world_id, type(exc).__name__)
+                ok = False
+        try:
+            self._provisioner.remove_world(info.world_id, keep_volume=True)
+        except Exception as exc:
+            LOG.warning("Aufräumen Welt %s: Entfernen gescheitert (%s)", info.world_id, type(exc).__name__)
+            ok = False
+        return ok
 
     # Hilfen
 

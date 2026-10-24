@@ -13,19 +13,27 @@ import httpx
 import pytest
 from nc_py_api import NextcloudException
 
+from gameworld import lifecycle
 from gameworld.lifecycle import enabled_handler
 from gameworld.playtime.engine import META_TIME_ADMINS
 from gameworld.talk import bot as talk_bot
 from gameworld.talk.service import TalkService
 from gameworld.worlds.store import WorldStore
 from tests.conftest import FakeBot, FakeTalkRooms, appapi_headers, assert_closed, install_fake_nc
-from tests.test_lifecycle import fake_nc
+from tests.test_lifecycle import FakeWorlds, fake_nc
 from tests.test_pause_api import _row
 
 W1 = "bbbbbbbbbbb1"
 W2 = "bbbbbbbbbbb2"
 SUFFIX = "/apps/app_api/api/v1/talk_proxy/gameworld/talk/bot"
 CHAT = "Geheimnis aus dem Kinderchat 4711"
+
+
+@pytest.fixture(autouse=True)
+def _no_world_teardown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """enabled_handler räumt Welten ab (06-08); hier nie gegen den echten Docker-Proxy."""
+    fake = FakeWorlds()
+    monkeypatch.setattr(lifecycle, "get_service", lambda: fake)
 
 
 @dataclass

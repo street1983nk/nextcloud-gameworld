@@ -391,10 +391,11 @@ class DockerProvisioner:
             if not container.put_archive(WORLD_PATH, archive):
                 raise ProvisionerError("Docker hat die Sicherung nicht angenommen.")
 
-    def stop(self, world_id: str) -> None:
+    def stop(self, world_id: str, *, timeout: int = STOP_TIMEOUT) -> None:
+        """Stoppt die Welt; ``timeout`` kürzer nur beim Aufräumen unter Frist (teardown_all)."""
         with self._guarded():
             # Client-Timeout (60 s) liegt über dem Stop-Timeout, Luanti speichert vorher.
-            self._owned(world_id).stop(timeout=STOP_TIMEOUT)
+            self._owned(world_id).stop(timeout=timeout)
 
     def remove_world(self, world_id: str, *, keep_volume: bool) -> None:
         """Entfernt den Container der Welt und auf Wunsch ihr Volume.

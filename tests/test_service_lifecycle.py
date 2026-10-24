@@ -99,6 +99,10 @@ class FakeProvisioner:
     snapshots: dict[str, bytes] = field(default_factory=dict)
     snapshot_errors: list[Exception] = field(default_factory=list)
     put_archives: list[tuple[str, bytes]] = field(default_factory=list)
+    # Aufräumen beim Deaktivieren (06-08): Stopp-Timeouts, Fehler je Welt, künstliche Dauer.
+    stop_timeouts: list[int] = field(default_factory=list)
+    stop_errors: dict[str, ProvisionerError] = field(default_factory=dict)
+    stop_delay: float = 0.0
 
     def ensure_image(self) -> None:
         return None
@@ -132,8 +136,13 @@ class FakeProvisioner:
             raise self.start_errors.pop(0)
         self.containers[world_id] = (port, "running")
 
-    def stop(self, world_id: str) -> None:
+    def stop(self, world_id: str, *, timeout: int = 30) -> None:
         port, _ = self._known(world_id)
+        self.stop_timeouts.append(timeout)
+        if world_id in self.stop_errors:
+            raise self.stop_errors[world_id]
+        if self.stop_delay:
+            time.sleep(self.stop_delay)
         self.stopped.append(world_id)
         self.calls.append(f"stop:{world_id}")
         self.containers[world_id] = (port, "exited")
@@ -2698,3 +2707,125 @@ async def test_abort_offline_restores_failed_world_without_halt(
     assert not any(call.startswith(("stop:", "start:", "remove:")) for call in fake.calls)
     data, _changed = service.time.render(world_id)
     assert _halt_lines(data) == []
+
+
+# Aufräumen beim Deaktivieren (06-08, D-17 Option A)
+
+
+async def _three_worlds(service: WorldService) -> tuple[str, str, str]:
+    """Zwei laufende Welten und eine gestoppte."""
+    first = await service.create_world("Eins")
+    second = await service.create_world("Zwei")
+    third = await service.create_world("Drei")
+    await service.stop_world(third.id)
+    return first.id, second.id, third.id
+
+
+async def test_teardown_all_removes_every_container_and_keeps_volumes(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    first, second, third = await _three_worlds(service)
+    desired_before = {row.id: row.desired_state for row in store.list_worlds()}
+    fake.stopped.clear()
+
+    assert await service.teardown() == 0
+
+    assert fake.containers == {}
+    assert sorted(fake.removed[-3:]) == sorted([(first, True), (second, True), (third, True)])
+    assert all(keep for _world, keep in fake.removed[-3:])
+    # Nur laufende Welten werden gestoppt, mit kurzem Timeout (P-07).
+    assert sorted(fake.stopped) == sorted([first, second])
+    assert fake.stop_timeouts[-2:] == [service_module.TEARDOWN_STOP_TIMEOUT] * 2
+    # Soll-Zustand und Zeilen bleiben unverändert (Boot-Abgleich baut daraus neu).
+    assert {row.id: row.desired_state for row in store.list_worlds()} == desired_before
+    assert desired_before == {first: "running", second: "running", third: "stopped"}
+
+
+async def test_teardown_error_of_one_world_does_not_stop_the_others(
+    service: WorldService, fake: FakeProvisioner, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Fehler einer Welt stoppt die anderen nicht; gezählt, nie nach außen geworfen."""
+    first, second, third = await _three_worlds(service)
+    fake.stop_errors[first] = ProvisionerError("Docker hat den Stopp abgelehnt: geheim-intern")
+
+    errors = await service.teardown()
+
+    assert errors == 1
+    assert second not in fake.containers
+    assert third not in fake.containers
+    # Entfernen wird auch nach gescheitertem Stopp versucht (force beendet den Prozess).
+    assert (first, True) in fake.removed
+    assert "geheim-intern" not in caplog.text
+    assert "ProvisionerError" in caplog.text
+
+
+async def test_teardown_list_failure_returns_error_count(service: WorldService, fake: FakeProvisioner) -> None:
+    await service.create_world("Welt")
+    fake.list_error = DockerUnavailableError("Proxy weg")
+    assert await service.teardown() == 1
+    assert fake.removed == []
+
+
+async def test_teardown_runs_worlds_in_parallel(service: WorldService, fake: FakeProvisioner) -> None:
+    for name in ("Eins", "Zwei", "Drei", "Vier"):
+        await service.create_world(name)
+    fake.stop_delay = 0.4
+
+    began = time.monotonic()
+    assert await service.teardown() == 0
+    elapsed = time.monotonic() - began
+
+    assert fake.containers == {}
+    # Seriell wären es mindestens 1,6 s.
+    assert elapsed < 1.2
+
+
+async def test_teardown_deadline_counts_hanging_worlds(
+    service: WorldService, fake: FakeProvisioner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await service.create_world("Eins")
+    await service.create_world("Zwei")
+    monkeypatch.setattr(service_module, "TEARDOWN_DEADLINE", 0.1)
+    fake.stop_delay = 0.5
+
+    began = time.monotonic()
+    errors = await service.teardown()
+
+    assert errors == 2
+    assert time.monotonic() - began < 0.45
+
+
+async def test_teardown_proceeds_without_lock(
+    service: WorldService, fake: FakeProvisioner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hängt eine Elternaktion, räumt teardown_all nach kurzer Wartezeit trotzdem auf."""
+    await service.create_world("Welt")
+    monkeypatch.setattr(service_module, "TEARDOWN_LOCK_WAIT", 0.05)
+    assert service_module._LOCK.acquire(blocking=False)
+    try:
+        assert service.teardown_all() == 0
+    finally:
+        service_module._LOCK.release()
+    assert fake.containers == {}
+
+
+async def test_boot_reconcile_rebuilds_after_teardown(
+    service: WorldService, fake: FakeProvisioner, store: WorldStore
+) -> None:
+    """Boot-Abgleich baut nach teardown neu: Container fehlt, Volume da, Soll running -> RECREATE."""
+    first, second, third = await _three_worlds(service)
+    assert await service.teardown() == 0
+    fake.created.clear()
+
+    assert await service.boot_reconcile()
+
+    rebuilt = {world_id for world_id, _port, reuse in fake.created if reuse}
+    assert rebuilt == {first, second}
+    assert fake.containers[first][1] == "running"
+    assert fake.containers[second][1] == "running"
+    # Gestoppt gewünschte Welt bleibt ohne Container, bis die Eltern sie starten.
+    assert third not in fake.containers
+    for world_id in (first, second, third):
+        row = store.get_world(world_id)
+        assert row is not None
+        assert row.op_state == "ready"
