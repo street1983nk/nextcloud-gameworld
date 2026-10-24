@@ -352,9 +352,18 @@ check "K4 Negativkontrolle: Weltname mit Zeilenumbruch HTTP 422 (ist ${CODE_INJ}
 strip_page_visibility() {
 	sed -E 's/document\.visibilityState|visibilitychange//g' | grep -iE 'announce|serverlist|visibility' || true
 }
-STATIC_HITS=$(grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/frontend/src" "${REPO_ROOT}/appinfo/info.xml" \
-	| strip_page_visibility)
-check "K4 statisch: kein announce/serverlist/visibility in frontend/src und info.xml" empty "${STATIC_HITS}"
+# Store-Texte (<description>, seit 06-11) sind Prosa für Menschen und sagen ausdrücklich
+# "keine Welt steht jemals in einer Serverliste"; geprüft wird die Konfiguration von
+# info.xml ohne diese Blöcke (Routen, Variablen, Docker-Angaben).
+info_xml_config() {
+	awk '/<description[ >]/ { skip = 1 } !skip { print FILENAME ":" FNR ":" $0 } /<\/description>/ { skip = 0 }' "$1"
+}
+STATIC_HITS=$({
+	grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/frontend/src" || true
+	info_xml_config "${REPO_ROOT}/appinfo/info.xml" | grep -iE 'announce|serverlist|visibility' || true
+} | strip_page_visibility)
+# Gleiche Zahl an Prüfungen wie vorher: Die Regressionen zählen "N von N" fest mit.
+check "K4 statisch: kein announce/serverlist/visibility in frontend/src und info.xml (ohne Store-Texte)" empty "${STATIC_HITS}"
 check "K4 Positivkontrolle: der Filter lässt eine echte Sichtbarkeitsoption durch" \
 	nonempty "$(printf '%s\n' "if (document.visibilityState) world.visibility = 'public'" | strip_page_visibility)"
 CONTROL_HITS=$(grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/src/gameworld/provisioner/luanti_conf.py" || true)
