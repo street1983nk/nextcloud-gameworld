@@ -33,6 +33,7 @@ from gameworld.access.secret import SecretUnavailableError
 from gameworld.api.invites import JOIN_HOST_KEY, AccessDep
 from gameworld.api.playtime import TimeDep
 from gameworld.api.worlds import ServiceDep
+from gameworld.i18n import translate
 from gameworld.playtime.service import MyPlaytime, MyWorldWindow, PlaytimeUnavailableError
 from gameworld.worlds.status import BACKING_UP, RESTORING
 
@@ -164,6 +165,8 @@ async def my_worlds(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
     if not mine:
         return MyWorldsOut(worlds=[])
+    # After the profile lookup: the language comes from the same cached self-lookup (T-06-76).
+    language = await roles.language(uid)
     host = await anyio.to_thread.run_sync(service.store.get_meta, JOIN_HOST_KEY) or None
     views = {view.id: view for view in await service.list_worlds()}
     try:
@@ -189,7 +192,7 @@ async def my_worlds(
                 id=view.id,
                 name=view.name,
                 status=view.status,
-                status_text=status_text,
+                status_text=translate(status_text, language),
                 host=host,
                 port=view.port,
                 player_name=entry.player_name,

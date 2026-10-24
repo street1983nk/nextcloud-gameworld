@@ -29,6 +29,8 @@ _HEX = re.compile(f"[0-9a-f]{{{2 * SECRET_BYTES}}}")
 
 MSG_UNAVAILABLE = "Das Spielgeheimnis ist in Nextcloud gerade nicht lesbar."
 MSG_UNREADABLE = "Das gespeicherte Spielgeheimnis ist unlesbar und wird nicht überschrieben."
+# Template (D-25): only the exception type name is inserted, never values.
+TEXT_UNAVAILABLE_TYPE = MSG_UNAVAILABLE + " ({type_name})"
 
 
 class SecretUnavailableError(Exception):
@@ -104,7 +106,7 @@ class PlayerSecret:
             raise
         except Exception as exc:
             # Nur Typ und Status, nie Werte: Die Ausnahme könnte die Anfrage enthalten.
-            raise SecretUnavailableError(f"{MSG_UNAVAILABLE} ({type(exc).__name__})") from None
+            raise SecretUnavailableError(TEXT_UNAVAILABLE_TYPE.format(type_name=type(exc).__name__)) from None
         if stored is None:
             raise SecretUnavailableError(MSG_UNAVAILABLE)
         return _parse(stored)

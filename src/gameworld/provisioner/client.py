@@ -57,6 +57,16 @@ SNAPSHOT_CHUNK = 2 * 1024 * 1024
 # nicht und ist auch nicht eingefroren oder im Neustart (Erfolgskriterium 2).
 SNAPSHOT_SAFE_STATES = frozenset({"created", "exited", "dead"})
 SNAPSHOT_RUNNING = "Die Welt läuft noch; eine Sicherung braucht eine gestoppte Welt."
+# Templates of Docker errors (D-25). Docker's own explanation, the proxy URL and the
+# port are inserted unchanged; only the German frame is translated.
+TEXT_DOCKER_NOT_FOUND = "Docker kennt das Objekt nicht: {explanation}"
+TEXT_DOCKER_REJECTED = "Docker hat die Anfrage abgelehnt: {explanation}"
+TEXT_DOCKER_UNREACHABLE = (
+    "Gameworld erreicht den Docker-Proxy unter {docker_url} nicht. "
+    "Bitte prüfen, ob der Dienst gameworld-docker-proxy läuft."
+)
+TEXT_START_REJECTED = "Docker hat den Start der Welt abgelehnt: {explanation}"
+TEXT_PORT_IN_USE = "Der UDP-Port {port} ist auf dem Server schon belegt."
 # Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
 # Leseversuch heilt (Pitfall 4). Timeouts werden nie wiederholt; Achtung:
 # ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
@@ -81,7 +91,7 @@ class PortInUseError(ProvisionerError):
     """Der Host-Port der Welt ist schon belegt."""
 
     def __init__(self, port: int) -> None:
-        super().__init__(f"Der UDP-Port {port} ist auf dem Server schon belegt.")
+        super().__init__(TEXT_PORT_IN_USE.format(port=port))
         self.port = port
 
 
@@ -261,9 +271,9 @@ class DockerProvisioner:
         except ProvisionerError:
             raise
         except docker.errors.NotFound as exc:
-            raise WorldNotFoundError(f"Docker kennt das Objekt nicht: {_explanation(exc)}") from exc
+            raise WorldNotFoundError(TEXT_DOCKER_NOT_FOUND.format(explanation=_explanation(exc))) from exc
         except docker.errors.APIError as exc:
-            raise ProvisionerError(f"Docker hat die Anfrage abgelehnt: {_explanation(exc)}") from exc
+            raise ProvisionerError(TEXT_DOCKER_REJECTED.format(explanation=_explanation(exc))) from exc
         except (
             requests.exceptions.ConnectionError,
             requests.exceptions.Timeout,
@@ -271,10 +281,7 @@ class DockerProvisioner:
             docker.errors.DockerException,
         ) as exc:
             self._client = None
-            raise DockerUnavailableError(
-                f"Gameworld erreicht den Docker-Proxy unter {self._docker_url} nicht. "
-                "Bitte prüfen, ob der Dienst gameworld-docker-proxy läuft."
-            ) from exc
+            raise DockerUnavailableError(TEXT_DOCKER_UNREACHABLE.format(docker_url=self._docker_url)) from exc
 
     def _read[T](self, operation: Callable[[], T]) -> T:
         """Lesender Aufruf mit genau einem zweiten Versuch nach einem Verbindungsabbruch.
@@ -382,7 +389,7 @@ class DockerProvisioner:
                 explanation = _explanation(exc)
                 if exc.status_code == 500 and any(marker in explanation for marker in PORT_CONFLICT_MARKERS):
                     raise PortInUseError(_label_port(container.labels or {})) from exc
-                raise ProvisionerError(f"Docker hat den Start der Welt abgelehnt: {explanation}") from exc
+                raise ProvisionerError(TEXT_START_REJECTED.format(explanation=explanation)) from exc
 
     def write_world_files(self, world_id: str, archive: bytes) -> None:
         """Spielt ein Tar (Pfade relativ zum Weltordner) in die Welt ein, laufend oder gestoppt.

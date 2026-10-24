@@ -76,9 +76,17 @@ PRESETS: dict[str, Preset] = {preset.id: preset for preset in (MTG_KREATIV, VOXE
 DEFAULT_PRESET_ID = MTG_KREATIV.id
 
 
+# Template (D-25); the inserted titles are translated per language in the catalogs.
+TEXT_UNKNOWN_PRESET_ID = "Unbekannte Spielart. Erlaubt sind: {titles}."
+
+
+def unknown_preset_message(titles: list[str]) -> str:
+    """Message for an unknown game type with the given (possibly translated) titles."""
+    return TEXT_UNKNOWN_PRESET_ID.format(titles=", ".join(titles))
+
+
 def _unknown_message() -> str:
-    titles = ", ".join(preset.title for preset in PRESETS.values())
-    return f"Unbekannte Spielart. Erlaubt sind: {titles}."
+    return unknown_preset_message([preset.title for preset in PRESETS.values()])
 
 
 def get_preset(preset_id: str) -> Preset:

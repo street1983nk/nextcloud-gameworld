@@ -27,6 +27,10 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from gameworld.access.roles import get_role_service
+from gameworld.api.language import language_of
+from gameworld.i18n import translate
+
 CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 FOREIGN_FETCH_SITES = frozenset({"cross-site", "same-site"})
 JSON_TYPE = "application/json"
@@ -62,7 +66,9 @@ class JsonOnlyChangesMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         reason = refusal(scope)
         if reason is not None:
-            response = JSONResponse({"detail": reason}, status_code=403)
+            # Refusal text in the account language (D-25); the language lookup never raises.
+            language = await language_of(scope.get("username"), get_role_service())
+            response = JSONResponse({"detail": translate(reason, language)}, status_code=403)
             await response(scope, receive, send)
             return
         await self.app(scope, receive, send)

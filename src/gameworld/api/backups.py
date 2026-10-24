@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from gameworld.access.roles import require_verwalter
+from gameworld.api.language import LangDep
 from gameworld.api.worlds import ServiceDep, WorldId, WorldOut, _http_error, _out  # pyright: ignore[reportPrivateUsage]
 from gameworld.backup.files import FilesError
 from gameworld.backup.service import (
@@ -96,7 +97,12 @@ VerwalterDep = Annotated[str, Depends(require_verwalter)]
 
 @router.post("/worlds/{world_id}/backups", status_code=status.HTTP_202_ACCEPTED)
 async def start_backup(
-    world_id: WorldId, worlds: ServiceDep, backups: BackupDep, uid: VerwalterDep, body: BackupRequest | None = None
+    world_id: WorldId,
+    worlds: ServiceDep,
+    backups: BackupDep,
+    uid: VerwalterDep,
+    language: LangDep,
+    body: BackupRequest | None = None,
 ) -> WorldOut:
     request = body or BackupRequest()
     try:
@@ -105,12 +111,17 @@ async def start_backup(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
     except ProvisionerError as exc:
         raise _http_error(exc) from None
-    return await _current(worlds, world_id)
+    return await _current(worlds, world_id, language)
 
 
 @router.post("/worlds/{world_id}/restore", status_code=status.HTTP_202_ACCEPTED)
 async def start_restore(
-    world_id: WorldId, body: RestoreRequest, worlds: ServiceDep, backups: BackupDep, uid: VerwalterDep
+    world_id: WorldId,
+    body: RestoreRequest,
+    worlds: ServiceDep,
+    backups: BackupDep,
+    uid: VerwalterDep,
+    language: LangDep,
 ) -> WorldOut:
     """Eigene Sicherung dieser Welt wiederherstellen (BACKUP-02); 202, der Ablauf läuft im Hintergrund.
 
@@ -126,14 +137,14 @@ async def start_restore(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from None
     except ProvisionerError as exc:
         raise _http_error(exc) from None
-    return await _current(worlds, world_id)
+    return await _current(worlds, world_id, language)
 
 
-async def _current(worlds: ServiceDep, world_id: str) -> WorldOut:
+async def _current(worlds: ServiceDep, world_id: str, language: str) -> WorldOut:
     """Aktuelle Ansicht, damit backup_job und der Busy-Status sofort sichtbar sind."""
     for view in await worlds.list_worlds():
         if view.id == world_id:
-            return _out(view)
+            return _out(view, language)
     raise HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
 

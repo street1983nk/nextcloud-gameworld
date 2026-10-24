@@ -25,7 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from gameworld.access.directory import get_directory
 from gameworld.access.roles import require_verwalter
+from gameworld.api.language import LangDep
 from gameworld.api.worlds import ServiceDep, refresh_snapshot
+from gameworld.i18n import translate
 from gameworld.notify.links import MAX_BASE, clean_origin, decide_origin, join_base
 from gameworld.notify.loop import META_LINK_ORIGIN, collect_play, display_name, limits_reached
 from gameworld.notify.review import minutes
@@ -162,7 +164,7 @@ def _review_sync(service: WorldService, day: date) -> tuple[dict[str, dict[str, 
 
 
 @router.get("/review")
-async def get_review(service: ServiceDep, uid: VerwalterDep, day: DayQuery = None) -> ReviewOut:
+async def get_review(service: ServiceDep, uid: VerwalterDep, language: LangDep, day: DayQuery = None) -> ReviewOut:
     try:
         today = await anyio.to_thread.run_sync(_household_today, service)
         day = today if day is None else day
@@ -170,6 +172,7 @@ async def get_review(service: ServiceDep, uid: VerwalterDep, day: DayQuery = Non
     except sqlite3.Error:
         raise _unavailable() from None
     directory = get_directory()
+    deleted_world = translate(DELETED_WORLD, language)
     kids: list[ReviewKidOut] = []
     for nc_user, worlds in sorted(play.items()):
         # Alle heute gelöschten Welten zählen als eine Zeile "gelöschte Welt" (leere world_id).
@@ -180,7 +183,7 @@ async def get_review(service: ServiceDep, uid: VerwalterDep, day: DayQuery = Non
         world_items = sorted(
             (
                 ReviewWorldOut(
-                    world_id=world_id, world_name=names.get(world_id, DELETED_WORLD), minutes=minutes(seconds)
+                    world_id=world_id, world_name=names.get(world_id, deleted_world), minutes=minutes(seconds)
                 )
                 for world_id, seconds in merged.items()
             ),

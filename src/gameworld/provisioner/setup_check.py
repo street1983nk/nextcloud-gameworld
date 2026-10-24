@@ -21,6 +21,63 @@ MIN_API_VERSION = (1, 44)
 DOCS_URL = "https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md#setup-check"
 DOCS = f"Anleitung: {DOCS_URL}"
 
+# Messages as module constants (German = message ID, D-25); messages with data are
+# templates with {name} placeholders, formatted at the call site. The guide link is
+# a placeholder too, so "Anleitung:" is part of the translated text.
+MSG_CONTAINERS_OK = "Zugriff auf Container ist erlaubt."
+MSG_CONTAINERS_DENIED = f"Der Docker-Proxy erlaubt keinen Zugriff auf Container. Bitte CONTAINERS=1 setzen. {DOCS}"
+MSG_POST_OK = "Schreibende Anfragen sind erlaubt."
+MSG_POST_DENIED = (
+    "Der Docker-Proxy erlaubt keine schreibenden Anfragen, Welten lassen sich so weder anlegen "
+    f"noch starten. Bitte POST=1 setzen. {DOCS}"
+)
+MSG_IMAGES_OK = "Zugriff auf Images ist erlaubt."
+MSG_IMAGES_DENIED = f"Der Docker-Proxy erlaubt keinen Zugriff auf Images. Bitte IMAGES=1 setzen. {DOCS}"
+MSG_VOLUMES_OK = "Zugriff auf Volumes ist erlaubt."
+MSG_VOLUMES_DENIED = (
+    "Der Docker-Proxy erlaubt keinen Zugriff auf Volumes, Welten lassen sich so nicht löschen. "
+    f"Bitte VOLUMES=1 setzen. {DOCS}"
+)
+MSG_EXEC_OK = "Befehle in Containern sind gesperrt."
+MSG_EXEC_OPEN = f"Der Docker-Proxy ist zu weit offen: Befehle in Containern sind erlaubt. Bitte EXEC=0 setzen. {DOCS}"
+MSG_INFO_OK = "Systeminformationen sind gesperrt."
+MSG_INFO_OPEN = f"Der Docker-Proxy gibt Systeminformationen preis. Bitte INFO=0 setzen. {DOCS}"
+MSG_NOT_CHECKED = f"Nicht geprüft: Erst POST=1 setzen, dann den Setup-Check erneut ausführen. {DOCS}"
+MSG_DOCKER_SOCKET = (
+    "Gameworld soll nie direkt mit dem Docker-Socket sprechen. Trage die Adresse des gescopten "
+    f"Docker-Proxys ein, Standard tcp://gameworld-docker-proxy:2375. {DOCS}"
+)
+MSG_PROXY_EXPOSED = (
+    "Der Docker-Proxy liegt auf einer Adresse außerhalb des privaten Netzes. Er darf nur im "
+    f"Docker-Netz von Gameworld erreichbar sein. {DOCS}"
+)
+MSG_REACHABLE = "Der Docker-Proxy ist erreichbar."
+TEXT_PROXY_DNS = (
+    "Gameworld findet den Dienst {host} nicht. Er muss im selben Docker-Netz laufen wie "
+    "Gameworld (das Netz des Deploy-Daemons, bei AIO nextcloud-aio). Anleitung: {docs_url}"
+)
+TEXT_PROXY_TIMEOUT = (
+    "Der Docker-Proxy unter {host}:{port} antwortet nicht. Meist hängt er in einem anderen "
+    "Docker-Netz, oder eine Firewall sperrt Port {port}. Anleitung: {docs_url}"
+)
+TEXT_PROXY_REFUSED = (
+    "Der Docker-Proxy unter {host}:{port} nimmt keine Verbindung an. Läuft der Container "
+    "gameworld-docker-proxy? Anleitung: {docs_url}"
+)
+TEXT_PROXY_UNREACHABLE = (
+    "Gameworld erreicht den Docker-Proxy unter {docker_url} nicht. Bitte den Dienst "
+    "gameworld-docker-proxy starten und GAMEWORLD_DOCKER_URL prüfen. Anleitung: {docs_url}"
+)
+TEXT_ENGINE_TOO_OLD = (
+    "Docker-Engine zu alt, benötigt API 1.44 oder neuer (gemeldet: {shown}). "
+    "Bitte Docker aktualisieren. Anleitung: {docs_url}"
+)
+# Without a readable version the inserted value is a German word, so this case is its own message.
+MSG_ENGINE_VERSION_UNKNOWN = TEXT_ENGINE_TOO_OLD.format(shown="unbekannt", docs_url=DOCS_URL)
+TEXT_API_SUPPORTED = "Docker-API {version} wird unterstützt."
+TEXT_UNEXPECTED_ANSWER = "Unerwartete Antwort des Docker-Proxys auf {method} {path}: HTTP {code}. Anleitung: {docs_url}"
+TEXT_REQUEST_FAILED = "Die Anfrage an den Docker-Proxy ({path}) ist fehlgeschlagen: {error_type}. Anleitung: {docs_url}"
+
 Severity = Literal["error", "warning"]
 
 
@@ -61,9 +118,9 @@ _CONTAINERS = _Probe(
     params={"filters": _LABEL_FILTER},
     expected=200,
     severity="error",
-    ok_message="Zugriff auf Container ist erlaubt.",
+    ok_message=MSG_CONTAINERS_OK,
     known_code=403,
-    known_message=f"Der Docker-Proxy erlaubt keinen Zugriff auf Container. Bitte CONTAINERS=1 setzen. {DOCS}",
+    known_message=MSG_CONTAINERS_DENIED,
 )
 _POST = _Probe(
     id="post",
@@ -71,12 +128,9 @@ _POST = _Probe(
     path="/containers/gameworld-probe-nonexistent/stop",
     expected=404,
     severity="error",
-    ok_message="Schreibende Anfragen sind erlaubt.",
+    ok_message=MSG_POST_OK,
     known_code=403,
-    known_message=(
-        "Der Docker-Proxy erlaubt keine schreibenden Anfragen, Welten lassen sich so weder anlegen "
-        f"noch starten. Bitte POST=1 setzen. {DOCS}"
-    ),
+    known_message=MSG_POST_DENIED,
 )
 _IMAGES = _Probe(
     id="images",
@@ -84,9 +138,9 @@ _IMAGES = _Probe(
     path="/images/json",
     expected=200,
     severity="error",
-    ok_message="Zugriff auf Images ist erlaubt.",
+    ok_message=MSG_IMAGES_OK,
     known_code=403,
-    known_message=f"Der Docker-Proxy erlaubt keinen Zugriff auf Images. Bitte IMAGES=1 setzen. {DOCS}",
+    known_message=MSG_IMAGES_DENIED,
 )
 _VOLUMES = _Probe(
     id="volumes",
@@ -94,12 +148,9 @@ _VOLUMES = _Probe(
     path="/volumes/gameworld-probe-nonexistent",
     expected=404,
     severity="error",
-    ok_message="Zugriff auf Volumes ist erlaubt.",
+    ok_message=MSG_VOLUMES_OK,
     known_code=403,
-    known_message=(
-        "Der Docker-Proxy erlaubt keinen Zugriff auf Volumes, Welten lassen sich so nicht löschen. "
-        f"Bitte VOLUMES=1 setzen. {DOCS}"
-    ),
+    known_message=MSG_VOLUMES_DENIED,
 )
 _EXEC = _Probe(
     id="exec",
@@ -107,11 +158,9 @@ _EXEC = _Probe(
     path="/exec/gameworld-probe-nonexistent/start",
     expected=403,
     severity="warning",
-    ok_message="Befehle in Containern sind gesperrt.",
+    ok_message=MSG_EXEC_OK,
     known_code=404,
-    known_message=(
-        f"Der Docker-Proxy ist zu weit offen: Befehle in Containern sind erlaubt. Bitte EXEC=0 setzen. {DOCS}"
-    ),
+    known_message=MSG_EXEC_OPEN,
 )
 _INFO = _Probe(
     id="info",
@@ -119,12 +168,10 @@ _INFO = _Probe(
     path="/info",
     expected=403,
     severity="warning",
-    ok_message="Systeminformationen sind gesperrt.",
+    ok_message=MSG_INFO_OK,
     known_code=200,
-    known_message=f"Der Docker-Proxy gibt Systeminformationen preis. Bitte INFO=0 setzen. {DOCS}",
+    known_message=MSG_INFO_OPEN,
 )
-
-_NOT_CHECKED = f"Nicht geprüft: Erst POST=1 setzen, dann den Setup-Check erneut ausführen. {DOCS}"
 
 
 def _http_base(docker_url: str) -> str:
@@ -186,10 +233,7 @@ def check_docker_url(docker_url: str) -> CheckItem | None:
             id="docker_url_socket",
             ok=False,
             severity="warning",
-            message=(
-                "Gameworld soll nie direkt mit dem Docker-Socket sprechen. Trage die Adresse des gescopten "
-                f"Docker-Proxys ein, Standard tcp://gameworld-docker-proxy:2375. {DOCS}"
-            ),
+            message=MSG_DOCKER_SOCKET,
         )
     if not host:
         return None
@@ -204,10 +248,7 @@ def check_docker_url(docker_url: str) -> CheckItem | None:
         id="docker_url_exposed",
         ok=False,
         severity="warning",
-        message=(
-            "Der Docker-Proxy liegt auf einer Adresse außerhalb des privaten Netzes. Er darf nur im "
-            f"Docker-Netz von Gameworld erreichbar sein. {DOCS}"
-        ),
+        message=MSG_PROXY_EXPOSED,
     )
 
 
@@ -240,39 +281,27 @@ class _Checker:
                 id="proxy_dns",
                 ok=False,
                 severity="error",
-                message=(
-                    f"Gameworld findet den Dienst {host} nicht. Er muss im selben Docker-Netz laufen wie "
-                    f"Gameworld (das Netz des Deploy-Daemons, bei AIO nextcloud-aio). {DOCS}"
-                ),
+                message=TEXT_PROXY_DNS.format(host=host, docs_url=DOCS_URL),
             )
         if exc is not None and _has_cause(exc, requests.exceptions.Timeout):
             return CheckItem(
                 id="proxy_timeout",
                 ok=False,
                 severity="error",
-                message=(
-                    f"Der Docker-Proxy unter {host}:{port} antwortet nicht. Meist hängt er in einem anderen "
-                    f"Docker-Netz, oder eine Firewall sperrt Port {port}. {DOCS}"
-                ),
+                message=TEXT_PROXY_TIMEOUT.format(host=host, port=port, docs_url=DOCS_URL),
             )
         if exc is not None:
             return CheckItem(
                 id="proxy_refused",
                 ok=False,
                 severity="error",
-                message=(
-                    f"Der Docker-Proxy unter {host}:{port} nimmt keine Verbindung an. Läuft der Container "
-                    f"gameworld-docker-proxy? {DOCS}"
-                ),
+                message=TEXT_PROXY_REFUSED.format(host=host, port=port, docs_url=DOCS_URL),
             )
         return CheckItem(
             id="reachable",
             ok=False,
             severity="error",
-            message=(
-                f"Gameworld erreicht den Docker-Proxy unter {self.docker_url} nicht. Bitte den Dienst "
-                f"gameworld-docker-proxy starten und GAMEWORLD_DOCKER_URL prüfen. {DOCS}"
-            ),
+            message=TEXT_PROXY_UNREACHABLE.format(docker_url=self.docker_url, docs_url=DOCS_URL),
         )
 
     def ping(self) -> CheckItem:
@@ -282,7 +311,7 @@ class _Checker:
             return self.unreachable(exc)
         if response.status_code != 200:
             return self.unreachable()
-        return CheckItem(id="reachable", ok=True, severity="error", message="Der Docker-Proxy ist erreichbar.")
+        return CheckItem(id="reachable", ok=True, severity="error", message=MSG_REACHABLE)
 
     def version(self) -> CheckItem:
         try:
@@ -297,17 +326,13 @@ class _Checker:
             raw = None
         parsed = _parse_version(raw)
         if parsed is None or parsed < MIN_API_VERSION:
-            shown = raw if isinstance(raw, str) else "unbekannt"
-            return CheckItem(
-                id="version",
-                ok=False,
-                severity="error",
-                message=(
-                    f"Docker-Engine zu alt, benötigt API 1.44 oder neuer (gemeldet: {shown}). "
-                    f"Bitte Docker aktualisieren. {DOCS}"
-                ),
+            message = (
+                TEXT_ENGINE_TOO_OLD.format(shown=raw, docs_url=DOCS_URL)
+                if isinstance(raw, str)
+                else MSG_ENGINE_VERSION_UNKNOWN
             )
-        return CheckItem(id="version", ok=True, severity="error", message=f"Docker-API {raw} wird unterstützt.")
+            return CheckItem(id="version", ok=False, severity="error", message=message)
+        return CheckItem(id="version", ok=True, severity="error", message=TEXT_API_SUPPORTED.format(version=raw))
 
     def probe(self, probe: _Probe) -> CheckItem:
         try:
@@ -327,7 +352,7 @@ class _Checker:
             id=item_id,
             ok=False,
             severity=severity,
-            message=f"Unerwartete Antwort des Docker-Proxys auf {method} {path}: HTTP {code}. {DOCS}",
+            message=TEXT_UNEXPECTED_ANSWER.format(method=method, path=path, code=code, docs_url=DOCS_URL),
         )
 
     @staticmethod
@@ -336,7 +361,7 @@ class _Checker:
             id=item_id,
             ok=False,
             severity="error",
-            message=f"Die Anfrage an den Docker-Proxy ({path}) ist fehlgeschlagen: {type(exc).__name__}. {DOCS}",
+            message=TEXT_REQUEST_FAILED.format(path=path, error_type=type(exc).__name__, docs_url=DOCS_URL),
         )
 
     def run(self) -> list[CheckItem]:
@@ -354,7 +379,7 @@ class _Checker:
             # Mit POST=0 sperrt tecnativa jede nicht lesende Methode; die Ergebnisse
             # wären Folgefehler (VOLUMES fälschlich fehlend, EXEC fälschlich gesperrt).
             items += [
-                CheckItem(id=probe.id, ok=False, severity="warning", message=_NOT_CHECKED)
+                CheckItem(id=probe.id, ok=False, severity="warning", message=MSG_NOT_CHECKED)
                 for probe in (_VOLUMES, _EXEC)
             ]
         items.append(self.probe(_INFO))

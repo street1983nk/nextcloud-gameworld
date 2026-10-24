@@ -19,7 +19,9 @@ from gameworld.access.directory import Directory, get_directory
 from gameworld.access.roles import RolesDep, require_verwalter
 from gameworld.access.secret import PlayerSecret, get_player_secret
 from gameworld.access.service import AccessService, actor_of
+from gameworld.api.language import LangDep
 from gameworld.config import load_settings
+from gameworld.i18n import SOURCE_LANGUAGE, translate, translate_optional
 from gameworld.playtime.service import TimeService
 from gameworld.provisioner.client import (
     DockerProvisioner,
@@ -162,10 +164,15 @@ class PresetListOut(BaseModel):
 
 
 @router.get("/presets")
-async def list_presets() -> PresetListOut:
+async def list_presets(language: LangDep) -> PresetListOut:
     return PresetListOut(
         presets=[
-            PresetOut(id=preset.id, title=preset.title, description=preset.description) for preset in PRESETS.values()
+            PresetOut(
+                id=preset.id,
+                title=translate(preset.title, language),
+                description=translate(preset.description, language),
+            )
+            for preset in PRESETS.values()
         ]
     )
 
@@ -177,6 +184,7 @@ async def list_worlds(
     directory: Annotated[Directory, Depends(get_directory)],
     secret: Annotated[PlayerSecret, Depends(get_player_secret)],
     roles: RolesDep,
+    language: LangDep,
 ) -> WorldListOut:
     # Abgleich beim Verwalter-Besuch (T-03-26), gedrosselt auf einmal pro Minute.
     # Er darf die Weltenliste nie blockieren (T-03-33): Fehler nur als Warnung.
@@ -193,12 +201,12 @@ async def list_worlds(
     except Exception as exc:
         LOG.warning("Verwalter-Stand beim Verwalter-Besuch nicht aktualisiert: %s", type(exc).__name__)
     views = await service.list_worlds()
-    return WorldListOut(worlds=[WorldOut(**asdict(view)) for view in views])
+    return WorldListOut(worlds=[_out(view, language) for view in views])
 
 
 @router.post("/worlds", status_code=status.HTTP_201_CREATED)
 async def create_world(
-    body: CreateWorldRequest, service: ServiceDep, uid: Annotated[str, Depends(require_verwalter)]
+    body: CreateWorldRequest, service: ServiceDep, uid: Annotated[str, Depends(require_verwalter)], language: LangDep
 ) -> WorldOut:
     # Seit 03-05 ohne Weltschlüssel: Zugang nur über eingeladene, provisionierte Konten.
     # Ungültige Namen weist schon das Pydantic-Modell ab (AfterValidator mit
@@ -214,7 +222,7 @@ async def create_world(
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from None
     # Jede Welt bekommt einen Talk-Raum (D-16); der Request wartet nie auf Talk (D-20).
     _talk_hook(lambda: get_talk_service(service.store).schedule_ensure(created.id, uid))
-    return _out(created)
+    return _out(created, language)
 
 
 # IDs erzeugt nur die App (uuid4().hex[:12]); alles andere ist 422 (T-01-17).
@@ -232,30 +240,44 @@ def _http_error(exc: ProvisionerError) -> HTTPException:
     return HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
-def _out(view: WorldView) -> WorldOut:
-    return WorldOut(**asdict(view))
+def _out(view: WorldView, language: str) -> WorldOut:
+    """Response of a world; server texts (also stored ones like last_error) in the account language (D-25)."""
+    out = WorldOut(**asdict(view))
+    if language == SOURCE_LANGUAGE:
+        return out
+    job = out.backup_job
+    return out.model_copy(
+        update={
+            "status_text": translate(out.status_text, language),
+            "preset_title": translate(out.preset_title, language),
+            "last_error": translate_optional(out.last_error, language),
+            "backup_job": None
+            if job is None
+            else job.model_copy(update={"message": translate_optional(job.message, language)}),
+        }
+    )
 
 
 @router.post("/worlds/{world_id}/start")
-async def start_world(world_id: WorldId, service: ServiceDep) -> WorldOut:
+async def start_world(world_id: WorldId, service: ServiceDep, language: LangDep) -> WorldOut:
     try:
-        return _out(await service.start_world(world_id))
+        return _out(await service.start_world(world_id), language)
     except ProvisionerError as exc:
         raise _http_error(exc) from None
 
 
 @router.post("/worlds/{world_id}/stop")
-async def stop_world(world_id: WorldId, service: ServiceDep) -> WorldOut:
+async def stop_world(world_id: WorldId, service: ServiceDep, language: LangDep) -> WorldOut:
     try:
-        return _out(await service.stop_world(world_id))
+        return _out(await service.stop_world(world_id), language)
     except ProvisionerError as exc:
         raise _http_error(exc) from None
 
 
 @router.post("/worlds/{world_id}/restart")
-async def restart_world(world_id: WorldId, service: ServiceDep) -> WorldOut:
+async def restart_world(world_id: WorldId, service: ServiceDep, language: LangDep) -> WorldOut:
     try:
-        return _out(await service.restart_world(world_id))
+        return _out(await service.restart_world(world_id), language)
     except ProvisionerError as exc:
         raise _http_error(exc) from None
 

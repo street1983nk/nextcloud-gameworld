@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from gameworld.access.roles import require_verwalter
+from gameworld.api.language import LangDep
 from gameworld.config import load_settings
+from gameworld.i18n import translate
 from gameworld.provisioner.setup_check import run_setup_check
 
 # Jede Route dieses Routers ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN.
@@ -33,11 +35,13 @@ class SetupCheckOut(BaseModel):
 
 
 @router.get("/setup-check")
-async def setup_check() -> SetupCheckOut:
+async def setup_check(language: LangDep) -> SetupCheckOut:
     try:
         docker_url = load_settings().docker_url
     except ValueError as exc:
         # Ungültige Umgebung (z. B. GAMEWORLD_PORT_RANGE) als Befund statt 500.
-        return SetupCheckOut(ok=False, items=[CheckItemOut(id="config", ok=False, severity="error", message=str(exc))])
+        message = translate(str(exc), language)
+        return SetupCheckOut(ok=False, items=[CheckItemOut(id="config", ok=False, severity="error", message=message)])
     result = await anyio.to_thread.run_sync(run_setup_check, docker_url)
-    return SetupCheckOut(ok=result.ok, items=[CheckItemOut(**asdict(item)) for item in result.items])
+    items = [CheckItemOut(**{**asdict(item), "message": translate(item.message, language)}) for item in result.items]
+    return SetupCheckOut(ok=result.ok, items=items)
