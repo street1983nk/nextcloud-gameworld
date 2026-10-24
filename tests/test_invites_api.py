@@ -91,6 +91,9 @@ async def test_admin_invites_account(client: httpx.AsyncClient, service: WorldSe
             "player_name": "Kind",
             "password": PASSWORD,
             "via": "user",
+            "adult": False,
+            "verwalter": False,
+            "has_rules": False,
         }
     ]
     assert [(i["kind"], i["target"], i["invited_by"]) for i in data["invites"]] == [("user", "gw-kind", "admin")]
