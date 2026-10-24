@@ -249,6 +249,10 @@
 		<JoinHostSettings />
 		<TimeZoneSetting :time-zone="playtime?.time_zone ?? ''" @changed="onTimeZoneChanged" />
 		<ReviewSetting />
+		<VerwalterGroupsSection v-if="me?.nc_admin === true" @forbidden="onVerwalterForbidden" />
+		<NcNoteCard v-else-if="verwalterForbidden" type="error" class="gameworld__verwalter-forbidden">
+			{{ NC_ADMIN_ONLY_TEXT }}
+		</NcNoteCard>
 	</div>
 </template>
 
@@ -274,9 +278,11 @@ import ReviewSetting from '../components/ReviewSetting.vue'
 import SetupCheck from '../components/SetupCheck.vue'
 import TalkRoomStatus from '../components/TalkRoomStatus.vue'
 import TimeZoneSetting from '../components/TimeZoneSetting.vue'
+import VerwalterGroupsSection from '../components/VerwalterGroupsSection.vue'
 import WorldWindowDialog from '../components/WorldWindowDialog.vue'
 import { formatBytes, jobNote } from '../backup.js'
 import { pauseUntilText, talkHint, windowSummary } from '../playtime.js'
+import { NC_ADMIN_ONLY_TEXT } from '../roles.js'
 import { navigate } from '../route.js'
 import {
 	createWorld,
@@ -292,6 +298,22 @@ import {
 	startWorld,
 	stopWorld,
 } from '../api.js'
+
+defineProps({
+	// Antwort von /api/me (App.vue); nc_admin blendet die Admin-Abschnitte ein (nur Komfort,
+	// gesperrt ist serverseitig), invite_groups zeigt der Einladen-Dialog.
+	me: { type: Object, required: false, default: null },
+})
+// reload-me: App.vue lädt /api/me neu (Rechte inzwischen entzogen, 403).
+const emit = defineEmits(['reload-me'])
+
+// Verwalter-Gruppen antworteten 403: Abschnitt fällt mit dem neuen /api/me weg, der Hinweis bleibt.
+const verwalterForbidden = ref(false)
+
+function onVerwalterForbidden() {
+	verwalterForbidden.value = true
+	emit('reload-me')
+}
 
 // Statuscodes kommen aus der API (worlds/status.py), die Texte ebenfalls.
 const CHIP_VARIANT = {
@@ -764,6 +786,10 @@ onUnmounted(() => {
 }
 
 .gameworld__mine {
+	margin-top: 32px;
+}
+
+.gameworld__verwalter-forbidden {
 	margin-top: 32px;
 }
 

@@ -30,7 +30,7 @@
 				<PauseView v-if="page === 'pause'" />
 				<AttemptsView v-else-if="page === 'versuch'" :key="routeKey" />
 				<ReviewView v-else-if="page === 'rueckblick'" :key="routeKey" />
-				<ParentView v-else />
+				<ParentView v-else :me="me" @reload-me="reloadMe" />
 			</template>
 			<PlayerView v-else :user="me" />
 		</NcAppContent>
@@ -54,9 +54,10 @@ import { getMe, reportOrigin } from './api.js'
 import { originQuestion, readDismissed, rememberDismissed } from './origin.js'
 import { ROUTE_EVENT, currentPage } from './route.js'
 
-// Die Rolle kommt allein vom Backend (/api/me, Gruppe admin). Die Weiche hier
-// blendet nur aus; gesperrt ist die Verwaltung serverseitig (403). Kinder sehen
-// immer ihre Ansicht, auch auf einem Verwalter-Pfad (T-04.1-38).
+// Die Rolle kommt allein vom Backend (/api/me: Gruppe admin plus die konfigurierten
+// Verwalter-Gruppen, nc_admin für die Admin-Abschnitte). Die Weiche hier blendet nur
+// aus; gesperrt ist die Verwaltung serverseitig (403). Kinder sehen immer ihre
+// Ansicht, auch auf einem Verwalter-Pfad (T-04.1-38).
 const loading = ref(true)
 const error = ref('')
 const me = ref(null)
@@ -93,6 +94,16 @@ function dismissOrigin() {
 		rememberDismissed(storage(), originAsk.value.proposed)
 	}
 	originAsk.value = null
+}
+
+// Rechte haben sich geändert (403 in einem Admin-Abschnitt): /api/me neu lesen;
+// schlägt das fehl, bleibt der alte Stand und der Server sperrt weiter.
+async function reloadMe() {
+	try {
+		me.value = await getMe()
+	} catch {
+		// Best effort.
+	}
 }
 
 function syncPage() {
