@@ -171,11 +171,24 @@ def _by_lang(tag: str) -> dict[str | None, str]:
     return found
 
 
-@pytest.mark.parametrize("tag", ["name", "summary", "description"])
+@pytest.mark.parametrize("tag", ["summary", "description"])
 def test_store_texts_in_three_languages(tag: str) -> None:
     texts = _by_lang(tag)
     assert set(texts) == LANGS
     assert all(texts.values()), tag
+
+
+def test_name_exactly_once_without_lang() -> None:
+    """AppAPI liest info.xml per simplexml/json; mehrere <name> werden ein Array.
+
+    Belegt am 24.10.2026 mit occ app_api:app:register --info-xml über HaRP (06-12):
+    Die App hieß danach "Array" (ExAppService::getAppInfo -> setName). Derselbe
+    Pfad gilt für die Store-Installation. Darum genau ein <name>, ohne lang.
+    """
+    names = _root().findall("name")
+    assert len(names) == 1
+    assert names[0].get("lang") is None
+    assert (names[0].text or "").strip() == "Gameworld"
 
 
 def test_name_and_summary_length() -> None:
