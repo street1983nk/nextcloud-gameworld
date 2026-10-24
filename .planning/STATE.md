@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-19-PLAN.md
-last_updated: "2026-10-24T19:18:54.000Z"
-last_activity: 2026-10-24 -- 06-19 Verwalter-Kernansicht dreisprachig (ParentView, BackupSection, InviteDialog, PlayerManager, parent.js 96 Schlüssel) abgeschlossen
+stopped_at: Completed 06-20-PLAN.md
+last_updated: "2026-10-24T20:15:23.000Z"
+last_activity: 2026-10-24 -- 06-20 Einstellungen und Admin-Abschnitte dreisprachig (7 Komponenten, admin.js 52 Schlüssel) abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 84
-  completed_plans: 71
-  percent: 85
+  completed_plans: 72
+  percent: 86
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 15 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19)
+Plan: 16 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-19 Verwalter-Kernansicht DE/EN/FR: Weltliste, Sicherungen, Einladen, Spielerliste über parent.js (96 Schlüssel je Sprache), Deutsch wortgleich belegt (b315a66, c9d46df)
+Last activity: 2026-10-24 -- 06-20 Admin-Abschnitte DE/EN/FR: Verwalter-Gruppen, Reste, Talk-Raum, Setup-Check, Spieler-Adresse, Tagesrückblick, Zeitzone über admin.js (52 Schlüssel je Sprache), Deutsch wortgleich belegt (f562800, 8b45eb6)
 
-Progress: [████████░░] 83%
+Progress: [████████░░] 86%
 
 ## Performance Metrics
 
@@ -278,6 +278,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-18 Server-Texte: Übersetzung an der API-Grenze, deutscher Text als Nachrichten-ID; Kataloge src/gameworld/i18n/catalog_en.py und catalog_fr.py (Schlüssel = importierte Konstanten); Sprache aus RoleService.language (gecachte Selbstauskunft, nach Störung keine zweite Abfrage, Rückfall en)
 - [Phase 06]: 06-18 Neue Server-Texte nur als MSG_/TEXT_-Konstante mit EN/FR-Eintrag; AST-Test über raise/HTTPException, Ausnahmen nur in tests/i18n_exceptions.tsv mit Grund "intern: ..."; gespeicherte Texte werden beim Ausliefern übersetzt
 - [Phase 06]: 06-19 Gemeinsame Verwalter-Texte unter parent.common.*; Ordnerpfad Gameworld/Sicherungen bleibt in en/fr wörtlich (Backend-Ordnername); en meidet "announce" (gesperrtes Wort); Erwachsen-Bestätigung nutzt weiter die core-Texte aus adult.js
+- [Phase 06]: 06-20 Doku-Links bleiben für alle Sprachen auf docs/install.md (Setup-Check-Link kommt vom Backend, CLEANUP_DOCS_URL ist core); Backend-Erkennungsmarken (422 unbekannte Gruppe, 409 Spielstand in Benutzung) im Frontend als Liste in de/en/fr, weil 06-18 die Servertexte übersetzt
 
 ### Pending Todos
 
@@ -307,6 +308,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T19:18:54.000Z
-Stopped at: Completed 06-19-PLAN.md
+Last session: 2026-10-24T20:15:23.000Z
+Stopped at: Completed 06-20-PLAN.md
 Resume file: None
