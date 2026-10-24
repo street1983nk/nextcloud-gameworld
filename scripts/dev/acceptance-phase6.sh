@@ -431,6 +431,21 @@ ptype() {
 		"${WORK_DIR}/parts.json" 2>/dev/null || true
 }
 
+# room_synced TOKEN -> 0 once admin reads the room, ALT is its owner (type 1) and admin a
+# moderator; a manager visit (GET /api/pause) refreshes the manager snapshot like the UI.
+room_synced() {
+	until_ts=$(deadline "${TALK_WAIT}")
+	while :; do
+		http_code GET "${API_URL}/pause" /dev/null >/dev/null || true
+		fetch_parts "$1"
+		if [ "${PART_CODE}" = 200 ] && [ "$(ptype "${ALT}")" = 1 ]; then
+			case "$(ptype admin)" in 1 | 2) return 0 ;; esac
+		fi
+		before "${until_ts}" || return 1
+		sleep 10
+	done
+}
+
 new_containers() {
 	count=0
 	for cid in $(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null); do
@@ -948,7 +963,10 @@ else
 	check "K7 Talk-Raum für '${W3_NAME}' entsteht (binnen ${TALK_WAIT} s)" wait_talk "${W3}" '.has_room' "${TALK_WAIT}"
 	http_code POST "${API_URL}/worlds/${W3}/stop" /dev/null >/dev/null || true
 	T3=$(talk_field "${W3}" '.token // empty')
-	fetch_parts "${T3}"
+	# The room starts with its owner alone; admin can read the participants only after
+	# the member sync added the managers (next reconcile, up to 300 s). Without this wait
+	# the check raced the sync (06-24: run 1 passed it, run 2 got HTTP 404).
+	check "K7 ${ALT} ist Owner des Raums, admin nach dem Abgleich Moderator (binnen ${TALK_WAIT} s)" room_synced "${T3}"
 	TYPE=$(ptype "${ALT}")
 	check "K7 ${ALT} ist Owner des Raums (participantType 1, ist ${TYPE:-leer}, HTTP ${PART_CODE})" eq "${TYPE}" 1
 	check "K7 Negativkontrolle vorher: owner_not_admin false" eq "$(talk_field "${W3}" '.owner_not_admin')" false
@@ -978,19 +996,7 @@ else
 	# hinzugefügt hat: Bis dahin ist gw-alt allein im Raum (Verwalter-Schnappschuss
 	# höchstens alle 60 s, Abgleich alle 5 min). Ein Verwalter-Besuch (GET /api/pause)
 	# frischt den Schnappschuss auf, wie in der Oberfläche.
-	room_synced() {
-		until_ts=$(deadline "${TALK_WAIT}")
-		while :; do
-			http_code GET "${API_URL}/pause" /dev/null >/dev/null || true
-			fetch_parts "${T4}"
-			if [ "${PART_CODE}" = 200 ] && [ "$(ptype "${ALT}")" = 1 ]; then
-				case "$(ptype admin)" in 1 | 2) return 0 ;; esac
-			fi
-			before "${until_ts}" || return 1
-			sleep 10
-		done
-	}
-	check "K7 ${ALT} ist Owner des zweiten Raums, admin nach dem Abgleich Moderator (binnen ${TALK_WAIT} s)" room_synced
+	check "K7 ${ALT} ist Owner des zweiten Raums, admin nach dem Abgleich Moderator (binnen ${TALK_WAIT} s)" room_synced "${T4}"
 	occ user:delete "${ALT}" >/dev/null 2>&1 || fail "K7 occ user:delete ${ALT} scheiterte"
 	check "K7 Konto ${ALT} gelöscht" user_absent "${ALT}"
 	taken_over() {
