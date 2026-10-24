@@ -175,6 +175,7 @@ TEXT_DENY_EN="You are not invited to this world."
 TEXT_DENY_FR="Tu n’as pas d’invitation pour ce monde."
 TEXT_HALT_SOON_EN="The world is taking a short break soon."
 TEXT_HALT_EN="The world is taking a short break. It will be back in a moment."
+TEXT_HALT_DE="Die Welt macht kurz Pause"
 SUBJECT_ATTEMPT_EN="Unknown player name in"
 SUBJECT_ATTEMPT_DE="Unbekannter Spielername in"
 SUBJECT_SUMMARY_EN="More join attempts"
@@ -1144,8 +1145,8 @@ check "K8 Chat vor dem Trennen enthält '${TEXT_HALT_SOON_EN}'" \
 	eq "$(jq -r --arg t "${TEXT_HALT_SOON_EN}" '[.events[]? | select(.kind == "chat" and (.text | contains($t)))] | length > 0' \
 		"${WORK_DIR}/k8-kid-hold.json" 2>/dev/null)" true
 check "K8 ${KIDEN8} getrennt mit '${TEXT_HALT_EN}'" kicked_with "${WORK_DIR}/k8-kid-hold.json" "${TEXT_HALT_EN}"
-check "K8 Gegenprobe: kein deutscher Pausentext '${TEXT_HALT}' im Trenngrund" \
-	not kicked_with "${WORK_DIR}/k8-kid-hold.json" "Die Welt macht kurz Pause"
+check "K8 Gegenprobe: kein deutscher Pausentext '${TEXT_HALT_DE}' im Trenngrund" \
+	not kicked_with "${WORK_DIR}/k8-kid-hold.json" "${TEXT_HALT_DE}"
 wait_backup() {
 	until_ts=$(deadline 180)
 	while :; do
