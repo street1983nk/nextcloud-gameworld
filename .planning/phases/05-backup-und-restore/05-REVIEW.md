@@ -62,6 +62,12 @@ findings:
   info: 7
   total: 10
 status: issues_found
+fixed_at: 2026-10-24
+fixes:
+  WR-01: fc9747e
+  WR-02: 3f7305a
+  WR-03: 7d154ba
+open: [IN-01, IN-02, IN-03, IN-04, IN-05, IN-06, IN-07]
 ---
 
 # Phase 5: Code Review Report
@@ -79,9 +85,13 @@ Gesamturteil: Der Kern ist ungewöhnlich sorgfältig gebaut. Die Angriffsfläche
 
 Kein Blocker gefunden. Drei Warnungen betreffen Luecken in sonst vorhandenen Schutzmechanismen: ein ungedeckelter Restore-Download, der das geprüfte Platzbudget aushebelt; eine Inkonsistenz zwischen Listen- und Restore-Pfad bei in Files umbenannten Sicherungen; und ein TOCTOU-Fenster im Upload, in dem die App im Fehlerfall eine fremde Datei loeschen koennte (D-08-Randfall).
 
+**Update 2026-10-24:** Alle drei Warnungen sind behoben (WR-01 fc9747e, WR-02 3f7305a, WR-03 7d154ba), jeweils mit Negativtest; offen bleiben nur die Info-Hinweise IN-01 bis IN-07.
+
 ## Warnings
 
 ### WR-01: Restore-Download ohne Groessen-Deckel hebelt das Platzbudget aus
+
+**Status:** fixed, Commit `fc9747e` (_CappedWriter deckelt den Download auf proof.size, Ueberschreiten endet sofort als RestoreTampered; download_to reicht BackupError unveraendert durch; Negativtest: getauschte 64-fach groessere Datei bricht am Deckel ab, Spool aufgeraeumt, Welt bleibt ready)
 
 **File:** `src/gameworld/backup/service.py:490-513`, `src/gameworld/backup/files.py:199-208`
 **Issue:** `_check_restore_space` budgetiert `RESTORE_SPACE_FACTOR * proof.size` freien Platz (T-05-35), aber `_fetch_and_check` laedt die Datei aus Files per `download_to` VOLLSTAENDIG in den Spool, bevor `_check_integrity` die Groesse gegen den Nachweis prueft. Wird die Datei in Nextcloud Files gegen eine deutlich groessere getauscht (Verwalter-Files sind beschreibbar, genau das Szenario, gegen das T-05-29 den SHA-Check einfuehrt), schreibt der Download beliebig viele Bytes nach `storage_dir/tmp`, bis der Datentraeger voll ist. Das trifft denselben Datentraeger wie `gameworld.sqlite3` (Zeittakt, Zaehlbuch-Verbuchung, Job-Zeilen schlagen dann fehl). Die Groessenpruefung existiert, kommt aber erst nach dem Vollpuffern; genau der Fehlerklasse "Body-Limit erst nach dem Lesen" galt der CR-01-Fix aus Phase 04.2.
@@ -109,11 +119,15 @@ await self._files().download_to(uid, proof.path, cast(BinaryIO, _CappedWriter(do
 
 ### WR-02: In Files umbenannte Sicherung wird gelistet, ist aber nicht wiederherstellbar
 
+**Status:** fixed, Commit `3f7305a` (_current_path loest den Download-Pfad vor dem Laden per listdir ueber die file_id auf; Tests: umbenannte Sicherung restaurierbar, geloeschte mit fremder Datei am alten Namen ergibt MSG_FILE_GONE statt RESTORE_TAMPERED)
+
 **File:** `src/gameworld/backup/service.py:673-704` (list_backups), `src/gameworld/backup/service.py:496` (download ueber `proof.path`)
 **Issue:** Die Liste matcht Dateien gegen Nachweise ueber `(file_id, size)` aus `listdir` und zeigt dabei `entry.name` (den AKTUELLEN Namen in Files). Wiederherstellen laedt dagegen ueber den gespeicherten `proof.path`. Benennt der Verwalter die Datei in Nextcloud Files um (im selben Ordner, file_id und Groesse bleiben gleich), erscheint sie weiter als gueltige Sicherung in der Liste, aber jeder Restore endet mit `MSG_FILE_GONE` ("Diese Sicherung liegt nicht mehr in deinen Nextcloud-Dateien."), obwohl sie sichtbar daneben liegt. Legt er zusaetzlich eine andere Datei unter dem alten Namen ab, laedt der Restore die falsche Datei und meldet irrefuehrend `RESTORE_TAMPERED`. Umbenennen ist in der UI ausdruecklich vorgesehen ("Aufraeumen kannst du dort"), das ist also ein realistischer Nutzerpfad, kein Exot.
 **Fix:** Den Download ueber die file_id aufloesen statt ueber den gespeicherten Pfad: in `list_backups`/`_fetch_and_check` den aktuellen Pfad aus dem `listdir`-Treffer (`entry.path`) verwenden bzw. vor dem Download per `by_id`/`listdir` den Pfad zur `proof.file_id` aufloesen und bei Treffer den Nachweis-Pfad aktualisieren. SHA- und Groessenpruefung bleiben unveraendert die Autoritaet.
 
 ### WR-03: TOCTOU im Upload: WebDAV-PUT kann eine fremde gleichnamige Datei ueberschreiben und der Fehlerpfad loescht sie (D-08-Randfall)
+
+**Status:** fixed, Commit `7d154ba` (Upload auf eindeutigen Temp-Namen `.{name}.{uuid}.gwtmp`, Zielname per nc_py_api files.move mit "Overwrite: F", 412 fuehrt zum naechsten Suffix; Aufraeumpfad loescht nur noch die eigene Temp- bzw. frisch verschobene Datei; Race-Negativtests fuer PUT- und MOVE-Fenster)
 
 **File:** `src/gameworld/backup/files.py:149-177`
 **Issue:** `_free_target` prueft per `by_path`, dass der Zielname frei ist, danach laeuft `upload_stream`. WebDAV-PUT ueberschreibt still: Entsteht zwischen Pruefung und PUT eine gleichnamige Datei (zweites Geraet des Verwalters, Sync-Client, Auto-Upload in denselben Ordner), wird sie ueberschrieben; schlaegt danach die Groessenpruefung fehl, loescht der Aufraeumpfad `nc.files.delete(target)` diese Datei endgueltig. Das verletzt im Race sowohl T-05-08 ("nie eine vorhandene Datei loeschen") als auch den Geist von D-08. Der globale Ein-Job-Schutz verhindert nur Kollisionen der App mit sich selbst, nicht mit externen Schreibern.
