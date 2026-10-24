@@ -5,7 +5,7 @@
 
 # Privacy, privileges and data flow
 
-Deutsche Fassung: [privacy.de.md](privacy.de.md)
+Deutsch: [privacy.de.md](privacy.de.md)
 
 **Scope:** what extra privileges Gameworld needs on your server and why, what personal
 data it stores, where it stores it, what it never does, and what happens on disabling,
@@ -154,7 +154,7 @@ SRP verifiers), the rules file and a usage ledger with player names and seconds.
   `nc_app_gameworld_data` is only deleted when you choose to delete the data. The world
   volumes and the backups in Files always stay on purpose, so no world is lost silently.
 - **Cleaning up:** Nextcloud admins see leftovers of earlier installations in the
-  Gameworld section "Reste früherer Installationen" and can remove them one by one. After
+  Gameworld section "Leftovers from earlier installations" and can remove them one by one. After
   the uninstall, `scripts/gameworld-orphans.sh` on the Docker host lists the leftovers and
   removes them on request, see [install.md](install.md#cleanup).
 

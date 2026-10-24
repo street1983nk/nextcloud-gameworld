@@ -1,1 +1,9 @@
 # file	key	literal	reason (tab separated; proper names and deliberate German artefacts only)
+frontend/src/i18n/en/parent.js	parent.backup.hint	Gameworld/Sicherungen	Files folder path created by the backend, literal path in every language
+frontend/src/i18n/fr/parent.js	parent.backup.hint	Gameworld/Sicherungen	Files folder path created by the backend, literal path in every language
+README.md	doc	Deutsch	language name in the language switcher
+README.fr.md	doc	Deutsch	language name in the language switcher
+docs/install.md	doc	Deutsch	language name in the pointer to the German version
+docs/privacy.md	doc	Deutsch	language name in the pointer to the German version
+docs/install.md	doc	Gameworld/Sicherungen/<world	Files folder path created by the backend
+docs/privacy.md	doc	Gameworld/Sicherungen/<world>/	Files folder path created by the backend
