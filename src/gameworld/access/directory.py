@@ -27,6 +27,7 @@ _NOT_FOUND_CODES = frozenset({404, 998})
 _REJECTED_CODES = frozenset({401, 403, 997})
 
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
+_GROUPS_EP = "/ocs/v1.php/cloud/groups"
 
 
 @dataclass(frozen=True)
@@ -74,10 +75,11 @@ class Directory(Protocol):
 class NcDirectory:
     """Kontoprüfung per OCS als handelnder Verwalter (``users.get_user(uid)``).
 
-    Gruppen löst nur ein Admin auf: ``users_groups.get_members`` antwortet
-    Nicht-Admins mit 403 (Pitfall 6). Darum laufen Gruppenabfragen nur im
-    Verwalter-Kontext; ein 403 gilt als Störung (503), nie als leere Gruppe,
-    damit kein Abgleich Zugänge wegen fehlender Rechte entfernt.
+    Gruppen löst Nextcloud nur Admins, Subadmins und Mitgliedern der Gruppe auf
+    (``/cloud/groups/{gid}/users``); allen anderen antwortet es mit 403 (Pitfall 6).
+    Darum laufen Gruppenabfragen nur im Verwalter-Kontext; ein 403 gilt als
+    Ablehnung bzw. Störung (503), nie als leere Gruppe, damit kein Abgleich Zugänge
+    wegen fehlender Rechte entfernt.
     """
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
@@ -99,8 +101,12 @@ class NcDirectory:
     async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
         try:
             async with nc_as(acting_uid) as nc:
-                # Auch die Gruppen-ID setzt nc_py_api roh in den Pfad.
-                members = await nc.users_groups.get_members(quote(gid, safe=""))
+                # /users statt /cloud/groups/{gid} (nc_py_api get_members): Der alte
+                # Endpunkt verlangt Subadmin-Rechte, /users lässt auch Mitglieder der
+                # Gruppe lesen (D-01), Nicht-Mitglieder bekommen weiter 403 (06-12).
+                # Die Gruppen-ID kodiert, damit "/" oder ".." nichts umlenkt.
+                data = await nc.ocs("GET", f"{_GROUPS_EP}/{quote(gid, safe='')}/users")
+                members = data.get("users") if isinstance(data, dict) else None
         except NextcloudException as exc:
             if exc.status_code in _NOT_FOUND_CODES:
                 return None

@@ -330,7 +330,7 @@ async def test_kid_never_triggers_refresh(
 
 def _fake_nc(monkeypatch: pytest.MonkeyPatch, error: Exception) -> MagicMock:
     app = MagicMock()
-    app.users_groups.get_members = AsyncMock(side_effect=error)
+    app.ocs = AsyncMock(side_effect=error)
     install_fake_nc(monkeypatch, app)
     return app
 

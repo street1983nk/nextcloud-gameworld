@@ -116,7 +116,7 @@ async def test_directory_and_roles_close_even_on_error(app_env: Path, monkeypatc
     del app_env
     app = MagicMock()
     app.users.get_user = AsyncMock(side_effect=OSError("weg"))
-    app.users_groups.get_members = AsyncMock(side_effect=OSError("weg"))
+    app.ocs = AsyncMock(side_effect=OSError("weg"))
     recorder = install_fake_nc(monkeypatch, app)
     with pytest.raises(DirectoryUnavailableError):
         await NcDirectory().user("admin", "gw-kind")

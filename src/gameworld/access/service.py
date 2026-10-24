@@ -17,8 +17,9 @@ Mitglieder eingeladener Gruppen, jeweils nur, wenn Nextcloud sie als vorhanden
 und aktiv bestätigt. Die Mitgliedschaft kommt immer frisch aus Nextcloud
 (ROLLE-02); Gameworld speichert nur die Einladung der Gruppe.
 
-Pitfall 6: Gruppen löst nur ein Admin auf (``get_members`` gibt Nicht-Admins
-403). Darum laufen Auflösung und Abgleich nur im Verwalter-Kontext.
+Pitfall 6: Gruppen löst Nextcloud nur Admins, Subadmins und Mitgliedern der
+Gruppe auf (``/cloud/groups/{gid}/users``, sonst 403). Darum laufen Auflösung und
+Abgleich nur im Verwalter-Kontext.
 
 Seit Phase 6 (ROLLE-03, D-01) gibt es Verwalter ohne Nextcloud-Adminrecht. Für
 sie gilt die Regel "404 heißt gelöscht nur als NC-Admin" (P-01, 404-Falle):
