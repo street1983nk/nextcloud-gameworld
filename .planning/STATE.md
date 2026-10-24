@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-10-24T08:53:26.000Z"
-last_activity: 2026-10-24 -- 06-02 Einladungs-Umfang, Admin-API, Routenstufe USER abgeschlossen
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-10-24T09:06:00.000Z"
+last_activity: 2026-10-24 -- 06-03 UI-Baustein B1 Verwalter-Gruppen und Einladungsgrenze abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 59
-  percent: 82
+  completed_plans: 60
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 3 of 16 complete (06-01, 06-07, 06-02)
+Plan: 4 of 16 complete (06-01, 06-07, 06-02, 06-03)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-02 Einladungs-Umfang D-01, 404-Falle entschärft, /api/admin, ^/api/.* auf USER mit Strukturtest (8e45dd4, 9ad987c, 02f66d0)
+Last activity: 2026-10-24 -- 06-03 B1 VerwalterGroupsSection (nur NC-Admin), roles.js mit Prüfskript, Einladungsgrenze im Einladen-Dialog (e719bf8, 68bad36, 7ded3b4, c25f115)
 
-Progress: [████████░░] 79%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -256,6 +256,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-07 Docker übergeht put_archive-Einträge für "."; Weltordner nur über build_world_payload, bestehende Welten nicht migriert (worldmods aber ab nächstem Start root-eigen); Hinweis für install.md in 06-11
 - [Phase 06]: 06-02 Actor statt acting_uid für invite/revoke/sync/list; nc_admin wird vor jeder Änderung frisch an der Gruppe admin bestätigt, sonst Nicht-Admin-Pfad (nie user() je Konto, direkte Einladungen bleiben, unlesbare Gruppe = Welt unverändert)
 - [Phase 06]: 06-02 /api/admin routerweit require_nc_admin; info.xml ohne ADMIN-Stufe, tests/test_route_guards.py prüft jede /api/-Route außer /api/me und /api/my/ über den Abhängigkeitsbaum
+- [Phase 06]: 06-03 403 im Verwalter-Gruppen-Abschnitt: ParentView zeigt NC_ADMIN_ONLY_TEXT an seiner Stelle und lässt App.vue /api/me neu laden (reload-me); Anzeigenamen der Verwalter-Gruppen nur aus der Gruppensuche
+- [Phase 06]: 06-03 me geht auch an AttemptsView, damit der Einladen-Dialog dort die Einladungsgrenze zeigt
 
 ### Pending Todos
 
@@ -285,6 +287,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T08:53:26.000Z
-Stopped at: Completed 06-02-PLAN.md
-Resume file: .planning/phases/06-store-release/06-03-PLAN.md
+Last session: 2026-10-24T09:06:00.000Z
+Stopped at: Completed 06-03-PLAN.md
+Resume file: .planning/phases/06-store-release/06-04-PLAN.md
