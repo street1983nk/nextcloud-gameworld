@@ -15,14 +15,17 @@ from gameworld.provisioner.presets import MTG_KREATIV, PRESETS, Preset
 from gameworld.provisioner.spec import WorldPayload
 from gameworld.provisioner.status_mod import MOD_CONF, MOD_DIR, MOD_INIT_LUA
 
+# Ordner, die Luanti gehören (alles außer Weltordner und worldmods).
 DIRS = [
     ".minetest",
     ".minetest/worlds",
-    ".minetest/worlds/world",
-    ".minetest/worlds/world/worldmods",
-    MOD_DIR,
     ".minetest/games",
 ]
+WORLD = ".minetest/worlds/world"
+# AR-23: Weltordner root:30000 mit Sticky-Bit, worldmods samt Mods root-eigen.
+WORLD_DIR_RIGHTS = (0, 30000, 0o1775)
+ROOT_DIR_RIGHTS = (0, 0, 0o755)
+ROOT_FILE_RIGHTS = (0, 0, 0o644)
 
 
 def _members(payload: WorldPayload) -> dict[str, tarfile.TarInfo]:
@@ -80,6 +83,7 @@ def test_world_and_game_belong_to_luanti() -> None:
     members = _members(_kreativ())
     assert members[".minetest/worlds/world/world.mt"].uid == 30000
     assert members[".minetest/games/minetest_game/game.conf"].uid == 30000
+    assert members[".minetest/games/minetest_game"].uid == 30000
     for name in DIRS:
         member = members[name]
         assert member.isdir(), name
@@ -92,8 +96,7 @@ def test_status_mod_is_in_every_world() -> None:
     for name in ("init.lua", "mod.conf"):
         member = members[f"{MOD_DIR}/{name}"]
         assert member.isfile(), name
-        assert member.uid == 30000, name
-        assert member.mode == 0o644, name
+        assert (member.uid, member.gid, member.mode) == ROOT_FILE_RIGHTS, name
     assert _read(_kreativ(), f"{MOD_DIR}/init.lua") == MOD_INIT_LUA.encode("utf-8")
     assert _read(_kreativ(), f"{MOD_DIR}/mod.conf") == MOD_CONF.encode("utf-8")
     assert "name = gameworld_status" in MOD_CONF.splitlines()
@@ -159,11 +162,11 @@ def test_access_mod_and_file_are_in_every_world() -> None:
     members = _members(_kreativ())
     access_dir = members[access_mod.MOD_DIR]
     assert access_dir.isdir()
-    assert (access_dir.uid, access_dir.mode) == (30000, 0o755)
+    assert (access_dir.uid, access_dir.gid, access_dir.mode) == ROOT_DIR_RIGHTS
     for name in ("init.lua", "mod.conf"):
         member = members[f"{access_mod.MOD_DIR}/{name}"]
         assert member.isfile(), name
-        assert (member.uid, member.gid, member.mode) == (30000, 30000, 0o644), name
+        assert (member.uid, member.gid, member.mode) == ROOT_FILE_RIGHTS, name
     access = members[f".minetest/worlds/world/{access_mod.ACCESS_FILE_NAME}"]
     assert (access.uid, access.gid, access.mode) == (0, 0, 0o444)
     assert _read(_kreativ(), f".minetest/worlds/world/{access_mod.ACCESS_FILE_NAME}") == ACCESS
@@ -182,12 +185,12 @@ def test_world_files_tar_carries_both_mods_and_access_file() -> None:
     for directory in ("worldmods", "worldmods/gameworld_status", "worldmods/gameworld_access"):
         member = members[directory]
         assert member.isdir(), directory
-        assert (member.uid, member.mode) == (30000, 0o755), directory
+        assert (member.uid, member.gid, member.mode) == ROOT_DIR_RIGHTS, directory
     for mod in ("gameworld_status", "gameworld_access"):
         for name in ("init.lua", "mod.conf"):
             member = members[f"worldmods/{mod}/{name}"]
             assert member.isfile()
-            assert (member.uid, member.mode) == (30000, 0o644)
+            assert (member.uid, member.gid, member.mode) == ROOT_FILE_RIGHTS
     assert _tar_read(raw, "worldmods/gameworld_status/init.lua") == MOD_INIT_LUA.encode("utf-8")
     assert _tar_read(raw, "worldmods/gameworld_access/init.lua") == access_mod.MOD_INIT_LUA.encode("utf-8")
     access = members[access_mod.ACCESS_FILE_NAME]
@@ -209,10 +212,10 @@ def test_time_mod_and_rules_are_in_every_world() -> None:
     members = _tar_members(raw)
     time_dir = members[time_mod.MOD_DIR]
     assert time_dir.isdir()
-    assert (time_dir.uid, time_dir.mode) == (30000, 0o755)
+    assert (time_dir.uid, time_dir.gid, time_dir.mode) == ROOT_DIR_RIGHTS
     for name in ("init.lua", "mod.conf"):
         member = members[f"{time_mod.MOD_DIR}/{name}"]
-        assert (member.uid, member.gid, member.mode) == (30000, 30000, 0o644), name
+        assert (member.uid, member.gid, member.mode) == ROOT_FILE_RIGHTS, name
     assert _tar_read(raw, f"{time_mod.MOD_DIR}/init.lua") == time_mod.MOD_INIT_LUA.encode("utf-8")
     rules = members[f".minetest/worlds/world/{time_mod.RULES_FILE_NAME}"]
     assert (rules.uid, rules.gid, rules.mode) == (0, 0, 0o444)
@@ -237,10 +240,10 @@ def test_world_files_tar_carries_time_mod_and_rules() -> None:
     ]
     directory = members["worldmods/gameworld_time"]
     assert directory.isdir()
-    assert (directory.uid, directory.mode) == (30000, 0o755)
+    assert (directory.uid, directory.gid, directory.mode) == ROOT_DIR_RIGHTS
     for name in ("init.lua", "mod.conf"):
         member = members[f"worldmods/gameworld_time/{name}"]
-        assert (member.uid, member.mode) == (30000, 0o644), name
+        assert (member.uid, member.gid, member.mode) == ROOT_FILE_RIGHTS, name
     assert _tar_read(raw, "worldmods/gameworld_time/mod.conf") == time_mod.MOD_CONF.encode("utf-8")
     rules = members[time_mod.RULES_FILE_NAME]
     assert (rules.uid, rules.gid, rules.mode) == (0, 0, 0o444)
@@ -274,3 +277,51 @@ def test_access_tar_has_exactly_the_access_file() -> None:
     member = members[access_mod.ACCESS_FILE_NAME]
     assert (member.uid, member.gid, member.mode) == (0, 0, 0o444)
     assert _tar_read(raw, access_mod.ACCESS_FILE_NAME) == ACCESS
+
+
+# AR-23 (06-07): Weltordner und worldmods gehören root, Spielstand bleibt Luanti.
+
+
+def _rights(member: tarfile.TarInfo) -> tuple[int, int, int]:
+    return member.uid, member.gid, member.mode
+
+
+def test_payload_hardens_world_dir_and_worldmods() -> None:
+    """Neue und wiederhergestellte Welten (beide über build_world_payload)."""
+    payload = archive.build_world_payload(MTG_KREATIV, "x\n", "gameid = minetest\n", ACCESS, RULES)
+    raw = payload.archive.read()
+    payload.archive.close()
+    members = _tar_members(raw)
+    world = members[WORLD]
+    assert world.isdir()
+    assert _rights(world) == WORLD_DIR_RIGHTS
+    mod_dirs = [name for name in members if name.startswith(f"{WORLD}/worldmods") and members[name].isdir()]
+    assert sorted(mod_dirs) == sorted([f"{WORLD}/worldmods", *(mod_dir for mod_dir, _, _ in archive.WORLD_MODS)])
+    for name in mod_dirs:
+        assert _rights(members[name]) == ROOT_DIR_RIGHTS, name
+    mod_files = [name for name in members if name.startswith(f"{WORLD}/worldmods/") and members[name].isfile()]
+    assert len(mod_files) == 2 * len(archive.WORLD_MODS)
+    for name in mod_files:
+        assert _rights(members[name]) == ROOT_FILE_RIGHTS, name
+    for name in (access_mod.ACCESS_FILE_NAME, time_mod.RULES_FILE_NAME):
+        assert _rights(members[f"{WORLD}/{name}"]) == (0, 0, 0o444), name
+    # Was Luanti selbst neu schreibt, bleibt Luanti (sonst scheitert dessen Umbenennen).
+    assert _rights(members[f"{WORLD}/world.mt"]) == (30000, 30000, 0o644)
+    for name in DIRS:
+        assert _rights(members[name]) == (30000, 30000, 0o755), name
+
+
+def test_world_files_harden_worldmods_but_not_the_world_dir() -> None:
+    """Vor jedem Start: worldmods root-eigen; einen Eintrag für "." überginge Docker ohnehin."""
+    members = _tar_members(archive.build_world_files(ACCESS, RULES))
+    assert "." not in members
+    directories = [name for name, member in members.items() if member.isdir()]
+    expected = ["worldmods", *(mod_dir.removeprefix(f"{WORLD}/") for mod_dir, _, _ in archive.WORLD_MODS)]
+    assert sorted(directories) == sorted(expected)
+    for name, member in members.items():
+        if member.isdir():
+            assert _rights(member) == ROOT_DIR_RIGHTS, name
+        elif name.startswith("worldmods/"):
+            assert _rights(member) == ROOT_FILE_RIGHTS, name
+        else:
+            assert _rights(member) == (0, 0, 0o444), name
