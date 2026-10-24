@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-17-PLAN.md
-last_updated: "2026-10-24T18:06:42.381Z"
-last_activity: 2026-10-24 -- 06-17 i18n-Fundament (frontend/src/i18n, DE/EN/FR, reine JS-Module) abgeschlossen
+stopped_at: Completed 06-18-PLAN.md
+last_updated: "2026-10-24T19:03:17.650Z"
+last_activity: 2026-10-24 -- 06-18 Server-Texte nach Kontosprache (src/gameworld/i18n, Kataloge EN/FR, Übersetzung an der API-Grenze) abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 84
-  completed_plans: 69
-  percent: 82
+  completed_plans: 70
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 13 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17)
+Plan: 14 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-17 eigenes i18n-Modul (t/tn/normalizeLanguage, Kontosprache, Rueckfall en), core-Woerterbuecher DE wortgleich plus EN/FR, i18n.check a bis j mit Positivkontrolle (5766c18, 81db621, ef39635)
+Last activity: 2026-10-24 -- 06-18 Backend-Texte nach Kontosprache: i18n-Kern, RoleService.language, übersetzende Handler, 144 Meldungen und 24 Schablonen je Sprache, AST-Abdeckung der raise-Literale (a6d05c1, 1740860, 4c8ae07, 6dff83e)
 
-Progress: [████████░░] 82%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -114,6 +114,7 @@ Progress: [████████░░] 82%
 | Phase 06 P10 | 20 min | 3 tasks | 14 files |
 | Phase 06 P12 | ca. 6 h (4 h Abnahmeläufe) | 2 tasks | 20 files |
 | Phase 06 P17 | 25 min | 3 tasks | 45 files |
+| Phase 06 P18 | 95 min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -274,6 +275,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-12 register-exapp.sh lässt eine passende Registrierung stehen, sonst Neustart mit neuem Secret vor dem Neu-Registrieren (kein D-17-Abräumen über /enabled?enabled=0)
 - [Phase 06]: 06-17 eigenes i18n-Modul frontend/src/i18n (t/tn/normalizeLanguage/compareText/dateLocale), Wörterbücher <lang>/<bereich>.js mit Bereichspräfix, Sprache aus der Nextcloud-Kontosprache vor createApp, Rückfall en; Text-Konstanten der reinen Module sind Funktionen (Tabelle in 06-17-SUMMARY)
 - [Phase 06]: 06-17 Gleichwerte de=en/fr nur mit Eintrag in frontend/tests/i18n.exceptions.json; i18n.check prüft zusätzlich französische Zeichensetzung (  vor ? ! ; : und in « »)
+- [Phase 06]: 06-18 Server-Texte: Übersetzung an der API-Grenze, deutscher Text als Nachrichten-ID; Kataloge src/gameworld/i18n/catalog_en.py und catalog_fr.py (Schlüssel = importierte Konstanten); Sprache aus RoleService.language (gecachte Selbstauskunft, nach Störung keine zweite Abfrage, Rückfall en)
+- [Phase 06]: 06-18 Neue Server-Texte nur als MSG_/TEXT_-Konstante mit EN/FR-Eintrag; AST-Test über raise/HTTPException, Ausnahmen nur in tests/i18n_exceptions.tsv mit Grund "intern: ..."; gespeicherte Texte werden beim Ausliefern übersetzt
 
 ### Pending Todos
 
@@ -303,6 +306,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T18:06:42.358Z
-Stopped at: Completed 06-17-PLAN.md
+Last session: 2026-10-24T19:03:17.629Z
+Stopped at: Completed 06-18-PLAN.md
 Resume file: None
