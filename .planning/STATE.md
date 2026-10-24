@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-06-PLAN.md
-last_updated: "2026-10-24T10:40:26.000Z"
-last_activity: 2026-10-24 -- 06-06 Talk-Raum-Übernahme D-16/D-19 und UI-SPEC B4 abgeschlossen
+stopped_at: Completed 06-10-PLAN.md
+last_updated: "2026-10-24T10:58:45.807Z"
+last_activity: 2026-10-24 -- 06-10 ExApp-Image, Workflow, Store-Archiv, Version 1.0.0 abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 64
-  percent: 89
+  completed_plans: 65
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 8 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06)
+Plan: 9 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-06 Talk-Übernahme: owner_uid an dienstältesten bestätigten Verwalter, former_owner/orphaned_token, Raum neu anlegen (Route + B4 in TalkRoomStatus), talkHint ohne Besitz-Versprechen (6d8752d, cdee714, 57e9829)
+Last activity: 2026-10-24 -- 06-10 ExApp-Image (USER 10001, frpc 0.71.1 SHA-Pin, HaRP-start, Healthcheck), image.yml Multi-Arch + Lockstep, Store-Archiv-Skript, Version 1.0.0 / NC bis 35 (47aa5af, 7f22d67, 857c923, 5f9b557)
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -111,6 +111,7 @@ Progress: [█████████░] 89%
 | Phase 06 P07 | 25 min | 2 tasks | 3 files |
 | Phase 06 P05 | 35 min | 3 tasks | 7 files |
 | Phase 06 P06 | 45 min | 3 tasks | 9 files |
+| Phase 06 P10 | 20 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -293,6 +294,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T10:40:26.000Z
-Stopped at: Completed 06-06-PLAN.md
+Last session: 2026-10-24T10:58:42.082Z
+Stopped at: Completed 06-10-PLAN.md
 Resume file: None
