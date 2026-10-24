@@ -56,6 +56,8 @@ class MeOut(BaseModel):
     # Nur Komfort für die Oberfläche; die Sperre sitzt in require_nc_admin.
     nc_admin: bool = False
     invite_groups: list[str] = Field(default_factory=list[str])
+    # Nextcloud account language (de, en or fr; fallback en), D-25.
+    language: str = "de"
 
 
 class WindowOut(BaseModel):
@@ -138,14 +140,16 @@ async def me(uid: UserDep, roles: RolesDep) -> MeOut:
     except RoleUnavailableError:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
     role = role_of(profile, await roles.verwalter_groups())
+    language = await roles.language(uid)
     if role != ROLE_VERWALTER:
-        return MeOut(user_id=profile.user_id, display_name=profile.display_name, role=role)
+        return MeOut(user_id=profile.user_id, display_name=profile.display_name, role=role, language=language)
     return MeOut(
         user_id=profile.user_id,
         display_name=profile.display_name,
         role=role,
         nc_admin=ADMIN_GROUP in profile.groups,
         invite_groups=sorted(set(profile.groups) | set(profile.subadmin)),
+        language=language,
     )
 
 

@@ -723,6 +723,7 @@ async def test_me_carries_nc_admin_and_invite_groups(client: httpx.AsyncClient, 
         "role": ROLE_VERWALTER,
         "nc_admin": False,
         "invite_groups": ["klasse", "lehrkraefte"],
+        "language": "de",
     }
     child = (await client.get("/api/me", headers=appapi_headers("gw-kind-k"))).json()
     assert (child["role"], child["nc_admin"], child["invite_groups"]) == (ROLE_SPIELER, False, [])

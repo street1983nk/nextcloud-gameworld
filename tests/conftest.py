@@ -572,10 +572,14 @@ FAKE_PROFILES: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
+# Account language per uid (D-25); tests put single accounts on en or fr, everyone else stays de.
+FAKE_LANGUAGES: dict[str, str] = {}
+
+
 async def fake_lookup(uid: str) -> Profile:
     """Selbstauskunft ohne Nextcloud: admin ist Verwalter, alle anderen Spieler."""
     display_name, groups = FAKE_PROFILES.get(uid, (uid, ()))
-    return Profile(user_id=uid, display_name=display_name, groups=groups)
+    return Profile(user_id=uid, display_name=display_name, groups=groups, language=FAKE_LANGUAGES.get(uid, "de"))
 
 
 @pytest.fixture

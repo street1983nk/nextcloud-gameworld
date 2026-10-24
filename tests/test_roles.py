@@ -78,6 +78,7 @@ async def test_me_for_player(client: httpx.AsyncClient) -> None:
         "role": "spieler",
         "nc_admin": False,
         "invite_groups": [],
+        "language": "de",
     }
 
 
@@ -90,6 +91,7 @@ async def test_me_for_admin(client: httpx.AsyncClient) -> None:
         "role": "verwalter",
         "nc_admin": True,
         "invite_groups": ["admin"],
+        "language": "de",
     }
 
 
@@ -99,7 +101,8 @@ async def test_lookup_error_gives_503_and_is_not_cached(
 ) -> None:
     first = await client.get(path, headers=appapi_headers())
     assert first.status_code == 503
-    assert "Nextcloud antwortet gerade nicht" in first.json()["detail"]
+    # Account never seen, its language is unknown: fallback en (D-25, 06-18).
+    assert first.json()["detail"] == "Nextcloud is not responding right now. Please try again in a moment."
     second = await client.get(path, headers=appapi_headers())
     assert second.status_code == 503
     assert role_lookup_error == ["admin", "admin"]

@@ -17,6 +17,7 @@ from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
 from gameworld.api import admin, alerts, backups, invites, me, pause, playtime, setup_check, talk, talk_bot, worlds
 from gameworld.api.csrf import JsonOnlyChangesMiddleware
+from gameworld.api.language import install_language_handlers
 from gameworld.backup.service import get_backup_service, shutdown_backups
 from gameworld.lifecycle import enabled_handler
 from gameworld.notify.loop import notify_forever
@@ -110,6 +111,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 APP = FastAPI(lifespan=lifespan)
+# Error texts in the account language (D-25): German stays the source, en/fr are translated.
+install_language_handlers(APP)
 # Reihenfolge zählt: Zuerst hinzugefügt heißt innen. Die JSON-Pflicht für Änderungen
 # (IN-08) läuft so nach AppAPIAuthMiddleware, die scope["username"] setzt.
 APP.add_middleware(JsonOnlyChangesMiddleware)

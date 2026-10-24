@@ -24,6 +24,7 @@ from typing import Annotated
 import anyio.to_thread
 from fastapi import Depends, HTTPException, Request, status
 
+from gameworld.i18n import FALLBACK_LANGUAGE, normalize_language
 from gameworld.nc import nc_as
 
 LOG = logging.getLogger(__name__)
@@ -52,6 +53,9 @@ class Profile:
     groups: tuple[str, ...]
     # Gruppen, die das Konto als Subadmin verwaltet (Einladungs-Umfang, D-01).
     subadmin: tuple[str, ...] = ()
+    # Account language (D-25). The default only applies to profiles built without
+    # Nextcloud (tests); nc_profile always sets the value from Nextcloud.
+    language: str = "de"
 
 
 class RoleUnavailableError(Exception):
@@ -90,6 +94,7 @@ async def nc_profile(uid: str) -> Profile:
         display_name=info.display_name or uid,
         groups=tuple(info.groups),
         subadmin=tuple(info.subadmin),
+        language=normalize_language(info.language),
     )
 
 
@@ -104,6 +109,10 @@ class RoleService:
         self._lookup = lookup
         self._groups = groups
         self._cache: dict[str, tuple[float, Profile]] = {}
+        # Language only travels with the existing self-lookup (T-06-75, T-06-76):
+        # last known value and time per account, plus the time of the last failed lookup.
+        self._languages: dict[str, tuple[float, str]] = {}
+        self._failed: dict[str, float] = {}
 
     async def profile(self, uid: str) -> Profile:
         cached = self._cache.get(uid)
@@ -114,9 +123,38 @@ class RoleService:
             profile = await self._lookup(uid)
         except Exception as exc:  # jede Störung heißt: Rolle unbekannt, nie Verwalter
             self._cache.pop(uid, None)
+            self._failed[uid] = now
             raise RoleUnavailableError(str(exc)) from exc
         self._cache[uid] = (now, profile)
+        self._remember_language(uid, profile, now)
         return profile
+
+    def _remember_language(self, uid: str, profile: Profile, now: float) -> None:
+        self._languages[uid] = (now, profile.language)
+        self._failed.pop(uid, None)
+
+    async def language(self, uid: str) -> str:
+        """Account language for response texts; never raises and never adds a Nextcloud call in the normal case.
+
+        A fresh value (from profile or nc_admin within CACHE_SECONDS) is used as is.
+        Right after a failed lookup the last known value (or en) is returned without
+        asking Nextcloud again; otherwise the cached self-lookup is used.
+        """
+        try:
+            now = time.monotonic()
+            known = self._languages.get(uid)
+            if known is not None and now - known[0] < CACHE_SECONDS:
+                return known[1]
+            failed = self._failed.get(uid)
+            if failed is not None and now - failed < CACHE_SECONDS:
+                return FALLBACK_LANGUAGE if known is None else known[1]
+            try:
+                return (await self.profile(uid)).language
+            except RoleUnavailableError:
+                return FALLBACK_LANGUAGE if known is None else known[1]
+        except Exception as exc:  # the language must never break a response
+            LOG.warning("Account language unknown, using fallback: %s", type(exc).__name__)
+            return FALLBACK_LANGUAGE
 
     async def verwalter_groups(self) -> frozenset[str]:
         """Konfigurierte Verwalter-Gruppen; jede Störung der Quelle heißt nur admin (T-06-01)."""
@@ -134,10 +172,14 @@ class RoleService:
 
     async def nc_admin(self, uid: str) -> bool:
         """Echter Nextcloud-Admin? Immer frisch gefragt, nie aus dem Cache (Rechteausweitung, T-06-02)."""
+        now = time.monotonic()
         try:
             profile = await self._lookup(uid)
         except Exception as exc:  # Störung heißt: kein Admin-Recht
+            self._failed[uid] = now
             raise RoleUnavailableError(str(exc)) from exc
+        # Only the language is remembered, never the profile (the role cache stays untouched).
+        self._remember_language(uid, profile, now)
         return ADMIN_GROUP in profile.groups
 
     def invalidate(self) -> None:
