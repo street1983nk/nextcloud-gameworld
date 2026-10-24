@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-12-PLAN.md
-last_updated: "2026-10-24T16:10:55.759Z"
-last_activity: 2026-10-24 -- 06-12 Dev-HaRP mit lokaler Registry und Phasenabnahme acceptance-phase6.sh abgeschlossen
+stopped_at: Completed 06-17-PLAN.md
+last_updated: "2026-10-24T18:06:42.381Z"
+last_activity: 2026-10-24 -- 06-17 i18n-Fundament (frontend/src/i18n, DE/EN/FR, reine JS-Module) abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 72
-  completed_plans: 68
-  percent: 94
+  total_plans: 84
+  completed_plans: 69
+  percent: 82
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 12 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12)
+Plan: 13 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-12 harp.compose.yaml/harp-install.sh (Test-Instanz, localhost:5000, --info-xml, uid 10001), acceptance-phase6.sh K1 bis K7: manual 130/130 mit Regression Phase 5 bis 1, harp 140/140; Fixes info.xml-Name, Gruppen-Mitglieder /users, Talk-Abgleich frisch (bcb90f6, 4c5b9a4, c3351f5, 034bc4b, b83ab5f)
+Last activity: 2026-10-24 -- 06-17 eigenes i18n-Modul (t/tn/normalizeLanguage, Kontosprache, Rueckfall en), core-Woerterbuecher DE wortgleich plus EN/FR, i18n.check a bis j mit Positivkontrolle (5766c18, 81db621, ef39635)
 
-Progress: [█████████░] 94%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -113,6 +113,7 @@ Progress: [█████████░] 94%
 | Phase 06 P06 | 45 min | 3 tasks | 9 files |
 | Phase 06 P10 | 20 min | 3 tasks | 14 files |
 | Phase 06 P12 | ca. 6 h (4 h Abnahmeläufe) | 2 tasks | 20 files |
+| Phase 06 P17 | 25 min | 3 tasks | 45 files |
 
 ## Accumulated Context
 
@@ -271,6 +272,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-12 Gruppenmitglieder über /ocs/v1.php/cloud/groups/{gid}/users (Mitglieder dürfen lesen, Nicht-Mitglieder 403) statt Subadmin-Endpunkt; ohne das konnte ein Gruppen-Verwalter als reines Mitglied nicht einladen
 - [Phase 06]: 06-12 Talk-Abgleich (reconcile_all) fragt Verfügbarkeit frisch (fresh=True); Cache nur für GET /api/talk und Anlegen
 - [Phase 06]: 06-12 register-exapp.sh lässt eine passende Registrierung stehen, sonst Neustart mit neuem Secret vor dem Neu-Registrieren (kein D-17-Abräumen über /enabled?enabled=0)
+- [Phase 06]: 06-17 eigenes i18n-Modul frontend/src/i18n (t/tn/normalizeLanguage/compareText/dateLocale), Wörterbücher <lang>/<bereich>.js mit Bereichspräfix, Sprache aus der Nextcloud-Kontosprache vor createApp, Rückfall en; Text-Konstanten der reinen Module sind Funktionen (Tabelle in 06-17-SUMMARY)
+- [Phase 06]: 06-17 Gleichwerte de=en/fr nur mit Eintrag in frontend/tests/i18n.exceptions.json; i18n.check prüft zusätzlich französische Zeichensetzung (  vor ? ! ; : und in « »)
 
 ### Pending Todos
 
@@ -300,6 +303,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T16:10:55.740Z
-Stopped at: Completed 06-12-PLAN.md
+Last session: 2026-10-24T18:06:42.358Z
+Stopped at: Completed 06-17-PLAN.md
 Resume file: None

@@ -381,7 +381,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 06-17-PLAN.md , i18n-Fundament Oberfläche (D-25): eigenes Wörterbuch-Modul de/en/fr, Kontosprache, reine JS-Module und Prüfskripte
+- [x] 06-17-PLAN.md , i18n-Fundament Oberfläche (D-25): eigenes Wörterbuch-Modul de/en/fr, Kontosprache, reine JS-Module und Prüfskripte
 - [ ] 06-18-PLAN.md , Backend-Texte nach Kontosprache (D-25): Übersetzung an der API-Grenze, /api/me language, Katalog EN/FR
 
 **Wave 10** *(blocked on Wave 9 completion)*
@@ -439,4 +439,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
 | 5. Backup und Restore | 9/9 | Complete   | 2026-10-24 |
-| 6. Store-Release | 12/28 | In Progress | - |
+| 6. Store-Release | 13/28 | In Progress|  |
