@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-20-PLAN.md
-last_updated: "2026-10-24T20:15:23.000Z"
-last_activity: 2026-10-24 -- 06-20 Einstellungen und Admin-Abschnitte dreisprachig (7 Komponenten, admin.js 52 Schlüssel) abgeschlossen
+stopped_at: Completed 06-21-PLAN.md
+last_updated: "2026-10-24T21:05:00.000Z"
+last_activity: 2026-10-24 -- 06-21 Kinder-Ansicht, Spielzeit und Shell dreisprachig (13 Komponenten, kids.js 109 Schlüssel) abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 84
-  completed_plans: 72
-  percent: 86
+  completed_plans: 73
+  percent: 87
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 16 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20)
+Plan: 17 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20, 06-21)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-20 Admin-Abschnitte DE/EN/FR: Verwalter-Gruppen, Reste, Talk-Raum, Setup-Check, Spieler-Adresse, Tagesrückblick, Zeitzone über admin.js (52 Schlüssel je Sprache), Deutsch wortgleich belegt (f562800, 8b45eb6)
+Last activity: 2026-10-24 -- 06-21 Kinder-Ansicht, App-Shell, Pause, Rückblick, Beitrittsversuche, Spielzeit, Ferien, Zeitfenster DE/EN/FR über kids.js (109 Schlüssel je Sprache), Deutsch wortgleich belegt (ea1811e, d59981b)
 
-Progress: [████████░░] 86%
+Progress: [████████░░] 87%
 
 ## Performance Metrics
 
@@ -279,6 +279,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-18 Neue Server-Texte nur als MSG_/TEXT_-Konstante mit EN/FR-Eintrag; AST-Test über raise/HTTPException, Ausnahmen nur in tests/i18n_exceptions.tsv mit Grund "intern: ..."; gespeicherte Texte werden beim Ausliefern übersetzt
 - [Phase 06]: 06-19 Gemeinsame Verwalter-Texte unter parent.common.*; Ordnerpfad Gameworld/Sicherungen bleibt in en/fr wörtlich (Backend-Ordnername); en meidet "announce" (gesperrtes Wort); Erwachsen-Bestätigung nutzt weiter die core-Texte aus adult.js
 - [Phase 06]: 06-20 Doku-Links bleiben für alle Sprachen auf docs/install.md (Setup-Check-Link kommt vom Backend, CLEANUP_DOCS_URL ist core); Backend-Erkennungsmarken (422 unbekannte Gruppe, 409 Spielstand in Benutzung) im Frontend als Liste in de/en/fr, weil 06-18 die Servertexte übersetzt
+- [Phase 06]: 06-21 JoinGuide en/fr mit den Original-Menünamen des Luanti-Clients (Join Game, Address, Port, Name, Password, Login; geprüft gegen tab_online.lua), de wortgleich; Werte in <strong> über Platzhalter-Segmente statt v-html; Ferien-Datum über dateLocale() (de unverändert); keine Servertext-Erkennung in Kinder-/Spielzeit-Komponenten, also keine Markenliste nötig
 
 ### Pending Todos
 
@@ -308,6 +309,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T20:15:23.000Z
-Stopped at: Completed 06-20-PLAN.md
+Last session: 2026-10-24T21:05:00.000Z
+Stopped at: Completed 06-21-PLAN.md
 Resume file: None
