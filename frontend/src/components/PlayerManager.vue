@@ -1,6 +1,7 @@
-<!-- Spieler einer Welt: Spielername, Passwort (verdeckt), Herkunft, Passwort neu, Umbenennen, Einladungen entfernen. -->
+<!-- Spieler einer Welt: Spielername, Passwort (verdeckt), Herkunft, Erwachsen-Schalter (ROLLE-04), Passwort neu, Umbenennen, Einladungen entfernen. -->
 <template>
 	<NcDialog
+		v-if="!confirmAdult"
 		:open="true"
 		:name="`Spieler von ${world.name}`"
 		size="large"
@@ -19,6 +20,12 @@
 			<NcNoteCard v-if="notApplied" type="info">
 				Die Änderung wirkt beim nächsten Start der Welt.
 			</NcNoteCard>
+			<NcNoteCard v-if="adultNotApplied" type="info">
+				{{ NOT_APPLIED_TEXT }}
+			</NcNoteCard>
+			<NcNoteCard v-if="info" type="info">
+				{{ info }}
+			</NcNoteCard>
 
 			<p v-if="!loadError && players.length === 0" class="players__empty">
 				Noch niemand eingeladen.
@@ -32,7 +39,29 @@
 					:data-nc-user="player.nc_user">
 					<div class="players__head">
 						<strong>{{ player.display_name }}</strong>
+						<NcChip
+							v-if="player.verwalter"
+							variant="tertiary"
+							text="Verwalter"
+							no-close />
+						<NcChip
+							v-else-if="player.adult"
+							variant="secondary"
+							text="Erwachsen"
+							no-close />
 						<span class="players__via">{{ viaText(player.via) }}</span>
+					</div>
+
+					<!-- Verwalter spielen ohnehin ohne Regeln und bekommen keinen Schalter (D-06). -->
+					<div v-if="!player.verwalter" class="players__adult">
+						<NcCheckboxRadioSwitch
+							type="switch"
+							:model-value="Boolean(adultShown[player.nc_user])"
+							:disabled="busy || adultSaving === player.nc_user"
+							:description="SWITCH_META"
+							@update:model-value="(on) => toggleAdult(player, on)">
+							Erwachsen
+						</NcCheckboxRadioSwitch>
 					</div>
 
 					<NcFormBox>
@@ -128,11 +157,48 @@
 			</NcButton>
 		</template>
 	</NcDialog>
+
+	<!-- Bestätigung beim Einschalten (D-07): ersetzt den Spieler-Dialog, solange sie offen ist. -->
+	<NcDialog
+		v-else
+		:open="true"
+		name="Als erwachsen markieren"
+		@update:open="onConfirmOpen">
+		<div class="players__adult-confirm">
+			<p class="players__adult-lead">
+				{{ confirmLead([confirmAdult.display_name]) }}
+			</p>
+			<p>{{ CONFIRM_SCOPE }}</p>
+			<p class="players__adult-note">
+				{{ CONFIRM_WARNING }}
+			</p>
+			<p v-if="confirmAdult.has_rules" class="players__adult-note">
+				{{ rulesKeptText(confirmAdult.display_name) }}
+			</p>
+			<NcNoteCard v-if="confirmError" type="error">
+				{{ confirmError }}
+			</NcNoteCard>
+		</div>
+
+		<template #actions>
+			<NcButton variant="tertiary" :disabled="confirmSaving" @click="cancelAdult">
+				Abbrechen
+			</NcButton>
+			<NcButton variant="warning" :disabled="confirmSaving" @click="confirmAdultOn">
+				<template v-if="confirmSaving" #icon>
+					<NcLoadingIcon :size="20" />
+				</template>
+				Als erwachsen markieren
+			</NcButton>
+		</template>
+	</NcDialog>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import NcButton from '@nextcloud/vue/components/NcButton'
+import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
+import NcChip from '@nextcloud/vue/components/NcChip'
 import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcFormBox from '@nextcloud/vue/components/NcFormBox'
 import NcFormBoxCopyButton from '@nextcloud/vue/components/NcFormBoxCopyButton'
@@ -145,7 +211,19 @@ import {
 	removeInvite,
 	renamePlayer,
 	rotatePassword,
+	setAdult,
 } from '../api.js'
+import {
+	adultOffText,
+	adultOnText,
+	CONFIRM_SCOPE,
+	CONFIRM_WARNING,
+	confirmLead,
+	nowVerwalterText,
+	rulesKeptText,
+	SWITCH_META,
+} from '../adult.js'
+import { NOT_APPLIED_TEXT } from '../playtime.js'
 
 const props = defineProps({
 	// { id, name } der Welt; nur id geht an die API.
@@ -169,10 +247,26 @@ const copied = ref('')
 const rotating = ref('')
 const renaming = ref('')
 const newName = ref('')
+const adultNotApplied = ref(false)
+const info = ref('')
+// Eigene Anzeige der Erwachsen-Schalter (nc_user -> bool), damit sie bei Fehler zurückspringen.
+const adultShown = reactive({})
+// nc_user, dessen Schalter gerade speichert.
+const adultSaving = ref('')
+// { nc_user, display_name, has_rules } solange die Bestätigung offen ist, sonst null.
+const confirmAdult = ref(null)
+const confirmSaving = ref(false)
+const confirmError = ref('')
 
 function apply(result) {
 	players.value = result?.players ?? []
 	invites.value = result?.invites ?? []
+	// Sofortige Wirkung sichtbar: die Schalter folgen der Serverantwort.
+	for (const player of players.value) {
+		if (adultSaving.value !== player.nc_user) {
+			adultShown[player.nc_user] = Boolean(player.adult)
+		}
+	}
 }
 
 async function load() {
@@ -226,6 +320,118 @@ function resetMessages() {
 	error.value = ''
 	notice.value = ''
 	notApplied.value = false
+	adultNotApplied.value = false
+	info.value = ''
+}
+
+// Fokus zurück auf die Schalterzeile der Person (UI-SPEC B2, Barrierefreiheit).
+async function focusAdultRow(ncUser) {
+	await nextTick()
+	setTimeout(() => {
+		const rows = document.querySelectorAll('.players__item')
+		const row = [...rows].find((item) => item.dataset.ncUser === ncUser)
+		row?.querySelector('.players__adult input')?.focus()
+	}, 0)
+}
+
+async function reloadPlayers() {
+	try {
+		apply(await listPlayers(props.world.id))
+	} catch (err) {
+		error.value = errorText(err)
+	}
+}
+
+function toggleAdult(player, on) {
+	if (busy.value || adultSaving.value) {
+		return
+	}
+	resetMessages()
+	rotating.value = ''
+	renaming.value = ''
+	if (on) {
+		// Einschalten nur nach Bestätigung (D-07); der Schalter bleibt bis dahin aus.
+		adultShown[player.nc_user] = false
+		confirmError.value = ''
+		confirmAdult.value = {
+			nc_user: player.nc_user,
+			display_name: player.display_name,
+			has_rules: Boolean(player.has_rules),
+		}
+		return
+	}
+	switchOff(player)
+}
+
+// Ausschalten wirkt sofort ohne Dialog (macht die Regeln strenger).
+async function switchOff(player) {
+	adultSaving.value = player.nc_user
+	adultShown[player.nc_user] = false
+	try {
+		const result = await setAdult(player.nc_user, false)
+		adultShown[player.nc_user] = Boolean(result?.adult)
+		notice.value = adultOffText(player.display_name)
+		adultNotApplied.value = result?.applied === false
+		adultSaving.value = ''
+		await reloadPlayers()
+		emit('changed')
+	} catch (err) {
+		adultShown[player.nc_user] = true
+		error.value = errorText(err)
+	} finally {
+		adultSaving.value = ''
+		focusAdultRow(player.nc_user)
+	}
+}
+
+function cancelAdult() {
+	if (confirmSaving.value) {
+		return
+	}
+	const ncUser = confirmAdult.value?.nc_user
+	confirmAdult.value = null
+	confirmError.value = ''
+	if (ncUser) {
+		focusAdultRow(ncUser)
+	}
+}
+
+function onConfirmOpen(open) {
+	if (!open) {
+		cancelAdult()
+	}
+}
+
+async function confirmAdultOn() {
+	const target = confirmAdult.value
+	if (!target || confirmSaving.value) {
+		return
+	}
+	confirmSaving.value = true
+	confirmError.value = ''
+	try {
+		const result = await setAdult(target.nc_user, true)
+		adultShown[target.nc_user] = Boolean(result?.adult)
+		notice.value = adultOnText(target.display_name)
+		adultNotApplied.value = result?.applied === false
+		confirmAdult.value = null
+		await reloadPlayers()
+		emit('changed')
+		focusAdultRow(target.nc_user)
+	} catch (err) {
+		if (err?.response?.status === 409) {
+			// Konto wurde inzwischen Verwalter: Hinweis statt Fehler, Liste neu laden.
+			confirmAdult.value = null
+			info.value = nowVerwalterText(target.display_name)
+			await reloadPlayers()
+			emit('changed')
+		} else {
+			// Fehler im Dialog, er bleibt offen; der Schalter bleibt aus.
+			confirmError.value = errorText(err)
+		}
+	} finally {
+		confirmSaving.value = false
+	}
 }
 
 function askRotate(player) {
@@ -314,8 +520,38 @@ defineExpose({ reload: load })
 
 .players__head {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 8px;
-	align-items: baseline;
+	align-items: center;
+}
+
+.players__adult {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.players__adult :deep(.checkbox-content__description) {
+	font-size: 0.9em;
+	color: var(--color-text-maxcontrast);
+}
+
+.players__adult-confirm {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.players__adult-confirm p {
+	margin: 0;
+}
+
+.players__adult-lead {
+	font-weight: bold;
+}
+
+.players__adult-note {
+	color: var(--color-text-maxcontrast);
 }
 
 .players__via,
