@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 6 geplant (16 Plaene, Checker-Revision eingearbeitet)
-last_updated: "2026-10-24T07:26:38.701Z"
-last_activity: 2026-10-24
+status: executing
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-10-24T07:55:08.336Z"
+last_activity: 2026-10-24 -- 06-01 Rollen-Kern ROLLE-03 abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 56
-  percent: 78
+  completed_plans: 57
+  percent: 79
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 6 — store release
+**Current focus:** Phase 6
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-24
+Phase: 6 — EXECUTING
+Plan: 1 of 16 complete (06-01)
+Status: Executing Phase 6
+Last activity: 2026-10-24 -- 06-01 Rollen-Kern ROLLE-03 abgeschlossen (d35b8aa, 032e1de)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 79%
 
 ## Performance Metrics
 
@@ -107,6 +107,7 @@ Progress: [██████████] 100%
 | Phase 05 P05 | 70 min | 3 tasks | 9 files |
 | Phase 05 P06 | 75 min | 3 tasks | 6 files |
 | Phase 05 P09 | 2 Sitzungen | 2 tasks | 8 files |
+| Phase 06 P01 | 25 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -247,6 +248,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-09: Owner-Abnahme Phase 5 approved (24.10.2026, 7 Schritte, Welt Browser Minetest); Alt-Container-Kick 'Server shutting down.' vor Neuaufbau kein Produktfehler
 - [Phase 05]: 05-09: Veraltete Regressionsprüfungen auf Produktstand gezogen (Owner-Entscheid): 4.1 K2 Uhrzeit-Text, Phase 3 K5 tolerante Spalten ohne Passwortspalte, Phase 3 K3 /my/worlds-Grundlinie gegen Owner-Spike-Welten
 - [Phase 05]: 05-09: Phase-4-Stabilitätsprüfung bleibt streng; Verbindungsfehler durch offene Abnahme-Browser-Sitzung während geplanter Neustarts sind Umgebung (deferred-items.md, Bestätigungslauf 103/103 offen)
+- [Phase 06]: 06-01 Verwalter-Stand je Gruppe (verwalter_snapshot); 403 oder Störung lässt nur den Stand dieser Gruppe stehen, time_admins bleibt die Vereinigung aller Gruppen
+- [Phase 06]: 06-01 Kontenabgleich nur mit Konto aus meta nc_admins (frische Antwort der Gruppe admin) plus frischer admin-Gegenprobe in purge_accounts (404-Falle F-04)
+- [Phase 06]: 06-01 Kaputte oder fehlende verwalter_groups-Konfiguration und jede Störung der Gruppenquelle heißen nur admin (fail closed); require_nc_admin fragt ohne Cache
 
 ### Pending Todos
 
@@ -276,6 +280,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T07:26:38.674Z
-Stopped at: Phase 6 geplant (16 Plaene, Checker-Revision eingearbeitet)
-Resume file: .planning/phases/06-store-release/06-01-PLAN.md
+Last session: 2026-10-24T07:55:08.318Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: .planning/phases/06-store-release/06-02-PLAN.md
