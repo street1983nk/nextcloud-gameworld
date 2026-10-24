@@ -12,7 +12,8 @@ Kindes mit Regeln (ein Kontingent über alle Welten, O-03) und verankert den
 gesehenen Stand neu. ``render`` rechnet je Welt die Regeldatei aus der Datenbank:
 für jedes eingeladene Kind mit Regeln eine Zeile mit absolutem Fenster und
 Deckel im Zählbuch-Maß (gesehener Stand plus Restsekunden), für jedes eingeladene
-Verwalter-Konto aus dem Schnappschuss ``time_admins`` die Zeile ``frei`` (O-11/A4),
+Verwalter-Konto aus dem Schnappschuss ``time_admins`` und für jedes als erwachsen
+markierte Konto (Tabelle ``adults``, ROLLE-04) die Zeile ``frei`` (O-11/A4),
 dazu die Welt-Zeile aus dem Welt-Fenster. Der Regelteil wird je Welt zwischengespeichert; nur bei
 einer Änderung zählt die Generation hoch und der Kopf bekommt einen neuen
 Zeitpunkt, damit die Bytes nicht in jedem Takt wechseln (Pitfall 6).
@@ -150,6 +151,13 @@ class TimeEngine:
             return None
         return PauseLine(ab=state.ab, bis=state.bis, art=state.art)
 
+    def _admins(self) -> frozenset[str]:
+        return parse_admins(self._store.get_meta(META_TIME_ADMINS))
+
+    def _frei(self, admins: frozenset[str]) -> frozenset[str]:
+        """Frei-Menge: Verwalter-Vereinigung plus Erwachsene (ROLLE-04, nur Zeit-Regeln, nie Rechte)."""
+        return admins | frozenset(self._store.adults())
+
     def book(self, world_id: str, ledger: Ledger | None) -> None:
         """Verbucht die Zuwächse des Zählbuchs; verankert den gesehenen Stand neu.
 
@@ -159,7 +167,10 @@ class TimeEngine:
         zählt nur Kinder mit Regeln dieses Haushalts und nie Verwalter aus dem
         Schnappschuss (IN-03, Owner-Entscheid 22.10.2026 "Nur Kinder mit Regeln"):
         Eingeladene Kinder anderer Familien ohne Regeln erscheinen nirgends mit
-        Minuten. Ein fehlendes Zählbuch (None) ändert nichts.
+        Minuten. Erwachsene (ROLLE-04) werden weder auf Verbrauch noch auf die
+        Tagesspielzeit verbucht: Was als Erwachsener gespielt wurde, zählt nicht,
+        auch wenn ein ruhender Plan in der Datenbank steht. Ein fehlendes Zählbuch
+        (None) ändert nichts.
         """
         if ledger is None:
             return
@@ -171,12 +182,15 @@ class TimeEngine:
         day = attribution_day(ledger.written_at, tz)
         if delta:
             plans = self._store.child_plans()
-            admins = parse_admins(self._store.get_meta(META_TIME_ADMINS))
+            admins = self._admins()
+            adults = self._store.adults()
             for name, seconds in delta.items():
                 nc_user = self._store.player_name_owner(name)
                 if nc_user is None:
                     continue
                 if nc_user not in plans:
+                    continue
+                if nc_user in adults and nc_user not in admins:
                     continue
                 usage[nc_user] = usage.get(nc_user, 0) + seconds
                 if nc_user not in admins:
@@ -196,7 +210,7 @@ class TimeEngine:
         plans = self._store.child_plans()
         holidays = self._store.list_holidays()
         seen = self._store.ledger_seen(world_id)
-        admins = parse_admins(self._store.get_meta(META_TIME_ADMINS))
+        frei = self._frei(self._admins())
         today = local_day(now, tz)
         cached = self._cache.get(world_id)
         previous = {} if cached is None else cached.bases
@@ -207,8 +221,8 @@ class TimeEngine:
             nc_user = self._store.player_name_owner(name)
             if nc_user is None:
                 continue
-            if nc_user in admins:
-                # Eingeladene Verwalter: Zeile frei, auch ohne Welt-Fenster (A4).
+            if nc_user in frei:
+                # Eingeladene Verwalter und Erwachsene: Zeile frei, auch ohne Welt-Fenster (A4, ROLLE-04).
                 players[name] = _FREI
                 continue
             if nc_user not in plans:
@@ -241,7 +255,7 @@ class TimeEngine:
         if pause is not None and pause.art == ART_SCHLUSS:
             morgen = morgen_minutes(now, tz, plans, holidays, names_by_user)
         rendered = self._render_cached(
-            world_id, world_line, players, now, days, pause, morgen, halt=self._halts.get(world_id)
+            world_id, world_line, players, now, days, pause, morgen, halt=self._halts.get(world_id), frei=frei
         )
         self._maybe_prune(now, tz)
         return rendered
@@ -306,14 +320,18 @@ class TimeEngine:
         morgen: dict[str, int] | None = None,
         *,
         halt: int | None = None,
+        frei: frozenset[str] = frozenset(),
     ) -> tuple[bytes, bool]:
         # Pause, Morgen-Minuten und Halt gehören in den Schlüssel, sonst schreibt der
         # Takt sie nie (der Halt kommt beim nächsten push_time in die Regeldatei).
+        # Die Frei-Menge ebenso: Ein Umschalten des Erwachsen-Schalters muss neue Bytes
+        # ergeben (T-06-18), auch wenn die Zeilen zufällig gleich blieben.
         key = (
             *self._body_key(world_line, players, days),
             pause,
             None if morgen is None else tuple(sorted(morgen.items())),
             halt,
+            tuple(sorted(frei)),
         )
         cached = self._cache.get(world_id)
         if cached is not None and cached.key == key:

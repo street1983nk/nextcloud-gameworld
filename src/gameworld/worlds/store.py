@@ -709,6 +709,27 @@ class WorldStore:
             )
         return removed > 0
 
+    # Erwachsen-Schalter je Konto (Schema 8, ROLLE-04, D-05)
+
+    def set_adult(self, nc_user: str, set_by: str, set_at: str) -> None:
+        """Markiert ein Konto als erwachsen; wer und wann bleiben gespeichert (T-06-19)."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO adults (nc_user, set_by, set_at) VALUES (?, ?, ?)",
+                (nc_user, set_by, set_at),
+            )
+
+    def clear_adult(self, nc_user: str) -> None:
+        """Nimmt die Markierung weg; ein nicht markiertes Konto ist kein Fehler."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM adults WHERE nc_user = ?", (nc_user,))
+
+    def adults(self) -> set[str]:
+        """Alle als erwachsen markierten Konten."""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT nc_user FROM adults").fetchall()
+        return {str(row[0]) for row in rows}
+
     def delete_access_data(self, world_id: str) -> None:
         """Einladungen und Zugang einer gelöschten Welt; Spieler bleiben (gelten für alle Welten)."""
         with self._connect() as connection:

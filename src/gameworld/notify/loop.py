@@ -139,8 +139,10 @@ def collect_play(store: WorldStore, day: date, admins: Iterable[str]) -> dict[st
     "Regeln" heißt: ein Wochenplan dieses Haushalts (``child_plans``, wie
     ``has_rules`` der Spielzeit-Seite). Auch ältere Zeilen von Konten ohne Regeln
     (vor IN-03 gezählt) oder mit heute entfernten Regeln erscheinen nicht.
+    Erwachsene (Tabelle ``adults``, ROLLE-04) erscheinen nie, auch nicht mit
+    Minuten, die vor dem Umschalten am selben Tag gezählt wurden.
     """
-    excluded = set(admins)
+    excluded = set(admins) | store.adults()
     with_rules = set(store.child_plans())
     result: dict[str, dict[str, int]] = {}
     for (nc_user, world_id), seconds in store.play_seconds(day).items():
