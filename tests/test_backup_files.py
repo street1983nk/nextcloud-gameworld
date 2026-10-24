@@ -51,9 +51,14 @@ class FakeDav:
         self.ids: dict[str, int] = {}
         self.deleted: list[str] = []
         self.uploaded: list[tuple[str, int]] = []
+        self.moves: list[tuple[str, str]] = []
         self.short_by = 0
         self.mkdirs: list[str] = []
         self.upload_exc: Exception | None = None
+        # WR-03: Diese Pfade entstehen "gleichzeitig" durch einen externen Schreiber,
+        # je einer direkt vor dem nächsten PUT bzw. MOVE (TOCTOU-Fenster).
+        self.race_on_upload: list[str] = []
+        self.race_on_move: list[str] = []
         self._next = 500
 
     def add(self, path: str, size: int) -> None:
@@ -79,6 +84,8 @@ class FakeDav:
 
     async def upload_stream(self, path: str, fp: Any, chunk_size: int) -> None:
         assert chunk_size == UPLOAD_CHUNK
+        if self.race_on_upload:
+            self.add(self.race_on_upload.pop(0), 1)
         data = fp.read()
         self.uploaded.append((path, len(data)))
         if self.upload_exc is not None:
@@ -91,6 +98,20 @@ class FakeDav:
         assert not_fail
         self.deleted.append(path)
         self.sizes.pop(path, None)
+
+    async def move(self, src: str, dest: str, overwrite: bool = False) -> Any:
+        # Wie WebDAV MOVE: "Overwrite: F" lehnt ein vorhandenes Ziel mit 412 ab.
+        assert not overwrite
+        if self.race_on_move:
+            self.add(self.race_on_move.pop(0), 1)
+        if src not in self.sizes:
+            raise NextcloudException(404, "Not found")
+        if dest in self.sizes:
+            raise NextcloudException(412, "Precondition Failed")
+        self.moves.append((src, dest))
+        self.sizes[dest] = self.sizes.pop(src)
+        self.ids[dest] = self.ids.pop(src)
+        return _node(dest, self.sizes[dest], self.ids[dest])
 
     async def listdir(self, path: str) -> list[Any]:
         if path + "/" not in self.sizes:
@@ -153,9 +174,48 @@ async def test_upload_picks_free_suffix_and_never_deletes_existing(dav: tuple[Fa
     fake.add(f"{FOLDER}/{BASE}", 99)
     entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert entry.name == "Burg-2026-10-23-1405-2.tar.gz"
-    assert fake.uploaded == [(f"{FOLDER}/Burg-2026-10-23-1405-2.tar.gz", 1234)]
+    temp, size = fake.uploaded[0]
+    assert (len(fake.uploaded), size) == (1, 1234)
+    assert fake.moves == [(temp, f"{FOLDER}/Burg-2026-10-23-1405-2.tar.gz")]
     assert fake.sizes[f"{FOLDER}/{BASE}"] == 99
     assert fake.deleted == []
+
+
+async def test_upload_streams_to_temp_name_then_moves_without_overwrite(
+    dav: tuple[FakeDav, NcRecorder, MagicMock],
+) -> None:
+    """WR-03: PUT auf einen eigenen, eindeutigen Temp-Namen, dann MOVE mit "Overwrite: F" auf den Zielnamen."""
+    fake, _recorder, _app = dav
+    entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
+    temp, size = fake.uploaded[0]
+    assert size == 1234
+    assert temp.startswith(f"{FOLDER}/.")
+    assert temp.endswith(".gwtmp")
+    assert fake.moves == [(temp, f"{FOLDER}/{BASE}")]
+    assert temp not in fake.sizes
+    assert entry.name == BASE
+
+
+async def test_race_file_at_target_survives_upload(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
+    """WR-03/D-08: Entsteht im TOCTOU-Fenster eine gleichnamige Datei, wird sie nie überschrieben oder gelöscht."""
+    fake, _recorder, _app = dav
+    fake.race_on_upload = [f"{FOLDER}/{BASE}"]
+    entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
+    assert entry.name == "Burg-2026-10-23-1405-2.tar.gz"
+    # Die fremde Datei liegt unverändert am ursprünglichen Zielnamen.
+    assert fake.sizes[f"{FOLDER}/{BASE}"] == 1
+    assert fake.deleted == []
+
+
+async def test_race_file_at_move_target_is_not_overwritten(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
+    """WR-03: 412 beim MOVE (Ziel entstand nach der Namensprüfung) führt zum nächsten Suffix, nie zum Überschreiben."""
+    fake, _recorder, _app = dav
+    fake.race_on_move = [f"{FOLDER}/{BASE}"]
+    entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
+    assert entry.name == "Burg-2026-10-23-1405-2.tar.gz"
+    assert fake.sizes[f"{FOLDER}/{BASE}"] == 1
+    assert fake.deleted == []
+    assert len(fake.moves) == 1
 
 
 async def test_size_mismatch_deletes_only_own_target(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
@@ -165,7 +225,11 @@ async def test_size_mismatch_deletes_only_own_target(dav: tuple[FakeDav, NcRecor
     with pytest.raises(FilesError) as caught:
         await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert str(caught.value) == MSG_UPLOAD_INCOMPLETE
-    assert fake.deleted == [f"{FOLDER}/Burg-2026-10-23-1405-2.tar.gz"]
+    # Aufgeräumt wird nur die eigene Temp-Datei; ein Zielname ist nie entstanden.
+    temp = fake.uploaded[0][0]
+    assert fake.deleted == [temp]
+    assert fake.moves == []
+    assert f"{FOLDER}/Burg-2026-10-23-1405-2.tar.gz" not in fake.sizes
     assert fake.sizes[f"{FOLDER}/{BASE}"] == 99
     assert_closed(app, times=1)
 
@@ -178,7 +242,9 @@ async def test_quota_507_is_fixed_text_and_cleans_target(
     with pytest.raises(FilesError) as caught:
         await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert str(caught.value) == MSG_QUOTA
-    assert fake.deleted == [f"{FOLDER}/{BASE}"]
+    temp = fake.uploaded[0][0]
+    assert fake.deleted == [temp]
+    assert temp not in fake.sizes
     assert f"{FOLDER}/{BASE}" not in fake.sizes
     assert_closed(app, times=1)
     # T-05-12: keine Pfade, Dateinamen oder Konten im Log.
@@ -193,7 +259,7 @@ async def test_other_errors_are_fixed_text(dav: tuple[FakeDav, NcRecorder, Magic
     with pytest.raises(FilesError) as caught:
         await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert str(caught.value) == MSG_FILES_FAILED
-    assert fake.deleted == [f"{FOLDER}/{BASE}"]
+    assert fake.deleted == [fake.uploaded[0][0]]
 
 
 async def test_client_closed_when_mkdir_fails(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:

@@ -5,9 +5,12 @@ WebDAV-Timeout (600 s, Pitfall 6) und Upload v1 (``chunked_upload_v2=False``);
 nie ein geteilter Client, Sessions werden immer geschlossen (WR-05, T-05-07).
 
 Ein Upload gilt erst als gelungen, wenn ``by_path`` die Datei mit exakt der
-lokalen Größe zeigt (T-05-09). Der Zielname wird vorher per ``by_path`` frei
-gewählt (``-2``, ``-3`` ..., Pitfall 5); im Fehlerfall wird nur dieser frisch
-gewählte Name gelöscht, nie eine vorhandene Datei (T-05-08).
+lokalen Größe zeigt (T-05-09). Weil WebDAV-PUT still überschreibt, läuft der
+Upload erst auf einen eigenen, eindeutigen Temp-Namen; den Zielnamen (``-2``,
+``-3`` ..., Pitfall 5) vergibt danach ein MOVE mit ``Overwrite: F``. Eine im
+TOCTOU-Fenster entstandene gleichnamige Datei bleibt so unberührt (412, nächster
+Suffix). Im Fehlerfall wird nur die eigene Temp- bzw. frisch verschobene Datei
+gelöscht, nie eine vorhandene (T-05-08, D-08, WR-03).
 
 Ordnerpfade baut immer der Aufrufer (``naming.folder_path``), dieses Modul setzt
 nichts aus Weltnamen zusammen. Ins Log kommen nur Fehlertyp und Statuscode, nie
@@ -23,6 +26,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, BinaryIO, Protocol
+from uuid import uuid4
 
 import anyio
 from nc_py_api import NextcloudException
@@ -40,7 +44,11 @@ CLEANUP_TIMEOUT = 30
 STATUS_NOT_FOUND = 404
 # MKCOL auf einen vorhandenen Ordner antwortet 405 Method Not Allowed.
 STATUS_EXISTS = 405
+# MOVE mit "Overwrite: F" auf ein vorhandenes Ziel antwortet 412 Precondition Failed.
+STATUS_TARGET_EXISTS = 412
 STATUS_QUOTA = 507
+# Temp-Endung des Uploads; ".part" ist in Nextcloud für interne Teil-Uploads reserviert.
+TEMP_SUFFIX = ".gwtmp"
 
 MSG_QUOTA = "Nicht genug Speicherplatz in deinen Nextcloud-Dateien."
 MSG_UPLOAD_INCOMPLETE = "Die Sicherung wurde nicht vollständig in Nextcloud gespeichert."
@@ -153,28 +161,42 @@ class NcBackupFiles:
         try:
             async with _client(uid) as nc:
                 await _makedirs(nc, folder_path)
-                target = await self._free_target(nc, folder_path, base_name, suffix)
+                # WR-03: PUT überschreibt still; darum erst auf einen eigenen, eindeutigen
+                # Temp-Namen hochladen und dann per MOVE mit "Overwrite: F" umbenennen.
+                created = f"{folder_path}/.{base_name}.{uuid4().hex}{TEMP_SUFFIX}"
                 try:
                     spool.seek(0)
-                    await nc.files.upload_stream(target, spool, chunk_size=UPLOAD_CHUNK)
-                    node = await _by_path(nc, target)
+                    await nc.files.upload_stream(created, spool, chunk_size=UPLOAD_CHUNK)
+                    node = await _by_path(nc, created)
                     if node is None or int(node.info.size) != size:
+                        raise FilesError(MSG_UPLOAD_INCOMPLETE)
+                    created = await self._move_to_free_target(nc, folder_path, base_name, suffix, created)
+                    node = await _by_path(nc, created)
+                    if node is None:
                         raise FilesError(MSG_UPLOAD_INCOMPLETE)
                     return _entry(node)
                 except BaseException:
-                    # Nur der frisch gewählte Name; auch bei Abbruch, aber zeitlich begrenzt.
+                    # Nur die eigene Temp- bzw. frisch verschobene Datei; auch bei Abbruch, zeitlich begrenzt.
                     with anyio.move_on_after(CLEANUP_TIMEOUT, shield=True), contextlib.suppress(Exception):
-                        await nc.files.delete(target, not_fail=True)
+                        await nc.files.delete(created, not_fail=True)
                     raise
         except Exception as exc:
             raise _map_error(exc, "Upload") from exc
 
     @staticmethod
-    async def _free_target(nc: Any, folder_path: str, base_name: str, suffix: SuffixFn) -> str:
+    async def _move_to_free_target(nc: Any, folder_path: str, base_name: str, suffix: SuffixFn, temp: str) -> str:
+        """MOVE mit "Overwrite: F" auf den ersten freien Namen; ein im Fenster entstandenes Ziel bleibt unberührt."""
         for n in range(1, MAX_SUFFIX + 1):
             target = f"{folder_path}/{suffix(base_name, n)}"
-            if await _by_path(nc, target) is None:
-                return target
+            if await _by_path(nc, target) is not None:
+                continue
+            try:
+                await nc.files.move(temp, target)
+            except NextcloudException as exc:
+                if exc.status_code == STATUS_TARGET_EXISTS:
+                    continue
+                raise
+            return target
         raise FilesError(MSG_NAME_EXHAUSTED)
 
     async def listdir(self, uid: str, folder_path: str) -> list[FilesEntry]:
