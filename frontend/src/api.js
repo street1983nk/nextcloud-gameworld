@@ -344,6 +344,23 @@ export async function removeVerwalterGroup(gid) {
 	return response.data.groups
 }
 
+// Reste früherer Installationen (06-08, nur NC-Admins, sonst 403): alle drei Routen
+// antworten mit { containers, volumes }; 409 eigene/fremde oder benutzte Objekte, 503 Docker gestört.
+export async function listOrphans() {
+	const response = await axios.get(`${apiBase}/api/admin/orphans`)
+	return response.data
+}
+
+export async function removeOrphanContainer(id) {
+	const response = await post(`${apiBase}/api/admin/orphans/container/remove`, { id })
+	return response.data
+}
+
+export async function removeOrphanVolume(name) {
+	const response = await post(`${apiBase}/api/admin/orphans/volume/remove`, { name })
+	return response.data
+}
+
 // Gruppensuche über Nextcloud ([{ id, display_name }]); 503 heißt: Suche gestört.
 export async function searchGroups(query) {
 	const response = await axios.get(`${apiBase}/api/admin/groups`, { params: { search: query } })
