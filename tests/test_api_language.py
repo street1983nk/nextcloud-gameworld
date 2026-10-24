@@ -22,13 +22,17 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from gameworld.access import roles
 from gameworld.access.roles import Profile, RoleService, UserDep
+from gameworld.api import admin as admin_api
 from gameworld.api import csrf as csrf_api
 from gameworld.api import me as me_api
+from gameworld.api import playtime as playtime_api
 from gameworld.api import setup_check as setup_check_api
 from gameworld.api import worlds as worlds_api
 from gameworld.api.language import LangDep, install_language_handlers
 from gameworld.backup import service as backup_service
 from gameworld.config import load_settings
+from gameworld.i18n import translate
+from gameworld.provisioner import client as client_module
 from gameworld.provisioner import presets
 from gameworld.provisioner import setup_check as setup_texts
 from gameworld.provisioner.client import DockerProvisioner
@@ -39,6 +43,7 @@ from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldRow, WorldStore
 from tests import conftest
 from tests.conftest import appapi_headers, fake_lookup
+from tests.test_orphans import OWN_BOX, OWN_VOLUME, dock, orphan_api  # noqa: F401 (fixtures)
 from tests.test_service_lifecycle import FakeProvisioner
 
 KID = "gw-kind"
@@ -558,3 +563,87 @@ async def test_csrf_refusal_stays_german(client: httpx.AsyncClient) -> None:
     headers = {**appapi_headers(), "Content-Type": "text/plain"}
     response = await client.post("/api/pause/end", content="x", headers=headers)
     assert response.json() == {"detail": csrf_api.MSG_NOT_JSON}
+
+
+# --- playtime validators (422) and orphan refusal (409), Task 3 ----------------------------------
+
+REVERSED_HOLIDAY = {"label": "Ferien", "start_date": "2026-12-21", "end_date": "2026-12-01"}
+LONG_HOLIDAY = {"label": "Ferien", "start_date": "2026-01-01", "end_date": "2027-06-01"}
+
+
+def _messages(response: httpx.Response) -> list[str]:
+    detail = response.json()["detail"]
+    return [detail] if isinstance(detail, str) else [entry["msg"] for entry in detail]
+
+
+async def test_playtime_validator_422_in_english(client: httpx.AsyncClient, lang: Any) -> None:
+    lang("admin", "en")
+    response = await client.post("/api/playtime/holidays", json=REVERSED_HOLIDAY, headers=appapi_headers())
+    assert response.status_code == 422
+    messages = _messages(response)
+    assert messages == ["Value error, A holiday period cannot end before it starts."]
+    for message in messages:
+        assert not german_in(message), message
+
+
+async def test_playtime_validator_422_stays_german(client: httpx.AsyncClient) -> None:
+    response = await client.post("/api/playtime/holidays", json=REVERSED_HOLIDAY, headers=appapi_headers())
+    assert response.status_code == 422
+    assert _messages(response) == [f"Value error, {playtime_api.MSG_HOLIDAY_ENDS_BEFORE_START}"]
+    assert _messages(response) == ["Value error, Ein Ferienzeitraum endet nicht vor seinem Beginn."]
+
+
+async def test_playtime_max_days_template_in_english(client: httpx.AsyncClient, lang: Any) -> None:
+    german = await client.post("/api/playtime/holidays", json=LONG_HOLIDAY, headers=appapi_headers())
+    assert _messages(german) == ["Value error, Ein Ferienzeitraum dauert höchstens 366 Tage."]
+    lang("admin", "fr")
+    french = await client.post("/api/playtime/holidays", json=LONG_HOLIDAY, headers=appapi_headers())
+    assert _messages(french) == ["Value error, Une période de vacances dure au maximum 366 jours."]
+    lang("admin", "en")
+    english = await client.post("/api/playtime/holidays", json=LONG_HOLIDAY, headers=appapi_headers())
+    assert english.status_code == 422
+    assert _messages(english) == ["Value error, A holiday period lasts at most 366 days."]
+
+
+async def test_playtime_window_detail_in_english(client: httpx.AsyncClient, worlds_env: WorldStore, lang: Any) -> None:
+    """Validator texts that arrive via _http_error as a plain detail string are translated too."""
+    del worlds_env
+    body = {"days": [{"weekday": day, "open": True} for day in range(1, 8)]}
+    german = await client.post(f"/api/playtime/worlds/{W1}/window", json=body, headers=appapi_headers())
+    assert german.json() == {"detail": playtime_api.MSG_OPEN_DAY_NEEDS_TIMES}
+    lang("admin", "en")
+    english = await client.post(f"/api/playtime/worlds/{W1}/window", json=body, headers=appapi_headers())
+    assert english.status_code == 422
+    assert english.json() == {"detail": "An open day needs the start and end of its time window."}
+
+
+@pytest.mark.usefixtures("orphan_api")
+async def test_orphan_refusal_409_in_english(client: httpx.AsyncClient, lang: Any) -> None:
+    lang("admin", "en")
+    for path, body in (
+        ("/api/admin/orphans/container/remove", {"id": OWN_BOX}),
+        ("/api/admin/orphans/volume/remove", {"name": OWN_VOLUME}),
+    ):
+        response = await client.post(path, json=body, headers=appapi_headers())
+        assert response.status_code == 409, path
+        assert response.json() == {"detail": "This belongs to this installation or not to Gameworld."}
+
+
+@pytest.mark.usefixtures("orphan_api")
+async def test_orphan_refusal_409_stays_german(client: httpx.AsyncClient) -> None:
+    response = await client.post("/api/admin/orphans/container/remove", json={"id": OWN_BOX}, headers=appapi_headers())
+    assert response.status_code == 409
+    assert response.json() == {"detail": admin_api.MSG_ORPHAN_REFUSED}
+
+
+def test_orphan_refused_texts_are_translated() -> None:
+    """The provisioner texts behind the 409 (str(exc) in logs and answers) have en and fr entries."""
+    for text in (
+        client_module.MSG_ORPHAN_BAD_ID,
+        client_module.MSG_ORPHAN_CONTAINER_REFUSED,
+        client_module.MSG_ORPHAN_VOLUME_REFUSED,
+    ):
+        assert german_in(text), text
+        assert not german_in(translate(text, "en")), text
+        assert translate(text, "fr") != text
+    assert translate(client_module.MSG_ORPHAN_BAD_ID, "en") == "Invalid container ID."

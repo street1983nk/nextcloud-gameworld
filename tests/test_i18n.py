@@ -294,3 +294,121 @@ def test_no_dashes_or_emojis_in_catalogs() -> None:
             assert chr(0x2013) not in value, value
             assert chr(0x2014) not in value, value
             assert all(ord(char) < 0x2600 for char in value), value
+
+
+# --- raise and HTTPException literals (Task 3, T-06-109) -------------------------------------
+
+_RAISE_DIRS = ("api", "access", "backup", "talk", "playtime", "worlds")
+_RAISE_FILES = ("provisioner/client.py", "provisioner/presets.py", "provisioner/archive.py")
+INTERNAL = "intern: "
+
+
+@dataclass(frozen=True)
+class Literal:
+    file: str
+    line: int
+    text: str
+    formatted: bool  # f-string (JoinedStr)
+
+
+def _literals(node: ast.expr) -> list[tuple[ast.expr, str, bool]]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [(node, node.value, False)]
+    if isinstance(node, ast.JoinedStr):
+        return [(node, ast.unparse(node), True)]
+    if isinstance(node, ast.BinOp):
+        return _literals(node.left) + _literals(node.right)
+    return []
+
+
+def _call_name(call: ast.Call) -> str:
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def scan_source(source: str, file: str) -> list[Literal]:
+    """Str literals passed to ``raise X(...)`` (positional and keyword) and to ``HTTPException(detail=...)``."""
+    found: list[Literal] = []
+    for node in ast.walk(ast.parse(source)):
+        arguments: list[ast.expr] = []
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
+            arguments = [*node.exc.args, *(keyword.value for keyword in node.exc.keywords)]
+        if isinstance(node, ast.Call) and _call_name(node) == "HTTPException":
+            arguments += [keyword.value for keyword in node.keywords if keyword.arg == "detail"]
+            arguments += node.args[1:2]
+        for argument in arguments:
+            for literal, text, formatted in _literals(argument):
+                found.append(Literal(file, literal.lineno, text, formatted))
+    return sorted(set(found), key=lambda item: (item.file, item.line, item.text))
+
+
+def raise_files() -> list[str]:
+    found = [path.relative_to(SRC).as_posix() for folder in _RAISE_DIRS for path in sorted((SRC / folder).glob("*.py"))]
+    return found + list(_RAISE_FILES)
+
+
+def scan_repo() -> list[Literal]:
+    result: list[Literal] = []
+    for relative in raise_files():
+        result += scan_source((SRC / relative).read_text(encoding="utf-8"), f"src/gameworld/{relative}")
+    return result
+
+
+def literal_covered(literal: Literal) -> bool:
+    """An exact entry (or a matching template) in en and fr; an f-string is never covered."""
+    if literal.formatted:
+        return False
+    return all(
+        literal.text in catalog.MESSAGES or translate(literal.text, language) != literal.text
+        for catalog, language in ((catalog_en, "en"), (catalog_fr, "fr"))
+    )
+
+
+def test_scanner_positive_control() -> None:
+    source = (
+        "from fastapi import HTTPException\n"
+        "def f(y):\n"
+        "    raise ValueError('Neuer Text')\n"
+        "def g(y):\n"
+        "    return HTTPException(400, detail=f'x {y}')\n"
+    )
+    found = scan_source(source, "mini.py")
+    assert [(item.line, item.text, item.formatted) for item in found] == [
+        (3, "Neuer Text", False),
+        (5, "f'x {y}'", True),
+    ]
+    assert not literal_covered(found[0])
+    assert not literal_covered(found[1])
+
+
+def test_every_raise_literal_is_translated_or_internal() -> None:
+    excepted = {(row.file, row.line) for row in load_exceptions()}
+    missing = [item for item in scan_repo() if (item.file, item.line) not in excepted and not literal_covered(item)]
+    assert missing == []
+
+
+def test_exception_list_matches_the_scan() -> None:
+    """Both directions: every row points to a real, uncovered literal and carries an internal reason."""
+    findings = {(item.file, item.line): item for item in scan_repo()}
+    constants = {(file, line) for file, line, _, _ in server_constants()}
+    rows = load_exceptions()
+    assert len({(row.file, row.line) for row in rows}) == len(rows), "duplicate rows"
+    for row in rows:
+        assert row.reason.startswith(INTERNAL), row
+        assert row.reason.removeprefix(INTERNAL).strip(), row
+        assert (row.file, row.line) in findings or (row.file, row.line) in constants, f"stale row: {row}"
+        finding = findings.get((row.file, row.line))
+        if finding is not None:
+            assert not literal_covered(finding), f"row for a translated literal: {row}"
+
+
+def test_raise_scan_reaches_all_folders() -> None:
+    """No silent empty scan: findings come from the folders the plan names (internal ones included)."""
+    files = {item.file for item in scan_repo()}
+    assert "src/gameworld/backup/files.py" in files
+    assert "src/gameworld/worlds/store.py" in files
+    assert len(raise_files()) > 40
