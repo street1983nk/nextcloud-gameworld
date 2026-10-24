@@ -45,6 +45,8 @@ Jede Familie und jede Schule mit Nextcloud kann Gameworld direkt aus dem Nextclo
 - **D-27:** Auch die Texte IM Spiel (Chat-Hinweise, Pausen-/Kick-Texte, Spielzeit-Warnungen der Mods) werden uebersetzt, PRO WELT einstellbar; Standard ist die Sprache des anlegenden Verwalters. Alle Kinder einer Welt sehen dieselben Texte.
 - Folge: Die Plaene 06-13 (Screenshots/Abnahme), 06-11-Anteile (Listing-Interface-Zeile) und 06-16 verschieben sich hinter die neuen i18n-Plaene. Die am 24.10. aufgenommenen deutschen Screenshots bleiben fuer die DE-Fassung verwendbar, sofern sich die UI nicht aendert.
 
+- **D-28 (Owner 24.10., Store-Strategie):** info.xml bekommt einen discussion-Link auf einen eigenen Gameworld-Thread im Nextcloud-Forum (Thread-Entwurf vorbereiten, Owner postet/gibt GO vor dem Store-Upload). Die Store-Beschreibung bekommt je Sprache einen Cross-Promo-Satz auf die Schwester-Apps (Findling Search, MCP Connector) im Fakten-Ton. Summaries sind schon dreisprachig (D-09).
+
 ### Rahmenbedingungen
 - **R-01:** Die Store-Zertifikatsanfrage läuft (nextcloud/app-certificate-requests PR #1364, offen seit 21.10.2026). Owner-Vorgabe: NICHT nachhaken, einfach warten. Der eigentliche Store-Upload (Signieren + Submit) ist der letzte Plan der Phase, NICHT autonom und hängt am gemergten Zertifikat; alle anderen Pläne sind davon unabhängig.
 - **R-02:** Test der Store-Installation auf AIO und Standard-Compose (Roadmap-Kriterium 1) gehört in die Phasenabnahme.
