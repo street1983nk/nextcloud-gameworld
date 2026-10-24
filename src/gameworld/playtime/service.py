@@ -72,6 +72,7 @@ MAX_HOLIDAYS = 50
 MSG_TOO_MANY_HOLIDAYS = f"Es sind höchstens {MAX_HOLIDAYS} Ferienzeiträume möglich."
 MSG_NO_HOLIDAY = "Diesen Ferienzeitraum gibt es nicht."
 MSG_ADMIN_NO_RULES = "Verwalter haben keine Spielzeitregeln."
+MSG_ADULT_IS_VERWALTER = "Dieses Konto verwaltet Gameworld und spielt ohnehin ohne Regeln."
 MSG_WINDOW_NEEDS_OPEN_DAY = "Eine Welt mit Zeitfenster braucht mindestens einen offenen Tag."
 # Verwalter-Schnappschuss höchstens so oft aus Nextcloud holen (wie SYNC_INTERVAL_SECONDS).
 ADMINS_INTERVAL_SECONDS = 60
@@ -165,6 +166,8 @@ class ChildView:
     holiday: WeekPlan | None
     used_today_s: int
     state: ChildState | None
+    # Erwachsen-Schalter (ROLLE-04): Plan ruht, das Konto spielt ohne Regeln.
+    adult: bool = False
 
 
 @dataclass(frozen=True)
@@ -492,6 +495,18 @@ class TimeService:
         applied = await anyio.to_thread.run_sync(self._clear_sync, nc_user)
         return await self._result(acting_uid, nc_user, applied)
 
+    async def set_adult(self, acting_uid: str, nc_user: str, *, adult: bool) -> bool:
+        """Erwachsen-Schalter eines eingeladenen Kontos (ROLLE-04, D-05/D-08); True, wenn alle Welten ihn tragen.
+
+        Nur aus dem Verwalter-Router aufrufen (D-06). Wirkt ausschließlich auf die
+        Zeitregeln (frei-Zeile, keine Verbuchung), nie auf Verwaltungs- oder
+        Luanti-Rechte. Unbekanntes Konto: PlayerNotFoundError; ein Verwalter-Konto
+        lässt sich nicht als erwachsen markieren (ValueError MSG_ADULT_IS_VERWALTER).
+        """
+        # Nextcloud-Abfrage außerhalb der Sperre (Sperr-Regel), danach frischer Verwalter-Stand.
+        await self.refresh_admins(acting_uid, force=True)
+        return await anyio.to_thread.run_sync(self._adult_sync, nc_user, adult, acting_uid)
+
     async def add_holiday(self, holiday: Holiday) -> HolidayResult:
         """Legt einen Ferienzeitraum für den Haushalt an und schreibt alle Welten neu (O-08)."""
         return await anyio.to_thread.run_sync(self._add_holiday_sync, holiday)
@@ -541,7 +556,8 @@ class TimeService:
 
     def _my_playtime_sync(self, nc_user: str) -> MyPlaytime:
         try:
-            if nc_user in self._admins():
+            # Frei-Menge wie im Welt-Mod: Verwalter und Erwachsene (ROLLE-04).
+            if nc_user in self._admins() or nc_user in self._store.adults():
                 return UNLIMITED
             engine = self._worlds.time
             state = engine.child_state(nc_user)
@@ -676,6 +692,20 @@ class TimeService:
             self._store.set_child_plan(nc_user, normal, holiday, acting_uid, updated_at)
             return all(self._worlds.push_time(world_id) for world_id in self._store.player_worlds(nc_user))
 
+    def _adult_sync(self, nc_user: str, adult: bool, acting_uid: str) -> bool:
+        set_at = datetime.now(UTC).isoformat(timespec="seconds")
+        with self._worlds.mutation():
+            if self._store.get_player(nc_user) is None:
+                raise PlayerNotFoundError(MSG_NO_PLAYER)
+            if adult:
+                if nc_user in self._admins():
+                    raise ValueError(MSG_ADULT_IS_VERWALTER)
+                self._store.set_adult(nc_user, acting_uid, set_at)
+            else:
+                # Zurück auf Kind ist immer erlaubt, auch für ein inzwischen verwaltendes Konto.
+                self._store.clear_adult(nc_user)
+            return all(self._worlds.push_time(world_id) for world_id in self._store.player_worlds(nc_user))
+
     def _clear_sync(self, nc_user: str) -> bool:
         with self._worlds.mutation():
             # Heutigen Verbrauch behalten: erneutes Setzen gibt kein frisches Kontingent (WR-04).
@@ -737,6 +767,7 @@ class TimeService:
         holidays = [self._holiday_view(hid, item, today) for hid, item in self._store.holiday_rows()]
         # Verwalter erscheinen nicht in der Kinderliste (A4); die Einzelsicht nach clear_child zeigt sie.
         admins = self._admins() if without_admins else frozenset[str]()
+        adults = self._store.adults()
         rows: list[ChildView] = []
         for player in self._store.list_players():
             if player.nc_user in admins:
@@ -753,6 +784,7 @@ class TimeService:
                     holiday=holiday,
                     used_today_s=self._store.usage(player.nc_user, today),
                     state=self._worlds.time.child_state(player.nc_user),
+                    adult=player.nc_user in adults,
                 )
             )
         return _Snapshot(time_zone=tz_name, holidays=holidays, rows=rows)

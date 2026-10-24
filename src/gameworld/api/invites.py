@@ -4,7 +4,8 @@ Der Browser liefert nur Konto- und Gruppen-IDs; das Backend lädt nur ein, was
 Nextcloud dem Verwalter als vorhandenes, aktives Konto oder als Gruppe
 bestätigt. Entfernen läuft als POST mit Body, weil Konto- und Gruppen-IDs
 Sonderzeichen enthalten dürfen. Passwort neu und Umbenennen gelten für alle
-Welten eines Kontos (A2).
+Welten eines Kontos (A2). Der Erwachsen-Schalter (ROLLE-04) liegt bewusst hier
+im Verwalter-Router: Nur Verwalter setzen ihn (D-06), nie ein Kind über /api/my/.
 """
 
 from __future__ import annotations
@@ -36,9 +37,12 @@ from gameworld.access.service import (
     actor_of,
 )
 from gameworld.api.worlds import ServiceDep, WorldId
+from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
+from gameworld.playtime.service import MSG_ADULT_IS_VERWALTER, TimeService
 from gameworld.provisioner.client import WorldNotFoundError
 from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import NOT_FOUND
+from gameworld.worlds.store import WorldStore
 
 LOG = logging.getLogger(__name__)
 
@@ -111,12 +115,29 @@ class RenameRequest(PlayerRef):
     player_name: Annotated[str, Field(max_length=20)]
 
 
+class AdultIn(PlayerRef):
+    """Erwachsen-Schalter eines Kontos (ROLLE-04); extra="forbid" wie PlayerRef."""
+
+    adult: bool
+
+
+class AdultOut(BaseModel):
+    nc_user: str
+    adult: bool
+    # Tragen alle Welten des Kontos die neue Regeldatei schon?
+    applied: bool
+
+
 class PlayerOut(BaseModel):
     nc_user: str
     display_name: str
     player_name: str
     password: str
     via: str
+    # Erwachsen-Schalter, Verwalter-Konto, Spielzeitregeln (Chips der Spielerliste, 06-05).
+    adult: bool = False
+    verwalter: bool = False
+    has_rules: bool = False
 
 
 class PlayerChangeOut(BaseModel):
@@ -155,9 +176,28 @@ def get_access_service(
 AccessDep = Annotated[AccessService, Depends(get_access_service)]
 
 
-async def _players(access: AccessService, world_id: str, actor: Actor, result: AccessResult | None) -> PlayersOut:
+def get_time_service(
+    worlds: ServiceDep,
+    directory: Annotated[Directory, Depends(get_directory)],
+) -> TimeService:
+    """Wie api.playtime.get_time_service (dort nicht importierbar: api.playtime importiert dieses Modul)."""
+    return TimeService(worlds, directory)
+
+
+TimeDep = Annotated[TimeService, Depends(get_time_service)]
+
+
+def _player_flags(store: WorldStore) -> tuple[set[str], frozenset[str], set[str]]:
+    """Erwachsene, Verwalter-Vereinigung und Konten mit Regeln aus dem Store (Worker-Thread)."""
+    return store.adults(), parse_admins(store.get_meta(META_TIME_ADMINS)), set(store.child_plans())
+
+
+async def _players(
+    access: AccessService, store: WorldStore, world_id: str, actor: Actor, result: AccessResult | None
+) -> PlayersOut:
     players = await access.list_players(world_id, actor)
     invites = await anyio.to_thread.run_sync(access.list_invites, world_id)
+    adults, verwalter, with_rules = await anyio.to_thread.run_sync(_player_flags, store)
     return PlayersOut(
         players=[
             PlayerOut(
@@ -166,6 +206,9 @@ async def _players(access: AccessService, world_id: str, actor: Actor, result: A
                 player_name=player.player_name,
                 password=player.password,
                 via=player.via,
+                adult=player.nc_user in adults,
+                verwalter=player.nc_user in verwalter,
+                has_rules=player.nc_user in with_rules,
             )
             for player in players
         ],
@@ -219,9 +262,9 @@ ActorDep = Annotated[Actor, Depends(current_actor)]
 
 
 @router.get("/worlds/{world_id}/players")
-async def list_players(world_id: WorldId, access: AccessDep, actor: ActorDep) -> PlayersOut:
+async def list_players(world_id: WorldId, access: AccessDep, actor: ActorDep, service: ServiceDep) -> PlayersOut:
     try:
-        return await _players(access, world_id, actor, None)
+        return await _players(access, service.store, world_id, actor, None)
     except _ERRORS as exc:
         raise _http_error(exc) from None
 
@@ -240,7 +283,7 @@ async def invite(
     # Talk-Raum folgt world_access (D-16), best effort und nie blockierend (D-20).
     _talk_hook(lambda: get_talk_service(service.store).schedule_sync(world_id))
     try:
-        return await _players(access, world_id, actor, result)
+        return await _players(access, service.store, world_id, actor, result)
     except _ERRORS as exc:
         raise _http_error(exc) from None
 
@@ -255,7 +298,7 @@ async def remove_invite(
         raise _http_error(exc) from None
     _talk_hook(lambda: get_talk_service(service.store).schedule_sync(world_id))
     try:
-        return await _players(access, world_id, actor, result)
+        return await _players(access, service.store, world_id, actor, result)
     except _ERRORS as exc:
         raise _http_error(exc) from None
 
@@ -285,6 +328,20 @@ async def reset_password(body: PlayerRef, access: AccessDep, uid: VerwalterDep) 
         return _change_out(await access.rotate_password(uid, body.nc_user))
     except _PLAYER_ERRORS as exc:
         raise _http_error(exc) from None
+
+
+@router.post("/players/adult")
+async def set_adult(body: AdultIn, playtime: TimeDep, uid: VerwalterDep) -> AdultOut:
+    """Erwachsen-Schalter (ROLLE-04): wirkt sofort in allen Welten des Kontos, nur auf die Zeitregeln."""
+    try:
+        applied = await playtime.set_adult(uid, body.nc_user, adult=body.adult)
+    except ValueError as exc:
+        if str(exc) == MSG_ADULT_IS_VERWALTER:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=MSG_ADULT_IS_VERWALTER) from None
+        raise _http_error(exc) from None
+    except _PLAYER_ERRORS as exc:
+        raise _http_error(exc) from None
+    return AdultOut(nc_user=body.nc_user, adult=body.adult, applied=applied)
 
 
 @router.get("/settings")

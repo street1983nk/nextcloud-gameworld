@@ -174,6 +174,8 @@ class ChildOut(BaseModel):
     holiday: list[DayOut] | None
     used_today_s: int
     state: StateOut | None
+    # Erwachsen-Schalter (ROLLE-04): Plan ruht, Konto spielt ohne Regeln.
+    adult: bool = False
     # Nur bei POST/DELETE gesetzt: Tragen die Welten die Regeln schon?
     applied: bool | None = None
 
@@ -276,6 +278,7 @@ def _child_out(child: ChildView, applied: bool | None = None) -> ChildOut:
         holiday=None if child.holiday is None else _days_out(child.holiday),
         used_today_s=child.used_today_s,
         state=_state_out(child.state),
+        adult=child.adult,
         applied=applied,
     )
 
