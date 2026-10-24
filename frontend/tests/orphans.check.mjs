@@ -3,13 +3,14 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { formatDate } from '../src/backup.js'
+import { setLanguage } from '../src/i18n/index.js'
 import {
 	CLEANUP_DOCS_URL,
-	EMPTY_TEXT,
-	INTRO_TEXT,
-	LIFECYCLE_TEXT,
-	SCRIPT_SEGMENTS,
-	SCRIPT_TEXT,
+	emptyText,
+	introText,
+	lifecycleText,
+	scriptSegments,
+	scriptText,
 	containerMeta,
 	containerQuestion,
 	inUseText,
@@ -18,6 +19,8 @@ import {
 	volumeMeta,
 	volumeQuestion,
 } from '../src/orphans.js'
+
+setLanguage('de')
 
 assert.equal(CLEANUP_DOCS_URL, 'https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md#cleanup')
 
@@ -48,25 +51,25 @@ assert.equal(
 )
 
 assert.equal(
-	EMPTY_TEXT,
+	emptyText(),
 	'Keine Reste gefunden. Alles, was Gameworld auf diesem Server angelegt hat, gehört zu einer Welt in der Liste oben.',
 )
 assert.equal(
-	INTRO_TEXT,
+	introText(),
 	'Hier stehen Welt-Container und Spielstände, die Gameworld angelegt hat, die aber zu keiner Welt dieser Installation gehören. Das passiert zum Beispiel nach einer Neuinstallation mit gelöschten App-Daten. Gameworld fasst nur eigene Container und Spielstände an.',
 )
 assert.equal(
-	LIFECYCLE_TEXT,
+	lifecycleText(),
 	'Beim Deaktivieren und bei jedem Update der App stoppt Gameworld alle Welten und entfernt ihre Container. Wer gerade spielt, wird kurz getrennt. Spielstände und Sicherungen bleiben, danach baut Gameworld die Welten von selbst wieder auf.',
 )
 assert.equal(
-	SCRIPT_TEXT,
+	scriptText(),
 	'Nach dem Deinstallieren gibt es diese Liste nicht mehr. Dann hilft das Skript gameworld-orphans.sh auf dem Docker-Host: Es zeigt Reste nur an und löscht sie erst mit --remove-containers oder --remove-volumes.',
 )
 // Die Darstellung mit code-Elementen ergibt denselben Text.
-assert.equal(SCRIPT_SEGMENTS.map((part) => part.text).join(''), SCRIPT_TEXT)
+assert.equal(scriptSegments().map((part) => part.text).join(''), scriptText())
 assert.deepEqual(
-	SCRIPT_SEGMENTS.filter((part) => part.code).map((part) => part.text),
+	scriptSegments().filter((part) => part.code).map((part) => part.text),
 	['gameworld-orphans.sh', '--remove-containers', '--remove-volumes'],
 )
 
@@ -102,5 +105,23 @@ if (vue !== null) {
 	assert.equal(mounts.length, 1, `OrphanSection-Einhängepunkte: ${mounts.length}`)
 	assert.match(mounts[0], /v-if="me\?\.nc_admin === true"/)
 }
+
+// English and French (D-25); expected texts written out independently.
+const local = '2026-10-20T08:15:00'
+setLanguage('en')
+assert.equal(containerMeta({ state: 'running', created: local }), 'Status: running, created 20/10/2026 08:15')
+assert.equal(removedText('volume', 'x'), 'World data x deleted.')
+assert.deepEqual(
+	scriptSegments().filter((part) => part.code).map((part) => part.text),
+	['gameworld-orphans.sh', '--remove-containers', '--remove-volumes'],
+)
+setLanguage('fr')
+assert.equal(containerMeta({ state: 'exited', created: local }), 'État\u00a0: arrêté, création\u00a0: 20/10/2026 08:15')
+assert.equal(
+	containerQuestion('gw-x'),
+	'Arrêter et supprimer le conteneur «\u00a0gw-x\u00a0»\u00a0? Les personnes qui y jouent seront déconnectées. Les données du monde sont conservées.',
+)
+assert.equal(scriptText().includes(' ou --remove-volumes.'), true)
+setLanguage('de')
 
 console.log('orphans.check: alle Prüfungen bestanden')

@@ -1,68 +1,87 @@
-// Spielzeit im Browser: Voreinstellungen, Zusammenfassungen und Umrechnung
-// zwischen den Tages-Kacheln und der API (Minuten ab 00:00 lokal, Ende exklusiv).
+// Playtime in the browser: presets, summaries and conversion between the day
+// tiles and the API (minutes from 00:00 local time, end exclusive).
 //
-// Rein, ohne Vue und ohne @nextcloud: läuft auch unter Node
-// (frontend/tests/playtime.check.mjs). Das Backend prüft jede Eingabe
-// unabhängig; die Prüfung hier ist nur Komfort.
+// Pure, without Vue and without Nextcloud packages: also runs under Node
+// (frontend/tests/playtime.check.mjs). The backend validates every input
+// independently; the check here is only for convenience.
 //
-// Kindertexte (Owner-Entscheid 21.10.2026): dieselben Sätze wie im Welt-Mod
-// (kid_text in src/gameworld/provisioner/time_mod.py), nie "0 Uhr",
-// "Mitternacht", ein Datum oder eine Kurzform; Tagesbezug "Heute", "Morgen",
-// "Am Samstag", "Nächsten Samstag", eine Uhrzeit nur bei echter Startzeit.
+// Kid texts (owner decision 21.10.2026): in German the same sentences as the world
+// mod (kid_text in src/gameworld/provisioner/time_mod.py), never "0 Uhr",
+// "Mitternacht", a date or an abbreviation; day reference "Heute", "Morgen",
+// "Am Samstag", "Nächsten Samstag", a clock time only for a real start time.
+// All texts come from the i18n dictionaries (area core); sentences that combine a
+// day and a time use one template per language with a {when} placeholder.
+import { t, tn } from './i18n/index.js'
 
 const FULL_DAY = 1440
-// Vorgaben, wenn eine Kachel von "ganzer Tag" auf ein Zeitfenster wechselt.
+// Defaults when a tile switches from "whole day" to a time window.
 const DEFAULT_START = 540
 const DEFAULT_END = 1140
-// Chips bleiben kurz; wird der Text länger, entfällt das Zeitfenster (steht im Dialog).
+// Chips stay short; if the text gets longer, the time window is dropped (it is in the dialog).
 const MAX_CHIP = 30
 
-export const WEEKDAYS = Object.freeze([
-	{ weekday: 1, short: 'Mo', long: 'Montag' },
-	{ weekday: 2, short: 'Di', long: 'Dienstag' },
-	{ weekday: 3, short: 'Mi', long: 'Mittwoch' },
-	{ weekday: 4, short: 'Do', long: 'Donnerstag' },
-	{ weekday: 5, short: 'Fr', long: 'Freitag' },
-	{ weekday: 6, short: 'Sa', long: 'Samstag' },
-	{ weekday: 7, short: 'So', long: 'Sonntag' },
-].map((entry) => Object.freeze(entry)))
+// ISO weekdays, 1 = Monday.
+const ISO_WEEKDAYS = Object.freeze([1, 2, 3, 4, 5, 6, 7])
 
-const SCHOOL_DAYS = [1, 2, 3, 4, 5]
+// { weekday, short, long } per ISO weekday in the UI language ("Mo"/"Montag" in German).
+export function weekdays() {
+	return Object.freeze(ISO_WEEKDAYS.map((weekday) => Object.freeze({
+		weekday,
+		short: t(`core.playtime.weekdayShort.${weekday}`),
+		long: t(`core.playtime.weekdayLong.${weekday}`),
+	})))
+}
 
-// "45 min", "1 Std", "1 Std 30 min"
+// German "45 min", "1 Std", "1 Std 30 min"
 export function formatMinutes(minutes) {
 	const hours = Math.floor(minutes / 60)
 	const rest = minutes % 60
 	if (hours === 0) {
-		return `${rest} min`
+		return t('core.playtime.duration.minutes', { minutes: rest })
 	}
-	return rest === 0 ? `${hours} Std` : `${hours} Std ${rest} min`
+	return rest === 0
+		? t('core.playtime.duration.hours', { hours })
+		: t('core.playtime.duration.hoursMinutes', { hours, minutes: rest })
 }
 
-// "19", "19:30" (ohne "Uhr", für "9 bis 19 Uhr")
+function clockParts(minutes) {
+	return { hours: Math.floor(minutes / 60), minutes: String(minutes % 60).padStart(2, '0') }
+}
+
+// Start of a range: German "19", "19:30" (without "Uhr", for "9 bis 19 Uhr").
 function clockShort(minutes) {
-	const hours = Math.floor(minutes / 60)
-	const rest = minutes % 60
-	return rest === 0 ? String(hours) : `${hours}:${String(rest).padStart(2, '0')}`
+	const parts = clockParts(minutes)
+	return minutes % 60 === 0
+		? t('core.playtime.clock.rangeStartHour', parts)
+		: t('core.playtime.clock.hourMinute', parts)
 }
 
-// "19 Uhr", "19:30" (mit Minuten ohne "Uhr", Owner-Entscheid 22.10.2026); 1440 ist "24 Uhr" (Ende des Tages).
+// German "19 Uhr", "19:30" (with minutes without "Uhr", owner decision 22.10.2026);
+// 1440 is "24 Uhr" (end of the day). English "19:00", French "19 h" and "19 h 30".
 export function formatClock(minutes) {
-	return minutes % 60 === 0 ? `${clockShort(minutes)} Uhr` : clockShort(minutes)
+	const parts = clockParts(minutes)
+	return minutes % 60 === 0
+		? t('core.playtime.clock.hour', parts)
+		: t('core.playtime.clock.hourMinute', parts)
 }
 
-// Tageslimit-Auswahl: 15 min bis 4 Std im 15-Minuten-Raster; "ohne Limit" extra.
-export const LIMIT_OPTIONS = Object.freeze(
-	Array.from({ length: 16 }, (_, index) => Object.freeze({ value: 15 * (index + 1), label: formatMinutes(15 * (index + 1)) })),
-)
-export const NO_LIMIT_OPTION = Object.freeze({ value: null, label: 'ohne Limit' })
+// Daily limit choice: 15 min to 4 h in steps of 15 minutes; "no limit" separately.
+export function limitOptions() {
+	return Object.freeze(
+		Array.from({ length: 16 }, (_, index) => Object.freeze({ value: 15 * (index + 1), label: formatMinutes(15 * (index + 1)) })),
+	)
+}
+
+export function noLimitOption() {
+	return Object.freeze({ value: null, label: t('core.playtime.noLimit') })
+}
 
 function apiDay(weekday, allowed, limit = null, start = null, end = null) {
 	return Object.freeze({ weekday, allowed, limit_minutes: limit, window_start: start, window_end: end })
 }
 
 function week(rule) {
-	return Object.freeze(WEEKDAYS.map(({ weekday }) => rule(weekday)))
+	return Object.freeze(ISO_WEEKDAYS.map((weekday) => rule(weekday)))
 }
 
 // Voreinstellungen nach O-07 im API-Format; keine = keine Regeln (Opt-in, O-10).
@@ -79,41 +98,42 @@ export const PRESETS = Object.freeze({
 export const HOLIDAY_PRESET = week((weekday) => apiDay(weekday, true, 120, 540, 1200))
 
 function shortName(weekday) {
-	return WEEKDAYS[weekday - 1].short
+	return t(`core.playtime.weekdayShort.${weekday}`)
 }
 
-// "Jeden Tag", "Sa und So", "Mo bis Fr", "Mi", "Mo, Mi und Fr"
-function daysLabel(weekdays) {
-	const sorted = [...weekdays].sort((a, b) => a - b)
+// German "Jeden Tag", "Sa und So", "Mo bis Fr", "Mi", "Mo, Mi und Fr"; inline uses the
+// lower-case "jeden Tag" for the middle of a sentence.
+function daysLabel(days, inline = false) {
+	const sorted = [...days].sort((a, b) => a - b)
 	if (sorted.length === 7) {
-		return 'Jeden Tag'
+		return t(inline ? 'core.playtime.days.everyInline' : 'core.playtime.days.every')
 	}
 	if (sorted.length === 1) {
 		return shortName(sorted[0])
 	}
 	const contiguous = sorted.every((weekday, index) => index === 0 || weekday === sorted[index - 1] + 1)
 	if (contiguous && sorted.length >= 3) {
-		return `${shortName(sorted[0])} bis ${shortName(sorted[sorted.length - 1])}`
+		return t('core.playtime.days.range', { from: shortName(sorted[0]), to: shortName(sorted[sorted.length - 1]) })
 	}
 	const names = sorted.map(shortName)
-	return `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}`
+	return t('core.playtime.days.list', { list: names.slice(0, -1).join(', '), last: names[names.length - 1] })
 }
 
-// "9 bis 19 Uhr", "bis 19 Uhr", "ab 9 Uhr", "ganztags"; null ohne Fenster.
+// German "9 bis 19 Uhr", "bis 19 Uhr", "ab 9 Uhr", "ganztags"; null without a window.
 function rangeText(start, end) {
 	if (start === null || end === null) {
 		return null
 	}
 	if (start === 0 && end === FULL_DAY) {
-		return 'ganztags'
+		return t('core.playtime.range.allDay')
 	}
 	if (start === 0) {
-		return `bis ${formatClock(end)}`
+		return t('core.playtime.range.until', { end: formatClock(end) })
 	}
 	if (end === FULL_DAY) {
-		return `ab ${formatClock(start)}`
+		return t('core.playtime.range.from', { start: formatClock(start) })
 	}
-	return `${clockShort(start)} bis ${formatClock(end)}`
+	return t('core.playtime.range.between', { start: clockShort(start), end: formatClock(end) })
 }
 
 function groupBy(days, keyOf) {
@@ -128,32 +148,32 @@ function groupBy(days, keyOf) {
 	return [...groups.values()]
 }
 
-// Kurztext für den Chip eines Kindes (API-Tage oder null).
+// Short text for a child's chip (API days or null).
 export function summarize(days) {
 	if (!days) {
-		return 'Keine Begrenzung'
+		return t('core.playtime.summary.none')
 	}
 	const allowed = days.filter((entry) => entry.allowed)
 	if (allowed.length === 0) {
-		return 'Kein Spieltag'
+		return t('core.playtime.summary.noPlayDay')
 	}
 	const groups = groupBy(allowed, (entry) => `${entry.limit_minutes}|${entry.window_start}|${entry.window_end}`)
 	if (groups.length === 1) {
-		const { first, weekdays } = groups[0]
-		const label = daysLabel(weekdays)
+		const { first, weekdays: groupDays } = groups[0]
+		const label = daysLabel(groupDays)
 		const limit = first.limit_minutes === null ? null : formatMinutes(first.limit_minutes)
 		const window = rangeText(first.window_start, first.window_end)
 		let head = label
 		const parts = []
-		if (label === 'Jeden Tag') {
+		if (groupDays.length === 7) {
 			if (limit) {
-				head = `${label} ${limit}`
+				head = t('core.playtime.summary.daysRule', { days: label, rule: limit })
 			}
 		} else if (limit) {
-			parts.push(weekdays.length > 1 ? `je ${limit}` : limit)
+			parts.push(groupDays.length > 1 ? t('core.playtime.summary.each', { limit }) : limit)
 		}
 		if (!limit && !window) {
-			return `${label}, ohne Limit`
+			return t('core.playtime.summary.daysNoLimit', { days: label })
 		}
 		const withWindow = [head, ...parts, ...(window ? [window] : [])].join(', ')
 		if (withWindow.length <= MAX_CHIP || !limit || !window) {
@@ -163,33 +183,34 @@ export function summarize(days) {
 	}
 	if (groups.length === 2) {
 		return groups
-			.map(({ first, weekdays }) => {
+			.map(({ first, weekdays: groupDays }) => {
 				const rule = first.limit_minutes !== null
 					? formatMinutes(first.limit_minutes)
-					: (rangeText(first.window_start, first.window_end) ?? 'ohne Limit')
-				return `${daysLabel(weekdays)} ${rule}`
+					: (rangeText(first.window_start, first.window_end) ?? t('core.playtime.noLimit'))
+				return t('core.playtime.summary.daysRule', { days: daysLabel(groupDays), rule })
 			})
 			.join(', ')
 	}
-	return 'Eigener Wochenplan'
+	return t('core.playtime.summary.custom')
 }
 
-// Chip einer Welt aus time_window: "Offen Mi 10 bis 12 Uhr"; ohne Fenster leer.
+// Chip of a world from time_window: German "Offen Mi 10 bis 12 Uhr"; empty without a window.
 export function windowSummary(days) {
 	if (!days) {
 		return ''
 	}
 	const open = days.filter((entry) => entry.open)
 	if (open.length === 0) {
-		return 'Geschlossen'
+		return t('core.playtime.window.closed')
 	}
 	const groups = groupBy(open, (entry) => `${entry.window_start}|${entry.window_end}`)
-	const label = daysLabel(open.map((entry) => entry.weekday)).replace('Jeden Tag', 'jeden Tag')
+	const label = daysLabel(open.map((entry) => entry.weekday), true)
 	if (groups.length > 1) {
-		return `Offen ${label}, je nach Tag`
+		return t('core.playtime.window.varies', { days: label })
 	}
 	const { first } = groups[0]
-	return `Offen ${label} ${rangeText(first.window_start, first.window_end) ?? 'ganztags'}`
+	const range = rangeText(first.window_start, first.window_end) ?? t('core.playtime.range.allDay')
+	return t('core.playtime.window.open', { days: label, range })
 }
 
 // Kachel-Modell: { weekday, allowed, limit, fullDay, start, end } (Minuten).
@@ -199,7 +220,7 @@ function tile(weekday, allowed, limit, fullDay, start, end) {
 
 // API-Tage (oder null) in bearbeitbare Kacheln; immer Kopien.
 export function fromApiDays(days) {
-	return WEEKDAYS.map(({ weekday }) => {
+	return ISO_WEEKDAYS.map((weekday) => {
 		const entry = days?.find((item) => item.weekday === weekday)
 		if (!entry) {
 			return tile(weekday, true, 60, true, DEFAULT_START, DEFAULT_END)
@@ -236,7 +257,7 @@ export function toApiDays(tiles) {
 
 // Welt-Fenster (time_window oder null) in Kacheln ohne Limit.
 export function fromWindowDays(days) {
-	return WEEKDAYS.map(({ weekday }) => {
+	return ISO_WEEKDAYS.map((weekday) => {
 		const entry = days?.find((item) => item.weekday === weekday)
 		if (!entry) {
 			return tile(weekday, true, null, false, DEFAULT_START, DEFAULT_END)
@@ -273,20 +294,20 @@ export function toWindowDays(tiles) {
 		})
 }
 
-// Wochentag -> Hinweistext für Kacheln mit Ende nicht nach Beginn.
+// Weekday -> hint text for tiles whose end is not after their start.
 export function validateDays(tiles) {
 	const problems = {}
 	for (const entry of tiles) {
 		if (entry.allowed && !entry.fullDay && entry.end <= entry.start) {
-			problems[entry.weekday] = 'Das Ende muss nach dem Beginn liegen.'
+			problems[entry.weekday] = t('core.playtime.validate.endAfterStart')
 		}
 	}
 	return problems
 }
 
-// "heute 45 von 60 min"
+// German "heute 45 von 60 min"
 export function usageText(usedSeconds, limitMinutes) {
-	return `heute ${Math.floor(usedSeconds / 60)} von ${limitMinutes} min`
+	return t('core.playtime.usage', { used: Math.floor(usedSeconds / 60), limit: limitMinutes })
 }
 
 // Minuten in eine Uhrzeit für <input type="time"> (1440 zeigt 00:00).
@@ -320,11 +341,12 @@ export function todayRule(child, holidayActive, weekday) {
 }
 
 function longName(weekday) {
-	return WEEKDAYS[weekday - 1]?.long ?? ''
+	return ISO_WEEKDAYS.includes(weekday) ? t(`core.playtime.weekdayLong.${weekday}`) : ''
 }
 
-// Tagesbezug wie kid_text im Welt-Mod: "Heute ab 15 Uhr", "Morgen", "Am Samstag ab 9:30",
-// "Nächsten Mittwoch"; eine Uhrzeit nur bei Minute > 0. null bei fehlenden oder unsinnigen Angaben.
+// Day reference like kid_text in the world mod: German "Heute ab 15 Uhr", "Morgen",
+// "Am Samstag ab 9:30", "Nächsten Mittwoch"; a clock time only for minute > 0. null for
+// missing or nonsensical input. The phrase fills {when} in the sentence templates.
 function dayPhrase(next) {
 	const ahead = next?.days_ahead
 	const minute = next?.minute
@@ -333,81 +355,87 @@ function dayPhrase(next) {
 	}
 	let day
 	if (ahead === 0) {
-		day = 'Heute'
+		day = t('core.playtime.when.today')
 	} else if (ahead === 1) {
-		day = 'Morgen'
+		day = t('core.playtime.when.tomorrow')
 	} else {
 		const name = longName(next.weekday)
 		if (!name) {
 			return null
 		}
-		day = ahead === 7 ? `Nächsten ${name}` : `Am ${name}`
+		day = t(ahead === 7 ? 'core.playtime.when.next' : 'core.playtime.when.on', { day: name })
 	}
-	return minute > 0 ? `${day} ab ${formatClock(minute)}` : day
+	return minute > 0 ? t('core.playtime.when.withTime', { day, time: formatClock(minute) }) : day
 }
 
-const KID_BLOCKED = Object.freeze({
-	aufgebraucht: 'Deine Spielzeit für heute ist vorbei.',
-	fenster: 'Jetzt ist keine Spielzeit.',
-	tag: 'Heute ist kein Spieltag.',
-})
-// Vor dem Fenster, das heute noch öffnet.
-const KID_EARLY = 'Jetzt ist noch keine Spielzeit.'
-const WORLD_CLOSED = 'Diese Welt ist gerade zu.'
+// Blocking states of /api/my/playtime (API values, not translated).
+const KID_BLOCKED_STATES = Object.freeze(['aufgebraucht', 'fenster', 'tag'])
 
-// Kindertext aus /api/my/playtime; null heißt: kein Block (keine Regeln oder heute nichts zu sagen).
+function blockedText(state) {
+	return KID_BLOCKED_STATES.includes(state) ? t(`core.playtime.kid.blocked.${state}`) : null
+}
+
+// Kid text from /api/my/playtime; null means no block (no rules or nothing to say today).
 export function kidPlaytimeText(playtime) {
 	if (!playtime?.limited) {
 		return null
 	}
-	const blocked = KID_BLOCKED[playtime.state]
+	const blocked = blockedText(playtime.state)
 	if (blocked) {
 		const phrase = dayPhrase(playtime.next)
 		if (!phrase) {
 			return blocked
 		}
 		const today = playtime.next.days_ahead === 0
-		const base = playtime.state === 'fenster' && today ? KID_EARLY : blocked
-		return `${base} ${phrase}${today ? ' kannst du spielen.' : ' kannst du wieder spielen.'}`
+		// Before the window that still opens today.
+		const base = playtime.state === 'fenster' && today ? t('core.playtime.kid.early') : blocked
+		return t(today ? 'core.playtime.kid.playToday' : 'core.playtime.kid.playAgain', { base, when: phrase })
 	}
 	const until = playtime.until_minute === null || playtime.until_minute === undefined
 		? null
 		: formatClock(playtime.until_minute)
 	const remaining = playtime.remaining_minutes
 	if (remaining === null || remaining === undefined) {
-		return until ? `Heute kannst du bis ${until} spielen.` : null
+		return until ? t('core.playtime.kid.untilOnly', { until }) : null
 	}
-	const minutes = remaining === 1 ? 'Heute noch 1 Minute' : `Heute noch ${remaining} Minuten`
-	return until ? `${minutes}, bis ${until}.` : `${minutes}.`
+	const minutes = tn('core.playtime.kid.remaining', remaining)
+	return until
+		? t('core.playtime.kid.remainingUntil', { minutes, until })
+		: t('core.playtime.kid.remainingOnly', { minutes })
 }
 
-// Hinweis "aufgebraucht", "fenster", "tag" als Warnung, sonst Info.
+// "aufgebraucht", "fenster", "tag" show as a warning, everything else as info.
 export function kidPlaytimeBlocked(playtime) {
-	return Boolean(KID_BLOCKED[playtime?.state])
+	return KID_BLOCKED_STATES.includes(playtime?.state)
 }
 
-// Chip einer Welt in der Kind-Ansicht: "Heute offen, 10 bis 12 Uhr" bzw.
-// "Diese Welt ist gerade zu. Am Mittwoch ab 10 Uhr ist sie wieder offen."; null ohne Zeitfenster.
+// Chip of a world in the kid view: German "Heute offen, 10 bis 12 Uhr" or
+// "Diese Welt ist gerade zu. Am Mittwoch ab 10 Uhr ist sie wieder offen."; null without a time window.
 export function windowText(world) {
 	if (world?.window_open === null || world?.window_open === undefined) {
 		return null
 	}
 	const slot = world.window_next
 	if (world.window_open) {
-		return slot ? `Heute offen, ${rangeText(slot.start, slot.end)}` : 'Heute offen'
+		return slot
+			? t('core.playtime.world.openTodayRange', { range: rangeText(slot.start, slot.end) })
+			: t('core.playtime.world.openToday')
 	}
+	const closed = t('core.playtime.world.closed')
 	const phrase = slot ? dayPhrase({ weekday: slot.weekday, minute: slot.start, days_ahead: slot.days_ahead }) : null
-	return phrase ? `${WORLD_CLOSED} ${phrase} ist sie wieder offen.` : WORLD_CLOSED
+	return phrase ? t('core.playtime.world.opensAgain', { closed, when: phrase }) : closed
 }
 
-// Rückblick (04.1-07): "45 Min." je Kind und Welt.
+// Daily summary (04.1-07): German "45 Min." per child and world.
 export function minutesText(minutes) {
-	return `${minutes} Min.`
+	return t('core.playtime.minutesShort', { minutes })
 }
 
-// Pause-Seite: until_clock aus /api/pause (H:MM in der Haushalts-Zeitzone).
+// Break page: until_clock from /api/pause (H:MM in the household time zone).
 export function pauseUntilText(untilClock) {
-	return typeof untilClock === 'string' && untilClock !== '' ? `Pause bis ${untilClock}` : 'Pause läuft'
+	return typeof untilClock === 'string' && untilClock !== ''
+		? t('core.playtime.pause.until', { until: untilClock })
+		: t('core.playtime.pause.running')
 }
 
 // Rückblick-Einstellung (04.1-08): Vorgabe 20 Uhr, Auswahl 0:15 bis 23:45 im 15-Minuten-Raster.
@@ -438,59 +466,64 @@ export function reviewSelectOptions(stored) {
 	return { options, selected: stored, dirty: false }
 }
 
-// Talk-Hinweise (D-20); leer, wenn nichts zu sagen ist. Ein Ex-Verwalter als Talk-Owner
-// ist kein Info-Hinweis mehr, sondern die Warnung aus formerOwnerText (UI-SPEC B4).
-export const TALK_MISSING_TEXT = 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.'
+// Talk hints (D-20); empty when there is nothing to say. A former manager as Talk owner
+// is no longer an info hint but the warning from formerOwnerText (UI-SPEC B4).
+export function talkMissingText() {
+	return t('core.playtime.talk.missing')
+}
 
 export function talkHint(status) {
 	if (!status) {
 		return ''
 	}
 	if (status.available === false) {
-		return TALK_MISSING_TEXT
+		return talkMissingText()
 	}
 	return ''
 }
 
-// Talk-Raum-Übernahme (UI-SPEC B4, D-16/D-19). Talk erlaubt Gameworld keinen Owner-Wechsel,
-// darum bleibt nur "Raum neu anlegen". Namen und Token nur als Text, nie als HTML.
+// Talk room takeover (UI-SPEC B4, D-16/D-19). Talk does not let Gameworld change the
+// owner, so only "recreate room" is left. Names and tokens only as text, never as HTML.
 export function formerOwnerText(ownerDisplay) {
 	if (ownerDisplay) {
-		return `Der Talk-Raum gehört noch ${ownerDisplay}, der kein Verwalter mehr ist. `
-			+ `${ownerDisplay} kann den Raum weiter lesen. Gameworld kann das nicht ändern, nur den Raum neu anlegen.`
+		return t('core.playtime.talk.formerOwner', { owner: ownerDisplay })
 	}
-	return 'Der Talk-Raum gehört noch einem früheren Verwalter, der kein Verwalter mehr ist. '
-		+ 'Diese Person kann den Raum weiter lesen. Gameworld kann das nicht ändern, nur den Raum neu anlegen.'
+	return t('core.playtime.talk.formerOwnerUnknown')
 }
 
 export function recreateQuestion(worldName, ownerDisplay) {
-	const owner = ownerDisplay || 'der frühere Verwalter'
-	return `Den Talk-Raum von »${worldName}« neu anlegen? Der alte Raum wird mit seinem ganzen Verlauf gelöscht. `
-		+ `Der neue Raum bekommt alle Eingeladenen und Verwalter, ${owner} nicht mehr.`
+	const owner = ownerDisplay || t('core.playtime.talk.formerManager')
+	return t('core.playtime.talk.recreateQuestion', { world: worldName, owner })
 }
 
-export const RECREATED_TEXT = 'Neuer Talk-Raum angelegt. Der alte Raum und sein Verlauf sind gelöscht.'
+export function recreatedText() {
+	return t('core.playtime.talk.recreated')
+}
 
-// Sperrfall: Text vor und nach dem occ-Befehl, damit der Befehl als <code> stehen kann.
-export const ORPHANED_BEFORE = 'Der alte Talk-Raum dieser Welt gehört niemandem mehr. Gameworld hat einen neuen Raum angelegt. '
-	+ 'Ein Nextcloud-Admin kann den alten Raum mit '
-export const ORPHANED_AFTER = ' löschen.'
+// Locked case: text before and after the occ command, so the command can be shown as <code>.
+export function orphanedBefore() {
+	return t('core.playtime.talk.orphanedBefore')
+}
+
+export function orphanedAfter() {
+	return t('core.playtime.talk.orphanedAfter')
+}
 
 export function orphanedCommand(token) {
 	return `occ talk:room:delete ${token}`
 }
 
 export function orphanedText(token) {
-	return `${ORPHANED_BEFORE}${orphanedCommand(token)}${ORPHANED_AFTER}`
+	return `${orphanedBefore()}${orphanedCommand(token)}${orphanedAfter()}`
 }
 
-// Antwort mit applied false (WR-08): gespeichert, aber mindestens eine Welt trägt den neuen
-// Stand noch nicht. Laufende Welten holt der 15-s-Takt nach, gestoppte der nächste Start.
-export const NOT_APPLIED_TEXT = 'Gespeichert, aber noch nicht in jeder Welt angekommen. '
-	+ 'Gameworld versucht es alle 15 Sekunden erneut, bis die Welt erreichbar ist. '
-	+ 'Eine gestoppte Welt übernimmt die Änderung beim nächsten Start.'
+// Response with applied false (WR-08): saved, but at least one world does not carry the new
+// state yet. Running worlds catch up within the 15 s cycle, stopped ones on their next start.
+export function notAppliedMessage() {
+	return t('core.playtime.notApplied')
+}
 
-// Hinweistext zur API-Antwort; leer, wenn alle Welten den neuen Stand schon tragen.
+// Hint for an API response; empty when every world already carries the new state.
 export function notAppliedText(result) {
-	return result?.applied === false ? NOT_APPLIED_TEXT : ''
+	return result?.applied === false ? notAppliedMessage() : ''
 }

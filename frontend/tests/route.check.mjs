@@ -12,6 +12,9 @@ globalThis.window = {
 }
 
 const { EMBED_STEM, PAGES, currentPage, dayLabel, localDay, navigate, pageParams, pagePath, parsePath } = await import('../src/route.js')
+const { setLanguage } = await import('../src/i18n/index.js')
+
+setLanguage('de')
 
 const stem = '/index.php/apps/app_api/embedded/gameworld/gameworld'
 
@@ -78,5 +81,15 @@ assert.equal(pushed.at(-1), `${stem}/rueckblick`)
 navigate('')
 assert.equal(pushed.at(-1), stem)
 assert.equal(pushed.length, 4)
+
+// English and French (D-25); page IDs and parameters stay the same in every language.
+setLanguage('en')
+assert.equal(dayLabel('2026-10-21', '2026-10-21'), 'Today')
+assert.equal(dayLabel('2026-10-20', '2026-10-21'), 'Tuesday 20 October')
+assert.equal(parsePath(`${stem}/rueckblick`), 'rueckblick')
+setLanguage('fr')
+assert.equal(dayLabel('2026-10-21', '2026-10-21'), 'Aujourd’hui')
+assert.equal(dayLabel('2026-10-20', '2026-10-21'), 'Mardi 20 octobre')
+setLanguage('de')
 
 console.log('route.check: alle Prüfungen bestanden')

@@ -2,6 +2,9 @@
 import assert from 'node:assert/strict'
 
 const { DISMISS_KEY, originQuestion, readDismissed, rememberDismissed } = await import('../src/origin.js')
+const { setLanguage, t } = await import('../src/i18n/index.js')
+
+setLanguage('de')
 
 const ask = { origin: 'https://cloud.example', proposed: 'http://192.168.1.10', saved: false, confirm_needed: true }
 
@@ -32,5 +35,18 @@ assert.equal(readDismissed(broken), null)
 assert.equal(readDismissed(null), null)
 rememberDismissed(broken, 'x')
 rememberDismissed(null, 'x')
+
+// English and French (D-25): origin.js itself has no visible text, the question data
+// stay the same in every language; the shared fallback text of the request helpers
+// is translated.
+for (const lang of ['en', 'fr']) {
+	setLanguage(lang)
+	assert.deepEqual(originQuestion(ask, null), { current: 'https://cloud.example', proposed: 'http://192.168.1.10' })
+}
+setLanguage('en')
+assert.equal(t('core.api.requestFailed'), 'The request to Gameworld failed.')
+setLanguage('fr')
+assert.equal(t('core.api.requestFailed'), 'La requête vers Gameworld a échoué.')
+setLanguage('de')
 
 console.log('origin.check: alle Prüfungen bestanden')

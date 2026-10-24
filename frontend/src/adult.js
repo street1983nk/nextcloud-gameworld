@@ -1,54 +1,60 @@
-// Reine Texte für den Erwachsen-Schalter (ROLLE-04, UI-SPEC B2), ohne Vue; geprüft von
-// frontend/tests/adult.check.mjs. Namen nur per Textinterpolation ausgeben, nie als HTML.
+// Pure texts for the adult switch (ROLLE-04, UI-SPEC B2), without Vue; checked by
+// frontend/tests/adult.check.mjs. Names only go out through text interpolation, never
+// as HTML. All texts come from the i18n dictionaries (area core).
+import { t, tn } from './i18n/index.js'
 
-// Bestätigungsdialog, Absatz 1 (bold): Folgen für ein oder mehrere Konten.
+// Confirmation dialog, paragraph 1 (bold): consequences for one or more accounts.
+// More than one name takes the plural, everything else the singular.
 export function confirmLead(names) {
-	const list = names.join(', ')
-	const verb = names.length > 1 ? 'spielen' : 'spielt'
-	return `${list} ${verb} dann ohne Pause, Zeitfenster und Spielzeitregeln.`
+	return tn('core.adult.confirmLead', names.length > 1 ? names.length : 1, { names: names.join(', ') })
 }
 
-// Absatz 2 und 3.
-export const CONFIRM_SCOPE = 'Das gilt sofort und in allen Welten, auch mitten im Spiel. '
-	+ 'Erwachsene erscheinen nicht im Tagesrückblick und bekommen keine Verwaltungsrechte.'
+// Paragraphs 2 and 3.
+export function confirmScope() {
+	return t('core.adult.confirmScope')
+}
 
-export const CONFIRM_WARNING = 'Markiere nur Konten von Erwachsenen, nie das Konto eines Kindes.'
+export function confirmWarning() {
+	return t('core.adult.confirmWarning')
+}
 
-// Absatz 4, nur wenn eine Spielzeitregel existiert (has_rules).
+// Paragraph 4, only when a playtime rule exists (has_rules).
 export function rulesKeptText(name) {
-	return `Die Spielzeitregel von ${name} bleibt gespeichert und gilt wieder, sobald du den Schalter ausschaltest.`
+	return t('core.adult.rulesKept', { name })
 }
 
 export function adultOnText(name) {
-	return `${name} ist als erwachsen markiert und spielt ab sofort ohne Pause, Zeitfenster und Spielzeitregeln.`
+	return t('core.adult.on', { name })
 }
 
 export function adultOffText(name) {
-	return `${name} spielt wieder mit den Kinderregeln. Pause, Zeitfenster und Spielzeit gelten ab sofort. `
-		+ `Ist gerade keine Spielzeit, trennt die Welt ${name} in wenigen Sekunden.`
+	return t('core.adult.off', { name })
 }
 
-// Konto wurde inzwischen Verwalter (409).
+// The account has become a manager in the meantime (409).
 export function nowVerwalterText(name) {
-	return `${name} verwaltet Gameworld inzwischen und spielt ohnehin ohne Regeln.`
+	return t('core.adult.nowVerwalter', { name })
 }
 
-// Einladung gelungen, Markieren nicht. API-Meldungen enden meist mit Punkt, er entfällt hier.
+// Invite succeeded, marking did not. API messages usually end with a full stop; it is
+// dropped here because the sentence continues.
 export function adultInviteWarning(name, detail) {
 	const reason = String(detail ?? '').trim().replace(/[.]+$/, '')
-	return `${name} ist eingeladen, aber nicht als erwachsen markiert: ${reason}. Du kannst es in der Spielerliste nachholen.`
+	return t('core.adult.inviteWarning', { name, reason })
 }
 
 export function invitedLabel(labels) {
-	return `Eingeladen: ${labels.join(', ')}`
+	return t('core.adult.invitedLabel', { labels: labels.join(', ') })
 }
 
-export const SWITCH_META = 'Spielt ohne Pause, Zeitfenster und Spielzeitregeln. Gilt in allen Welten.'
+export function switchMeta() {
+	return t('core.adult.switchMeta')
+}
 
-export const INVITE_SWITCH_META = 'Gilt nur für einzeln ausgewählte Konten, nicht für Gruppen. '
-	+ 'Bei Gruppen stellst du es danach in der Spielerliste je Person ein.'
+export function inviteSwitchMeta() {
+	return t('core.adult.inviteSwitchMeta')
+}
 
 export function PLAYTIME_RESTING_TEXT(name) {
-	return `${name} ist als erwachsen markiert. Diese Regel ruht und gilt erst wieder, `
-		+ 'wenn du den Schalter in der Spielerliste ausschaltest.'
+	return t('core.adult.playtimeResting', { name })
 }

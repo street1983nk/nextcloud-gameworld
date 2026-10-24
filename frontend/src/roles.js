@@ -1,23 +1,39 @@
-// Texte für die Verwalter-Gruppen (UI-SPEC B1, ROLLE-03): rein, ohne Vue, per
-// node frontend/tests/roles.check.mjs geprüft. Gruppen-IDs kommen nur als Text in
-// die Seite (Textinterpolation, nie v-html).
+// Texts for the manager groups (UI-SPEC B1, ROLLE-03): pure, without Vue, checked by
+// node frontend/tests/roles.check.mjs. Group IDs only reach the page as text (text
+// interpolation, never v-html). All texts come from the i18n dictionaries (area core)
+// and are resolved on every call, so the account language set in main.js applies.
+import { compareText, t } from './i18n/index.js'
 
-export const SECTION_HINT = 'Mitglieder dieser Gruppen verwalten Gameworld wie du: Welten erstellen, Spieler einladen, Spielzeiten, Ferien und Pause einstellen. Nextcloud-Admin werden sie dadurch nicht.'
+export function sectionHint() {
+	return t('core.roles.sectionHint')
+}
 
-export const CHILDREN_WARNING = 'Wähle keine Gruppe, in der Kinder sind. Jedes Mitglied einer Verwalter-Gruppe kann Kinder einladen und die Pause aufheben. Gameworld kann das nicht prüfen.'
+export function childrenWarning() {
+	return t('core.roles.childrenWarning')
+}
 
-export const BOUNDARY_TEXT = 'Gruppen-Verwalter ohne Nextcloud-Admin laden nur Konten aus Gruppen ein, in denen sie selbst Mitglied oder Gruppenadmin sind. Andere Konten zeigt ihnen Nextcloud nicht. Gelöschte und deaktivierte Konten räumt Gameworld nur auf, wenn ein Nextcloud-Admin Gameworld geöffnet hat.'
+export function boundaryText() {
+	return t('core.roles.boundary')
+}
 
-export const ONLY_ADMIN_TEXT = 'Bisher verwaltet nur die Gruppe admin Gameworld.'
+export function onlyAdminText() {
+	return t('core.roles.onlyAdmin')
+}
 
-export const NC_ADMIN_ONLY_TEXT = 'Nur Nextcloud-Admins können Verwalter-Gruppen ändern.'
+export function ncAdminOnlyText() {
+	return t('core.roles.ncAdminOnly')
+}
 
-export const SEARCH_DOWN_TEXT = 'Die Gruppensuche in Nextcloud ist gerade nicht möglich.'
+export function searchDownText() {
+	return t('core.roles.searchDown')
+}
 
-export const NO_SCOPE_TEXT = 'Nextcloud zeigt dir keine Konten zum Einladen. Bitte einen Nextcloud-Admin, dich in die Gruppe der Kinder aufzunehmen oder zum Gruppenadmin zu machen.'
+export function noScopeText() {
+	return t('core.roles.noScope')
+}
 
-// Grenz-Hinweis im Einladen-Dialog (D-01); null heißt: keine Gruppe, die Komponente
-// zeigt dann NO_SCOPE_TEXT.
+// Boundary hint in the invite dialog (D-01); null means no group, the component then
+// shows noScopeText().
 export function scopeHint(groups) {
 	const list = Array.isArray(groups)
 		? [...new Set(groups.map((gid) => String(gid)).filter((gid) => gid !== ''))]
@@ -25,22 +41,22 @@ export function scopeHint(groups) {
 	if (list.length === 0) {
 		return null
 	}
-	list.sort((a, b) => a.localeCompare(b, 'de'))
-	return `Du kannst Konten aus deinen Gruppen einladen: ${list.join(', ')}. Andere Konten zeigt dir Nextcloud nicht.`
+	list.sort(compareText)
+	return t('core.roles.scopeHint', { groups: list.join(', ') })
 }
 
 export function groupAddedText(gid) {
-	return `Die Gruppe ${gid} verwaltet Gameworld ab sofort.`
+	return t('core.roles.groupAdded', { gid })
 }
 
 export function groupRemovedText(gid) {
-	return `Die Gruppe ${gid} verwaltet Gameworld nicht mehr. Ihre Mitglieder verlieren die Verwaltung sofort, außer sie sind in einer anderen Verwalter-Gruppe.`
+	return t('core.roles.groupRemoved', { gid })
 }
 
 export function groupUnknownText(gid) {
-	return `Die Gruppe ${gid} gibt es in Nextcloud nicht. Bitte wähle eine Gruppe aus der Liste.`
+	return t('core.roles.groupUnknown', { gid })
 }
 
 export function loadErrorText(detail) {
-	return `Die Verwalter-Gruppen konnten nicht geladen werden: ${detail}`
+	return t('core.roles.loadError', { detail })
 }

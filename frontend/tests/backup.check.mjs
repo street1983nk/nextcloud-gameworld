@@ -8,6 +8,9 @@ import {
 	playersWarning,
 	restoreQuestion,
 } from '../src/backup.js'
+import { setLanguage } from '../src/i18n/index.js'
+
+setLanguage('de')
 
 const MIB = 1048576
 const GIB = 1073741824
@@ -61,5 +64,20 @@ assert.equal(jobFinished(running, running), false, 'running -> running')
 assert.equal(jobFinished(null, null), false, 'null -> null')
 assert.equal(jobFinished(undefined, undefined), false, 'undefined -> undefined')
 assert.equal(jobFinished(ok1, null), false, 'ok -> null')
+
+// English and French (D-25); expected texts written out independently.
+setLanguage('en')
+assert.equal(formatBytes(GIB * 1.5), '1.5 GB')
+assert.equal(formatBytes(GIB * 1024), '1024 GB')
+assert.equal(playersWarning(1), '1 child is playing in the world right now and will be briefly disconnected.')
+assert.equal(jobNote({ kind: 'restore', state: 'running', message: null }), 'Restore in progress ...')
+assert.equal(formatDate('2026-10-23T09:05:00'), '23/10/2026 09:05')
+setLanguage('fr')
+assert.equal(formatBytes(GIB * 1.5), '1,5\u00a0Go')
+assert.equal(formatBytes(MIB), '1\u00a0Mo')
+assert.equal(playersWarning(3), '3 enfants jouent en ce moment dans le monde et seront brièvement déconnectés.')
+assert.equal(jobNote({ kind: 'backup', state: 'failed', message: 'Disque plein.' }), 'Échec de la sauvegarde\u00a0: Disque plein.')
+setLanguage('de')
+assert.equal(formatBytes(GIB * 1024), '1024 GB')
 
 console.log('backup.check.mjs: alle Prüfungen bestanden')

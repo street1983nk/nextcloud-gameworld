@@ -1,29 +1,32 @@
 // Prüfskript für frontend/src/adult.js (rein, ohne Vue): node frontend/tests/adult.check.mjs
 // Literale stehen hier unabhängig vom Modul, wörtlich aus 06-UI-SPEC.md B2.
 import assert from 'node:assert/strict'
+import { setLanguage } from '../src/i18n/index.js'
 import {
 	adultInviteWarning,
 	adultOffText,
 	adultOnText,
-	CONFIRM_SCOPE,
-	CONFIRM_WARNING,
+	confirmScope,
+	confirmWarning,
 	confirmLead,
-	INVITE_SWITCH_META,
+	inviteSwitchMeta,
 	invitedLabel,
 	nowVerwalterText,
 	PLAYTIME_RESTING_TEXT,
 	rulesKeptText,
-	SWITCH_META,
+	switchMeta,
 } from '../src/adult.js'
+
+setLanguage('de')
 
 // Bestätigungsdialog, Absatz 1 bis 4
 assert.equal(confirmLead(['Anna']), 'Anna spielt dann ohne Pause, Zeitfenster und Spielzeitregeln.')
 assert.equal(confirmLead(['Anna', 'Ben']), 'Anna, Ben spielen dann ohne Pause, Zeitfenster und Spielzeitregeln.')
 assert.equal(
-	CONFIRM_SCOPE,
+	confirmScope(),
 	'Das gilt sofort und in allen Welten, auch mitten im Spiel. Erwachsene erscheinen nicht im Tagesrückblick und bekommen keine Verwaltungsrechte.',
 )
-assert.equal(CONFIRM_WARNING, 'Markiere nur Konten von Erwachsenen, nie das Konto eines Kindes.')
+assert.equal(confirmWarning(), 'Markiere nur Konten von Erwachsenen, nie das Konto eines Kindes.')
 assert.equal(
 	rulesKeptText('Anna'),
 	'Die Spielzeitregel von Anna bleibt gespeichert und gilt wieder, sobald du den Schalter ausschaltest.',
@@ -56,9 +59,9 @@ assert.equal(
 )
 
 // Meta-Texte und Spielzeit-Abschnitt
-assert.equal(SWITCH_META, 'Spielt ohne Pause, Zeitfenster und Spielzeitregeln. Gilt in allen Welten.')
+assert.equal(switchMeta(), 'Spielt ohne Pause, Zeitfenster und Spielzeitregeln. Gilt in allen Welten.')
 assert.equal(
-	INVITE_SWITCH_META,
+	inviteSwitchMeta(),
 	'Gilt nur für einzeln ausgewählte Konten, nicht für Gruppen. Bei Gruppen stellst du es danach in der Spielerliste je Person ein.',
 )
 assert.equal(
@@ -67,8 +70,21 @@ assert.equal(
 )
 
 // Keine Gedankenstriche in den Texten
-for (const text of [CONFIRM_SCOPE, CONFIRM_WARNING, SWITCH_META, INVITE_SWITCH_META, adultOffText('X')]) {
+for (const text of [confirmScope(), confirmWarning(), switchMeta(), inviteSwitchMeta(), adultOffText('X')]) {
 	assert.doesNotMatch(text, /[\u2013\u2014]/)
 }
+
+// English and French (D-25); expected texts written out independently.
+setLanguage('en')
+assert.equal(confirmLead(['Anna', 'Ben']), 'Anna, Ben will then play without breaks, time windows or playtime rules.')
+assert.equal(
+	adultInviteWarning('Ben', 'This account manages Gameworld.'),
+	'Ben is invited but not marked as an adult: This account manages Gameworld. You can do that later in the player list.',
+)
+setLanguage('fr')
+assert.equal(confirmLead(['Anna']), 'Anna jouera alors sans pause, plage horaire ni règle de temps de jeu.')
+assert.equal(confirmLead(['Anna', 'Ben']), 'Anna, Ben joueront alors sans pause, plage horaire ni règle de temps de jeu.')
+assert.equal(invitedLabel(['Anna', 'Ben']), 'Invités\u00a0: Anna, Ben')
+setLanguage('de')
 
 console.log('adult.check: alle Prüfungen bestanden')

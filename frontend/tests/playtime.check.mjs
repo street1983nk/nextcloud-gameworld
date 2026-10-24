@@ -1,12 +1,14 @@
 // Prüfskript für frontend/src/playtime.js (rein, ohne Vue): node frontend/tests/playtime.check.mjs
 import assert from 'node:assert/strict'
+import { setLanguage } from '../src/i18n/index.js'
 import {
 	HOLIDAY_PRESET,
-	LIMIT_OPTIONS,
-	NOT_APPLIED_TEXT,
-	NO_LIMIT_OPTION,
+	limitOptions,
+	notAppliedMessage,
+	noLimitOption,
 	PRESETS,
-	TALK_MISSING_TEXT,
+	talkMissingText,
+	weekdays,
 	formatClock,
 	formatMinutes,
 	fromApiDays,
@@ -21,7 +23,7 @@ import {
 	talkHint,
 	formerOwnerText,
 	recreateQuestion,
-	RECREATED_TEXT,
+	recreatedText,
 	orphanedText,
 	orphanedCommand,
 	toApiDays,
@@ -31,6 +33,8 @@ import {
 	windowSummary,
 	windowText,
 } from '../src/playtime.js'
+
+setLanguage('de')
 
 function day(days, weekday) {
 	return days.find((entry) => entry.weekday === weekday)
@@ -102,12 +106,12 @@ assert.deepEqual(Object.keys(problems), ['3'])
 assert.deepEqual(validateDays(fromApiDays(PRESETS.schultage)), {})
 
 // Limit-Auswahl: 15 min bis 4 Std im 15-Minuten-Raster, plus "ohne Limit"
-assert.equal(LIMIT_OPTIONS[0].value, 15)
-assert.equal(LIMIT_OPTIONS[LIMIT_OPTIONS.length - 1].value, 240)
-assert.equal(LIMIT_OPTIONS.length, 16)
-assert.ok(LIMIT_OPTIONS.every((option, index) => option.value === 15 * (index + 1)))
-assert.equal(NO_LIMIT_OPTION.value, null)
-assert.equal(NO_LIMIT_OPTION.label, 'ohne Limit')
+assert.equal(limitOptions()[0].value, 15)
+assert.equal(limitOptions()[limitOptions().length - 1].value, 240)
+assert.equal(limitOptions().length, 16)
+assert.ok(limitOptions().every((option, index) => option.value === 15 * (index + 1)))
+assert.equal(noLimitOption().value, null)
+assert.equal(noLimitOption().label, 'ohne Limit')
 
 // Texte
 assert.equal(formatMinutes(45), '45 min')
@@ -256,15 +260,15 @@ for (let ahead = 0; ahead <= 7; ahead += 1) {
 }
 
 // WR-08: applied false heißt "gespeichert, aber noch nicht in der Welt"; sonst kein Hinweis.
-assert.equal(notAppliedText({ applied: false }), NOT_APPLIED_TEXT)
+assert.equal(notAppliedText({ applied: false }), notAppliedMessage())
 assert.equal(notAppliedText({ applied: true }), '')
 assert.equal(notAppliedText({ applied: null }), '')
 assert.equal(notAppliedText({}), '')
 assert.equal(notAppliedText(null), '')
-assert.match(NOT_APPLIED_TEXT, /^Gespeichert, aber noch nicht in jeder Welt angekommen\./)
-assert.match(NOT_APPLIED_TEXT, /übernimmt die Änderung beim nächsten Start\.$/)
+assert.match(notAppliedMessage(), /^Gespeichert, aber noch nicht in jeder Welt angekommen\./)
+assert.match(notAppliedMessage(), /übernimmt die Änderung beim nächsten Start\.$/)
 for (const forbidden of ['–', '—', 'uebernimmt', 'Aenderung', 'naechsten']) {
-	assert.ok(!NOT_APPLIED_TEXT.includes(forbidden), forbidden)
+	assert.ok(!notAppliedMessage().includes(forbidden), forbidden)
 }
 
 // Handy-Seiten (04.1-07): Minuten im Rückblick und Ende der Pause
@@ -325,8 +329,8 @@ for (const stored of [null, undefined]) {
 }
 
 // Talk-Hinweise (D-20, D-27)
-assert.equal(talkHint({ available: false }), TALK_MISSING_TEXT)
-assert.equal(TALK_MISSING_TEXT, 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.')
+assert.equal(talkHint({ available: false }), talkMissingText())
+assert.equal(talkMissingText(), 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.')
 // Kein Besitz-Versprechen mehr (Talk erlaubt Gameworld keinen Owner-Wechsel); B4 zeigt die Warnung.
 assert.equal(talkHint({ available: true, owner_not_admin: true, owner_display: 'Anna' }), '')
 assert.equal(talkHint({ available: true, owner_not_admin: false, owner_display: null }), '')
@@ -351,7 +355,7 @@ assert.equal(
 		+ 'Der neue Raum bekommt alle Eingeladenen und Verwalter, Anna nicht mehr.',
 )
 assert.match(recreateQuestion('Wiese', null), /Verwalter, der frühere Verwalter nicht mehr\.$/)
-assert.equal(RECREATED_TEXT, 'Neuer Talk-Raum angelegt. Der alte Raum und sein Verlauf sind gelöscht.')
+assert.equal(recreatedText(), 'Neuer Talk-Raum angelegt. Der alte Raum und sein Verlauf sind gelöscht.')
 assert.equal(
 	orphanedText('abc123'),
 	'Der alte Talk-Raum dieser Welt gehört niemandem mehr. Gameworld hat einen neuen Raum angelegt. '
@@ -359,9 +363,63 @@ assert.equal(
 )
 assert.equal(orphanedCommand('abc123'), 'occ talk:room:delete abc123')
 // Keine Gedankenstriche in den neuen Texten
-for (const text of [formerOwnerText('Anna'), formerOwnerText(null), recreateQuestion('W', 'A'), RECREATED_TEXT, orphanedText('t')]) {
+for (const text of [formerOwnerText('Anna'), formerOwnerText(null), recreateQuestion('W', 'A'), recreatedText(), orphanedText('t')]) {
 	assert.equal(/[\u2013\u2014]/.test(text), false)
 	assert.equal(text.includes('Besitz'), false)
 }
+
+// Weekdays (German, unchanged labels)
+assert.deepEqual(weekdays().map((entry) => entry.short), ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'])
+assert.equal(weekdays()[2].long, 'Mittwoch')
+assert.equal(validateDays(broken)[3], 'Das Ende muss nach dem Beginn liegen.')
+assert.equal(summarize([1, 3, 5].map((weekday) => ({ weekday, allowed: true, limit_minutes: 45, window_start: null, window_end: null }))), 'Mo, Mi und Fr, je 45 min')
+
+// English (D-25); expected texts written out independently.
+setLanguage('en')
+assert.equal(formatClock(1140), '19:00')
+assert.equal(formatClock(1170), '19:30')
+assert.equal(formatMinutes(90), '1 hr 30 min')
+assert.equal(summarize(PRESETS.wochenende), 'Sat and Sun, 2 hr a day')
+assert.equal(summarize(PRESETS.taeglich), 'Every day 1 hr, 9:00 to 19:00')
+assert.equal(windowSummary(midweek), 'Open Wed 10:00 to 12:00')
+assert.equal(
+	kidPlaytimeText(kid('aufgebraucht', 0, null, { weekday: 3, minute: 0, days_ahead: 7 })),
+	'Your playtime for today is over. You can play again next Wednesday.',
+)
+assert.equal(
+	kidPlaytimeText(kid('fenster', 0, null, { weekday: 3, minute: 900, days_ahead: 0 })),
+	'It\'s not playtime yet. You can play today from 15:00.',
+)
+assert.equal(kidPlaytimeText(kid('ok', 1, 1170)), '1 minute left today, until 19:30.')
+assert.equal(kidPlaytimeText(kid('ok', 0, null)), '0 minutes left today.')
+assert.equal(
+	windowText({ window_open: false, window_next: { weekday: 6, start: 600, end: 720, days_ahead: 3 } }),
+	'This world is closed right now. It opens again on Saturday from 10:00.',
+)
+assert.equal(noLimitOption().label, 'no limit')
+assert.equal(pauseUntilText('18:30'), 'Break until 18:30')
+
+// French (D-25): no-break spaces before "h" and between hour and minutes.
+setLanguage('fr')
+assert.equal(formatClock(1140), '19\u00a0h')
+assert.equal(formatClock(1170), '19\u00a0h\u00a030')
+assert.equal(formatMinutes(45), '45\u00a0min')
+assert.equal(summarize(PRESETS.schultage), 'Lun au Ven 1\u00a0h, Sam et Dim 2\u00a0h')
+assert.equal(windowSummary(school), 'Ouvert Lun au Ven de 8\u00a0h à 13\u00a0h')
+assert.equal(
+	kidPlaytimeText(kid('tag', 0, null, { weekday: 6, minute: 570, days_ahead: 3 })),
+	'Aujourd’hui n’est pas un jour de jeu. Tu pourras rejouer samedi à partir de 9\u00a0h\u00a030.',
+)
+assert.equal(
+	kidPlaytimeText(kid('aufgebraucht', 0, null, { weekday: 3, minute: 0, days_ahead: 7 })),
+	'Ton temps de jeu est terminé pour aujourd’hui. Tu pourras rejouer mercredi prochain.',
+)
+assert.equal(kidPlaytimeText(kid('ok', 0, null)), '0 minute restante aujourd’hui.')
+assert.equal(kidPlaytimeText(kid('ok', 2, null)), '2 minutes restantes aujourd’hui.')
+assert.equal(windowText({ window_open: true, window_next: { weekday: 3, start: 0, end: 1440, days_ahead: 0 } }), 'Ouvert aujourd’hui, toute la journée')
+assert.equal(recreateQuestion('Wiese', null).endsWith('mais plus l’ancien gestionnaire.'), true)
+assert.equal(weekdays()[0].long, 'lundi')
+setLanguage('de')
+assert.equal(formatClock(1140), '19 Uhr')
 
 console.log('playtime.check: alle Prüfungen bestanden')

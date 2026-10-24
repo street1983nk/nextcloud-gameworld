@@ -2,20 +2,23 @@
 // Die Soll-Texte stehen hier als eigene Literale (abgeschrieben aus 06-UI-SPEC.md B1),
 // nicht aus roles.js übernommen: unabhängige Gegenprobe.
 import assert from 'node:assert/strict'
+import { setLanguage } from '../src/i18n/index.js'
 import {
-	BOUNDARY_TEXT,
-	CHILDREN_WARNING,
-	NC_ADMIN_ONLY_TEXT,
-	NO_SCOPE_TEXT,
-	ONLY_ADMIN_TEXT,
-	SEARCH_DOWN_TEXT,
-	SECTION_HINT,
+	boundaryText,
+	childrenWarning,
+	ncAdminOnlyText,
+	noScopeText,
+	onlyAdminText,
+	searchDownText,
+	sectionHint,
 	groupAddedText,
 	groupRemovedText,
 	groupUnknownText,
 	loadErrorText,
 	scopeHint,
 } from '../src/roles.js'
+
+setLanguage('de')
 
 // scopeHint (D-01): alphabetisch, leer heißt null
 assert.equal(
@@ -40,7 +43,7 @@ scopeHint(input)
 assert.deepEqual(input, ['b', 'a'])
 
 assert.equal(
-	NO_SCOPE_TEXT,
+	noScopeText(),
 	'Nextcloud zeigt dir keine Konten zum Einladen. Bitte einen Nextcloud-Admin, dich in die Gruppe der Kinder aufzunehmen oder zum Gruppenadmin zu machen.',
 )
 
@@ -58,19 +61,30 @@ assert.equal(
 
 // Feste Texte des Abschnitts
 assert.equal(
-	SECTION_HINT,
+	sectionHint(),
 	'Mitglieder dieser Gruppen verwalten Gameworld wie du: Welten erstellen, Spieler einladen, Spielzeiten, Ferien und Pause einstellen. Nextcloud-Admin werden sie dadurch nicht.',
 )
 assert.equal(
-	CHILDREN_WARNING,
+	childrenWarning(),
 	'Wähle keine Gruppe, in der Kinder sind. Jedes Mitglied einer Verwalter-Gruppe kann Kinder einladen und die Pause aufheben. Gameworld kann das nicht prüfen.',
 )
 assert.equal(
-	BOUNDARY_TEXT,
+	boundaryText(),
 	'Gruppen-Verwalter ohne Nextcloud-Admin laden nur Konten aus Gruppen ein, in denen sie selbst Mitglied oder Gruppenadmin sind. Andere Konten zeigt ihnen Nextcloud nicht. Gelöschte und deaktivierte Konten räumt Gameworld nur auf, wenn ein Nextcloud-Admin Gameworld geöffnet hat.',
 )
-assert.equal(ONLY_ADMIN_TEXT, 'Bisher verwaltet nur die Gruppe admin Gameworld.')
-assert.equal(NC_ADMIN_ONLY_TEXT, 'Nur Nextcloud-Admins können Verwalter-Gruppen ändern.')
-assert.equal(SEARCH_DOWN_TEXT, 'Die Gruppensuche in Nextcloud ist gerade nicht möglich.')
+assert.equal(onlyAdminText(), 'Bisher verwaltet nur die Gruppe admin Gameworld.')
+assert.equal(ncAdminOnlyText(), 'Nur Nextcloud-Admins können Verwalter-Gruppen ändern.')
+assert.equal(searchDownText(), 'Die Gruppensuche in Nextcloud ist gerade nicht möglich.')
+
+// English and French (D-25); expected texts written out independently.
+setLanguage('en')
+assert.equal(scopeHint(['klasse']), 'You can invite accounts from your groups: klasse. Nextcloud doesn\'t show you any other accounts.')
+assert.equal(groupAddedText('lehrkraefte'), 'The group lehrkraefte now manages Gameworld.')
+assert.equal(ncAdminOnlyText(), 'Only Nextcloud admins can change manager groups.')
+setLanguage('fr')
+assert.equal(scopeHint(['klasse']), 'Tu peux inviter des comptes de tes groupes\u00a0: klasse. Nextcloud ne te montre pas les autres comptes.')
+assert.equal(groupUnknownText('x'), 'Le groupe x n’existe pas dans Nextcloud. Choisis un groupe dans la liste.')
+assert.equal(scopeHint(['Zebra', 'éclair', 'birne']), 'Tu peux inviter des comptes de tes groupes\u00a0: birne, éclair, Zebra. Nextcloud ne te montre pas les autres comptes.')
+setLanguage('de')
 
 console.log('roles.check.mjs: alle Prüfungen bestanden')

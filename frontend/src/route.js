@@ -10,6 +10,7 @@
 // window zu. Parameter aus der Adresse sind manipulierbar: hier fällt alles
 // weg, was nicht dem Muster entspricht, das Backend prüft erneut (T-04.1-36).
 import { generateUrl } from '@nextcloud/router'
+import { dateLocale, t } from './i18n/index.js'
 
 export const EMBED_STEM = '/apps/app_api/embedded/gameworld/gameworld'
 export const PAGES = Object.freeze(['pause', 'versuch', 'rueckblick'])
@@ -72,18 +73,21 @@ export function localDay(now = new Date()) {
 	return `${now.getFullYear()}-${month}-${day}`
 }
 
-// Überschrift für einen Tag: "Heute" oder etwa "Dienstag, 21. Oktober".
+// Heading for a day: "Heute" or e.g. "Dienstag, 21. Oktober" in German, in the
+// date format of the UI language; the first letter is upper case (French weekdays
+// are lower case on their own).
 export function dayLabel(tag, today = localDay()) {
 	if (tag === today) {
-		return 'Heute'
+		return t('core.route.today')
 	}
 	if (!validDay(tag)) {
 		return ''
 	}
 	const [year, month, day] = tag.split('-').map(Number)
-	return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('de-DE', {
+	const label = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(dateLocale(), {
 		timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long',
 	})
+	return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 // Pfad für generateUrl; unbekannte Seiten führen zur Übersicht.

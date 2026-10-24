@@ -21,7 +21,7 @@ import {
 const LANGUAGES = ['de', 'en', 'fr']
 const AREAS = ['core', 'parent', 'admin', 'kids', 'world']
 const PLACEHOLDER = /\{[a-zA-Z0-9_]+\}/g
-const DASHES = ['–', '—']
+const DASHES = ['\u2013', '\u2014']
 const EMOJI = /\p{Extended_Pictographic}/u
 // Same list as tests/test_frontend_privacy.py (ZUGANG-01), written out on purpose.
 const FORBIDDEN = ['announce', 'serverlist', 'public', 'visibility', 'öffentlich machen', 'sichtbar machen']
@@ -32,7 +32,8 @@ const FRENCH_ASCII = [
 ]
 const FRENCH_ASCII_RE = new RegExp(`(?<!\\p{L})(${FRENCH_ASCII.join('|')})(?!\\p{L})`, 'iu')
 // French typography: a narrow or normal no-break space before ? ! ; : and inside « ».
-const FRENCH_PUNCT_RE = /(?<![  \d])[?!;:]|«(?![  ])|(?<![  ])»/u
+// A colon between digits or placeholders is a clock time ("09:05", "{hour}:{minute}").
+const FRENCH_PUNCT_RE = /(?<![\u00a0\u202f])[?!;]|(?<![\u00a0\u202f\d}]):|«(?![\u00a0\u202f])|(?<![\u00a0\u202f])»/u
 
 function fileOf(lang, area) {
 	return `frontend/src/i18n/${lang}/${area}.js`
@@ -197,7 +198,7 @@ for (const type of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']) {
 assert.ok(found.some((error) => error.type === 'i' && error.message.includes('core.x.same')), 'equal value not detected')
 assert.ok(found.some((error) => error.type === 'i' && error.message.includes('core.x.gone')), 'stale exception not detected')
 // Narrow no-break space and digits before ":" are accepted.
-assert.equal(validate({ de: { core: { 'core.y': 'a' } }, en: { core: { 'core.y': 'b' } }, fr: { core: { 'core.y': 'c ? « d » 10:00' } } }, []).length, 0)
+assert.equal(validate({ de: { core: { 'core.y': 'a' } }, en: { core: { 'core.y': 'b' } }, fr: { core: { 'core.y': 'c\u202f? «\u00a0d\u00a0» 10:00' } } }, []).length, 0)
 console.log(`i18n.check: positive control found all error types a to j (${found.length} errors)`)
 
 // Real dictionaries

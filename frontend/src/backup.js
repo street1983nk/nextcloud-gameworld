@@ -1,32 +1,32 @@
-// Reine Hilfen für Sichern und Wiederherstellen (Phase 5), ohne Vue; geprüft von
-// frontend/tests/backup.check.mjs.
+// Pure helpers for backup and restore (phase 5), without Vue; checked by
+// frontend/tests/backup.check.mjs. All texts come from the i18n dictionaries (area core).
+import { dateLocale, t, tn } from './i18n/index.js'
 
 const MIB = 1048576
 const GIB = 1073741824
 
-// Unter 1 GiB ganze MB, ab 1 GiB GB mit höchstens einer Nachkommastelle ("1 GB", "1,5 GB").
+// Below 1 GiB whole MB, from 1 GiB on GB with at most one decimal ("1 GB", "1,5 GB" in
+// German); the decimal separator follows the UI language, no digit grouping.
 export function formatBytes(bytes) {
 	if (bytes < GIB) {
-		return `${Math.round(bytes / MIB)} MB`
+		return t('core.backup.megabytes', { value: Math.round(bytes / MIB) })
 	}
-	const gb = (Math.round((bytes / GIB) * 10) / 10).toString().replace('.', ',')
-	return `${gb} GB`
+	const gb = Math.round((bytes / GIB) * 10) / 10
+	const value = new Intl.NumberFormat(dateLocale(), { maximumFractionDigits: 1, useGrouping: false }).format(gb)
+	return t('core.backup.gigabytes', { value })
 }
 
-// D-09: gleicher Wortlaut wie das Backend (backup/service.py PLAYERS_ONLINE_*).
+// D-09: same wording as the backend (backup/service.py PLAYERS_ONLINE_*).
 export function playersWarning(count) {
-	if (count === 1) {
-		return 'In der Welt spielt gerade 1 Kind, es wird kurz getrennt.'
-	}
-	return `In der Welt spielen gerade ${count} Kinder, sie werden kurz getrennt.`
+	return tn('core.backup.playersOnline', count)
 }
 
-// D-04/D-05: Sicherheitsabfrage vor jedem Wiederherstellen.
+// D-04/D-05: confirmation before every restore.
 export function restoreQuestion(fileName) {
-	return `Die Welt wird auf den Stand von ${fileName} zurückgesetzt. Der aktuelle Stand wird vorher als Sicherung mit dem Zusatz vor-restore abgelegt.`
+	return t('core.backup.restoreQuestion', { file: fileName })
 }
 
-// D-11: Zeile zum letzten Auftrag (backup_job) der Welt; leer, wenn nichts zu melden ist.
+// D-11: line about the last job (backup_job) of the world; empty when there is nothing to report.
 export function jobNote(job) {
 	if (!job) {
 		return ''
@@ -34,10 +34,10 @@ export function jobNote(job) {
 	const restore = job.kind === 'restore'
 	if (job.state === 'failed') {
 		const reason = job.message ?? ''
-		return restore ? `Wiederherstellen fehlgeschlagen: ${reason}` : `Sicherung fehlgeschlagen: ${reason}`
+		return t(restore ? 'core.backup.job.restoreFailed' : 'core.backup.job.backupFailed', { reason })
 	}
 	if (job.state === 'running') {
-		return restore ? 'Wiederherstellen läuft ...' : 'Sicherung läuft ...'
+		return t(restore ? 'core.backup.job.restoreRunning' : 'core.backup.job.backupRunning')
 	}
 	return ''
 }
@@ -46,17 +46,23 @@ function pad(value) {
 	return String(value).padStart(2, '0')
 }
 
-// Deutsches Format TT.MM.JJJJ HH:MM in der Ortszeit des Browsers; Unlesbares bleibt, wie es ist.
+// Date and time in the browser's local time (German DD.MM.YYYY HH:MM, English and
+// French DD/MM/YYYY HH:MM); unreadable input stays as it is.
 export function formatDate(iso) {
 	const date = new Date(iso)
 	if (typeof iso !== 'string' || Number.isNaN(date.getTime())) {
 		return String(iso ?? '')
 	}
-	return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+	return t('core.backup.dateTime', {
+		day: pad(date.getDate()),
+		month: pad(date.getMonth() + 1),
+		year: date.getFullYear(),
+		hour: pad(date.getHours()),
+		minute: pad(date.getMinutes()),
+	})
 }
 
-// Ist ein Auftrag zwischen zwei Abrufen fertig geworden? Dann lädt der Sicherungsbereich
-// seine Liste neu (T-05-52).
+// Has a job finished between two polls? Then the backup section reloads its list (T-05-52).
 export function jobFinished(prev, next) {
 	const nextState = next?.state
 	if (nextState !== 'ok' && nextState !== 'failed') {

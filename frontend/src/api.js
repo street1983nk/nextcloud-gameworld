@@ -8,6 +8,7 @@
 import axios from '@nextcloud/axios'
 import { loadState } from '@nextcloud/initial-state'
 import { generateOcsUrl, generateUrl } from '@nextcloud/router'
+import { t } from './i18n/index.js'
 
 const fallback = { apiBase: generateUrl('/apps/app_api/proxy/gameworld') }
 
@@ -42,8 +43,9 @@ export function del(url) {
 	return axios.delete(url, { data: {}, headers: { ...JSON_HEADERS } })
 }
 
-// Deutsche Meldung aus einer Fehlerantwort der API (detail als Text oder als
-// FastAPI-Validierungsliste), sonst ein allgemeiner Satz.
+// Message from an API error response (detail as text or as a FastAPI validation
+// list); a detail string from the backend is shown unchanged (the backend translates
+// it itself), otherwise a general sentence in the UI language.
 export function errorText(err) {
 	const detail = err?.response?.data?.detail
 	if (typeof detail === 'string' && detail !== '') {
@@ -53,7 +55,7 @@ export function errorText(err) {
 	if (typeof msg === 'string' && msg !== '') {
 		return msg.replace(/^Value error, /, '')
 	}
-	return 'Die Anfrage an Gameworld ist fehlgeschlagen.'
+	return t('core.api.requestFailed')
 }
 
 // Für alle angemeldeten Konten: Nutzer, Anzeigename und Rolle (verwalter oder spieler).
