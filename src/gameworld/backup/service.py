@@ -63,7 +63,7 @@ from gameworld.backup.archive import (
     verify_snapshot,
     write_snapshot,
 )
-from gameworld.backup.files import BackupFiles, FilesEntry, FilesError, get_backup_files
+from gameworld.backup.files import MSG_FILE_GONE, BackupFiles, FilesEntry, FilesError, get_backup_files
 from gameworld.backup.naming import backup_file_name, folder_name, folder_path, with_suffix
 from gameworld.config import load_settings
 from gameworld.notify.links import app_link
@@ -516,13 +516,29 @@ class BackupService:
     ) -> IO[bytes]:
         """Phase A: Platz, gedeckelter Download, Größe und SHA-256 gegen den Nachweis, Restore-Tar bauen."""
         await anyio.to_thread.run_sync(self._check_restore_space, proof)
+        path = await self._current_path(ticket, proof, uid)
         download = await self._new_spool(spools)
         capped = _CappedWriter(cast(BinaryIO, download), proof.size)
-        await self._files().download_to(uid, proof.path, cast(BinaryIO, capped))
+        await self._files().download_to(uid, path, cast(BinaryIO, capped))
         await anyio.to_thread.run_sync(self._check_integrity, download, proof)
         restore = await self._new_spool(spools)
         await anyio.to_thread.run_sync(self._restore_tar, ticket, download, restore)
         return restore
+
+    async def _current_path(self, ticket: OfflineTicket, proof: BackupRow, uid: str) -> str:
+        """Aktueller Pfad zur nachgewiesenen file_id; der Verwalter darf die Datei in Files umbenennen.
+
+        Wie die Liste (list_backups) zählt die file_id aus dem Ordner-Listing,
+        nicht der beim Sichern gespeicherte Pfad: Eine umbenannte Sicherung bleibt
+        wiederherstellbar, eine fremde Datei unter dem alten Namen wird nie
+        geladen. Fehlt die file_id, ist die Sicherung weg (MSG_FILE_GONE).
+        Größe und SHA-256 bleiben die Autorität (_check_integrity).
+        """
+        folder = folder_path(folder_name(ticket.name, ticket.world_id))
+        for entry in await self._files().listdir(uid, folder):
+            if entry.file_id == proof.file_id:
+                return entry.path
+        raise FilesError(MSG_FILE_GONE)
 
     def _check_restore_space(self, proof: BackupRow) -> None:
         self._spool_dir.mkdir(parents=True, exist_ok=True)

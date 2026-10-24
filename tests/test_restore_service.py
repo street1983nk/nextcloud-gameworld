@@ -317,7 +317,9 @@ async def test_restore_runs_in_order_and_restores_old_state(
     assert job is not None
     assert (job.kind, job.file_name) == ("restore", proof.name)
     # Download und Prüfung, bevor die Welt angefasst wird; vor-restore-Upload vor der Zerstörung.
-    assert fake_files.calls[0] == ("download_to", ADMIN, proof.path)
+    # WR-02: erst den aktuellen Pfad zur file_id auflösen, dann laden.
+    assert fake_files.calls[0] == ("listdir", ADMIN, FOLDER)
+    assert fake_files.calls[1] == ("download_to", ADMIN, proof.path)
     assert events == ["prepare", "upload"]
     halt = _halt_write_index(fake, world_id)
     assert halt is not None
@@ -545,6 +547,40 @@ async def test_missing_file_fails_before_stop(
 
     assert _job_state(store, world_id) == ("failed", MSG_FILE_GONE)
     assert not _destroyed(fake)
+
+
+async def test_renamed_backup_is_restored_via_file_id(
+    backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
+) -> None:
+    """WR-02: Umbenennen in Files ist vorgesehen; maßgeblich ist die file_id, nicht der alte Pfad."""
+    world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
+    data = fake_files.files.pop((ADMIN, proof.path))
+    new_path = f"{FOLDER}/Aufgeräumt-und-umbenannt.tar.gz"
+    fake_files.files[(ADMIN, new_path)] = data
+
+    await _restore(backup, world_id, proof)
+
+    assert _job_state(store, world_id) == ("ok", None)
+    assert ("download_to", ADMIN, new_path) in fake_files.calls
+    assert _restored_env(fake.put_archives[0][1]) == b"alt"
+    assert _op_state(store, world_id) == "ready"
+
+
+async def test_deleted_backup_with_decoy_at_old_name_is_file_gone(
+    backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
+) -> None:
+    """WR-02: Gelöschte Sicherung plus fremde Datei am alten Namen ergibt FILE_GONE, nicht TAMPERED."""
+    world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
+    fake_files.files.pop((ADMIN, proof.path))
+    # Eine andere Datei unter dem alten Namen (neue file_id): sie darf nie geladen werden.
+    fake_files.put(ADMIN, proof.path, b"fremde datei")
+
+    await _restore(backup, world_id, proof)
+
+    assert _job_state(store, world_id) == ("failed", MSG_FILE_GONE)
+    assert ("download_to", ADMIN, proof.path) not in fake_files.calls
+    assert not _destroyed(fake)
+    assert _op_state(store, world_id) == "ready"
 
 
 async def test_not_enough_space_fails_before_download(
