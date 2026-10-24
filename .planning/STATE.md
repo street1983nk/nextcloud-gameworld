@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-18-PLAN.md
-last_updated: "2026-10-24T19:03:17.650Z"
-last_activity: 2026-10-24 -- 06-18 Server-Texte nach Kontosprache (src/gameworld/i18n, Kataloge EN/FR, Übersetzung an der API-Grenze) abgeschlossen
+stopped_at: Completed 06-19-PLAN.md
+last_updated: "2026-10-24T19:18:54.000Z"
+last_activity: 2026-10-24 -- 06-19 Verwalter-Kernansicht dreisprachig (ParentView, BackupSection, InviteDialog, PlayerManager, parent.js 96 Schlüssel) abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 84
-  completed_plans: 70
-  percent: 83
+  completed_plans: 71
+  percent: 85
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 14 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18)
+Plan: 15 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-18 Backend-Texte nach Kontosprache: i18n-Kern, RoleService.language, übersetzende Handler, 144 Meldungen und 24 Schablonen je Sprache, AST-Abdeckung der raise-Literale (a6d05c1, 1740860, 4c8ae07, 6dff83e)
+Last activity: 2026-10-24 -- 06-19 Verwalter-Kernansicht DE/EN/FR: Weltliste, Sicherungen, Einladen, Spielerliste über parent.js (96 Schlüssel je Sprache), Deutsch wortgleich belegt (b315a66, c9d46df)
 
 Progress: [████████░░] 83%
 
@@ -277,6 +277,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-17 Gleichwerte de=en/fr nur mit Eintrag in frontend/tests/i18n.exceptions.json; i18n.check prüft zusätzlich französische Zeichensetzung (  vor ? ! ; : und in « »)
 - [Phase 06]: 06-18 Server-Texte: Übersetzung an der API-Grenze, deutscher Text als Nachrichten-ID; Kataloge src/gameworld/i18n/catalog_en.py und catalog_fr.py (Schlüssel = importierte Konstanten); Sprache aus RoleService.language (gecachte Selbstauskunft, nach Störung keine zweite Abfrage, Rückfall en)
 - [Phase 06]: 06-18 Neue Server-Texte nur als MSG_/TEXT_-Konstante mit EN/FR-Eintrag; AST-Test über raise/HTTPException, Ausnahmen nur in tests/i18n_exceptions.tsv mit Grund "intern: ..."; gespeicherte Texte werden beim Ausliefern übersetzt
+- [Phase 06]: 06-19 Gemeinsame Verwalter-Texte unter parent.common.*; Ordnerpfad Gameworld/Sicherungen bleibt in en/fr wörtlich (Backend-Ordnername); en meidet "announce" (gesperrtes Wort); Erwachsen-Bestätigung nutzt weiter die core-Texte aus adult.js
 
 ### Pending Todos
 
@@ -306,6 +307,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T19:03:17.629Z
-Stopped at: Completed 06-18-PLAN.md
+Last session: 2026-10-24T19:18:54.000Z
+Stopped at: Completed 06-19-PLAN.md
 Resume file: None
