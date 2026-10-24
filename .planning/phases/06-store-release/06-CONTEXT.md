@@ -37,6 +37,8 @@ Jede Familie und jede Schule mit Nextcloud kann Gameworld direkt aus dem Nextclo
 - **D-15:** Deinstallation: Welt-Container werden gestoppt und entfernt, Spielstand-Volumes und Sicherungen in den Files BLEIBEN (kein stiller Datenverlust). Das Orphan-Kommando listet Reste auf und löscht sie gezielt; das Verhalten wird im Listing ehrlich beschrieben.
 - **D-16:** Verwaiste Talk-Räume (Besitzer gelöscht oder kein Verwalter mehr) gehen an den dienstältesten bestätigten Verwalter; der Reconciler prüft das regelmäßig. Kein Raum bleibt ohne handlungsfähigen Besitzer (talk_rooms.owner_uid).
 
+- **D-24 (Owner 24.10., nachgereicht):** GitHub-README dreisprachig: README.md auf Englisch als Standard, README.de.md und README.fr.md verlinkt (Sprachverweis oben). Gut strukturiert mit: Badges (CI-Status, Release/Store-Version, Lizenz AGPL-3.0-or-later, Nextcloud-Versionsfenster), Kurzbeschreibung, Funktionsliste, Architektur-Diagramm (Mermaid, von GitHub nativ gerendert: Nextcloud/AppAPI/HaRP, ExApp, docker-socket-proxy, Welt-Container, Sicherungen in Files), Screenshot-Abschnitt (die 6 Store-Screenshots -v1 aus 06-13, bis dahin Platzhalter), Installation, Doku-Links, Lizenz. Ton bleibt Faktenliste (bestehende Owner-Regel), kein Marketing.
+
 ### Rahmenbedingungen
 - **R-01:** Die Store-Zertifikatsanfrage läuft (nextcloud/app-certificate-requests PR #1364, offen seit 21.10.2026). Owner-Vorgabe: NICHT nachhaken, einfach warten. Der eigentliche Store-Upload (Signieren + Submit) ist der letzte Plan der Phase, NICHT autonom und hängt am gemergten Zertifikat; alle anderen Pläne sind davon unabhängig.
 - **R-02:** Test der Store-Installation auf AIO und Standard-Compose (Roadmap-Kriterium 1) gehört in die Phasenabnahme.
