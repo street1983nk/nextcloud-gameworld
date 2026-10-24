@@ -213,6 +213,17 @@ async def test_deleted_account_is_forgotten_completely_and_name_freed(
     assert newcomer.player_name == "Mia"
 
 
+def test_forget_account_removes_adult_flag_set_via_store(store: WorldStore) -> None:
+    """ROLLE-04/P-08: Die Erwachsen-Markierung fällt mit dem Konto, die eines anderen bleibt."""
+    store.set_adult(GONE, set_by="admin", set_at="2026-10-24T08:00:00+00:00")
+    store.set_adult("gw-kind", set_by="admin", set_at="2026-10-24T08:00:00+00:00")
+    assert store.adults() == {GONE, "gw-kind"}
+
+    assert store.forget_account(GONE) is True
+
+    assert store.adults() == {"gw-kind"}
+
+
 def test_forget_account_covers_every_table_with_nc_user(app_env: Path, store: WorldStore) -> None:
     """Wächter: Eine künftige Tabelle mit nc_user muss bewusst in ACCOUNT_TABLES (oder hier ausgenommen)."""
     del store

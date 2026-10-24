@@ -822,3 +822,76 @@ def test_halt_is_not_persisted(engine: TimeEngine, store: WorldStore) -> None:
     fresh = TimeEngine(store, clock=_clock)
     data, _ = fresh.render("w1")
     assert _halt_lines(data) == []
+
+
+# ROLLE-04: Erwachsen-Schalter (frei = Verwalter-Vereinigung | adults)
+
+FREI_LINE = ["-1", "-1", "-1", "frei", "-"]
+
+
+def test_adult_renders_frei_and_toggle_changes_bytes(engine: TimeEngine, store: WorldStore) -> None:
+    """Umschalten ändert die Bytes der Regeldatei; der ruhende Plan greift nach dem Zurückschalten wieder."""
+    _world(store, "w1", 30015)
+    store.replace_world_window("w1", dict.fromkeys(range(1, 8), (600, 720)))
+    _player(store, "gw-kind", "Kind")
+    _invite(store, "w1", "gw-kind")
+    # "0 Minuten heute": Tag nicht erlaubt (ein Limit 0 lässt der Plan nicht zu).
+    _plan(store, "gw-kind", _week(allowed=False))
+
+    child_bytes, _ = engine.render("w1")
+    child_line = _line(child_bytes, "Kind")
+    assert child_line is not None
+    assert child_line[4] != "frei"
+    assert child_line[1] == "0"
+
+    store.set_adult("gw-kind", set_by="admin", set_at="2026-10-24T10:00:00+00:00")
+    adult_bytes, changed = engine.render("w1")
+
+    assert changed is True
+    assert adult_bytes != child_bytes
+    assert _line(adult_bytes, "Kind") == ["Kind", *FREI_LINE]
+    # Welt-Zeile bleibt (gilt für Kinder), frei schlägt sie für den Erwachsenen.
+    assert _line(adult_bytes, "welt") is not None
+
+    store.clear_adult("gw-kind")
+    back_bytes, changed_back = engine.render("w1")
+
+    assert changed_back is True
+    assert back_bytes != adult_bytes
+    back_line = _line(back_bytes, "Kind")
+    assert back_line is not None
+    assert back_line[1:] == child_line[1:]
+    # Plan blieb in der Datenbank.
+    assert "gw-kind" in store.child_plans()
+
+
+def test_frei_set_is_part_of_cache_key(engine: TimeEngine, store: WorldStore) -> None:
+    """T-06-18: Auch ohne sichtbare Zeile (Erwachsener nicht eingeladen) neue Generation beim Umschalten."""
+    _world(store, "w1", 30015)
+    _player(store, "gw-kind", "Kind")
+    _invite(store, "w1", "gw-kind")
+    _plan(store, "gw-kind", _week(limit=30))
+    first, _ = engine.render("w1")
+    store.set_adult("gw-gast", set_by="admin", set_at="2026-10-24T10:00:00+00:00")
+    second, changed = engine.render("w1")
+    assert changed is True
+    assert _generation(second) == _generation(first) + 1
+
+
+def test_book_skips_adult_usage_and_play(engine: TimeEngine, store: WorldStore) -> None:
+    _world(store, "w1", 30015)
+    _player(store, "gw-kind", "Kind")
+    _player(store, "gw-oma", "Oma")
+    _plan(store, "gw-kind", _week(limit=60))
+    _plan(store, "gw-oma", _week(limit=60))
+    store.set_adult("gw-oma", set_by="admin", set_at="2026-10-24T10:00:00+00:00")
+    store.set_ledger_seen("w1", {"Kind": 0, "Oma": 0})
+
+    engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Kind": 120, "Oma": 120}))
+
+    # Positivkontrolle Kind, Negativ Erwachsene (ruhender Plan zählt nicht).
+    assert store.usage("gw-kind", TODAY) == 120
+    assert store.usage("gw-oma", TODAY) == 0
+    assert store.play_seconds(TODAY) == {("gw-kind", "w1"): 120}
+    # Stand trotzdem verankert: Nach dem Zurückschalten wird nichts nachverbucht.
+    assert store.ledger_seen("w1")["Oma"] == 120
