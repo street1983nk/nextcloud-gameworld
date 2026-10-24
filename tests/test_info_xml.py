@@ -6,6 +6,8 @@ import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 INFO_XML = ROOT / "appinfo" / "info.xml"
 
@@ -117,3 +119,134 @@ def test_no_public_or_announce_setting() -> None:
     content = INFO_XML.read_text(encoding="utf-8").lower()
     assert "announce" not in content
     assert "public" not in content
+
+
+# --- Store-Texte (06-11, D-09, D-11, T-06-48) -------------------------------------------
+
+LANGS = {None, "de", "fr"}
+PRIVILEGES_HEADING = {
+    None: "What this app may do and why",
+    "de": "Was diese App darf und warum",
+    "fr": "Ce que cette application peut faire et pourquoi",
+}
+INTERFACE_LINE = {None: "Interface: German", "de": "Oberfläche: Deutsch", "fr": "Interface : allemand"}
+SCREENSHOT_BASE = "https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/"
+SCREENSHOTS = [
+    "worlds-v1.png",
+    "invite-v1.png",
+    "kids-view-v1.png",
+    "backups-v1.png",
+    "playtime-v1.png",
+    "mobile-v1.png",
+]
+DOC_BASE = "https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/"
+
+# Reihenfolge der Elemente laut info.xsd; ein Element an falscher Stelle scheitert beim Upload.
+XSD_ORDER = [
+    "id",
+    "name",
+    "summary",
+    "description",
+    "version",
+    "licence",
+    "author",
+    "namespace",
+    "documentation",
+    "category",
+    "website",
+    "bugs",
+    "repository",
+    "screenshot",
+    "dependencies",
+    "external-app",
+]
+
+
+def _by_lang(tag: str) -> dict[str | None, str]:
+    found: dict[str | None, str] = {}
+    for element in _root().findall(tag):
+        lang = element.get("lang")
+        assert lang not in found, (tag, lang)
+        found[lang] = (element.text or "").strip()
+    return found
+
+
+@pytest.mark.parametrize("tag", ["name", "summary", "description"])
+def test_store_texts_in_three_languages(tag: str) -> None:
+    texts = _by_lang(tag)
+    assert set(texts) == LANGS
+    assert all(texts.values()), tag
+
+
+def test_name_and_summary_length() -> None:
+    for tag in ("name", "summary"):
+        for lang, text in _by_lang(tag).items():
+            assert len(text) <= 128, (tag, lang)
+
+
+def test_description_leads_with_privileges() -> None:
+    """D-11: nach höchstens einem Einleitungssatz kommt der Privilegien-Abschnitt."""
+    for lang, text in _by_lang("description").items():
+        headings = [line for line in text.splitlines() if line.startswith("#")]
+        assert headings, lang
+        assert headings[0] == f"### {PRIVILEGES_HEADING[lang]}", lang
+        intro = text.split(headings[0], 1)[0].strip()
+        assert intro.count("\n") == 0, lang
+
+
+def test_description_names_interface_language() -> None:
+    for lang, text in _by_lang("description").items():
+        assert INTERFACE_LINE[lang] in text, lang
+
+
+def test_description_honest_about_uninstall() -> None:
+    """D-15/D-17: Volumes und Sicherungen bleiben, Welt-Container werden entfernt (T-06-51)."""
+    texts = _by_lang("description")
+    assert "gameworld-orphans.sh" in texts[None]
+    for text in texts.values():
+        assert "gameworld-orphans.sh" in text
+        assert "root" in text
+        assert "UDP" in text
+
+
+def test_description_store_markdown_subset() -> None:
+    """Der Store rendert nur Überschriften, Absätze, Listen, Links und Hervorhebungen."""
+    for lang, text in _by_lang("description").items():
+        assert "`" not in text, lang
+        assert "|" not in text, lang
+        for dash in (chr(0x2013), chr(0x2014)):
+            assert dash not in text, lang
+
+
+def test_categories() -> None:
+    assert [element.text for element in _root().findall("category")] == ["games", "tools"]
+
+
+def test_documentation_links() -> None:
+    documentation = _root().find("documentation")
+    assert documentation is not None
+    assert _text(documentation, "user") == DOC_BASE + "install.md"
+    assert _text(documentation, "admin") == DOC_BASE + "install.md"
+    assert _text(documentation, "developer") == DOC_BASE + "dev-setup.md"
+    for target in ("install.md", "dev-setup.md"):
+        assert (ROOT / "docs" / target).is_file()
+
+
+def test_six_versioned_screenshots() -> None:
+    urls = [(element.text or "").strip() for element in _root().findall("screenshot")]
+    assert urls == [SCREENSHOT_BASE + name for name in SCREENSHOTS]
+
+
+def test_element_order_follows_xsd() -> None:
+    seen = [child.tag for child in _root()]
+    order = [tag for tag in XSD_ORDER if tag in seen]
+    collapsed = [tag for index, tag in enumerate(seen) if index == 0 or seen[index - 1] != tag]
+    assert collapsed == order
+
+
+def test_store_listing_matches_info_xml() -> None:
+    """docs/store-listing.md ist die eine Quelle: jeder Text steht dort wortgleich."""
+    listing = (ROOT / "docs" / "store-listing.md").read_text(encoding="utf-8")
+    for tag in ("name", "summary", "description"):
+        for lang, text in _by_lang(tag).items():
+            assert text in listing, (tag, lang)
