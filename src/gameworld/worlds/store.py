@@ -26,7 +26,7 @@ from gameworld.playtime.pause import ART_PAUSE, PauseState
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
-SCHEMA_VERSION = "8"
+SCHEMA_VERSION = "9"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS worlds (
   op_state TEXT NOT NULL,
   last_error TEXT,
   created_at TEXT NOT NULL,
-  preset TEXT NOT NULL DEFAULT 'mtg_kreativ'
+  preset TEXT NOT NULL DEFAULT 'mtg_kreativ',
+  language TEXT NOT NULL DEFAULT 'de',
+  launched_language TEXT
 );
 CREATE TABLE IF NOT EXISTS players (
   nc_user TEXT PRIMARY KEY,
@@ -263,6 +265,11 @@ ADD_PLAYER_SALT = "ALTER TABLE players ADD COLUMN salt TEXT NOT NULL DEFAULT ''"
 # Ex-Verwalter, der in Talk noch Owner ist (D-19). Beide leer, solange nichts davon zutrifft.
 ADD_TALK_ORPHANED = "ALTER TABLE talk_rooms ADD COLUMN orphaned_token TEXT"
 ADD_TALK_FORMER_OWNER = "ALTER TABLE talk_rooms ADD COLUMN former_owner TEXT"
+# Schema 8 to 9: world language of the mod texts (D-27). Existing worlds become 'de'
+# because their texts are German today; the account-language default applies to new
+# worlds only. launched_language is the language the running server was started with.
+ADD_WORLD_LANGUAGE = "ALTER TABLE worlds ADD COLUMN language TEXT NOT NULL DEFAULT 'de'"
+ADD_WORLD_LAUNCHED_LANGUAGE = "ALTER TABLE worlds ADD COLUMN launched_language TEXT"
 # Tabellen, deren Zeilen einem Nextcloud-Konto gehören (Spalte nc_user), für forget_account.
 # adults gehört dazu (P-08): Sonst wäre eine neu angelegte gleiche Konto-ID sofort erwachsen.
 # Nicht dabei: talk_rooms.owner_uid (Raum gehört der Welt), invites.invited_by (wer eingeladen
@@ -299,6 +306,9 @@ class WorldRow:
     preset: str = DEFAULT_PRESET_ID
     access_generation: int = 0
     time_generation: int = 0
+    # World language of the mod texts (D-27) and the language of the last successful start.
+    language: str = "de"
+    launched_language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -442,6 +452,10 @@ class WorldStore:
                 connection.execute(ADD_ACCESS_GENERATION)
             if "time_generation" not in columns:
                 connection.execute(ADD_TIME_GENERATION)
+            if "language" not in columns:
+                connection.execute(ADD_WORLD_LANGUAGE)
+            if "launched_language" not in columns:
+                connection.execute(ADD_WORLD_LAUNCHED_LANGUAGE)
             player_columns = {str(info[1]) for info in connection.execute("PRAGMA table_info(players)").fetchall()}
             if "salt" not in player_columns:
                 connection.execute(ADD_PLAYER_SALT)
@@ -473,6 +487,12 @@ class WorldStore:
                 f"INSERT INTO worlds ({', '.join(COLUMNS)}) VALUES ({placeholders})",  # noqa: S608
                 astuple(row),
             )
+
+    def set_world_language(self, world_id: str, language: str) -> bool:
+        """Store the world language; False if the world does not exist (the caller checks the value)."""
+        with self._connect() as connection:
+            cursor = connection.execute("UPDATE worlds SET language = ? WHERE id = ?", (language, world_id))
+        return cursor.rowcount > 0
 
     def update_world(self, world_id: str, **fields: object) -> None:
         unknown = set(fields) - UPDATABLE

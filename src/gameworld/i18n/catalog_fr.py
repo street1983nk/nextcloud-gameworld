@@ -202,6 +202,7 @@ MESSAGES: dict[str, str] = {
         "la restauration se trouve dans Fichiers."
     ),
     world_service.WORLD_BUSY: "Le monde est en cours de sauvegarde ou de restauration.",
+    world_service.MSG_WORLD_LANGUAGE_UNSUPPORTED: "Cette langue n\u2019est pas disponible pour les textes du jeu.",
     world_service.OFFLINE_RESTART_FAILED: "Le monde n\u2019a pas pu redémarrer ensuite. Démarre le monde.",
     world_service.RECONCILE_FAILED: "Le monde n\u2019a pas pu être rétabli après le redémarrage du serveur.",
     world_service.UNKNOWN_PRESET_TITLE: "Type de jeu inconnu",

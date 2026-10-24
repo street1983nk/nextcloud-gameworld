@@ -180,6 +180,7 @@ MESSAGES: dict[str, str] = {
         "The restore was interrupted. Please restore again; the backup made before the restore is in Files."
     ),
     world_service.WORLD_BUSY: "The world is being backed up or restored right now.",
+    world_service.MSG_WORLD_LANGUAGE_UNSUPPORTED: "This language is not available for the game texts.",
     world_service.OFFLINE_RESTART_FAILED: "The world could not be started again afterwards. Please start the world.",
     world_service.RECONCILE_FAILED: "The world could not be brought back after the server restart.",
     world_service.UNKNOWN_PRESET_TITLE: "Unknown game type",

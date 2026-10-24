@@ -274,9 +274,9 @@ def payload_args(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
     calls: list[tuple[object, ...]] = []
     real = service_module.build_world_payload
 
-    def wrapper(*args: object) -> WorldPayload:
+    def wrapper(*args: object, **kwargs: object) -> WorldPayload:
         calls.append(args)
-        return real(*args)  # pyright: ignore[reportArgumentType]
+        return real(*args, **kwargs)  # pyright: ignore[reportArgumentType]
 
     monkeypatch.setattr(service_module, "build_world_payload", wrapper)
     return calls
@@ -1100,8 +1100,8 @@ async def test_api_interrupted_world_answers_409(
 # WR-01 (Phase-2-Review): Auch Fehler außerhalb von ProvisionerError räumen das Erzeugen auf.
 
 
-def _no_space(*args: object) -> WorldPayload:
-    del args
+def _no_space(*args: object, **kwargs: object) -> WorldPayload:
+    del args, kwargs
     raise OSError(28, "No space left on device")
 
 

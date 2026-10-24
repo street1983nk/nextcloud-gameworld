@@ -10,7 +10,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import asdict
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
@@ -96,6 +96,14 @@ class CreateWorldRequest(BaseModel):
     preset: Annotated[str, Field(max_length=64), AfterValidator(validate_preset_id)] = DEFAULT_PRESET_ID
 
 
+class WorldLanguageRequest(BaseModel):
+    """World language of the mod texts (D-27); only these three values, anything else is 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    language: Literal["de", "en", "fr"]
+
+
 class WindowDayOut(BaseModel):
     weekday: int
     open: bool
@@ -145,6 +153,9 @@ class WorldOut(BaseModel):
     time_window: list[WindowDayOut] | None
     # Letzter Auftrag (Sicherung oder Wiederherstellung) oder null; Fehler bleiben nach Neuladen sichtbar.
     backup_job: BackupJobOut | None = None
+    # World language of the mod texts (D-27); a running world started with another one needs a restart.
+    language: str
+    language_restart_needed: bool
 
 
 class WorldListOut(BaseModel):
@@ -213,7 +224,8 @@ async def create_world(
     # normalize_world_name, 422 mit Detail-Liste); der Dienst sieht nur noch
     # normalisierte Namen, ein eigener ValueError-Zweig wäre toter Code.
     try:
-        created = await service.create_world(body.name, body.preset)
+        # The world speaks the creating admin's account language (D-27); the body stays unchanged.
+        created = await service.create_world(body.name, body.preset, language)
     except DockerUnavailableError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
     except NoFreePortError as exc:
@@ -278,6 +290,21 @@ async def stop_world(world_id: WorldId, service: ServiceDep, language: LangDep) 
 async def restart_world(world_id: WorldId, service: ServiceDep, language: LangDep) -> WorldOut:
     try:
         return _out(await service.restart_world(world_id), language)
+    except ProvisionerError as exc:
+        raise _http_error(exc) from None
+
+
+@router.post("/worlds/{world_id}/language")
+async def set_world_language(
+    world_id: WorldId, body: WorldLanguageRequest, service: ServiceDep, language: LangDep
+) -> WorldOut:
+    """Change the world language (D-27). POST because AppAPI allows only GET, POST and DELETE.
+
+    Applies from the next start; until then the world shows language_restart_needed.
+    The router-wide require_verwalter refuses players with 403 (T-06-86).
+    """
+    try:
+        return _out(await service.set_world_language(world_id, body.language), language)
     except ProvisionerError as exc:
         raise _http_error(exc) from None
 

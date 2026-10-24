@@ -29,6 +29,7 @@ import anyio.to_thread
 from gameworld.backup.archive import ledger_tar
 from gameworld.config import Settings
 from gameworld.events.parse import new_events, parse_events, plausible
+from gameworld.i18n import SUPPORTED_LANGUAGES
 from gameworld.playtime.engine import TimeEngine
 from gameworld.playtime.pause import (
     OUTBOX_PAUSE_START,
@@ -107,6 +108,10 @@ RESTORE_INTERRUPTED = (
 )
 # Elternaktion auf einer Welt, die gerade gesichert oder wiederhergestellt wird (HTTP 409).
 WORLD_BUSY = "Die Welt wird gerade gesichert oder wiederhergestellt."
+# Only reachable from code paths outside the API (the route accepts de/en/fr only).
+MSG_WORLD_LANGUAGE_UNSUPPORTED = "Diese Sprache gibt es für die Spieltexte nicht."
+# Worlds started before schema 9 (launched_language NULL) run German mod texts.
+LEGACY_LAUNCH_LANGUAGE = "de"
 # Globaler Ein-Job-Schutz (RESEARCH Pattern 7): höchstens ein Auftrag im ganzen Haushalt.
 JOB_RUNNING = "Es läuft schon eine Sicherung oder Wiederherstellung. Bitte kurz warten."
 # Unerwarteter Fehler beim Wiederanlaufen nach dem Offline-Abschnitt; Details nur im Log.
@@ -224,6 +229,25 @@ class WorldView:
     time_window: list[WindowDay] | None = None
     # Letzter Auftrag (D-11): Fehler bleiben nach Neuladen sichtbar. Nie an Kinder (AR-24).
     backup_job: BackupJobView | None = None
+    # World language of the mod texts (D-27) and whether the running server still speaks another one.
+    language: str = "de"
+    language_restart_needed: bool = False
+
+
+def world_language(row: WorldRow) -> str:
+    """Effective world language; a stored value outside de/en/fr gives German (fail safe, T-06-85)."""
+    return row.language if row.language in SUPPORTED_LANGUAGES else "de"
+
+
+def _language_restart_needed(row: WorldRow, status: WorldStatus) -> bool:
+    """The running server was started with another language than the stored one (D-27).
+
+    Only for status running; no automatic restart, the parents decide when (T-06-88).
+    """
+    if status.code != RUNNING:
+        return False
+    launched = row.launched_language or LEGACY_LAUNCH_LANGUAGE
+    return launched != world_language(row)
 
 
 def _view(
@@ -272,6 +296,8 @@ def _view(
         events_restart_needed=events_restart_needed,
         time_window=time_window,
         backup_job=backup_job,
+        language=world_language(row),
+        language_restart_needed=_language_restart_needed(row, status),
     )
 
 
@@ -299,11 +325,24 @@ class WorldService:
         self._list_cache: tuple[float, list[WorldView]] | None = None
         self._cache_generation = 0
 
-    async def create_world(self, name: str, preset_id: str = DEFAULT_PRESET_ID) -> WorldView:
+    async def create_world(self, name: str, preset_id: str = DEFAULT_PRESET_ID, language: str = "de") -> WorldView:
+        """``language``: world language of the mod texts (D-27), by default the creating admin's
+        account language; an unsupported value gives German."""
         clean = normalize_world_name(name)
         # Unbekannte Presets scheitern vor Lock, Port-Vergabe und Datenbank.
         get_preset(preset_id)
-        return await anyio.to_thread.run_sync(self._create_world_sync, clean, preset_id)
+        chosen = language if language in SUPPORTED_LANGUAGES else "de"
+        return await anyio.to_thread.run_sync(self._create_world_sync, clean, preset_id, chosen)
+
+    async def set_world_language(self, world_id: str, language: str) -> WorldView:
+        """Change the world language (D-27); it applies from the next start, no restart here.
+
+        ValueError for an unsupported language, WorldNotFoundError for an unknown world.
+        Only the store changes under the mutation lock, no Docker or Nextcloud call (T-06-88).
+        """
+        if language not in SUPPORTED_LANGUAGES:
+            raise ValueError(MSG_WORLD_LANGUAGE_UNSUPPORTED)
+        return await anyio.to_thread.run_sync(self._set_world_language_sync, world_id, language)
 
     async def list_worlds(self) -> list[WorldView]:
         return await anyio.to_thread.run_sync(self._list_worlds_sync)
@@ -933,6 +972,7 @@ class WorldService:
                 render_world_mt(preset),
                 self._access_file(row),
                 self._time_file(row),
+                language=world_language(row),
             )
         except (OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
             LOG.warning("Weltdaten für Welt %s nicht vorbereitet: %r", row.id, exc)
@@ -1174,7 +1214,8 @@ class WorldService:
         while True:
             try:
                 # Im selben try: Fehlt der Container schon beim Schreiben, greift die Neuerzeugung.
-                world_files = build_world_files(self._access_file(row), self._time_file(row))
+                language = world_language(row)
+                world_files = build_world_files(self._access_file(row), self._time_file(row), language=language)
                 try:
                     self._provisioner.write_world_files(row.id, world_files)
                 except BaseException:
@@ -1182,6 +1223,10 @@ class WorldService:
                     self._time.forget(row.id)
                     raise
                 self._provisioner.start_world(row.id)
+                # The running mods now speak this language (language_restart_needed, D-27).
+                if row.launched_language != language:
+                    self._store.update_world(row.id, launched_language=language)
+                    row.launched_language = language
                 return
             except WorldNotFoundError:
                 # Volume vorhanden, Container weg: aus dem Volume neu erzeugen.
@@ -1266,7 +1311,7 @@ class WorldService:
 
     # Abläufe
 
-    def _create_world_sync(self, name: str, preset_id: str) -> WorldView:
+    def _create_world_sync(self, name: str, preset_id: str, language: str) -> WorldView:
         with self._mutating():
             instance = self._store.instance_id()
             world_id = uuid.uuid4().hex[:12]
@@ -1286,6 +1331,7 @@ class WorldService:
                 last_error=None,
                 created_at=datetime.now(UTC).isoformat(timespec="seconds"),
                 preset=preset_id,
+                language=language,
             )
             self._store.insert_world(row)
 
@@ -1311,6 +1357,12 @@ class WorldService:
             self._store.update_world(world_id, op_state="ready")
             # Der Weltschlüssel wird seit 03-05 nicht mehr angezeigt; Zugang über
             # provisionierte Konten. Er bleibt als default_password in der conf.
+            return self._current(world_id)
+
+    def _set_world_language_sync(self, world_id: str, language: str) -> WorldView:
+        with self._mutating():
+            if not self._store.set_world_language(world_id, language):
+                raise WorldNotFoundError(NOT_FOUND)
             return self._current(world_id)
 
     def _list_worlds_sync(self) -> list[WorldView]:

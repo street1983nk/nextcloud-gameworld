@@ -758,8 +758,9 @@ def _schema_7_file(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_fresh_db_is_schema_8_with_role_tables(tmp_path: pathlib.Path) -> None:
     db = tmp_path / "gameworld.sqlite3"
     WorldStore(db).migrate()
-    assert SCHEMA_VERSION == "8"
-    assert _schema_version(db) == "8"
+    # Schema 9 (06-22) adds the world language on top of the role tables of schema 8.
+    assert SCHEMA_VERSION == "9"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert {"adults", "verwalter_seen", "verwalter_snapshot"} == ROLE_TABLES
     assert ROLE_TABLES.issubset(_tables(db))
     assert {"orphaned_token", "former_owner"}.issubset(_talk_columns(db))
@@ -772,14 +773,14 @@ def test_schema_7_is_migrated_to_8_keeps_data_and_is_idempotent(tmp_path: pathli
     assert not {"orphaned_token", "former_owner"} & _talk_columns(db)
     store = WorldStore(db)
     store.migrate()
-    assert _schema_version(db) == "8"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert ROLE_TABLES.issubset(_tables(db))
     assert {"orphaned_token", "former_owner"}.issubset(_talk_columns(db))
     room = store.talk_room("w1")
     assert room is not None
     assert (room.token, room.owner_uid, room.orphaned_token, room.former_owner) == ("tok1", "admin", None, None)
     store.migrate()
-    assert _schema_version(db) == "8"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert store.list_talk_rooms() == [room]
     assert store.get_world("w1") is not None
 
