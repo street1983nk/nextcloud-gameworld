@@ -11,10 +11,17 @@
 	HaRP gar nicht.
 
 	Reihenfolge ist Semantik: Die erste Route, die zu Pfad und Verb passt,
-	gewinnt. Darum stehen die USER-Routen (Seite, Bundle, eigene Daten) vor dem
-	ADMIN-Auffangmuster ^/api/.*. AppAPI hängt keinen End-Anker an, darum endet
-	^/api/me$ auf "$" (sonst träfe es auch /api/members). Die Python-Seite prüft
-	jede Verwaltungsroute zusätzlich (require_verwalter, Gruppe admin).
+	gewinnt. Darum stehen die festen Routen (Seite, Bundle, eigene Daten) vor dem
+	Auffangmuster ^/api/.*. AppAPI hängt keinen End-Anker an, darum endet
+	^/api/me$ auf "$" (sonst träfe es auch /api/members).
+
+	Seit Phase 6 gibt es keine ADMIN-Stufe mehr: AppAPI prüft ADMIN nur als
+	IGroupManager::isAdmin, Gameworld hat aber eigene Verwalter-Gruppen
+	(ROLLE-03, RESEARCH F-03). Darum steht auch ^/api/.* auf USER, und die
+	einzige Sperre der Verwaltung ist require_verwalter bzw. require_nc_admin
+	(Admin-Abschnitt /api/admin/) in Python. tests/test_route_guards.py belegt
+	für jede Route unter /api/ (außer /api/me und /api/my/), dass eine der
+	beiden Sperren im Abhängigkeitsbaum steckt.
 
 	^/talk/bot$ ist der Webhook des Gameworld-Bots. AppAPI ruft ihn aus
 	TalkBotController::proxyTalkMessage direkt per requestToExApp auf, nachdem es
@@ -26,7 +33,9 @@
 	Browser-Spike 04.2: ^/api/my/play-ticket$ (nur POST) und ^/play/.* sind die
 	Ticket-Route und die Spielseite samt Artefakten und WebSocket. Ohne
 	GAMEWORLD_BROWSER_SPIKE antworten sie mit 404. HaRP prüft ^/play/.* auch
-	beim WebSocket-Upgrade.
+	beim WebSocket-Upgrade. Sie bleiben bewusst stehen (D-23): AppAPI kennt
+	keine Routen-Migration, ein späteres Einschalten bräuchte sonst eine
+	Neuinstallation. tests/test_route_guards.py belegt die 404.
 
 	Es gibt bewusst keine Einstellung, die eine Welt im Internet sichtbar macht
 	(ZUGANG-01).
@@ -107,7 +116,7 @@ Requirements:
 			<route>
 				<url>^/api/.*</url>
 				<verb>GET,POST,DELETE</verb>
-				<access_level>ADMIN</access_level>
+				<access_level>USER</access_level>
 				<headers_to_exclude>[]</headers_to_exclude>
 			</route>
 		</routes>

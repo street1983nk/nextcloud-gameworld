@@ -1,4 +1,4 @@
-"""ExApp-Manifest: Version im Lockstep, Routen USER vor ADMIN, Env-Variablen, NC-Fenster."""
+"""ExApp-Manifest: Version im Lockstep, feste Routen vor dem Auffangmuster, alles USER, Env-Variablen, NC-Fenster."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ EXPECTED_ROUTES = [
     ("^/api/my/play-ticket$", "POST", "USER"),
     ("^/play/.*", "GET,POST", "USER"),
     ("^/talk/bot$", "POST", "USER"),
-    ("^/api/.*", "GET,POST,DELETE", "ADMIN"),
+    ("^/api/.*", "GET,POST,DELETE", "USER"),
 ]
 
 
@@ -47,19 +47,22 @@ def _routes() -> list[tuple[str, str, str]]:
 
 
 def test_route_order_and_levels() -> None:
-    """Erste passende Route gewinnt: USER-Routen zuerst, Verwaltung als ADMIN dahinter."""
+    """Erste passende Route gewinnt: feste Routen zuerst, das Auffangmuster der Verwaltung dahinter (USER)."""
     assert _routes() == EXPECTED_ROUTES
 
 
 def test_user_routes_are_anchored_or_static() -> None:
-    """AppAPI hängt keinen End-Anker an: USER-Routen unter /api/ brauchen "$" oder ^/api/my/."""
-    for url, _verb, level in _routes():
+    """AppAPI hängt keinen End-Anker an: feste Routen unter /api/ brauchen "$" oder ^/api/my/.
+
+    Ausgenommen ist nur das Auffangmuster ^/api/.* als letzte Route (seit Phase 6 USER).
+    """
+    for url, _verb, level in _routes()[:-1]:
         if level == "USER" and url.startswith("^/api/"):
             assert url.endswith("$") or url == "^/api/my/.*", url
 
 
 def test_talk_bot_route_is_anchored_post_before_admin() -> None:
-    """Webhook des Gameworld-Bots (04.1-06): nur POST, fest verankert, vor dem ADMIN-Auffangmuster."""
+    """Webhook des Gameworld-Bots (04.1-06): nur POST, fest verankert, vor dem Auffangmuster ^/api/.*."""
     routes = _routes()
     urls = [url for url, _verb, _level in routes]
     assert ("^/talk/bot$", "POST", "USER") in routes
@@ -67,7 +70,7 @@ def test_talk_bot_route_is_anchored_post_before_admin() -> None:
 
 
 def test_play_routes_before_admin() -> None:
-    """Browser-Spike 04.2: Ticket (nur POST, verankert) und Spielseite stehen vor dem ADMIN-Auffangmuster."""
+    """Browser-Spike 04.2: Ticket (nur POST, verankert) und Spielseite stehen vor dem Auffangmuster ^/api/.*."""
     routes = _routes()
     urls = [url for url, _verb, _level in routes]
     assert ("^/api/my/play-ticket$", "POST", "USER") in routes
@@ -76,10 +79,12 @@ def test_play_routes_before_admin() -> None:
     assert urls.index("^/play/.*") < urls.index("^/api/.*")
 
 
-def test_admin_catch_all_is_last() -> None:
+def test_api_catch_all_is_last_and_no_admin_level() -> None:
+    """Seit Phase 6 keine AppAPI-ADMIN-Stufe (F-03); die Sperre belegt tests/test_route_guards.py."""
     routes = _routes()
-    assert routes[-1] == ("^/api/.*", "GET,POST,DELETE", "ADMIN")
-    assert [level for _url, _verb, level in routes].count("ADMIN") == 1
+    assert routes[-1] == ("^/api/.*", "GET,POST,DELETE", "USER")
+    assert [level for _url, _verb, level in routes].count("ADMIN") == 0
+    assert "<access_level>ADMIN</access_level>" not in INFO_XML.read_text(encoding="utf-8")
 
 
 def test_environment_defaults() -> None:
