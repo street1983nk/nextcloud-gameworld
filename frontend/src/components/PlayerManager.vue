@@ -3,7 +3,7 @@
 	<NcDialog
 		v-if="!confirmAdult"
 		:open="true"
-		:name="`Spieler von ${world.name}`"
+		:name="t('parent.players.title', { name: world.name })"
 		size="large"
 		@update:open="onOpen">
 		<NcLoadingIcon v-if="loading" :size="32" />
@@ -18,7 +18,7 @@
 				{{ notice }}
 			</NcNoteCard>
 			<NcNoteCard v-if="notApplied" type="info">
-				Die Änderung wirkt beim nächsten Start der Welt.
+				{{ t('parent.common.notApplied') }}
 			</NcNoteCard>
 			<NcNoteCard v-if="adultNotApplied" type="info">
 				{{ notAppliedMessage() }}
@@ -28,7 +28,7 @@
 			</NcNoteCard>
 
 			<p v-if="!loadError && players.length === 0" class="players__empty">
-				Noch niemand eingeladen.
+				{{ t('parent.players.empty') }}
 			</p>
 
 			<ul v-else class="players__list">
@@ -42,12 +42,12 @@
 						<NcChip
 							v-if="player.verwalter"
 							variant="tertiary"
-							text="Verwalter"
+							:text="t('parent.players.verwalter')"
 							no-close />
 						<NcChip
 							v-else-if="player.adult"
 							variant="secondary"
-							text="Erwachsen"
+							:text="t('parent.players.adult')"
 							no-close />
 						<span class="players__via">{{ viaText(player.via) }}</span>
 					</div>
@@ -60,72 +60,72 @@
 							:disabled="busy || adultSaving === player.nc_user"
 							:description="switchMeta()"
 							@update:model-value="(on) => toggleAdult(player, on)">
-							Erwachsen
+							{{ t('parent.players.adult') }}
 						</NcCheckboxRadioSwitch>
 					</div>
 
 					<NcFormBox>
-						<NcFormBoxCopyButton label="Spielername" :value="player.player_name" />
+						<NcFormBoxCopyButton :label="t('parent.players.playerName')" :value="player.player_name" />
 						<NcFormBoxCopyButton
 							v-if="revealed[player.nc_user]"
-							label="Passwort"
+							:label="t('parent.players.password')"
 							:value="player.password" />
 					</NcFormBox>
 
 					<div class="players__password">
-						<span v-if="!revealed[player.nc_user]" class="players__masked" aria-label="Passwort verdeckt">
-							Passwort: ••••-••••-••••
+						<span v-if="!revealed[player.nc_user]" class="players__masked" :aria-label="t('parent.players.passwordHidden')">
+							{{ t('parent.players.passwordMasked') }}
 						</span>
 						<NcButton variant="tertiary" @click="toggleReveal(player)">
-							{{ revealed[player.nc_user] ? 'Verbergen' : 'Anzeigen' }}
+							{{ revealed[player.nc_user] ? t('parent.players.hide') : t('parent.players.show') }}
 						</NcButton>
 						<NcButton
 							v-if="!revealed[player.nc_user]"
 							variant="tertiary"
 							@click="copyPassword(player)">
-							{{ copied === player.nc_user ? 'Kopiert' : 'Passwort kopieren' }}
+							{{ copied === player.nc_user ? t('parent.players.copied') : t('parent.players.copyPassword') }}
 						</NcButton>
 					</div>
 
 					<div class="players__actions">
 						<NcButton :disabled="busy" @click="askRotate(player)">
-							Neues Passwort
+							{{ t('parent.players.newPassword') }}
 						</NcButton>
 						<NcButton :disabled="busy" @click="startRename(player)">
-							Name ändern
+							{{ t('parent.players.rename') }}
 						</NcButton>
 					</div>
 
 					<NcNoteCard v-if="rotating === player.nc_user" type="warning">
-						<p>Das alte Passwort funktioniert danach nicht mehr. Das neue gilt in allen Welten dieses Kontos.</p>
+						<p>{{ t('parent.players.rotateWarning') }}</p>
 						<div class="players__confirm">
 							<NcButton variant="tertiary" :disabled="busy" @click="rotating = ''">
-								Abbrechen
+								{{ t('parent.common.cancel') }}
 							</NcButton>
 							<NcButton variant="warning" :disabled="busy" @click="confirmRotate(player)">
-								Neues Passwort erzeugen
+								{{ t('parent.players.rotateConfirm') }}
 							</NcButton>
 						</div>
 					</NcNoteCard>
 
 					<div v-if="renaming === player.nc_user" class="players__rename">
 						<NcNoteCard type="warning">
-							Mit neuem Namen beginnt im Spiel ein neuer Spielstand; Gebautes in der Welt bleibt, das Inventar des alten Namens nicht.
+							{{ t('parent.players.renameWarning') }}
 						</NcNoteCard>
 						<NcTextField
 							v-model="newName"
-							label="Neuer Spielername"
+							:label="t('parent.players.newPlayerName')"
 							:maxlength="20"
 							:disabled="busy" />
 						<div class="players__confirm">
 							<NcButton variant="tertiary" :disabled="busy" @click="renaming = ''">
-								Abbrechen
+								{{ t('parent.common.cancel') }}
 							</NcButton>
 							<NcButton
 								variant="primary"
 								:disabled="busy || newName.trim() === ''"
 								@click="confirmRename(player)">
-								Namen speichern
+								{{ t('parent.players.saveName') }}
 							</NcButton>
 						</div>
 					</div>
@@ -133,16 +133,16 @@
 			</ul>
 
 			<h3 class="players__title">
-				Einladungen
+				{{ t('parent.players.invitesTitle') }}
 			</h3>
 			<p v-if="invites.length === 0" class="players__empty">
-				Keine Einladungen.
+				{{ t('parent.players.noInvites') }}
 			</p>
 			<ul v-else class="players__invites">
 				<li v-for="entry in invites" :key="`${entry.kind}:${entry.target}`" class="players__invite">
 					<span>{{ inviteText(entry) }}</span>
 					<NcButton variant="error" :disabled="busy" @click="remove(entry)">
-						Entfernen
+						{{ t('parent.players.remove') }}
 					</NcButton>
 				</li>
 			</ul>
@@ -150,10 +150,10 @@
 
 		<template #actions>
 			<NcButton variant="tertiary" @click="emit('close')">
-				Schließen
+				{{ t('parent.common.close') }}
 			</NcButton>
 			<NcButton variant="primary" @click="emit('invite')">
-				Spieler einladen
+				{{ t('parent.common.invitePlayers') }}
 			</NcButton>
 		</template>
 	</NcDialog>
@@ -162,7 +162,7 @@
 	<NcDialog
 		v-else
 		:open="true"
-		name="Als erwachsen markieren"
+		:name="t('parent.common.markAdult')"
 		@update:open="onConfirmOpen">
 		<div class="players__adult-confirm">
 			<p class="players__adult-lead">
@@ -182,13 +182,13 @@
 
 		<template #actions>
 			<NcButton variant="tertiary" :disabled="confirmSaving" @click="cancelAdult">
-				Abbrechen
+				{{ t('parent.common.cancel') }}
 			</NcButton>
 			<NcButton variant="warning" :disabled="confirmSaving" @click="confirmAdultOn">
 				<template v-if="confirmSaving" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Als erwachsen markieren
+				{{ t('parent.common.markAdult') }}
 			</NcButton>
 		</template>
 	</NcDialog>
@@ -223,6 +223,7 @@ import {
 	rulesKeptText,
 	switchMeta,
 } from '../adult.js'
+import { t } from '../i18n/index.js'
 import { notAppliedMessage } from '../playtime.js'
 
 const props = defineProps({
@@ -282,17 +283,17 @@ async function load() {
 
 function viaText(via) {
 	if (typeof via === 'string' && via.startsWith('group:')) {
-		return `über Gruppe ${via.slice('group:'.length)}`
+		return t('parent.players.viaGroup', { group: via.slice('group:'.length) })
 	}
 	if (via === 'group') {
-		return 'über eine Gruppe'
+		return t('parent.players.viaSomeGroup')
 	}
-	return 'direkt eingeladen'
+	return t('parent.players.direct')
 }
 
 function inviteText(entry) {
 	if (entry.kind === 'group') {
-		return `Gruppe ${entry.target}`
+		return t('parent.players.inviteGroup', { group: entry.target })
 	}
 	const player = players.value.find((item) => item.nc_user === entry.target)
 	return player ? `${player.display_name} (${entry.target})` : entry.target
@@ -312,7 +313,7 @@ async function copyPassword(player) {
 			}
 		}, 2000)
 	} catch {
-		error.value = 'Kopieren ist in diesem Browser nicht möglich. Bitte Passwort anzeigen und abschreiben.'
+		error.value = t('parent.players.copyFailed')
 	}
 }
 
@@ -467,12 +468,12 @@ async function change(action, success) {
 }
 
 function confirmRotate(player) {
-	change(() => rotatePassword(player.nc_user), `Neues Passwort für ${player.display_name} erzeugt.`)
+	change(() => rotatePassword(player.nc_user), t('parent.players.rotated', { name: player.display_name }))
 }
 
 function confirmRename(player) {
 	const name = newName.value.trim()
-	change(() => renamePlayer(player.nc_user, name), `${player.display_name} heißt im Spiel jetzt ${name}.`)
+	change(() => renamePlayer(player.nc_user, name), t('parent.players.renamed', { name: player.display_name, newName: name }))
 }
 
 async function remove(entry) {
@@ -481,7 +482,7 @@ async function remove(entry) {
 	try {
 		const result = await removeInvite(props.world.id, entry.kind, entry.target)
 		apply(result)
-		notice.value = 'Einladung entfernt.'
+		notice.value = t('parent.players.inviteRemoved')
 		notApplied.value = result?.applied === false
 		emit('changed')
 	} catch (err) {

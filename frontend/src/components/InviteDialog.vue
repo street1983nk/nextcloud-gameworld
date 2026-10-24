@@ -3,11 +3,11 @@
 	<NcDialog
 		v-if="!confirmOpen"
 		:open="true"
-		:name="`Spieler einladen: ${world.name}`"
+		:name="t('parent.invite.title', { name: world.name })"
 		size="normal"
 		@update:open="onOpen">
 		<p class="invite__hint">
-			Suche nach Nextcloud-Konten oder ganzen Gruppen. Eingeladene bekommen einen Spielernamen und ein Passwort für diese Welt.
+			{{ t('parent.invite.hint') }}
 		</p>
 		<template v-if="me?.nc_admin === false">
 			<p v-if="scope" class="invite__scope">
@@ -22,8 +22,8 @@
 			:options="options"
 			:loading="searching"
 			:disabled="inviting"
-			input-label="Konto oder Gruppe"
-			placeholder="Name eingeben"
+			:input-label="t('parent.invite.searchLabel')"
+			:placeholder="t('parent.invite.searchPlaceholder')"
 			multiple
 			keep-open
 			@search="onSearch" />
@@ -35,7 +35,7 @@
 				type="switch"
 				:disabled="inviting || singleAccounts.length === 0"
 				:description="inviteSwitchMeta()">
-				Als erwachsen einladen
+				{{ t('parent.invite.asAdult') }}
 			</NcCheckboxRadioSwitch>
 		</div>
 
@@ -49,7 +49,7 @@
 			{{ warning.text }}
 		</NcNoteCard>
 		<NcNoteCard v-if="notApplied" type="info">
-			Die Änderung wirkt beim nächsten Start der Welt.
+			{{ t('parent.common.notApplied') }}
 		</NcNoteCard>
 		<NcNoteCard v-if="searchError" type="warning">
 			{{ searchError }}
@@ -63,7 +63,7 @@
 
 		<template #actions>
 			<NcButton variant="tertiary" :disabled="inviting" @click="close">
-				Schließen
+				{{ t('parent.common.close') }}
 			</NcButton>
 			<NcButton
 				variant="primary"
@@ -72,7 +72,7 @@
 				<template v-if="inviting" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Einladen
+				{{ t('parent.common.invite') }}
 			</NcButton>
 		</template>
 	</NcDialog>
@@ -81,7 +81,7 @@
 	<NcDialog
 		v-else
 		:open="true"
-		name="Als erwachsen markieren"
+		:name="t('parent.common.markAdult')"
 		@update:open="onConfirmOpen">
 		<div class="invite__confirm">
 			<p class="invite__confirm-lead">
@@ -95,13 +95,13 @@
 
 		<template #actions>
 			<NcButton variant="tertiary" :disabled="inviting" @click="cancelConfirm">
-				Abbrechen
+				{{ t('parent.common.cancel') }}
 			</NcButton>
 			<NcButton variant="warning" :disabled="inviting" @click="confirmInvite">
 				<template v-if="inviting" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Als erwachsen einladen
+				{{ t('parent.invite.asAdult') }}
 			</NcButton>
 		</template>
 	</NcDialog>
@@ -124,6 +124,7 @@ import {
 	invitedLabel,
 	inviteSwitchMeta,
 } from '../adult.js'
+import { t } from '../i18n/index.js'
 import { noScopeText, scopeHint } from '../roles.js'
 
 const props = defineProps({
@@ -170,11 +171,11 @@ function toOption(entry) {
 		id: `${entry.kind}:${entry.id}`,
 		// Ohne sichtbaren Anzeigenamen steht die Konto-ID da (kein Fehlertext).
 		displayName: entry.label || entry.id,
-		subname: isGroup ? 'Gruppe' : entry.id,
+		subname: isGroup ? t('parent.invite.group') : entry.id,
 		user: isGroup ? undefined : entry.id,
 		isNoUser: isGroup,
 		iconSvg: isGroup ? GROUP_ICON : undefined,
-		iconName: isGroup ? 'Gruppe' : undefined,
+		iconName: isGroup ? t('parent.invite.group') : undefined,
 		kind: entry.kind,
 		target: entry.id,
 	}
@@ -202,7 +203,7 @@ function onSearch(term) {
 			}
 		} catch {
 			if (seq === searchSeq) {
-				searchError.value = 'Die Suche in Nextcloud ist gerade nicht möglich.'
+				searchError.value = t('parent.invite.searchDown')
 			}
 		} finally {
 			if (seq === searchSeq) {
@@ -276,7 +277,7 @@ async function runInvites(markAdult) {
 		if (markAdult && option.kind !== 'group') {
 			try {
 				const marked = await setAdult(option.target, true)
-				label = `${option.displayName} (erwachsen)`
+				label = t('parent.invite.adultLabel', { name: option.displayName })
 				if (marked?.applied === false) {
 					notApplied.value = true
 				}
