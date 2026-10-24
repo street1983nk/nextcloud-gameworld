@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-04-PLAN.md
-last_updated: "2026-10-24T09:28:30.236Z"
-last_activity: 2026-10-24 -- 06-04 Erwachsen-Schalter Backend (ROLLE-04) abgeschlossen
+stopped_at: Completed 06-08-PLAN.md
+last_updated: "2026-10-24T09:58:07.000Z"
+last_activity: 2026-10-24 -- 06-08 Deaktivieren räumt auf, Orphan-API und Host-Skript abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 61
-  percent: 85
+  completed_plans: 62
+  percent: 86
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 5 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04)
+Plan: 6 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-04 Erwachsen-Schalter: frei = Verwalter | adults, POST /api/players/adult, Negativtests (fd71bb4, c4c2e88, e1faa24, ec90fe1)
+Last activity: 2026-10-24 -- 06-08 enabled=0 entfernt eigene Welt-Container (Volumes bleiben, RECREATE beim Start), /api/admin/orphans, scripts/gameworld-orphans.sh (205c3f7, 289cf23, 23c96c7)
 
 Progress: [█████████░] 85%
 
@@ -259,6 +259,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-03 403 im Verwalter-Gruppen-Abschnitt: ParentView zeigt NC_ADMIN_ONLY_TEXT an seiner Stelle und lässt App.vue /api/me neu laden (reload-me); Anzeigenamen der Verwalter-Gruppen nur aus der Gruppensuche
 - [Phase 06]: 06-03 me geht auch an AttemptsView, damit der Einladen-Dialog dort die Einladungsgrenze zeigt
 - [Phase 06]: 06-04 Erwachsen wirkt nur über die frei-Zeile (frei = time_admins | adults) in render/book und collect_play; 409 nur beim Einschalten eines Verwalter-Kontos, Ausschalten immer erlaubt; Mod und Konfig-Erzeuger unverändert
+- [Phase 06]: 06-08 D-17 Option A: jedes enabled=0 stoppt/entfernt alle eigenen Welt-Container (parallel, 5 s Stopp, 45 s Frist, fail_after(50)), Volumes und desired_state bleiben, enabled=1 stößt Boot-Abgleich an; Orphan-Entfernen nur fremde Instanzen mit Label managed=true bzw. Volumes ^gameworld-[a-z0-9-]+$ ohne eigene Weltzeile, Prüfung am frisch geholten Objekt; Host-Skript löscht Volumes nur nach getipptem delete, --yes gilt dafür nicht
 
 ### Pending Todos
 
@@ -288,6 +289,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T09:28:30.217Z
-Stopped at: Completed 06-04-PLAN.md
+Last session: 2026-10-24T09:58:07.000Z
+Stopped at: Completed 06-08-PLAN.md
 Resume file: None
