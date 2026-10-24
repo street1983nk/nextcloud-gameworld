@@ -120,7 +120,9 @@ def test_route_listing_is_not_vacuous() -> None:
     paths = {path for _method, path, _admin in GUARDED}
     assert len(GUARDED) >= 40
     assert {"/api/worlds", "/api/admin/verwalter-groups", "/api/admin/groups", "/api/pause"} <= paths
-    assert sum(1 for _method, _path, admin in GUARDED if admin) == 4
+    # Orphan-Routen (06-08): Liste und gezieltes Entfernen nur für NC-Admins.
+    assert {"/api/admin/orphans", "/api/admin/orphans/container/remove", "/api/admin/orphans/volume/remove"} <= paths
+    assert sum(1 for _method, _path, admin in GUARDED if admin) == 7
 
 
 def test_admin_routes_carry_nc_admin_guard() -> None:
@@ -129,7 +131,7 @@ def test_admin_routes_carry_nc_admin_guard() -> None:
         for route in _flat_routes(_app().routes)
         if isinstance(route, APIRoute) and route.path.startswith("/api/admin/")
     ]
-    assert len(admin_routes) == 4
+    assert len(admin_routes) == 7
     assert all(require_nc_admin in _dependency_calls(route) for route in admin_routes)
 
 

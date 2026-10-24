@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import io
 import logging
+import re
 import tarfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -61,6 +62,11 @@ SNAPSHOT_RUNNING = "Die Welt läuft noch; eine Sicherung braucht eine gestoppte 
 # ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
 # Timeout zusätzlich (WR-03), sonst verdoppelte ein schwarzes Loch die Wartezeit.
 RETRYABLE_ERRORS = (requests.exceptions.ConnectionError, urllib3.exceptions.ProtocolError)
+# Reste fremder oder früherer Installationen (06-08, ROADMAP Kriterium 3): nur
+# Volumes nach dem Namensschema resource_name, nie Compose-Volumes mit Unterstrich
+# (etwa die des Dev-Stacks) und nie Namen, die nur mit "gameworld" beginnen.
+ORPHAN_VOLUME_PATTERN = re.compile(r"^gameworld-[a-z0-9-]{1,120}$")
+ORPHAN_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")
 
 
 class ProvisionerError(Exception):
@@ -81,6 +87,39 @@ class PortInUseError(ProvisionerError):
 
 class WorldNotFoundError(ProvisionerError):
     """Der Container existiert nicht oder gehört nicht zu dieser Instanz."""
+
+
+class OrphanRefusedError(ProvisionerError):
+    """Das Objekt gehört zu dieser Installation oder nicht zu Gameworld; es wird nie entfernt."""
+
+
+class OrphanInUseError(ProvisionerError):
+    """Das Volume wird noch von einem Container benutzt (Docker 409)."""
+
+
+@dataclass(frozen=True)
+class OrphanContainer:
+    """Welt-Container einer fremden oder früheren Gameworld-Instanz."""
+
+    id: str
+    name: str
+    instance: str
+    state: str
+    created: str
+
+
+@dataclass(frozen=True)
+class OrphanVolume:
+    """Volume nach dem Gameworld-Namensschema ohne eigene Weltzeile."""
+
+    name: str
+    created: str
+
+
+@dataclass(frozen=True)
+class Orphans:
+    containers: list[OrphanContainer]
+    volumes: list[OrphanVolume]
 
 
 @dataclass(frozen=True)
@@ -471,6 +510,90 @@ class DockerProvisioner:
                 schema=str(labels.get("gameworld.schema", "1")),
             )
         return result
+
+    def _is_foreign(self, container: Container) -> bool:
+        """Gameworld-Welt-Container (Label managed), aber nicht von dieser Instanz."""
+        labels = container.labels or {}
+        return labels.get("gameworld.managed") == "true" and labels.get("gameworld.instance") != self._instance_id
+
+    def list_orphans(self, owned_volumes: set[str]) -> Orphans:
+        """Reste anderer Installationen: fremde Welt-Container und Volumes ohne eigene Welt.
+
+        Nur lesend. ``owned_volumes`` sind die Volume-Namen aller eigenen
+        Weltzeilen (der Provisioner kennt die Datenbank nicht); sie erscheinen
+        nie. Container ohne Label gameworld.managed=true erscheinen nie, auch
+        wenn ihr Name mit gameworld beginnt. Filter des Proxys werden am Ergebnis
+        ein zweites Mal geprüft.
+        """
+        return self._read(lambda: self._list_orphans(owned_volumes))
+
+    def _list_orphans(self, owned_volumes: set[str]) -> Orphans:
+        api = self._docker()
+        containers = [
+            OrphanContainer(
+                id=str(container.id),
+                name=str(container.name),
+                instance=str((container.labels or {}).get("gameworld.instance", "")),
+                state=str(container.status),
+                created=str((container.attrs or {}).get("Created") or ""),
+            )
+            for container in api.containers.list(all=True, filters={"label": ["gameworld.managed=true"]})
+            if self._is_foreign(container)
+        ]
+        volumes = [
+            OrphanVolume(name=str(volume.name), created=str((volume.attrs or {}).get("CreatedAt") or ""))
+            for volume in api.volumes.list(filters={"name": "gameworld-"})
+            if ORPHAN_VOLUME_PATTERN.fullmatch(str(volume.name)) and str(volume.name) not in owned_volumes
+        ]
+        containers.sort(key=lambda item: item.name)
+        volumes.sort(key=lambda item: item.name)
+        return Orphans(containers=containers, volumes=volumes)
+
+    def remove_orphan_container(self, container_id: str) -> None:
+        """Entfernt einen fremden Welt-Container; Volume bleibt (v=False).
+
+        Der Container wird frisch geholt und am Objekt geprüft (Label managed,
+        fremde Instanz, ID passt), nie über eine ungeprüfte ID entfernt. Fehlt
+        er schon, ist das kein Fehler.
+        """
+        if not ORPHAN_ID_PATTERN.fullmatch(container_id):
+            raise OrphanRefusedError("Ungültige Container-ID.")
+        with self._guarded():
+            try:
+                container = self._docker().containers.get(container_id)
+            except docker.errors.NotFound:
+                return
+            if not str(container.id).startswith(container_id) or not self._is_foreign(container):
+                raise OrphanRefusedError("Der Container gehört zu dieser Installation oder nicht zu Gameworld.")
+            try:
+                container.remove(force=True, v=False)
+            except docker.errors.NotFound:
+                return
+
+    def remove_orphan_volume(self, name: str, owned_volumes: set[str]) -> None:
+        """Entfernt ein Gameworld-Volume ohne eigene Welt; in Benutzung -> OrphanInUseError.
+
+        Name nach ORPHAN_VOLUME_PATTERN und nicht in ``owned_volumes``, sonst
+        OrphanRefusedError, noch bevor Docker gefragt wird. Fehlt es schon, ist
+        das kein Fehler.
+        """
+        if not ORPHAN_VOLUME_PATTERN.fullmatch(name) or name in owned_volumes:
+            raise OrphanRefusedError("Das Volume gehört zu dieser Installation oder nicht zu Gameworld.")
+        with self._guarded():
+            try:
+                volume = self._docker().volumes.get(name)
+            except docker.errors.NotFound:
+                return
+            if str(volume.name) != name:
+                raise OrphanRefusedError("Das Volume gehört zu dieser Installation oder nicht zu Gameworld.")
+            try:
+                volume.remove()
+            except docker.errors.NotFound:
+                return
+            except docker.errors.APIError as exc:
+                if exc.status_code == 409:
+                    raise OrphanInUseError("Das Volume wird noch benutzt.") from exc
+                raise
 
     def read_status_file(self, world_id: str) -> StatusFile | None:
         """Status-Datei des Welt-Mods (mtime und gekappter Inhalt) oder None.
