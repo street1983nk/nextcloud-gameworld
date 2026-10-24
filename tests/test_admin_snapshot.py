@@ -100,7 +100,7 @@ async def test_first_admin_lost_rights_is_dropped_and_next_one_acts(
         del world_service
         seen.append(acting_uid)
 
-    monkeypatch.setattr(loop, "MAINTENANCE", [hook])
+    monkeypatch.setattr(loop, "MAINTENANCE", [(hook, False)])
     await maintain_once(service, anna_lost_admin)
     assert anna_lost_admin.group_calls == [("anna", "admin"), ("papa", "admin")]
     assert _snapshot(store) == ["papa"]
@@ -173,7 +173,7 @@ async def test_all_accounts_rejected_empties_snapshot_and_skips_hooks(
         del world_service
         seen.append(acting_uid)
 
-    monkeypatch.setattr(loop, "MAINTENANCE", [hook])
+    monkeypatch.setattr(loop, "MAINTENANCE", [(hook, False)])
     await maintain_once(service, anna_lost_admin)
     assert _snapshot(store) == []
     assert seen == []
@@ -198,7 +198,7 @@ async def test_rejection_while_app_not_accepted_keeps_snapshot(
         del world_service
         seen.append(acting_uid)
 
-    monkeypatch.setattr(loop, "MAINTENANCE", [hook])
+    monkeypatch.setattr(loop, "MAINTENANCE", [(hook, False)])
     await maintain_once(service, fake_directory)
     assert _snapshot(store) == ["anna", "papa"]
     assert seen == []
@@ -235,7 +235,7 @@ async def test_outage_keeps_snapshot_but_confirms_nobody(
         del world_service
         seen.append(acting_uid)
 
-    monkeypatch.setattr(loop, "MAINTENANCE", [hook])
+    monkeypatch.setattr(loop, "MAINTENANCE", [(hook, False)])
     await maintain_once(service, fake_directory)
     # Eine Störung ist keine Ablehnung: der Stand bleibt, aber niemand handelt.
     assert _snapshot(store) == ["anna", "papa"]

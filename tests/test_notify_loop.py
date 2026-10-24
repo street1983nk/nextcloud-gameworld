@@ -334,7 +334,7 @@ async def test_maintenance_refreshes_snapshot_and_runs_hooks(
         assert world_service is service
         seen.append(acting_uid)
 
-    monkeypatch.setattr(loop, "MAINTENANCE", [hook])
+    monkeypatch.setattr(loop, "MAINTENANCE", [(hook, False)])
     await maintain_once(service, fake_directory)
     assert json.loads(store.get_meta(META_TIME_ADMINS) or "[]") == ["admin", "mama"]
     assert seen == ["admin"]
@@ -353,7 +353,7 @@ async def test_maintenance_with_empty_snapshot_does_nothing(
         del world_service
         seen.append(acting_uid)
 
-    monkeypatch.setattr(loop, "MAINTENANCE", [hook])
+    monkeypatch.setattr(loop, "MAINTENANCE", [(hook, False)])
     await maintain_once(service, fake_directory)
     assert fake_directory.group_calls == []
     assert seen == []
@@ -433,7 +433,7 @@ async def test_maintenance_runs_as_own_task_and_does_not_block_sending(
             hook_cancelled.append(True)
             raise
 
-    monkeypatch.setattr(loop, "MAINTENANCE", [hanging])
+    monkeypatch.setattr(loop, "MAINTENANCE", [(hanging, False)])
     store.add_outbox(W1, "deny", "Fremder", int(datetime.now(BERLIN).timestamp()))
     task = asyncio.create_task(loop.notify_forever(service, interval_seconds=0.01))
     await asyncio.wait_for(hook_started.wait(), timeout=5)

@@ -11,12 +11,17 @@ Welt-Zeitfenster (ZEIT-05) setzt nur die Welt-Zeile der Regeldatei: Kinder komme
 außerhalb nicht hinein und werden am Fensterende getrennt, die Welt selbst läuft
 weiter (O-05, kein Stopp, kein Eingriff ins Eltern-Soll).
 
-Verwalter-Schnappschuss (O-11/A4): Der Zeittakt hat keinen handelnden Nutzer,
-Gruppen löst aber nur ein Verwalter auf. Darum holt ``refresh_admins`` im Kontext
-eines geprüften Verwalters die Mitglieder der Gruppe admin (gedrosselt) und legt
-sie als meta ``time_admins`` ab (JSON, sortiert, der handelnde Verwalter immer
-darin). Bei einer Nextcloud-Störung bleibt der letzte Stand; ohne jeden Stand gibt
-es keine Freistellung (fail closed).
+Verwalter-Schnappschuss (O-11/A4, ROLLE-03): Der Zeittakt hat keinen handelnden
+Nutzer, Gruppen löst aber nur ein berechtigtes Konto auf. Darum holt
+``refresh_admins`` im Kontext eines geprüften Verwalters die Mitglieder jeder
+Verwalter-Gruppe (gedrosselt) und führt den Stand JE GRUPPE (Tabelle
+verwalter_snapshot). Darf das Konto eine Gruppe nicht lesen (403, etwa ein Lehrer
+die Gruppe admin) oder stört Nextcloud, bleibt genau der Stand dieser Gruppe
+(P-03). Die Vereinigung aller Gruppenstände steht als meta ``time_admins`` (JSON,
+sortiert, der handelnde Verwalter immer darin); alle bisherigen Leser sehen sie
+unverändert. Getrennt davon führt meta ``nc_admins`` die bestätigten Mitglieder der
+Gruppe admin: Nur sie dürfen den Kontenabgleich auslösen (404-Falle, F-04). Ohne
+jeden Stand gibt es keine Freistellung (fail closed).
 
 Sperr-Regel (wie access/service.py, _LOCK ist nicht reentrant): Nextcloud-Aufrufe
 (Anzeigename, Gruppe admin) laufen immer außerhalb von ``worlds.mutation()`` und
@@ -33,7 +38,7 @@ import logging
 import sqlite3
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from time import monotonic
 from zoneinfo import ZoneInfo
@@ -41,7 +46,7 @@ from zoneinfo import ZoneInfo
 import anyio.to_thread
 
 from gameworld.access.directory import Directory, DirectoryRejectedError, DirectoryUnavailableError
-from gameworld.access.roles import ADMIN_GROUP
+from gameworld.access.roles import ADMIN_GROUP, META_VERWALTER_GROUPS, parse_verwalter_groups
 from gameworld.access.service import MSG_NO_PLAYER, PlayerNotFoundError
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
 from gameworld.playtime.plan import (
@@ -70,6 +75,9 @@ MSG_ADMIN_NO_RULES = "Verwalter haben keine Spielzeitregeln."
 MSG_WINDOW_NEEDS_OPEN_DAY = "Eine Welt mit Zeitfenster braucht mindestens einen offenen Tag."
 # Verwalter-Schnappschuss höchstens so oft aus Nextcloud holen (wie SYNC_INTERVAL_SECONDS).
 ADMINS_INTERVAL_SECONDS = 60
+# Bestätigte Mitglieder der Gruppe admin (JSON, sortiert); nur sie lösen den Kontenabgleich aus.
+# Bewusst hier und nicht in playtime/engine.py (der Erwachsen-Plan ändert engine.py).
+META_NC_ADMINS = "nc_admins"
 # Kind-Ansicht: weniger Rest gilt als aufgebraucht, gleiche Schwelle wie MIN_LEFT im Welt-Mod (Pitfall 8).
 MIN_LEFT_SECONDS = 60
 # Lesefehler der Zeitregeln (Datenbank, Zeitzone, kaputte Zeilen) werden 503.
@@ -78,7 +86,7 @@ _READ_ERRORS = (sqlite3.Error, ValueError, KeyError)
 
 @dataclass
 class AdminsState:
-    """Zeitpunkt (monotonic) der letzten Abfrage der Gruppe admin."""
+    """Zeitpunkt (monotonic) der letzten Abfrage der Verwalter-Gruppen."""
 
     last: float | None = None
 
@@ -88,6 +96,61 @@ ADMINS_STATE = AdminsState()
 
 class HolidayNotFoundError(LookupError):
     """Unbekannte Ferien-id (404)."""
+
+
+@dataclass
+class _GroupRead:
+    """Ergebnis der Abfragen einer Verwalter-Gruppe in einem Lauf.
+
+    ``answer``: letzte erfolgreiche Mitgliederliste (Nextclouds Antwort), None ohne
+    Erfolg. ``confirmed``: Konten, die die Gruppe selbst lesen konnten UND darin
+    stehen (CR-01). ``rejected``: Konten, denen Nextcloud die Gruppe verweigert hat.
+    """
+
+    answer: frozenset[str] | None = None
+    confirmed: set[str] = field(default_factory=set[str])
+    rejected: set[str] = field(default_factory=set[str])
+    outage: bool = False
+
+
+@dataclass(frozen=True)
+class _AdminsUpdate:
+    """Neuer Verwalter-Stand: je Gruppe, Vereinigung (JSON), NC-Admins (JSON, None = unverändert)."""
+
+    stands: dict[str, frozenset[str]]
+    union: str
+    nc_admins: str | None
+    seen_at: str | None = None
+
+
+def _next_stands(
+    groups: list[str], previous: dict[str, set[str]], reads: dict[str, _GroupRead]
+) -> dict[str, frozenset[str]]:
+    """Stand je Gruppe: Nextclouds Antwort, sonst der letzte Stand ohne die abgelehnten Konten.
+
+    Ein Konto, das im Stand einer Gruppe steht und sie trotzdem nicht lesen darf,
+    gehört ihr nicht mehr an (Mitglieder lesen die eigene Gruppe). Wer nur keine
+    Rechte auf die Gruppe hat und nicht darin steht, ändert nichts (P-03).
+    """
+    stands: dict[str, frozenset[str]] = {}
+    for gid in groups:
+        read = reads[gid]
+        if read.answer is not None:
+            stands[gid] = read.answer
+        else:
+            stands[gid] = frozenset(previous.get(gid, set[str]()) - read.rejected)
+    return stands
+
+
+def _json_list(uids: Iterable[str]) -> str:
+    return json.dumps(sorted(set(uids)))
+
+
+def _union(groups: Iterable[Iterable[str]]) -> set[str]:
+    result: set[str] = set()
+    for uids in groups:
+        result.update(uids)
+    return result
 
 
 @dataclass(frozen=True)
@@ -294,47 +357,53 @@ class TimeService:
         self._directory = directory
 
     async def refresh_admins(self, acting_uid: str, *, force: bool = False, blocking: bool = True) -> bool:
-        """Verwalter-Schnappschuss (meta time_admins) aus der Gruppe admin; True, wenn er sich änderte.
+        """Verwalter-Schnappschuss je Verwalter-Gruppe auffrischen; True, wenn sich time_admins änderte.
 
         Nur im Kontext eines geprüften Verwalters aufrufen und nie unter
-        ``mutation()`` (die Gruppenabfrage läuft vorher, außerhalb der Sperre).
-        Gedrosselt auf ADMINS_INTERVAL_SECONDS, außer mit ``force``. Bei einer
-        Nextcloud-Störung bleibt der letzte Stand. Ändert sich die Liste, bekommen
-        alle Welten die neue Regeldatei: ``blocking`` unter ``mutation()``, sonst
-        (Dashboard) per ``try_mutation()``; bei belegter Sperre holt der nächste
-        Aufruf nach.
+        ``mutation()`` (die Gruppenabfragen laufen vorher, außerhalb der Sperre).
+        Gedrosselt auf ADMINS_INTERVAL_SECONDS, außer mit ``force``. Jede Gruppe
+        einzeln: Ablehnung (403, etwa ein Lehrer auf der Gruppe admin) oder Störung
+        lassen genau den Stand dieser Gruppe stehen (P-03). Ändert sich die
+        Vereinigung, bekommen alle Welten die neue Regeldatei: ``blocking`` unter
+        ``mutation()``, sonst (Dashboard) per ``try_mutation()``; bei belegter Sperre
+        holt der nächste Aufruf nach.
         """
         now = monotonic()
         if not force and ADMINS_STATE.last is not None and now - ADMINS_STATE.last < ADMINS_INTERVAL_SECONDS:
             return False
         ADMINS_STATE.last = now
-        try:
-            members = await self._directory.group_members(acting_uid, ADMIN_GROUP)
-        except DirectoryUnavailableError:
-            LOG.warning("Gruppe admin nicht abrufbar, der letzte Verwalter-Stand bleibt")
+        groups = await self._verwalter_groups()
+        reads = await self._read_groups(groups, [acting_uid])
+        if any(read.outage for read in reads.values()):
+            LOG.warning("Eine Verwalter-Gruppe ist nicht abrufbar, ihr letzter Stand bleibt")
             ADMINS_STATE.last = None
+        if all(read.answer is None and not read.rejected for read in reads.values()):
+            # Reine Störung: Nichts Neues zu wissen, der letzte Stand bleibt unverändert.
             return False
-        value = json.dumps(sorted(set(members or ()) | {acting_uid}))
-        current = await anyio.to_thread.run_sync(self._store.get_meta, META_TIME_ADMINS)
-        if current == value:
+        update = await anyio.to_thread.run_sync(self._plan_refresh, groups, reads, acting_uid)
+        if update is None:
             return False
         if blocking:
-            return await anyio.to_thread.run_sync(self._store_admins_sync, value)
-        return await anyio.to_thread.run_sync(self._try_store_admins_sync, value)
+            return await anyio.to_thread.run_sync(self._store_admins_sync, update)
+        return await anyio.to_thread.run_sync(self._try_store_admins_sync, update)
 
     async def verify_admins(self, candidates: Iterable[str]) -> str | None:
         """Hintergrund-Prüfung des Schnappschusses ohne geprüften Verwalter (CR-01); bestätigtes Konto oder None.
 
-        Fragt die Gruppe admin der Reihe nach als jedes Konto aus ``candidates``.
-        Bestätigt ist nur ein Konto, dessen Abfrage gelingt und das selbst in der
-        Antwort steht; ungeprüft wird nie ein Konto eingefügt. Die Antwort ersetzt
-        den Schnappschuss (ohne Warten auf die Welt-Sperre). Lehnt Nextcloud jedes
-        Konto ausdrücklich ab (401/403), ist niemand mehr bestätigt: Der
-        Schnappschuss wird leer (fail closed, keine Empfänger, keine Freistellung).
-        Vorher muss Nextcloud die ExApp selbst annehmen (Directory.app_accepted),
-        sonst fragt die Prüfung gar nicht erst und der Stand bleibt.
-        Bei einer Störung bleibt der letzte Stand, es gilt aber kein Konto als
-        bestätigt. Belegte Sperre: None, der nächste Lauf versucht es erneut.
+        Fragt jede Verwalter-Gruppe der Reihe nach als die Konten aus ``candidates``.
+        Bestätigt ist ein Konto nur, wenn es eine Gruppe selbst lesen kann UND darin
+        steht; ungeprüft wird nie ein Konto eingefügt. Eine erfolgreiche Antwort
+        ersetzt den Stand dieser Gruppe. Ohne Antwort bleibt er (ein Lehrer ohne
+        Recht auf die Gruppe admin leert sie nie, P-03); nur Konten, die darin
+        standen und abgelehnt wurden, fallen heraus. Lehnt Nextcloud jedes Konto
+        ausdrücklich ab (401/403), wird der Schnappschuss leer (fail closed, keine
+        Empfänger, keine Freistellung). meta ``nc_admins`` bekommt die eben
+        gelesenen Mitglieder der Gruppe admin; ohne Antwort auf admin ist sie leer,
+        dann läuft kein Kontenabgleich (F-04). Vorher muss Nextcloud die ExApp selbst
+        annehmen (Directory.app_accepted), sonst fragt die Prüfung gar nicht erst
+        und der Stand bleibt. Bei einer reinen Störung bleibt der letzte Stand, es
+        gilt aber kein Konto als bestätigt. Belegte Sperre: None, der nächste Lauf
+        versucht es erneut.
         """
         # Gegenprobe zuerst: Solange Nextcloud die ExApp selbst ablehnt (Start,
         # Neuregistrierung), bekommt jedes Konto 401. Das ist eine Störung, keine
@@ -344,31 +413,54 @@ class TimeService:
         if not await self._directory.app_accepted():
             LOG.warning("Verwalter-Schnappschuss nicht bestätigt, Nextcloud nimmt Gameworld gerade nicht an")
             return None
-        tried = 0
-        rejected = 0
-        for uid in candidates:
-            tried += 1
-            try:
-                members = await self._directory.group_members(uid, ADMIN_GROUP)
-            except DirectoryRejectedError:
-                rejected += 1
-                continue
-            except DirectoryUnavailableError:
-                continue
-            found = set(members or ())
-            if uid not in found:
-                rejected += 1
-                continue
-            if await anyio.to_thread.run_sync(self._store_admins_background_sync, json.dumps(sorted(found))):
-                ADMINS_STATE.last = monotonic()
-                return uid
+        order = list(dict.fromkeys(candidates))
+        if not order:
             return None
-        if tried and rejected == tried:
-            LOG.warning("Kein Konto des Verwalter-Schnappschusses ist noch Admin, der Schnappschuss wird geleert")
-            await anyio.to_thread.run_sync(self._store_admins_background_sync, "[]")
-        else:
+        groups = await self._verwalter_groups()
+        reads = await self._read_groups(groups, order)
+        if all(read.answer is None and not read.rejected for read in reads.values()):
             LOG.warning("Verwalter-Schnappschuss nicht bestätigt, der letzte Stand bleibt")
-        return None
+            return None
+        confirmed = _union(read.confirmed for read in reads.values())
+        acting = next((uid for uid in order if uid in confirmed), None)
+        seen_at = datetime.now(UTC).isoformat(timespec="seconds")
+        update = await anyio.to_thread.run_sync(self._plan_verify, groups, reads, seen_at)
+        if not await anyio.to_thread.run_sync(self._store_admins_background_sync, update):
+            return None
+        if acting is None:
+            LOG.warning("Kein Konto des Verwalter-Schnappschusses ist bestätigt, der Stand folgt den Antworten")
+            return None
+        ADMINS_STATE.last = monotonic()
+        return acting
+
+    async def _verwalter_groups(self) -> list[str]:
+        """Konfigurierte Verwalter-Gruppen, admin zuerst; kaputte Konfiguration heißt nur admin (fail closed)."""
+        raw = await anyio.to_thread.run_sync(self._store.get_meta, META_VERWALTER_GROUPS)
+        return sorted(parse_verwalter_groups(raw), key=lambda gid: (gid != ADMIN_GROUP, gid))
+
+    async def _read_groups(self, groups: list[str], candidates: list[str]) -> dict[str, _GroupRead]:
+        """Jede Gruppe als die Kandidaten der Reihe nach, bis einer sie liest und darin steht.
+
+        Außerhalb jeder Sperre (Sperr-Regel); ein Fehler betrifft nur die eine Gruppe.
+        """
+        reads: dict[str, _GroupRead] = {}
+        for gid in groups:
+            read = _GroupRead()
+            for uid in candidates:
+                try:
+                    members = await self._directory.group_members(uid, gid)
+                except DirectoryRejectedError:
+                    read.rejected.add(uid)
+                    continue
+                except DirectoryUnavailableError:
+                    read.outage = True
+                    continue
+                read.answer = frozenset(members or ())
+                if uid in read.answer:
+                    read.confirmed.add(uid)
+                    break
+            reads[gid] = read
+        return reads
 
     async def list_children(self, acting_uid: str) -> PlaytimeView:
         """Alle Konten mit Spielerzeile (ohne Verwalter), je mit Regeln, Verbrauch und Auswertung."""
@@ -476,31 +568,88 @@ class TimeService:
 
     # Unter der Sperre (Worker-Thread)
 
-    def _store_admins_sync(self, value: str) -> bool:
-        with self._worlds.mutation():
-            return self._apply_admins(value)
+    def _previous_stands(self) -> dict[str, set[str]]:
+        """Letzter Stand je Gruppe; vor dem ersten Lauf mit Schema 8 gilt der alte Schnappschuss als Gruppe admin."""
+        stands = self._store.group_snapshot()
+        if not stands:
+            legacy = self._admins()
+            if legacy:
+                stands = {ADMIN_GROUP: set(legacy)}
+        return stands
 
-    def _try_store_admins_sync(self, value: str) -> bool:
+    def _plan_refresh(self, groups: list[str], reads: dict[str, _GroupRead], acting_uid: str) -> _AdminsUpdate | None:
+        """Neuer Stand nach einem Verwalter-Besuch; None, wenn sich nichts ändert (dann keine Sperre)."""
+        stands = _next_stands(groups, self._previous_stands(), reads)
+        union = _json_list(_union(stands.values()) | {acting_uid})
+        admin_read = reads[ADMIN_GROUP]
+        if admin_read.answer is not None:
+            nc_admins: str | None = _json_list(admin_read.answer)
+        elif admin_read.rejected:
+            current = parse_admins(self._store.get_meta(META_NC_ADMINS))
+            nc_admins = _json_list(current - admin_read.rejected)
+        else:
+            nc_admins = None
+        update = _AdminsUpdate(stands=stands, union=union, nc_admins=nc_admins)
+        return update if self._differs(update) else None
+
+    def _plan_verify(self, groups: list[str], reads: dict[str, _GroupRead], seen_at: str) -> _AdminsUpdate:
+        """Neuer Stand nach der Hintergrund-Prüfung; nc_admins nur aus einer frischen Antwort der Gruppe admin."""
+        stands = _next_stands(groups, self._previous_stands(), reads)
+        answered = any(read.answer is not None for read in reads.values())
+        outage = any(read.outage for read in reads.values())
+        if not answered and not outage:
+            # Jede Abfrage jedes Kontos abgelehnt: Niemand ist mehr bestätigt (fail closed).
+            stands = {gid: frozenset[str]() for gid in groups}
+        admin_answer = reads[ADMIN_GROUP].answer
+        return _AdminsUpdate(
+            stands=stands,
+            union=_json_list(_union(stands.values())),
+            nc_admins=_json_list(admin_answer or ()),
+            seen_at=seen_at,
+        )
+
+    def _differs(self, update: _AdminsUpdate) -> bool:
+        current = {gid: frozenset(uids) for gid, uids in self._store.group_snapshot().items()}
+        wanted = {gid: uids for gid, uids in update.stands.items() if uids}
+        if current != wanted or self._store.get_meta(META_TIME_ADMINS) != update.union:
+            return True
+        return update.nc_admins is not None and self._store.get_meta(META_NC_ADMINS) != update.nc_admins
+
+    def _store_admins_sync(self, update: _AdminsUpdate) -> bool:
+        with self._worlds.mutation():
+            return self._apply_admins(update)
+
+    def _try_store_admins_sync(self, update: _AdminsUpdate) -> bool:
         with self._worlds.try_mutation() as acquired:
             if not acquired:
                 # Belegte Sperre: Der nächste Verwalter-Aufruf versucht es erneut.
                 ADMINS_STATE.last = None
                 return False
-            return self._apply_admins(value)
+            return self._apply_admins(update)
 
-    def _store_admins_background_sync(self, value: str) -> bool:
-        """Hintergrund: Schnappschuss ohne Warten ablegen; True, wenn er jetzt ``value`` ist."""
+    def _store_admins_background_sync(self, update: _AdminsUpdate) -> bool:
+        """Hintergrund: Stand ohne Warten ablegen; True, wenn er jetzt gilt."""
         with self._worlds.try_mutation() as acquired:
             if not acquired:
                 return False
-            self._apply_admins(value)
+            self._apply_admins(update)
             return True
 
-    def _apply_admins(self, value: str) -> bool:
-        """Nur unter der Sperre: neuen Schnappschuss ablegen und alle Welten neu rendern."""
-        if self._store.get_meta(META_TIME_ADMINS) == value:
+    def _apply_admins(self, update: _AdminsUpdate) -> bool:
+        """Nur unter der Sperre: Stand je Gruppe, NC-Admins, Dienstalter und Vereinigung ablegen.
+
+        True, wenn time_admins neu ist; dann bekommen alle Welten die neue Regeldatei.
+        """
+        for gid, uids in sorted(update.stands.items()):
+            self._store.replace_group_snapshot(gid, set(uids))
+        self._store.drop_group_snapshots(keep=set(update.stands))
+        if update.nc_admins is not None:
+            self._store.set_meta(META_NC_ADMINS, update.nc_admins)
+        if update.seen_at is not None:
+            self._store.sync_verwalter_seen(set(parse_admins(update.union)), update.seen_at)
+        if self._store.get_meta(META_TIME_ADMINS) == update.union:
             return False
-        self._store.set_meta(META_TIME_ADMINS, value)
+        self._store.set_meta(META_TIME_ADMINS, update.union)
         self._refresh_all_worlds()
         return True
 

@@ -355,7 +355,10 @@ async def test_no_directory_calls_under_world_lock(
 async def test_maintenance_hook_forgets_deleted_account(
     access: AccessService, store: WorldStore, worlds: WorldService, fake_directory: FakeDirectory
 ) -> None:
-    assert loop.MAINTENANCE.index(loop.purge_accounts) < loop.MAINTENANCE.index(loop.talk_reconcile)
+    hooks = [hook for hook, _needs_nc_admin in loop.MAINTENANCE]
+    assert hooks.index(loop.purge_accounts) < hooks.index(loop.talk_reconcile)
+    # Der Kontenabgleich braucht einen bestätigten Nextcloud-Admin (F-04), der Talk-Abgleich nicht.
+    assert dict(loop.MAINTENANCE) == {loop.purge_accounts: True, loop.talk_reconcile: False}
     await _populate_gone(access, store, fake_directory)
     del fake_directory.users[GONE]
     await loop.purge_accounts(worlds, "admin")

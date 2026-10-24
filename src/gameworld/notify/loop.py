@@ -36,6 +36,7 @@ from zoneinfo import ZoneInfo
 import anyio.to_thread
 
 from gameworld.access.directory import Directory, DirectoryUnavailableError, get_directory
+from gameworld.access.roles import ADMIN_GROUP
 from gameworld.access.secret import get_player_secret
 from gameworld.access.service import AccessService
 from gameworld.notify.links import clean_origin, page_link
@@ -63,7 +64,7 @@ from gameworld.notify.throttle import Decision, is_case_variant
 from gameworld.playtime.engine import META_TIME_ADMINS, parse_admins
 from gameworld.playtime.pause import OUTBOX_PAUSE_END, OUTBOX_PAUSE_SCHLUSS, OUTBOX_PAUSE_START, clock_text
 from gameworld.playtime.plan import local_day
-from gameworld.playtime.service import TimeService
+from gameworld.playtime.service import META_NC_ADMINS, TimeService
 from gameworld.talk.bot import get_bot
 from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import WorldService
@@ -116,6 +117,8 @@ class NotifyContext:
 
 Handler = Callable[[NotifyContext, OutboxRow], Awaitable[None]]
 MaintenanceHook = Callable[[WorldService, str], Awaitable[None]]
+# Wartungsschritt und ob er einen bestätigten Nextcloud-Admin braucht (statt irgendeines Verwalters).
+MaintenanceStep = tuple[MaintenanceHook, bool]
 
 
 def link_origin(store: WorldStore) -> str | None:
@@ -342,15 +345,31 @@ async def talk_reconcile(service: WorldService, acting: str) -> None:
 async def purge_accounts(service: WorldService, acting: str) -> None:
     """In Nextcloud gelöschte Konten vergessen: Spieler, Einladungen, Spielzeit, Rückblick.
 
-    ``acting`` ist das eben bestätigte Konto (CR-01). Vor dem Talk-Abgleich, damit
-    der kein gelöschtes Konto mehr in Räume holen will. Eine Störung bei Nextcloud
-    bricht den Lauf ohne Löschen ab (AccessService.purge_missing_accounts).
+    ``acting`` ist ein bestätigter Nextcloud-Admin (meta nc_admins, run_hooks).
+    "404 heißt gelöscht" gilt nur im Namen eines Admins: Ein Verwalter aus einer
+    Zusatzgruppe sieht fremde Konten als 404 und ließe sie fälschlich vergessen
+    (RESEARCH F-04, ROADMAP Kriterium 5, dabe0c0). Darum fragt der Schritt vorher
+    noch einmal frisch, ob ``acting`` selbst in der Gruppe admin steht; sonst
+    läuft nichts. Vor dem Talk-Abgleich, damit der kein gelöschtes Konto mehr in
+    Räume holen will. Eine Störung bei Nextcloud bricht den Lauf ohne Löschen ab
+    (AccessService.purge_missing_accounts).
     """
-    access = AccessService(service.store, service, get_directory(), get_player_secret())
+    directory = get_directory()
+    try:
+        members = await directory.group_members(acting, ADMIN_GROUP)
+    except DirectoryUnavailableError:
+        # Auch DirectoryRejectedError (Unterklasse): kein Admin, kein Abgleich.
+        LOG.info("Kontenabgleich übersprungen: %s ist gerade nicht als Nextcloud-Admin bestätigt", acting)
+        return
+    if acting not in (members or ()):
+        LOG.info("Kontenabgleich übersprungen: %s ist kein Nextcloud-Admin mehr", acting)
+        return
+    access = AccessService(service.store, service, directory, get_player_secret())
     await access.purge_missing_accounts(acting)
 
 
-MAINTENANCE: list[MaintenanceHook] = [purge_accounts, talk_reconcile]
+# (Schritt, braucht bestätigten Nextcloud-Admin): Der Kontenabgleich läuft nur als Admin (F-04).
+MAINTENANCE: list[MaintenanceStep] = [(purge_accounts, True), (talk_reconcile, False)]
 
 
 def _due_admins(store: WorldStore, admins: tuple[str, ...], day: date, minute: int) -> list[str]:
@@ -459,11 +478,33 @@ async def verify_once(service: WorldService, directory: Directory) -> str | None
     return acting
 
 
+def _nc_admin_for(store: WorldStore, acting: str) -> str | None:
+    """Bestätigter Nextcloud-Admin für Admin-Schritte: ``acting`` selbst, falls darin, sonst der erste; sonst None."""
+    nc_admins = sorted(parse_admins(store.get_meta(META_NC_ADMINS)))
+    if acting in nc_admins:
+        return acting
+    return nc_admins[0] if nc_admins else None
+
+
 async def run_hooks(service: WorldService, acting: str) -> None:
-    """Alle Einträge aus MAINTENANCE mit dem bestätigten Konto; Fehler je Eintrag isoliert."""
-    for hook in list(MAINTENANCE):
+    """Alle Einträge aus MAINTENANCE; Fehler je Eintrag isoliert.
+
+    Schritte ohne Admin-Bedarf laufen mit dem bestätigten Verwalter ``acting``.
+    Admin-Schritte (Kontenabgleich) laufen nur mit einem Konto aus meta nc_admins;
+    gibt es keins, werden sie übersprungen (404-Falle, F-04).
+    """
+    nc_admin: str | None = None
+    try:
+        nc_admin = await anyio.to_thread.run_sync(_nc_admin_for, service.store, acting)
+    except Exception as exc:
+        LOG.warning("Nextcloud-Admins nicht lesbar: %s", type(exc).__name__)
+    for hook, needs_nc_admin in list(MAINTENANCE):
+        hook_acting = nc_admin if needs_nc_admin else acting
+        if hook_acting is None:
+            LOG.info("Kontenabgleich übersprungen: kein bestätigter Nextcloud-Admin")
+            continue
         try:
-            await hook(service, acting)
+            await hook(service, hook_acting)
         except Exception as exc:
             LOG.warning("Wartungsschritt fehlgeschlagen: %s", type(exc).__name__)
 
