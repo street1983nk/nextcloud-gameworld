@@ -554,3 +554,30 @@ async def test_recreate_room_refuses_non_admin_and_keeps_room_on_talk_error(
         await talk.recreate_room(W1, "admin")
     assert _raw_room(app_env) == before
     assert old in fake_talk.rooms
+
+
+async def test_reconcile_all_checks_availability_fresh(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms
+) -> None:
+    """Der 5-min-Abgleich fragt Talk frisch (06-12, Regression 4.1 K6).
+
+    Cache und Wartung liefen beide im 300-s-Takt; traf die Wartung den Cache knapp vor
+    Ablauf, galt "Talk aus" noch fünf Minuten weiter, und ein nach dem Wieder-
+    Aktivieren nachzulegender Raum kam erst nach bis zu zehn Minuten (gemessen 332 s
+    statt höchstens 330 s). Der Abgleich läuft selten, eine Capability-Abfrage mehr
+    kostet nichts.
+    """
+    fake_talk.talk = False
+    await talk.ensure_room(W1, "admin")
+    assert store.talk_room(W1) is None
+    fake_talk.talk = True
+    await talk.reconcile_all("admin")
+    assert store.talk_room(W1) is not None
+    assert fake_talk.methods().count("available") == 2
+
+
+async def test_status_still_uses_cache(talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms) -> None:
+    del store
+    await talk.status("admin")
+    await talk.status("admin")
+    assert fake_talk.methods().count("available") == 1
