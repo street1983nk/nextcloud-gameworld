@@ -23,7 +23,10 @@ from gameworld.nc import nc_app, nc_as
 
 LOG = logging.getLogger(__name__)
 
-BOT = AsyncTalkBot("/talk/bot", "Gameworld", "Meldet Ereignisse der Gameworld-Welten")
+# Registered once for all accounts when the app is enabled, so there is no account
+# language: the description is English (fallback language en, D-25).
+BOT_DESCRIPTION = "Reports events from Gameworld worlds"
+BOT = AsyncTalkBot("/talk/bot", "Gameworld", BOT_DESCRIPTION)
 # So endet die URL, unter der AppAPI den Bot bei Talk einträgt (talk_proxy).
 BOT_URL_SUFFIX = "/apps/app_api/api/v1/talk_proxy/gameworld/talk/bot"
 

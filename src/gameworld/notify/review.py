@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from gameworld.notify.texts import REVIEW_LIMIT_SUFFIX
+from gameworld.notify.texts import notify_strings
 
 ReviewEntry = tuple[str, int, bool]
 # So lange nach der eingestellten Minute darf der Rückblick noch kommen (Neustart, Takt).
@@ -24,10 +24,15 @@ def minutes(seconds: int) -> int:
     return max(1, round(seconds / 60))
 
 
-def review_line(entries: Iterable[ReviewEntry]) -> str | None:
-    """Zeile je Kind, sortiert nach Anzeigename; None ohne Spielzeit."""
+def review_line(entries: Iterable[ReviewEntry], *, language: str = "de") -> str | None:
+    """One part per child, sorted by display name; None without playtime.
+
+    Minute unit and limit suffix follow ``language`` (the recipient's account
+    language); German stays "Min." and " (Limit erreicht)".
+    """
+    strings = notify_strings(language)
     parts = [
-        f"{name} {minutes(seconds)} Min.{REVIEW_LIMIT_SUFFIX if limit_reached else ''}"
+        f"{name} {minutes(seconds)} {strings.review_minutes}{strings.review_limit_suffix if limit_reached else ''}"
         for name, seconds, limit_reached in sorted(entries, key=lambda entry: entry[0].casefold())
         if seconds > 0
     ]
