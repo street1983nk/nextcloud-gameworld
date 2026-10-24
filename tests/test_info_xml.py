@@ -24,7 +24,17 @@ def test_id_and_version_lockstep() -> None:
     root = _root()
     assert _text(root, "id") == "gameworld"
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert _text(root, "version") == project["version"]
+    assert _text(root, "version") == project["version"] == "1.0.0"
+
+
+def test_image_tag_lockstep() -> None:
+    """T-06-45: Store-Archiv und Image laufen auf derselben Version (image.yml prüft dasselbe)."""
+    root = _root()
+    docker = root.find("./external-app/docker-install")
+    assert docker is not None
+    assert _text(docker, "registry") == "ghcr.io"
+    assert _text(docker, "image") == "street1983nk/gameworld"
+    assert _text(docker, "image-tag") == _text(root, "version")
 
 
 EXPECTED_ROUTES = [
@@ -100,7 +110,7 @@ def test_nextcloud_window() -> None:
     nextcloud = _root().find("./dependencies/nextcloud")
     assert nextcloud is not None
     assert nextcloud.get("min-version") == "32"
-    assert nextcloud.get("max-version") == "34"
+    assert nextcloud.get("max-version") == "35"
 
 
 def test_no_public_or_announce_setting() -> None:
