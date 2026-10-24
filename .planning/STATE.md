@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-10-24T10:40:00.000Z"
-last_activity: 2026-10-24 -- 06-05 Erwachsen-Schalter in Spielerliste, Einladen-Dialog und Spielzeit (UI-SPEC B2) abgeschlossen
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-10-24T10:40:26.000Z"
+last_activity: 2026-10-24 -- 06-06 Talk-Raum-Übernahme D-16/D-19 und UI-SPEC B4 abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 63
-  percent: 88
+  completed_plans: 64
+  percent: 89
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 7 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05)
+Plan: 8 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-05 B2 Erwachsen-Schalter: adult.js + setAdult, Spielerliste mit Chips/Schalter/Bestätigung, Als erwachsen einladen, Spielzeit "Erwachsen: Regel ruht" (3a92af8, a9386c2, 937da86, f033189)
+Last activity: 2026-10-24 -- 06-06 Talk-Übernahme: owner_uid an dienstältesten bestätigten Verwalter, former_owner/orphaned_token, Raum neu anlegen (Route + B4 in TalkRoomStatus), talkHint ohne Besitz-Versprechen (6d8752d, cdee714, 57e9829)
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -110,6 +110,7 @@ Progress: [█████████░] 88%
 | Phase 06 P01 | 25 min | 2 tasks | 10 files |
 | Phase 06 P07 | 25 min | 2 tasks | 3 files |
 | Phase 06 P05 | 35 min | 3 tasks | 7 files |
+| Phase 06 P06 | 45 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -262,6 +263,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-04 Erwachsen wirkt nur über die frei-Zeile (frei = time_admins | adults) in render/book und collect_play; 409 nur beim Einschalten eines Verwalter-Kontos, Ausschalten immer erlaubt; Mod und Konfig-Erzeuger unverändert
 - [Phase 06]: 06-08 D-17 Option A: jedes enabled=0 stoppt/entfernt alle eigenen Welt-Container (parallel, 5 s Stopp, 45 s Frist, fail_after(50)), Volumes und desired_state bleiben, enabled=1 stößt Boot-Abgleich an; Orphan-Entfernen nur fremde Instanzen mit Label managed=true bzw. Volumes ^gameworld-[a-z0-9-]+$ ohne eigene Weltzeile, Prüfung am frisch geholten Objekt; Host-Skript löscht Volumes nur nach getipptem delete, --yes gilt dafür nicht
 - [Phase 06]: 06-05 Bestätigung ersetzt den Spieler- bzw. Einladen-Dialog (v-if/v-else), Schalter-Anzeige folgt der Serverantwort und springt bei Fehler zurück; Absatz 4 (Regel bleibt gespeichert) nur in der Spielerliste, da die Kontosuche kein has_rules liefert; adultInviteWarning entfernt den Schlusspunkt des Backend-Details
+- [Phase 06]: 06-06 talk_rooms.owner_uid ist der Gameworld-Besitzer (nach Übernahme immer ein Verwalter), former_owner der Ex-Verwalter als Talk-Owner; Übernahme nur mit bestätigtem acting, Kandidaten nach verwalter_seniority plus noch nicht gesehene Verwalter; Sperrfall nur bei Besitzer ohne Verwalterrolle, neuer Raum per replace_talk_token (Nur-lesen bleibt), altes Token bleibt als orphaned_token und wird nie gelöscht; recreate_room löscht zuerst, scheitert das, bleibt alles (503)
 
 ### Pending Todos
 
@@ -291,6 +293,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T10:40:00.000Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-10-24T10:40:26.000Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None
