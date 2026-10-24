@@ -6,6 +6,9 @@
 		size="large"
 		@update:open="onOpen">
 		<div class="playtime-dialog">
+			<NcNoteCard v-if="child.adult" type="info">
+				{{ PLAYTIME_RESTING_TEXT(child.display_name) }}
+			</NcNoteCard>
 			<p class="playtime-dialog__hint">
 				Die Regeln gelten sofort in allen Welten zusammen. Wähle eine Voreinstellung und passe danach jeden Tag an.
 			</p>
@@ -76,6 +79,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import DayTiles from './DayTiles.vue'
 import { clearChildPlan, errorText, saveChildPlan } from '../api.js'
+import { PLAYTIME_RESTING_TEXT } from '../adult.js'
 import {
 	HOLIDAY_PRESET,
 	PRESETS,

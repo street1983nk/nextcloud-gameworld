@@ -24,7 +24,14 @@
 						</div>
 					</td>
 					<td>
+						<!-- ROLLE-04: Erwachsene bleiben in der Liste, ihre Regel ruht nur. -->
 						<NcChip
+							v-if="child.adult"
+							text="Erwachsen: Regel ruht"
+							variant="secondary"
+							no-close />
+						<NcChip
+							v-else
 							:text="summarize(child.has_rules ? child.normal : null)"
 							:variant="child.has_rules ? 'primary' : 'tertiary'"
 							no-close />
@@ -73,8 +80,11 @@ const editing = ref(null)
 const children = computed(() => props.playtime?.children ?? [])
 const holidayActive = computed(() => (props.playtime?.holidays ?? []).some((entry) => entry.active))
 
-// "heute 45 von 60 min", nur wenn heute ein Limit gilt.
+// "heute 45 von 60 min", nur wenn heute ein Limit gilt; bei Erwachsenen zählt nichts.
 function usage(child) {
+	if (child.adult) {
+		return 'zählt nicht'
+	}
 	if (!child.has_rules) {
 		return ''
 	}

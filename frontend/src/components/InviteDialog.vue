@@ -1,6 +1,7 @@
 <!-- Spieler einladen: Suche über Nextclouds Autovervollständigung (Benutzer und Gruppen), keine eigene Benutzerliste. -->
 <template>
 	<NcDialog
+		v-if="!confirmOpen"
 		:open="true"
 		:name="`Spieler einladen: ${world.name}`"
 		size="normal"
@@ -27,8 +28,25 @@
 			keep-open
 			@search="onSearch" />
 
+		<!-- ROLLE-04 (D-06): nur für einzeln gewählte Konten, Bestätigung erst beim Klick auf Einladen. -->
+		<div ref="adultRow" class="invite__adult">
+			<NcCheckboxRadioSwitch
+				v-model="inviteAdult"
+				type="switch"
+				:disabled="inviting || singleAccounts.length === 0"
+				:description="INVITE_SWITCH_META">
+				Als erwachsen einladen
+			</NcCheckboxRadioSwitch>
+		</div>
+
 		<NcNoteCard v-if="invitedLabels.length > 0" type="success">
-			Eingeladen: {{ invitedLabels.join(', ') }}
+			{{ invitedLabel(invitedLabels) }}
+		</NcNoteCard>
+		<NcNoteCard
+			v-for="warning in adultFailures"
+			:key="`adult-${warning.key}`"
+			type="warning">
+			{{ warning.text }}
 		</NcNoteCard>
 		<NcNoteCard v-if="notApplied" type="info">
 			Die Änderung wirkt beim nächsten Start der Welt.
@@ -58,16 +76,54 @@
 			</NcButton>
 		</template>
 	</NcDialog>
+
+	<!-- Bestätigung (D-07): ersetzt den Einladen-Dialog, die Auswahl bleibt erhalten. -->
+	<NcDialog
+		v-else
+		:open="true"
+		name="Als erwachsen markieren"
+		@update:open="onConfirmOpen">
+		<div class="invite__confirm">
+			<p class="invite__confirm-lead">
+				{{ confirmLead(singleAccounts.map((option) => option.displayName)) }}
+			</p>
+			<p>{{ CONFIRM_SCOPE }}</p>
+			<p class="invite__confirm-note">
+				{{ CONFIRM_WARNING }}
+			</p>
+		</div>
+
+		<template #actions>
+			<NcButton variant="tertiary" :disabled="inviting" @click="cancelConfirm">
+				Abbrechen
+			</NcButton>
+			<NcButton variant="warning" :disabled="inviting" @click="confirmInvite">
+				<template v-if="inviting" #icon>
+					<NcLoadingIcon :size="20" />
+				</template>
+				Als erwachsen einladen
+			</NcButton>
+		</template>
+	</NcDialog>
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import NcButton from '@nextcloud/vue/components/NcButton'
+import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
 import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSelectUsers from '@nextcloud/vue/components/NcSelectUsers'
-import { errorText, invite, searchAccounts } from '../api.js'
+import { errorText, invite, searchAccounts, setAdult } from '../api.js'
+import {
+	adultInviteWarning,
+	CONFIRM_SCOPE,
+	CONFIRM_WARNING,
+	confirmLead,
+	INVITE_SWITCH_META,
+	invitedLabel,
+} from '../adult.js'
 import { NO_SCOPE_TEXT, scopeHint } from '../roles.js'
 
 const props = defineProps({
@@ -93,6 +149,19 @@ const inviting = ref(false)
 const invitedLabels = ref([])
 const notApplied = ref(false)
 const failures = ref([])
+const inviteAdult = ref(false)
+const confirmOpen = ref(false)
+const adultFailures = ref([])
+const adultRow = ref(null)
+
+// Nur Einzelkonten lassen sich als erwachsen einladen, Gruppen nicht.
+const singleAccounts = computed(() => selected.value.filter((option) => option.kind !== 'group'))
+
+watch(() => singleAccounts.value.length, (count) => {
+	if (count === 0) {
+		inviteAdult.value = false
+	}
+})
 
 // Modell für NcSelectUsers; kind und target gehen später an die Einladungs-API.
 function toOption(entry) {
@@ -143,31 +212,86 @@ function onSearch(term) {
 	}, SEARCH_DELAY_MS)
 }
 
+function submit() {
+	if (inviting.value || selected.value.length === 0) {
+		return
+	}
+	if (inviteAdult.value && singleAccounts.value.length > 0) {
+		// Erst die Bestätigung, dann Einladungen und Markieren.
+		confirmOpen.value = true
+		return
+	}
+	runInvites(false)
+}
+
+function confirmInvite() {
+	runInvites(true)
+}
+
+function focusAdultRow() {
+	nextTick(() => {
+		setTimeout(() => {
+			adultRow.value?.querySelector('input')?.focus()
+		}, 0)
+	})
+}
+
+function cancelConfirm() {
+	if (inviting.value) {
+		return
+	}
+	confirmOpen.value = false
+	focusAdultRow()
+}
+
+function onConfirmOpen(open) {
+	if (!open) {
+		cancelConfirm()
+	}
+}
+
 // Nacheinander, damit jede Einladung ihre eigene Fehlermeldung bekommt.
-async function submit() {
+async function runInvites(markAdult) {
 	if (inviting.value || selected.value.length === 0) {
 		return
 	}
 	inviting.value = true
 	failures.value = []
+	adultFailures.value = []
 	invitedLabels.value = []
 	notApplied.value = false
 	const remaining = []
 	for (const option of selected.value) {
+		let label = option.displayName
 		try {
 			const result = await invite(props.world.id, option.kind, option.target)
-			invitedLabels.value.push(option.displayName)
 			if (result?.applied === false) {
 				notApplied.value = true
 			}
 		} catch (err) {
 			failures.value.push({ key: option.id, label: option.displayName, detail: errorText(err) })
 			remaining.push(option)
+			continue
 		}
+		if (markAdult && option.kind !== 'group') {
+			try {
+				const marked = await setAdult(option.target, true)
+				label = `${option.displayName} (erwachsen)`
+				if (marked?.applied === false) {
+					notApplied.value = true
+				}
+			} catch (err) {
+				// Einladung gelungen, Markieren nicht: eigener Hinweis je Konto (T-06-23).
+				adultFailures.value.push({ key: option.id, text: adultInviteWarning(option.displayName, errorText(err)) })
+			}
+		}
+		invitedLabels.value.push(label)
 	}
 	selected.value = remaining
 	inviting.value = false
+	confirmOpen.value = false
 	if (invitedLabels.value.length > 0) {
+		inviteAdult.value = false
 		emit('done')
 	}
 }
@@ -197,6 +321,34 @@ onUnmounted(() => {
 
 .invite__scope {
 	margin-bottom: 12px;
+	color: var(--color-text-maxcontrast);
+}
+
+.invite__adult {
+	margin-top: 8px;
+	min-width: 0;
+}
+
+.invite__adult :deep(.checkbox-content__description) {
+	font-size: 0.9em;
+	color: var(--color-text-maxcontrast);
+}
+
+.invite__confirm {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.invite__confirm p {
+	margin: 0;
+}
+
+.invite__confirm-lead {
+	font-weight: bold;
+}
+
+.invite__confirm-note {
 	color: var(--color-text-maxcontrast);
 }
 </style>

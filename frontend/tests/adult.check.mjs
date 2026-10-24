@@ -45,6 +45,11 @@ assert.equal(
 	adultInviteWarning('Anna', 'Fehler'),
 	'Anna ist eingeladen, aber nicht als erwachsen markiert: Fehler. Du kannst es in der Spielerliste nachholen.',
 )
+// Detail mit Schlusspunkt (Backend-Meldung) ergibt keinen doppelten Punkt.
+assert.equal(
+	adultInviteWarning('Ben', 'Dieses Konto verwaltet Gameworld und spielt ohnehin ohne Regeln.'),
+	'Ben ist eingeladen, aber nicht als erwachsen markiert: Dieses Konto verwaltet Gameworld und spielt ohnehin ohne Regeln. Du kannst es in der Spielerliste nachholen.',
+)
 assert.equal(
 	invitedLabel(['Anna (erwachsen)', 'Ben', 'Gruppe klasse-5a']),
 	'Eingeladen: Anna (erwachsen), Ben, Gruppe klasse-5a',
@@ -63,7 +68,7 @@ assert.equal(
 
 // Keine Gedankenstriche in den Texten
 for (const text of [CONFIRM_SCOPE, CONFIRM_WARNING, SWITCH_META, INVITE_SWITCH_META, adultOffText('X')]) {
-	assert.doesNotMatch(text, /[–—]/)
+	assert.doesNotMatch(text, /[\u2013\u2014]/)
 }
 
 console.log('adult.check: alle Prüfungen bestanden')

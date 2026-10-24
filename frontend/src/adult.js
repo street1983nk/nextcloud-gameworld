@@ -1,5 +1,5 @@
 // Reine Texte für den Erwachsen-Schalter (ROLLE-04, UI-SPEC B2), ohne Vue; geprüft von
-// frontend/tests/adult.check.mjs. Namen nur per Textinterpolation ausgeben, nie per v-html.
+// frontend/tests/adult.check.mjs. Namen nur per Textinterpolation ausgeben, nie als HTML.
 
 // Bestätigungsdialog, Absatz 1 (bold): Folgen für ein oder mehrere Konten.
 export function confirmLead(names) {
@@ -33,9 +33,10 @@ export function nowVerwalterText(name) {
 	return `${name} verwaltet Gameworld inzwischen und spielt ohnehin ohne Regeln.`
 }
 
-// Einladung gelungen, Markieren nicht.
+// Einladung gelungen, Markieren nicht. API-Meldungen enden meist mit Punkt, er entfällt hier.
 export function adultInviteWarning(name, detail) {
-	return `${name} ist eingeladen, aber nicht als erwachsen markiert: ${detail}. Du kannst es in der Spielerliste nachholen.`
+	const reason = String(detail ?? '').trim().replace(/[.]+$/, '')
+	return `${name} ist eingeladen, aber nicht als erwachsen markiert: ${reason}. Du kannst es in der Spielerliste nachholen.`
 }
 
 export function invitedLabel(labels) {
