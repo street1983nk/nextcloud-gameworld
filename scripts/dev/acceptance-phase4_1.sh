@@ -155,6 +155,9 @@ add_user() {
 	while [ "${add_try}" -le 3 ]; do
 		if docker compose -f "${COMPOSE_FILE}" exec -T -u www-data -e OC_PASS="$2" app \
 			php occ user:add --password-from-env --display-name="$3" "$1" >"${WORK_DIR}/user-add.log" 2>&1; then
+			# German dev account (D-25): without a setting Nextcloud reports its default
+			# language en, and the expected texts of this acceptance run are German.
+			occ user:setting "$1" core lang de >/dev/null 2>&1 || return 1
 			return 0
 		fi
 		printf 'occ user:add %s scheiterte (Versuch %s von 3): %s\n' "$1" "${add_try}" \

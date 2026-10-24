@@ -55,6 +55,15 @@
 #      liefert ein neues Token ohne gw-alt; zweite Welt von gw-alt, gw-alt gelöscht,
 #      nach dem Abgleich owner_not_admin false und der Raum für admin erreichbar.
 #      Übersprung NUR mit GAMEWORLD_SKIP_TALK=1, sonst ist fehlendes Talk ein Fehler.
+#   K8 Language (D-25, D-27): gw6-en (manager, core lang en) gets /api/me language en,
+#      gw6-lehrer (de) gets de; gw6-kind-en gets the English 403 text, a German kid
+#      still the exact German one; a world created by gw6-en is en, one by gw6-lehrer
+#      de; language xx 422, set by a player 403; a stranger is refused in English on the
+#      en world and in German on the de world; a backup with a held session shows the
+#      English chat hint and disconnect text; switching to fr sets
+#      language_restart_needed until the restart, then the refusal is French; the join
+#      attempt notification is English for gw6-en and German for gw6-lehrer (on the
+#      daily throttle: summary message as positive control, announced as a hint line).
 #
 # Bewusst unabhängig vom Implementierungsmuster: Belege kommen aus curl gegen den
 # AppAPI-Proxy, HaRP und die Talk-OCS-API mit echten Nextcloud-Konten, aus occ, aus
@@ -63,9 +72,11 @@
 # Session-Prober (tests/e2e/luanti_probe.py) über seine CLI; die Uhrzeit der
 # Haushalts-Zeitzone rechnet die Standardbibliothek (zoneinfo).
 #
-# Fixtures: Gruppen lehrkraefte und klasse; Wegwerfkonten gw-lehrer (lehrkraefte,
-# klasse), gw-kind-k (klasse), gw-kind-out (keine Gruppe), gw-erwachsen (klasse),
-# gw-alt (lehrkraefte). Spielpasswörter erscheinen nie in der Ausgabe, nur ihre
+# Fixtures: Gruppen gw6-lehrkraefte und gw6-klasse; Wegwerfkonten gw6-lehrer
+# (gw6-lehrkraefte, gw6-klasse), gw6-kind-k (gw6-klasse), gw6-kind-out (keine Gruppe),
+# gw6-erwachsen (gw6-klasse), gw6-alt (gw6-lehrkraefte), for K8 gw6-en (both groups,
+# lang en) and gw6-kind-en (gw6-klasse, lang en). All other accounts get core lang de.
+# The gw6 prefix keeps the demo environment (gw-lehrer, lehrkraefte, klasse) untouched. Spielpasswörter erscheinen nie in der Ausgabe, nur ihre
 # Länge. Zugangsdaten hier sind reine Dev-Konten von Loopback-Instanzen.
 #
 # Voraussetzung:
@@ -114,25 +125,33 @@ SPREED="${NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v4"
 PROBE_HOST=127.0.0.1
 SESSION_TIMEOUT=30
 
-G_LEHR=lehrkraefte
-G_KLASSE=klasse
-LEHRER=gw-lehrer
-KIND=gw-kind-k
-OUT=gw-kind-out
-ERW=gw-erwachsen
-ALT=gw-alt
+# Own gw6-* names: the demo environment of 06-13 uses gw-lehrer, lehrkraefte and klasse
+# (manager group) and must stay untouched; reset_fixtures deletes these fixtures.
+G_LEHR=gw6-lehrkraefte
+G_KLASSE=gw6-klasse
+LEHRER=gw6-lehrer
+KIND=gw6-kind-k
+OUT=gw6-kind-out
+ERW=gw6-erwachsen
+ALT=gw6-alt
+EN8=gw6-en
+KIDEN8=gw6-kind-en
 LEHRER_AUTH="${LEHRER}:gw-lehrer-dev-pass-6"
 KIND_AUTH="${KIND}:gw-kind-k-dev-pass-6"
 OUT_AUTH="${OUT}:gw-kind-out-dev-pass-6"
 ERW_AUTH="${ERW}:gw-erwachsen-dev-pass-6"
 ALT_AUTH="${ALT}:gw-alt-dev-pass-6"
-ACCOUNTS="${LEHRER} ${KIND} ${OUT} ${ERW} ${ALT}"
+EN8_AUTH="${EN8}:gw-en-dev-pass-8"
+KIDEN8_AUTH="${KIDEN8}:gw-kind-en-dev-pass-8"
+ACCOUNTS="${LEHRER} ${KIND} ${OUT} ${ERW} ${ALT} ${EN8} ${KIDEN8}"
 
 W1_NAME="Abnahme Store"
 W2_NAME="Abnahme Klasse"
 W3_NAME="Abnahme Talk Alt"
 W4_NAME="Abnahme Talk Erbe"
-ACCEPTANCE_WORLDS='["Abnahme Store","Abnahme Klasse","Abnahme Talk Alt","Abnahme Talk Erbe"]'
+W8_NAME="Abnahme Sprache EN"
+W9_NAME="Abnahme Sprache DE"
+ACCEPTANCE_WORLDS='["Abnahme Store","Abnahme Klasse","Abnahme Talk Alt","Abnahme Talk Erbe","Abnahme Sprache EN","Abnahme Sprache DE"]'
 ORPHAN_INSTANCE=acceptance-orphan
 ORPHAN_CONTAINER=gameworld-acceptance-orphan
 ORPHAN_VOLUME=gameworld-acceptance-orphan-x
@@ -148,6 +167,20 @@ TEXT_OUT_OF_SCOPE="Dieses Konto ist in keiner deiner Gruppen."
 TEXT_GROUP_OUT_OF_SCOPE="Diese Gruppe gehört nicht zu deinen Gruppen."
 # Abgleich beim Verwalter-Besuch höchstens alle 60 s (access/service.py), Talk alle 300 s.
 SYNC_WAIT=65
+# K8: own expected literals, copied from the catalogs as an independent cross-check
+# (catalog_en.py roles.MSG_FORBIDDEN, access_mod.py and time_mod.py MOD_TEXTS, notify/texts.py).
+TEXT_FORBIDDEN_DE="Nur Eltern können Welten verwalten."
+TEXT_FORBIDDEN_EN="Only parents can manage worlds."
+TEXT_DENY_EN="You are not invited to this world."
+TEXT_DENY_FR="Tu n’as pas d’invitation pour ce monde."
+TEXT_HALT_SOON_EN="The world is taking a short break soon."
+TEXT_HALT_EN="The world is taking a short break. It will be back in a moment."
+SUBJECT_ATTEMPT_EN="Unknown player name in"
+SUBJECT_ATTEMPT_DE="Unbekannter Spielername in"
+SUBJECT_SUMMARY_EN="More join attempts"
+SUBJECT_SUMMARY_DE="Weitere Beitrittsversuche"
+NOTIFY_URL="${NEXTCLOUD_URL}/ocs/v2.php/apps/notifications/api/v2/notifications?format=json"
+NOTIFY_WAIT=120
 TALK_WAIT=480
 
 PYTHONUTF8=1
@@ -210,6 +243,9 @@ add_user() {
 	while [ "${add_try}" -le 3 ]; do
 		if docker exec -u www-data -e OC_PASS="$2" "${NC_CONTAINER}" \
 			php occ user:add --password-from-env --display-name="$3" "$1" >"${WORK_DIR}/user-add.log" 2>&1; then
+			# German dev accounts: without a setting Nextcloud reports its default language,
+			# and every German expected text of K1 to K7 assumes a German account (D-25).
+			occ user:setting "$1" core lang de >/dev/null 2>&1 || return 1
 			return 0
 		fi
 		printf 'occ user:add %s scheiterte (Versuch %s von 3): %s\n' "$1" "${add_try}" \
@@ -981,6 +1017,188 @@ else
 		check "Welt ${world_id} gelöscht HTTP 204 (ist ${CODE})" eq "${CODE}" 204
 	done
 fi
+
+printf '\n== K8 Sprache ==\n'
+# K8 (D-25, D-27): account language for API texts, world language for game texts.
+# notif_max AUTH -> highest notification_id of the account (0 without entries), x on a fetch error
+notif_max() {
+	code=$(call "$1" GET "${NOTIFY_URL}" "${WORK_DIR}/nmax.json")
+	if [ "${code}" != 200 ]; then
+		printf 'x'
+		return 0
+	fi
+	jq -r '[.ocs.data[]?.notification_id] | max // 0' "${WORK_DIR}/nmax.json" 2>/dev/null || printf 'x'
+}
+# notif_subjects AUTH BASELINE FILE -> subjects of new Gameworld notifications, one per line
+notif_subjects() {
+	code=$(call "$1" GET "${NOTIFY_URL}" "${WORK_DIR}/nall.json")
+	[ "${code}" = 200 ] || return 1
+	jq -r --argjson b "$2" '.ocs.data[]? | select(.app == "gameworld" and .notification_id > $b) | .subject' \
+		"${WORK_DIR}/nall.json" >"$3" 2>/dev/null
+}
+# wait_subject AUTH BASELINE TEXT FILE -> 0 once a new notification subject contains TEXT
+wait_subject() {
+	until_ts=$(deadline "${NOTIFY_WAIT}")
+	while :; do
+		notif_subjects "$1" "$2" "$4" && grep -qF "$3" "$4" && return 0
+		before "${until_ts}" || return 1
+		sleep 5
+	done
+}
+add_user "${EN8}" "${EN8_AUTH#*:}" "English Manager" || abort "Konto ${EN8} ließ sich nicht anlegen"
+add_user "${KIDEN8}" "${KIDEN8_AUTH#*:}" "English Kid" || abort "Konto ${KIDEN8} ließ sich nicht anlegen"
+occ user:setting "${EN8}" core lang en >/dev/null 2>&1 || abort "Sprache von ${EN8} ließ sich nicht setzen"
+occ user:setting "${KIDEN8}" core lang en >/dev/null 2>&1 || abort "Sprache von ${KIDEN8} ließ sich nicht setzen"
+for pair in "${G_LEHR} ${EN8}" "${G_KLASSE} ${EN8}" "${G_KLASSE} ${KIDEN8}"; do
+	set -- ${pair}
+	occ group:adduser "$1" "$2" >/dev/null 2>&1 || abort "$2 ließ sich nicht in $1 aufnehmen"
+done
+check "K8 Konto ${EN8} hat core lang en, ${LEHRER} core lang de" sh -c \
+	'[ "$(docker exec -u www-data "$1" php occ user:setting "$2" core lang | tr -d "\r")" = en ] &&
+	 [ "$(docker exec -u www-data "$1" php occ user:setting "$3" core lang | tr -d "\r")" = de ]' \
+	_ "${NC_CONTAINER}" "${EN8}" "${LEHRER}"
+
+# 1. GET /api/me follows the account language.
+check "K8 ${EN8} ist Verwalter über ${G_LEHR} (GET /api/worlds 200 binnen 40 s)" wait_code "${EN8_AUTH}" "${API_URL}/worlds" 200 40
+CODE=$(call "${EN8_AUTH}" GET "${API_URL}/me" "${WORK_DIR}/k8-me-en.json")
+check "K8 GET /api/me als ${EN8}: HTTP 200, language en (ist ${CODE}, $(jq -r '.language // "leer"' "${WORK_DIR}/k8-me-en.json" 2>/dev/null))" \
+	sh -c '[ "$1" = 200 ] && [ "$(jq -r .language "$2")" = en ]' _ "${CODE}" "${WORK_DIR}/k8-me-en.json"
+CODE=$(call "${LEHRER_AUTH}" GET "${API_URL}/me" "${WORK_DIR}/k8-me-de.json")
+check "K8 Negativkontrolle: GET /api/me als ${LEHRER}: language de (ist $(jq -r '.language // "leer"' "${WORK_DIR}/k8-me-de.json" 2>/dev/null))" \
+	sh -c '[ "$1" = 200 ] && [ "$(jq -r .language "$2")" = de ]' _ "${CODE}" "${WORK_DIR}/k8-me-de.json"
+
+# 2. Error texts in the account language.
+CODE=$(call "${KIDEN8_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/k8-forbid-en.json")
+check "K8 ${KIDEN8} GET /api/worlds HTTP 403 mit '${TEXT_FORBIDDEN_EN}' (ist ${CODE}, $(detail_of "${WORK_DIR}/k8-forbid-en.json"))" \
+	sh -c '[ "$1" = 403 ] && [ "$2" = "$3" ]' _ "${CODE}" "$(detail_of "${WORK_DIR}/k8-forbid-en.json")" "${TEXT_FORBIDDEN_EN}"
+CODE=$(call "${KIND_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/k8-forbid-de.json")
+check "K8 Negativkontrolle: ${KIND} (de) bekommt weiter exakt '${TEXT_FORBIDDEN_DE}' (ist ${CODE})" \
+	sh -c '[ "$1" = 403 ] && [ "$2" = "$3" ]' _ "${CODE}" "$(detail_of "${WORK_DIR}/k8-forbid-de.json")" "${TEXT_FORBIDDEN_DE}"
+
+# 3. A new world takes the language of the creating manager.
+create_world "${EN8_AUTH}" "${W8_NAME}"
+W8=${NEW_ID}
+check "K8 ${EN8} legt '${W8_NAME}' an HTTP 201, language en (ist ${NEW_CODE}, $(jq -r '.language // "leer"' "${WORK_DIR}/new-world.json" 2>/dev/null))" \
+	sh -c '[ "$1" = 201 ] && [ "$(jq -r .language "$2")" = en ]' _ "${NEW_CODE}" "${WORK_DIR}/new-world.json"
+matches "${W8}" '^[0-9a-f]{12}$' || abort "Antwort ohne gültige id"
+create_world "${LEHRER_AUTH}" "${W9_NAME}"
+W9=${NEW_ID}
+check "K8 Negativkontrolle: ${LEHRER} legt '${W9_NAME}' an HTTP 201, language de (ist ${NEW_CODE}, $(jq -r '.language // "leer"' "${WORK_DIR}/new-world.json" 2>/dev/null))" \
+	sh -c '[ "$1" = 201 ] && [ "$(jq -r .language "$2")" = de ]' _ "${NEW_CODE}" "${WORK_DIR}/new-world.json"
+matches "${W9}" '^[0-9a-f]{12}$' || abort "Antwort ohne gültige id"
+
+# 4. Only managers set the world language, only de, en or fr.
+CODE=$(call "${EN8_AUTH}" POST "${API_URL}/worlds/${W8}/language" "${WORK_DIR}/k8-xx.json" '{"language":"xx"}')
+check "K8 Negativkontrolle: POST language xx HTTP 422 (ist ${CODE})" eq "${CODE}" 422
+CODE=$(call "${KIDEN8_AUTH}" POST "${API_URL}/worlds/${W8}/language" "${WORK_DIR}/k8-kidlang.json" '{"language":"fr"}')
+check "K8 Negativkontrolle: ${KIDEN8} POST language HTTP 403 (ist ${CODE})" eq "${CODE}" 403
+check "K8 Positivkontrolle: '${W8_NAME}' danach weiter en" eq "$(world_field "${W8}" '.language')" en
+
+# 5. Refusal text in the world language (prejoin, gameworld_access).
+NOTIF_EN8=$(notif_max "${EN8_AUTH}")
+NOTIF_LEHRER=$(notif_max "${LEHRER_AUTH}")
+check "K8 Grundlinie der Benachrichtigungen lesbar (${EN8} ${NOTIF_EN8}, ${LEHRER} ${NOTIF_LEHRER})" \
+	sh -c 'printf "%s %s" "$1" "$2" | grep -Eq "^[0-9]+ [0-9]+$"' _ "${NOTIF_EN8}" "${NOTIF_LEHRER}"
+check "K8 '${W8_NAME}' running binnen 120 s" wait_status "${W8}" running 120
+check "K8 '${W9_NAME}' running binnen 120 s" wait_status "${W9}" running 120
+C8=$(container_of "${W8}")
+C9=$(container_of "${W9}")
+PORT8=$(port_of "${C8}")
+PORT9=$(port_of "${C9}")
+matches "${PORT8}" '^[0-9]+$' || abort "kein UDP-Port für ${W8}"
+matches "${PORT9}" '^[0-9]+$' || abort "kein UDP-Port für ${W9}"
+PORT=${PORT8}
+check "K8 Fremder8 an '${W8_NAME}' abgewiesen mit '${TEXT_DENY_EN}'" \
+	probe_expect "${WORK_DIR}/k8-deny-en.json" ".result == \"denied\" and ((.reason // \"\") | contains(\"${TEXT_DENY_EN}\"))" 30 \
+	Fremder8 fremd-pass-8
+printf 'Fremder8 an %s: %s\n' "${W8}" "$(probe_summary "${WORK_DIR}/k8-deny-en.json")"
+PORT=${PORT9}
+check "K8 Negativkontrolle: Fremder8 an '${W9_NAME}' (de) abgewiesen mit '${TEXT_DENY}'" \
+	probe_expect "${WORK_DIR}/k8-deny-de.json" ".result == \"denied\" and ((.reason // \"\") | contains(\"${TEXT_DENY}\"))" 30 \
+	Fremder8 fremd-pass-8
+check "K8 Gegenprobe: der deutsche Text enthält keinen englischen Satz" \
+	not denied_with "${WORK_DIR}/k8-deny-de.json" "${TEXT_DENY_EN}"
+
+# 6. Backup with a held session: chat and disconnect text in the world language.
+CODE=$(call "${EN8_AUTH}" POST "${API_URL}/worlds/${W8}/invites" "${WORK_DIR}/k8-inv.json" "{\"kind\":\"user\",\"target\":\"${KIDEN8}\"}")
+check "K8 ${EN8} lädt ${KIDEN8} ein HTTP 200 (ist ${CODE})" eq "${CODE}" 200
+call "${EN8_AUTH}" GET "${API_URL}/worlds/${W8}/players" "${WORK_DIR}/p8.json" >/dev/null
+KEN_NAME=$(player_field "${WORK_DIR}/p8.json" "${KIDEN8}" player_name)
+KEN_PW=$(player_field "${WORK_DIR}/p8.json" "${KIDEN8}" password)
+check "K8 Spielname ${KEN_NAME:-leer}, Passwort vorhanden (Länge ${#KEN_PW})" \
+	sh -c '[ -n "$1" ] && [ -n "$2" ]' _ "${KEN_NAME}" "${KEN_PW}"
+PORT=${PORT8}
+check "K8 ${KIDEN8} tritt bei (auth_accept binnen 30 s)" \
+	probe_expect "${WORK_DIR}/k8-kid-pre.json" '.result == "auth_accept"' 30 "${KEN_NAME}" "${KEN_PW}"
+sleep 2.5
+printf 'Sitzung %s für bis zu 120 s, dann Sicherung\n' "${KIDEN8}"
+probe "${WORK_DIR}/k8-kid-hold.json" "${KEN_NAME}" "${KEN_PW}" --hold 120 --timeout "${SESSION_TIMEOUT}" &
+KID_JOB=$!
+check "K8 ${KIDEN8} ist laut Weltenliste online (binnen 30 s)" wait_online "${W8}" "${KEN_NAME}" 30
+CODE=$(call "${EN8_AUTH}" POST "${API_URL}/worlds/${W8}/backups" "${WORK_DIR}/k8-backup.json" '{"confirm_disconnect":true}')
+check "K8 Sicherung mit Trennbestätigung gestartet HTTP 202 (ist ${CODE})" eq "${CODE}" 202
+wait "${KID_JOB}" || true
+KID_JOB=""
+printf '%s: %s\n' "${KIDEN8}" "$(probe_summary "${WORK_DIR}/k8-kid-hold.json")"
+check "K8 Chat vor dem Trennen enthält '${TEXT_HALT_SOON_EN}'" \
+	eq "$(jq -r --arg t "${TEXT_HALT_SOON_EN}" '[.events[]? | select(.kind == "chat" and (.text | contains($t)))] | length > 0' \
+		"${WORK_DIR}/k8-kid-hold.json" 2>/dev/null)" true
+check "K8 ${KIDEN8} getrennt mit '${TEXT_HALT_EN}'" kicked_with "${WORK_DIR}/k8-kid-hold.json" "${TEXT_HALT_EN}"
+check "K8 Gegenprobe: kein deutscher Pausentext '${TEXT_HALT}' im Trenngrund" \
+	not kicked_with "${WORK_DIR}/k8-kid-hold.json" "Die Welt macht kurz Pause"
+wait_backup() {
+	until_ts=$(deadline 180)
+	while :; do
+		state=$(world_field "${W8}" '.backup_job.state // ""')
+		[ "${state}" = ok ] && return 0
+		[ "${state}" = failed ] && return 1
+		before "${until_ts}" || return 1
+		sleep 3
+	done
+}
+check "K8 Sicherung fertig (backup_job ok binnen 180 s)" wait_backup
+check "K8 '${W8_NAME}' läuft nach der Sicherung wieder (running binnen 90 s)" wait_status "${W8}" running 90
+
+# 7. Switching to fr applies from the next start.
+CODE=$(call "${EN8_AUTH}" POST "${API_URL}/worlds/${W8}/language" "${WORK_DIR}/k8-fr.json" '{"language":"fr"}')
+check "K8 POST language fr HTTP 200, language fr, language_restart_needed true (ist ${CODE})" \
+	sh -c '[ "$1" = 200 ] && [ "$(jq -r ".language + \" \" + (.language_restart_needed | tostring)" "$2")" = "fr true" ]' \
+	_ "${CODE}" "${WORK_DIR}/k8-fr.json"
+check "K8 Negativkontrolle: ohne Neustart weiter englisch abgewiesen" \
+	probe_expect "${WORK_DIR}/k8-deny-still-en.json" ".result == \"denied\" and ((.reason // \"\") | contains(\"${TEXT_DENY_EN}\"))" 30 \
+	Fremder8 fremd-pass-8
+CODE=$(call "${EN8_AUTH}" POST "${API_URL}/worlds/${W8}/restart" /dev/null)
+check "K8 Neustart von '${W8_NAME}' HTTP 200 (ist ${CODE})" eq "${CODE}" 200
+check "K8 '${W8_NAME}' nach dem Neustart running binnen 120 s" wait_status "${W8}" running 120
+check "K8 language_restart_needed nach dem Neustart false" eq "$(world_field "${W8}" '.language_restart_needed')" false
+C8=$(container_of "${W8}")
+PORT=$(port_of "${C8}")
+check "K8 Fremder8 an '${W8_NAME}' abgewiesen mit '${TEXT_DENY_FR}'" \
+	probe_expect "${WORK_DIR}/k8-deny-fr.json" ".result == \"denied\" and ((.reason // \"\") | contains(\"${TEXT_DENY_FR}\"))" 30 \
+	Fremder8 fremd-pass-8
+printf 'Fremder8 an %s (fr): %s\n' "${W8}" "$(probe_summary "${WORK_DIR}/k8-deny-fr.json")"
+check "K8 Positivkontrolle: '${W9_NAME}' blieb de" eq "$(world_field "${W9}" '.language')" de
+
+# 8. Notification about the stranger: subject in the language of each recipient.
+if wait_subject "${EN8_AUTH}" "${NOTIF_EN8}" "${SUBJECT_ATTEMPT_EN} ${W8_NAME}" "${WORK_DIR}/k8-n-en.txt"; then
+	pass "K8 ${EN8} bekommt '${SUBJECT_ATTEMPT_EN} ${W8_NAME}'"
+	check "K8 Negativkontrolle: ${LEHRER} bekommt '${SUBJECT_ATTEMPT_DE} ${W8_NAME}'" \
+		wait_subject "${LEHRER_AUTH}" "${NOTIF_LEHRER}" "${SUBJECT_ATTEMPT_DE} ${W8_NAME}" "${WORK_DIR}/k8-n-de.txt"
+	check "K8 Gegenprobe: ${EN8} hat keinen deutschen Betreff" not grep -qF "${SUBJECT_ATTEMPT_DE}" "${WORK_DIR}/k8-n-en.txt"
+else
+	# Daily throttle (5 hints a day, then one summary): never skipped silently.
+	printf 'Hinweis: kein Einzelhinweis für %s binnen %s s (Tagesdrosselung?), Prüfung über die Sammelnachricht\n' \
+		"${W8_NAME}" "${NOTIFY_WAIT}"
+	notif_subjects "${EN8_AUTH}" 0 "${WORK_DIR}/k8-n-en-all.txt" || true
+	notif_subjects "${LEHRER_AUTH}" 0 "${WORK_DIR}/k8-n-de-all.txt" || true
+	check "K8 ${EN8} hat die englische Sammelnachricht '${SUBJECT_SUMMARY_EN}'" grep -qF "${SUBJECT_SUMMARY_EN}" "${WORK_DIR}/k8-n-en-all.txt"
+	check "K8 Negativkontrolle: ${LEHRER} hat die deutsche Sammelnachricht '${SUBJECT_SUMMARY_DE}'" \
+		grep -qF "${SUBJECT_SUMMARY_DE}" "${WORK_DIR}/k8-n-de-all.txt"
+fi
+for world_id in ${W8} ${W9}; do
+	CODE=$(http_code DELETE "${API_URL}/worlds/${world_id}" /dev/null)
+	check "Welt ${world_id} gelöscht HTTP 204 (ist ${CODE})" eq "${CODE}" 204
+done
 
 printf '\n== Aufräumen ==\n'
 reset_fixtures
