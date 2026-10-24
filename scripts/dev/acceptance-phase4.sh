@@ -560,8 +560,8 @@ check "K1 Negativkontrolle: Fensterende vor Fensteranfang HTTP 422 (ist ${CODE})
 CODE=$(set_plan "$(week "${TODAY_WD}" 60 null null | jq -c '.[0:6]')")
 check "K1 Negativkontrolle: nur 6 Wochentage HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/playtime/children/${KID}" /dev/null "{\"normal\":$(week "${TODAY_WD}" null null null)}")
-# Genau 404 (AppAPI, ADMIN-Route): Ein abgestürztes Backend besteht nicht mehr (WR-08).
-check "K1 Negativkontrolle: ${KID} setzt eigene Regeln, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
+check "K1 Negativkontrolle: ${KID} setzt eigene Regeln, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 http_code GET "${API_URL}/playtime" "${WORK_DIR}/pt1b.json" >/dev/null
 check "K1 nach den Fehlversuchen gilt weiter limit 120 am heutigen Tag" \
 	eq "$(jq -r --arg u "${KID}" --argjson d "${TODAY_WD}" \

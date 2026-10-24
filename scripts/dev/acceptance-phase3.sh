@@ -481,23 +481,22 @@ CODE=$(call "${KID_AUTH}" GET "${PAGE_URL}" "${WORK_DIR}/page-kid.html")
 check "K4 Seite als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${KID_AUTH}" GET "${BUNDLE_URL}" /dev/null)
 check "K4 Bundle als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
-# Erwartet ist genau 404: AppAPI weist Nicht-Admins auf ADMIN-Routen vor dem Backend ab
-# (am Dev-Stack belegt). Ein abgestürztes Backend (500, 503) oder ein curl-Fehler (000)
-# gilt so nicht mehr als "abgewiesen" (WR-08).
+# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
+# Ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht (WR-08).
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/worlds" /dev/null)
-check "K4 Negativkontrolle: GET /api/worlds als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+check "K4 Negativkontrolle: GET /api/worlds als ${KID} HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 WORLDS_BEFORE=$(call "${ADMIN_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/kid-before.json" >/dev/null; jq -r '.worlds | length' "${WORK_DIR}/kid-before.json" 2>/dev/null || printf 'x')
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/worlds" "${WORK_DIR}/kid-create.json" '{"name":"Kind darf nicht","preset":"mtg_kreativ"}')
 remember_world "$(jq -r '.id // empty' "${WORK_DIR}/kid-create.json" 2>/dev/null || true)"
 WORLDS_AFTER=$(call "${ADMIN_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/kid-after.json" >/dev/null; jq -r '.worlds | length' "${WORK_DIR}/kid-after.json" 2>/dev/null || printf 'x')
-check "K4 Negativkontrolle: POST /api/worlds als ${KID} HTTP 404, Weltenzahl unverändert (ist ${CODE}, ${WORLDS_BEFORE} -> ${WORLDS_AFTER})" \
-	sh -c '[ "$1" = 404 ] && printf "%s" "$2" | grep -Eq "^[0-9]+$" && [ "$2" = "$3" ]' _ "${CODE}" "${WORLDS_BEFORE}" "${WORLDS_AFTER}"
+check "K4 Negativkontrolle: POST /api/worlds als ${KID} HTTP 403, Weltenzahl unverändert (ist ${CODE}, ${WORLDS_BEFORE} -> ${WORLDS_AFTER})" \
+	sh -c '[ "$1" = 403 ] && printf "%s" "$2" | grep -Eq "^[0-9]+$" && [ "$2" = "$3" ]' _ "${CODE}" "${WORLDS_BEFORE}" "${WORLDS_AFTER}"
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/worlds/${WORLD_ID}/players" /dev/null)
-check "K4 Negativkontrolle: GET players als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+check "K4 Negativkontrolle: GET players als ${KID} HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/players/password" /dev/null "{\"nc_user\":\"${GUEST}\"}")
-check "K4 Negativkontrolle: POST players/password als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+check "K4 Negativkontrolle: POST players/password als ${KID} HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/settings" /dev/null)
-check "K4 Negativkontrolle: GET settings als ${KID} HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+check "K4 Negativkontrolle: GET settings als ${KID} HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 players_to "${WORK_DIR}/p4.json" >/dev/null
 check "K4 Passwort von ${GUEST} nach den Kind-Aufrufen unverändert" \
 	eq "$(sha_of "$(player_field "${WORK_DIR}/p4.json" "${GUEST}" password)")" "$(sha_of "${GUEST_PW}")"

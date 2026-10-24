@@ -536,8 +536,8 @@ check "POST /api/origin ${NEXTCLOUD_URL} (bestätigt) HTTP 200 (ist ${CODE})" eq
 ORIGIN_NOW=$(sql "SELECT value FROM meta WHERE key = 'link_origin'")
 check "link_origin ist ${NEXTCLOUD_URL} (ist ${ORIGIN_NOW:-leer})" eq "${ORIGIN_NOW}" "${NEXTCLOUD_URL}"
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/origin" /dev/null '{"origin":"http://evil.example","confirm":true}')
-# AppAPI weist Nicht-Admins auf ADMIN-Routen mit 404 ab (am Dev-Stack belegt), vor dem Backend.
-check "Negativkontrolle: ${KID} setzt die Basis-URL nicht, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
+check "Negativkontrolle: ${KID} setzt die Basis-URL nicht, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 ORIGIN_AFTER=$(sql "SELECT value FROM meta WHERE key = 'link_origin'")
 check "Negativkontrolle: link_origin danach unverändert (ist ${ORIGIN_AFTER:-leer})" \
 	sh -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ "${ORIGIN_AFTER}" "${ORIGIN_NOW}"
@@ -564,9 +564,8 @@ check "Rückblick admin vorerst aus HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${ADMIN2_AUTH}" POST "${API_URL}/review/prefs" /dev/null '{"enabled":false,"minute":1200}')
 check "Rückblick ${ADMIN2} aus HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/review/prefs" /dev/null '{"enabled":true,"minute":600}')
-# Genau 404: AppAPI weist Nicht-Admins auf ADMIN-Routen vor dem Backend ab (am Dev-Stack
-# belegt); ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht nicht (WR-08).
-check "Negativkontrolle: ${KID} hat keine Rückblick-Einstellung, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+# Ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht (WR-08).
+check "Negativkontrolle: ${KID} hat keine Rückblick-Einstellung, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 KID_PREFS=$(sql "SELECT count(*) FROM review_prefs WHERE nc_user = '${KID}'")
 check "Negativkontrolle: keine Rückblick-Zeile für ${KID} in review_prefs (ist ${KID_PREFS:-leer})" eq "${KID_PREFS}" 0
 
@@ -630,7 +629,7 @@ CODE=$(http_code POST "${API_URL}/pause" /dev/null '{"minutes":"15"}')
 check "K1 Negativkontrolle: minutes als Text HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 PAUSE_BEFORE=$(sql "SELECT bis FROM pause_state WHERE id = 1")
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/pause" /dev/null '{"minutes":15}')
-check "K1 Negativkontrolle: ${KID} startet keine Pause, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+check "K1 Negativkontrolle: ${KID} startet keine Pause, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 PAUSE_AFTER=$(sql "SELECT bis FROM pause_state WHERE id = 1")
 check "K1 Negativkontrolle: Pausenende danach unverändert (${PAUSE_BEFORE:-leer} -> ${PAUSE_AFTER:-leer})" \
 	eq_num "${PAUSE_AFTER}" "${PAUSE_BEFORE}"
@@ -805,7 +804,7 @@ check "K2 Filter world=${WORLD_ID}: HTTP 200 und 6 Namen (ist ${CODE} $(jq -r '.
 CODE=$(http_code GET "${API_URL}/attempts?day=kaputt" /dev/null)
 check "K2 Negativkontrolle: day=kaputt HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/attempts?day=${TODAY}" /dev/null)
-check "K2 Negativkontrolle: ${KID} liest /attempts nicht, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+check "K2 Negativkontrolle: ${KID} liest /attempts nicht, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 
 printf '\n== K3 Tagesrückblick ==\n'
 # K3 Rückblick einmal am Tag je Verwalter, abschaltbar, neustartfest (SC 3)
@@ -859,7 +858,7 @@ check "K3 Rückblick zeigt ${KID} mit Minuten größer 0 in '${NAME_PAUSE}' (ist
 check "K3 Verwalter erscheinen nicht im Rückblick" \
 	eq "$(jq -r --arg a "${ADMIN2}" '[.kids[]? | select(.nc_user == "admin" or .nc_user == $a)] | length' "${WORK_DIR}/review.json" 2>/dev/null)" 0
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/review?day=${TODAY}" /dev/null)
-check "K3 Negativkontrolle: ${KID} liest /review nicht, HTTP 404 (ist ${CODE})" eq "${CODE}" 404
+check "K3 Negativkontrolle: ${KID} liest /review nicht, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 # Ohne Spielzeit kommt kein Rückblick (D-14): ein frischer Tag ohne Spielzeit ist im
 # laufenden Stack nicht herstellbar; belegt durch tests/test_notify_loop.py.
 

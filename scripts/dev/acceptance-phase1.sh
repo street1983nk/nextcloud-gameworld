@@ -221,9 +221,9 @@ KID_BUNDLE=$(http_code GET "${BUNDLE_URL}" "${KID_AUTH}" /dev/null)
 check "K1 Bundle für ${KID_USER} HTTP 200 (ist ${KID_BUNDLE})" eq "${KID_BUNDLE}" 200
 
 KID_API=$(http_code GET "${API_URL}/worlds" "${KID_AUTH}" /dev/null)
-# AppAPI weist Nicht-Admins auf ADMIN-Routen vor dem Backend mit 404 ab (am Dev-Stack belegt);
-# ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht mehr (WR-08).
-check "K1 Negativkontrolle: Welt-API für ${KID_USER} HTTP 404 (ist ${KID_API})" eq "${KID_API}" 404
+# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
+# Ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht (WR-08).
+check "K1 Negativkontrolle: Welt-API für ${KID_USER} HTTP 403 (ist ${KID_API})" eq "${KID_API}" 403
 
 KID_ME=$(http_code GET "${API_URL}/me" "${KID_AUTH}" "${WORK_DIR}/me-kid.json")
 check "K1 /api/me für ${KID_USER} HTTP 200 (ist ${KID_ME})" eq "${KID_ME}" 200
