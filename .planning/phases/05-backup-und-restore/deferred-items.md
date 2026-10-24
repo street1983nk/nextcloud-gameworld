@@ -45,12 +45,15 @@ Lauf 2 (Bestätigungslauf nach Ende der Browser-Sitzung): Phase-5-Teil erneut 96
 inklusive Aufräumen; die Regression wurde von der Claude-Code-Speicherüberwachung beim Start
 abgebrochen (Systemspeicher knapp, kein Fehler des Laufs). Gemäß Hinweis nicht neu gestartet.
 
-Offen:
+ERLEDIGT am 24.10.2026 (Lauf 3, 06:10 bis 06:50, nach den Review-Fixes WR-01 bis WR-03):
 
-- **Voller Bestätigungslauf 103/103**: `sh scripts/dev/acceptance-phase5.sh` einmal bei genug
-  freiem RAM und ohne offene Gameworld-Browser-Sitzung laufen lassen. Erwartung: grün, da die
-  einzige Fehlerquelle (Polling der offenen Sitzung) weg ist und alle Funktionsprüfungen in
-  beiden Läufen grün waren.
-- Reste des abgebrochenen Laufs 2 (der nächste Abnahmelauf räumt beides selbst weg, Löschung
-  per API wurde vom Berechtigungs-Klassifizierer blockiert): Welt "Abnahme Talk" (34cc17ad808d)
-  und Wegwerfkonto gw-abnahme41.
+- ~~**Voller Bestätigungslauf 103/103**~~: `sh scripts/dev/acceptance-phase5.sh` Exit 0,
+  "103 von 103 Prüfungen bestanden", Regression komplett grün (4.1: 133/133 inkl. Marker
+  84/84, 104/104, 75/75, 109/109). Browser-Sitzung war zu, nichts lief parallel. Der Lauf
+  belegt zugleich den neuen Temp+MOVE-Upload-Pfad (WR-03) live am echten Nextcloud.
+- ~~Reste des abgebrochenen Laufs 2~~: vom Lauf selbst weggeräumt; geprüft am 24.10.:
+  Konto gw-abnahme41 "user not found", keine Abnahme-Container mehr, admin sieht nur noch
+  die beiden Spike-Welten.
+
+Offen: nichts mehr aus 05-09. Die Info-Findings IN-01 bis IN-07 stehen in 05-REVIEW.md
+(nicht fixpflichtig, Owner-Entscheid war nur WR-01 bis WR-03).
