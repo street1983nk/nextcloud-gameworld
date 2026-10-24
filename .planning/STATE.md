@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-10-24T09:06:00.000Z"
-last_activity: 2026-10-24 -- 06-03 UI-Baustein B1 Verwalter-Gruppen und Einladungsgrenze abgeschlossen
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-10-24T09:28:30.236Z"
+last_activity: 2026-10-24 -- 06-04 Erwachsen-Schalter Backend (ROLLE-04) abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 60
-  percent: 83
+  completed_plans: 61
+  percent: 85
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 4 of 16 complete (06-01, 06-07, 06-02, 06-03)
+Plan: 5 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-03 B1 VerwalterGroupsSection (nur NC-Admin), roles.js mit Prüfskript, Einladungsgrenze im Einladen-Dialog (e719bf8, 68bad36, 7ded3b4, c25f115)
+Last activity: 2026-10-24 -- 06-04 Erwachsen-Schalter: frei = Verwalter | adults, POST /api/players/adult, Negativtests (fd71bb4, c4c2e88, e1faa24, ec90fe1)
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -258,6 +258,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-02 /api/admin routerweit require_nc_admin; info.xml ohne ADMIN-Stufe, tests/test_route_guards.py prüft jede /api/-Route außer /api/me und /api/my/ über den Abhängigkeitsbaum
 - [Phase 06]: 06-03 403 im Verwalter-Gruppen-Abschnitt: ParentView zeigt NC_ADMIN_ONLY_TEXT an seiner Stelle und lässt App.vue /api/me neu laden (reload-me); Anzeigenamen der Verwalter-Gruppen nur aus der Gruppensuche
 - [Phase 06]: 06-03 me geht auch an AttemptsView, damit der Einladen-Dialog dort die Einladungsgrenze zeigt
+- [Phase 06]: 06-04 Erwachsen wirkt nur über die frei-Zeile (frei = time_admins | adults) in render/book und collect_play; 409 nur beim Einschalten eines Verwalter-Kontos, Ausschalten immer erlaubt; Mod und Konfig-Erzeuger unverändert
 
 ### Pending Todos
 
@@ -287,6 +288,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T09:06:00.000Z
-Stopped at: Completed 06-03-PLAN.md
-Resume file: .planning/phases/06-store-release/06-04-PLAN.md
+Last session: 2026-10-24T09:28:30.217Z
+Stopped at: Completed 06-04-PLAN.md
+Resume file: None
