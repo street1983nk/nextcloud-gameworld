@@ -194,6 +194,12 @@ export async function rotatePassword(ncUser) {
 	return response.data
 }
 
+// ROLLE-04: Konto als erwachsen markieren oder die Marke entfernen; gilt in allen Welten.
+export async function setAdult(ncUser, adult) {
+	const response = await post(`${apiBase}/api/players/adult`, { nc_user: ncUser, adult })
+	return response.data
+}
+
 export async function renamePlayer(ncUser, playerName) {
 	const response = await post(`${apiBase}/api/players/name`, { nc_user: ncUser, player_name: playerName })
 	return response.data
