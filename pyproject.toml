@@ -1,6 +1,6 @@
 [project]
 name = "gameworld"
-version = "0.1.0"
+version = "1.0.0"
 description = "Gameworld ExApp: private, hardened Luanti worlds for families on Nextcloud"
 requires-python = ">=3.13,<3.14"
 license = "AGPL-3.0-or-later"

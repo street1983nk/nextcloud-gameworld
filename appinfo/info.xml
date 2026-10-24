@@ -51,9 +51,9 @@
 - Hardened game containers with fixed memory, CPU and process limits
 
 Requirements:
-- Nextcloud 32 to 34 with AppAPI
+- Nextcloud 32 to 35 with AppAPI
 - A scoped docker-socket-proxy next to the deploy daemon (see the documentation)]]></description>
-	<version>0.1.0</version>
+	<version>1.0.0</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author>street1983nk</author>
 	<namespace>Gameworld</namespace>
@@ -62,13 +62,13 @@ Requirements:
 	<bugs>https://github.com/street1983nk/nextcloud-gameworld/issues</bugs>
 	<repository type="git">https://github.com/street1983nk/nextcloud-gameworld.git</repository>
 	<dependencies>
-		<nextcloud min-version="32" max-version="34"/>
+		<nextcloud min-version="32" max-version="35"/>
 	</dependencies>
 	<external-app>
 		<docker-install>
 			<registry>ghcr.io</registry>
 			<image>street1983nk/gameworld</image>
-			<image-tag>0.1.0</image-tag>
+			<image-tag>1.0.0</image-tag>
 		</docker-install>
 		<routes>
 			<route>
