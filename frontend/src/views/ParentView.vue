@@ -107,6 +107,10 @@
 							:world="world"
 							:status="talkFor(world)"
 							@changed="loadTalk" />
+						<WorldLanguageSetting
+							v-if="!world.delete_only"
+							:world="world"
+							@changed="refresh" />
 					</td>
 					<td>{{ world.preset_title }}</td>
 					<td>{{ world.port }}</td>
@@ -282,6 +286,7 @@ import SetupCheck from '../components/SetupCheck.vue'
 import TalkRoomStatus from '../components/TalkRoomStatus.vue'
 import TimeZoneSetting from '../components/TimeZoneSetting.vue'
 import VerwalterGroupsSection from '../components/VerwalterGroupsSection.vue'
+import WorldLanguageSetting from '../components/WorldLanguageSetting.vue'
 import WorldWindowDialog from '../components/WorldWindowDialog.vue'
 import { formatBytes, jobNote } from '../backup.js'
 import { t } from '../i18n/index.js'

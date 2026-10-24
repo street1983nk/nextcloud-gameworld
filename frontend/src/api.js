@@ -323,6 +323,12 @@ export async function setTalkReadOnly(worldId, on) {
 	return response.data
 }
 
+// Game language of a world (D-27), only for managers; the answer is the WorldOut row.
+export async function setWorldLanguage(worldId, language) {
+	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/language`, { language })
+	return response.data
+}
+
 // Talk-Raum neu anlegen (D-19): alter Raum samt Verlauf weg, Antwort ist die neue Zeile aus GET /api/talk.
 export async function recreateTalkRoom(worldId) {
 	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/talk/recreate`)

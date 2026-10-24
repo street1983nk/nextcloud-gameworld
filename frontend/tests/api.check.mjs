@@ -30,6 +30,13 @@ const ticketBody = ticketFn.slice(0, ticketFn.indexOf('\n}\n'))
 assert.match(ticketBody, /await post\(`\$\{apiBase\}\/api\/my\/play-ticket`/)
 assert.doesNotMatch(source, /\bfetch\(/, 'kein eigener fetch in api.js')
 
+// World language (D-27): POST with JSON body {language} to /api/worlds/{id}/language.
+assert.match(source, /export async function setWorldLanguage\(worldId, language\)/)
+const langFn = source.slice(source.indexOf('export async function setWorldLanguage('))
+const langBody = langFn.slice(0, langFn.indexOf('\n}\n'))
+assert.match(langBody, /await post\(`\$\{apiBase\}\/api\/worlds\/\$\{encodeURIComponent\(worldId\)\}\/language`, \{ language \}\)/)
+assert.doesNotMatch(langBody, /await del\(/)
+
 // errorText (D-25): the own fallback comes from the dictionary, a backend detail stays unchanged.
 assert.match(source, /import \{ t \} from '\.\/i18n\/index\.js'/)
 const errorFn = source.slice(source.indexOf('export function errorText('))
