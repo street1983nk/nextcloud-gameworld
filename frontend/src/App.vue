@@ -28,7 +28,7 @@
 					</NcNoteCard>
 				</div>
 				<PauseView v-if="page === 'pause'" />
-				<AttemptsView v-else-if="page === 'versuch'" :key="routeKey" />
+				<AttemptsView v-else-if="page === 'versuch'" :key="routeKey" :me="me" />
 				<ReviewView v-else-if="page === 'rueckblick'" :key="routeKey" />
 				<ParentView v-else :me="me" @reload-me="reloadMe" />
 			</template>

@@ -56,6 +56,7 @@
 			v-if="inviteWorld"
 			:key="`invite-${inviteWorld.id}`"
 			:world="inviteWorld"
+			:me="me"
 			@close="inviteWorld = null" />
 	</div>
 </template>
@@ -68,6 +69,11 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import InviteDialog from '../components/InviteDialog.vue'
 import { errorText, listAttempts } from '../api.js'
 import { currentParams, dayLabel, navigate } from '../route.js'
+
+defineProps({
+	// Antwort von /api/me (App.vue); der Einladen-Dialog zeigt damit die Einladungsgrenze (D-01).
+	me: { type: Object, required: false, default: null },
+})
 
 // Parameter aus dem Link sind schon geprüft (route.js); das Backend prüft erneut.
 // Ohne tag wählt das Backend den heutigen Tag der Haushalts-Zeitzone, nicht die

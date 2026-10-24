@@ -210,6 +210,7 @@
 			v-if="inviteWorld"
 			:key="`invite-${inviteWorld.id}`"
 			:world="inviteWorld"
+			:me="me"
 			@done="refresh"
 			@close="inviteWorld = null" />
 		<PlayerManager
