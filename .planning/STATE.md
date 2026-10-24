@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: "Completed 05-09-PLAN.md; Phase 5: Bestätigungslauf 103/103, Deep Review und /gsd-secure-phase offen"
-last_updated: "2026-10-24T03:58:04.864Z"
+status: ready_to_plan
+stopped_at: Phase 05 complete (9/9) — ready to discuss Phase 6
+last_updated: 2026-10-24T05:29:07.038Z
 last_activity: 2026-10-24
 progress:
   total_phases: 8
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-19)
 
 **Core value:** Ein Elternteil ohne Serverwissen startet in Minuten eine private, sichere Luanti-Welt, auf der nur Eingeladene spielen und deren Daten zuhause bleiben.
-**Current focus:** Phase 05 — backup-und-restore
+**Current focus:** Phase 6 — store release
 
 ## Current Position
 
-Phase: 05 (backup-und-restore) — EXECUTING
-Plan: 9 of 9
-Status: Phase complete — ready for verification
+Phase: 6
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-10-24
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 24
+- Total plans completed: 33
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,6 +47,7 @@ Progress: [██████████] 100%
 | 01 | 5 | - | - |
 | 4 | 8 | - | - |
 | 04.2 | 11 | - | - |
+| 05 | 9 | - | - |
 
 **Recent Trend:**
 
