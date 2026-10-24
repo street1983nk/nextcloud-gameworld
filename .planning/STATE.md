@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-11-PLAN.md
-last_updated: "2026-10-24T11:41:59.620Z"
-last_activity: 2026-10-24 -- 06-11 Öffentliche Doku und dreisprachiges Store-Listing abgeschlossen
+stopped_at: Completed 06-12-PLAN.md
+last_updated: "2026-10-24T16:10:55.759Z"
+last_activity: 2026-10-24 -- 06-12 Dev-HaRP mit lokaler Registry und Phasenabnahme acceptance-phase6.sh abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 67
-  percent: 93
+  completed_plans: 68
+  percent: 94
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 11 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11)
+Plan: 12 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-11 privacy.md/install.md EN+DE, README EN/DE/FR (Badges, Mermaid), Store-Listing EN/DE/FR in store-listing.md und info.xml, Doku-Tests (6fc5a32, b83b508, 5f5b49c, 3b8c189)
+Last activity: 2026-10-24 -- 06-12 harp.compose.yaml/harp-install.sh (Test-Instanz, localhost:5000, --info-xml, uid 10001), acceptance-phase6.sh K1 bis K7: manual 130/130 mit Regression Phase 5 bis 1, harp 140/140; Fixes info.xml-Name, Gruppen-Mitglieder /users, Talk-Abgleich frisch (bcb90f6, 4c5b9a4, c3351f5, 034bc4b, b83ab5f)
 
-Progress: [█████████░] 93%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -112,6 +112,7 @@ Progress: [█████████░] 93%
 | Phase 06 P05 | 35 min | 3 tasks | 7 files |
 | Phase 06 P06 | 45 min | 3 tasks | 9 files |
 | Phase 06 P10 | 20 min | 3 tasks | 14 files |
+| Phase 06 P12 | ca. 6 h (4 h Abnahmeläufe) | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -265,6 +266,11 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-08 D-17 Option A: jedes enabled=0 stoppt/entfernt alle eigenen Welt-Container (parallel, 5 s Stopp, 45 s Frist, fail_after(50)), Volumes und desired_state bleiben, enabled=1 stößt Boot-Abgleich an; Orphan-Entfernen nur fremde Instanzen mit Label managed=true bzw. Volumes ^gameworld-[a-z0-9-]+$ ohne eigene Weltzeile, Prüfung am frisch geholten Objekt; Host-Skript löscht Volumes nur nach getipptem delete, --yes gilt dafür nicht
 - [Phase 06]: 06-05 Bestätigung ersetzt den Spieler- bzw. Einladen-Dialog (v-if/v-else), Schalter-Anzeige folgt der Serverantwort und springt bei Fehler zurück; Absatz 4 (Regel bleibt gespeichert) nur in der Spielerliste, da die Kontosuche kein has_rules liefert; adultInviteWarning entfernt den Schlusspunkt des Backend-Details
 - [Phase 06]: 06-06 talk_rooms.owner_uid ist der Gameworld-Besitzer (nach Übernahme immer ein Verwalter), former_owner der Ex-Verwalter als Talk-Owner; Übernahme nur mit bestätigtem acting, Kandidaten nach verwalter_seniority plus noch nicht gesehene Verwalter; Sperrfall nur bei Besitzer ohne Verwalterrolle, neuer Raum per replace_talk_token (Nur-lesen bleibt), altes Token bleibt als orphaned_token und wird nie gelöscht; recreate_room löscht zuerst, scheitert das, bleibt alles (503)
+- [Phase 06]: 06-12 HaRP-Abnahme auf eigener Test-Nextcloud (scripts/dev/harp.compose.yaml, Netz gameworld-dev-harp_default), nie über die Dev-Registrierung: D-17 räumte sonst die Owner-Welten ab; K3 Deaktivieren nur im Modus harp
+- [Phase 06]: 06-12 info.xml trägt genau einen <name> ohne lang (AppAPI machte aus drei Namen ein Array, App hieß "Array")
+- [Phase 06]: 06-12 Gruppenmitglieder über /ocs/v1.php/cloud/groups/{gid}/users (Mitglieder dürfen lesen, Nicht-Mitglieder 403) statt Subadmin-Endpunkt; ohne das konnte ein Gruppen-Verwalter als reines Mitglied nicht einladen
+- [Phase 06]: 06-12 Talk-Abgleich (reconcile_all) fragt Verfügbarkeit frisch (fresh=True); Cache nur für GET /api/talk und Anlegen
+- [Phase 06]: 06-12 register-exapp.sh lässt eine passende Registrierung stehen, sonst Neustart mit neuem Secret vor dem Neu-Registrieren (kein D-17-Abräumen über /enabled?enabled=0)
 
 ### Pending Todos
 
@@ -294,6 +300,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T11:41:59.602Z
-Stopped at: Completed 06-11-PLAN.md
+Last session: 2026-10-24T16:10:55.740Z
+Stopped at: Completed 06-12-PLAN.md
 Resume file: None
