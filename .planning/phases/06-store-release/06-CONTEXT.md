@@ -42,6 +42,7 @@ Jede Familie und jede Schule mit Nextcloud kann Gameworld direkt aus dem Nextclo
 ### Nachentscheide waehrend der Abnahme (Owner 24.10. abends, BINDEND, Release-Gate)
 - **D-25:** ERST UEBERSETZEN, DANN RELEASEN. Die App-Oberflaeche wird vor dem Store-Upload mehrsprachig: Deutsch, Englisch, Franzoesisch. Die UI-Sprache folgt der Nextcloud-Kontosprache des Nutzers. Das Listing-Feld "Interface: German" wird entsprechend ersetzt (German/English/French), README-Screenshots je Sprachfassung passend (EN-README mit englischer UI).
 - **D-26:** Quellcode-Kommentare und Docstrings komplett auf ENGLISCH, auch der Bestand (Uebersetzungs-Pass ueber das ganze Repo). Nutzersichtbare Strings sind davon getrennt (i18n).
+- **D-29 (Owner 24.10., Nachtrag zu D-26):** Auch Log-Meldungen (LOG.*) werden Englisch; betroffene Log-Tests mit anpassen. Gehoert in den Kommentar-Pass (Welle 13).
 - **D-27:** Auch die Texte IM Spiel (Chat-Hinweise, Pausen-/Kick-Texte, Spielzeit-Warnungen der Mods) werden uebersetzt, PRO WELT einstellbar; Standard ist die Sprache des anlegenden Verwalters. Alle Kinder einer Welt sehen dieselben Texte.
 - Folge: Die Plaene 06-13 (Screenshots/Abnahme), 06-11-Anteile (Listing-Interface-Zeile) und 06-16 verschieben sich hinter die neuen i18n-Plaene. Die am 24.10. aufgenommenen deutschen Screenshots bleiben fuer die DE-Fassung verwendbar, sofern sich die UI nicht aendert.
 
