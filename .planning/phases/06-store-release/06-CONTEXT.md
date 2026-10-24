@@ -41,6 +41,15 @@ Jede Familie und jede Schule mit Nextcloud kann Gameworld direkt aus dem Nextclo
 - **R-01:** Die Store-Zertifikatsanfrage läuft (nextcloud/app-certificate-requests PR #1364, offen seit 21.10.2026). Owner-Vorgabe: NICHT nachhaken, einfach warten. Der eigentliche Store-Upload (Signieren + Submit) ist der letzte Plan der Phase, NICHT autonom und hängt am gemergten Zertifikat; alle anderen Pläne sind davon unabhängig.
 - **R-02:** Test der Store-Installation auf AIO und Standard-Compose (Roadmap-Kriterium 1) gehört in die Phasenabnahme.
 
+### Nachentscheide aus dem Research (Owner 24.10., auf Researcher-Fragen)
+- **D-17:** Deinstallation/Updates: Option A. Welt-Container werden bei JEDEM Deaktivieren gestoppt und entfernt (Volumes bleiben), der Boot-Abgleich baut sie neu. Folge bewusst akzeptiert: Bei App-Updates werden spielende Kinder kurz getrennt. Dazu Orphan-Skript auf dem Host plus Liste in der App.
+- **D-18:** info.xml: min-version 32 bleibt, max-version 35 (Pflicht); getestet wird auf NC 34 und 35.
+- **D-19:** Ex-Verwalter mit existierendem Konto bleibt technisch Talk-Raum-Owner: Hinweis plus Knopf "Raum neu anlegen" (Verlust des Verlaufs ist eine bewusste Entscheidung, kein Automatismus).
+- **D-20:** AIO-Test auf einer kurzlebigen Cloud-VM (wenige Euro, Wegwerf-Domain, danach löschen).
+- **D-21:** AR-23 (Weltordner-Härtung, offener Punkt aus Phase 3) kommt als eigener kleiner Plan MIT Spike in Phase 6: erst belegen, dass Luanti mit root:30000/1775 und root-eigenem worldmods sauber schreibt, dann härten.
+- **D-22:** ExApp-Container läuft als Dienstnutzer (Entrypoint chown/gosu), nicht als root.
+- **D-23:** Die Browser-Spike-Routen bleiben im Store-info.xml (antworten 404, Feature-Flag aus); ein Test belegt das. AppAPI kennt keine Routen-Migration.
+
 ### Claude's Discretion
 - Technische Umsetzung des Gruppen-Lookups (OCS-Endpunkte, Caching) und der sofortigen Wirkung des Erwachsen-Schalters.
 - Form des Orphan-Kommandos (occ-Subcommand vs. API+UI), solange Roadmap-Kriterium 3 erfüllt ist.
