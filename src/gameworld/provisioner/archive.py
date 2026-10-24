@@ -45,6 +45,12 @@ from gameworld.provisioner.spec import WorldPayload
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 GAMES_DIR = REPO_ROOT / "vendor" / "games"
+# Game zip problems reach the client via str(exc) (D-25); the file name is inserted, never translated.
+TEXT_GAME_ZIP_MISSING = "Die mitgelieferte Spieldatei fehlt: {game_zip}. Bitte sh scripts/fetch-games.sh ausführen."
+TEXT_GAME_ZIP_TAMPERED = (
+    "Die mitgelieferte Spieldatei ist beschädigt oder verändert ({game_zip}). Bitte Gameworld neu installieren."
+)
+MSG_NO_GAME_CONF = "Die mitgelieferte Spieldatei enthält keine game.conf."
 
 LUANTI_UID = 30000
 ROOT_UID = 0
@@ -72,14 +78,9 @@ def _verified_zip(preset: Preset) -> pathlib.Path:
         with path.open("rb") as handle:
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
     except OSError as exc:
-        raise ProvisionerError(
-            f"Die mitgelieferte Spieldatei fehlt: {preset.game_zip}. Bitte sh scripts/fetch-games.sh ausführen."
-        ) from exc
+        raise ProvisionerError(TEXT_GAME_ZIP_MISSING.format(game_zip=preset.game_zip)) from exc
     if digest != preset.game_sha256:
-        raise ProvisionerError(
-            f"Die mitgelieferte Spieldatei ist beschädigt oder verändert ({preset.game_zip}). "
-            "Bitte Gameworld neu installieren."
-        )
+        raise ProvisionerError(TEXT_GAME_ZIP_TAMPERED.format(game_zip=preset.game_zip))
     return path
 
 
@@ -120,7 +121,7 @@ def _game_entries(zipped: zipfile.ZipFile) -> list[tuple[str, zipfile.ZipInfo]]:
         key=len,
     )
     if not roots:
-        raise ProvisionerError("Die mitgelieferte Spieldatei enthält keine game.conf.")
+        raise ProvisionerError(MSG_NO_GAME_CONF)
     prefix = roots[0]
     game = [(name[len(prefix) :], info) for name, info in entries if name.startswith(prefix) and name[len(prefix) :]]
     return sorted(game, key=lambda entry: entry[0])

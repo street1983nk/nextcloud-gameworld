@@ -38,7 +38,14 @@ from gameworld.access.secret import SecretUnavailableError
 from gameworld.access.service import PlayerNotFoundError
 from gameworld.api.invites import _clean_target  # pyright: ignore[reportPrivateUsage]
 from gameworld.api.worlds import ServiceDep, WindowDayOut, WorldId
-from gameworld.playtime.plan import ChildState, DayRule, Holiday, WeekPlan, check_world_window
+from gameworld.playtime.plan import (
+    MSG_HOLIDAY_ENDS_BEFORE_START,
+    ChildState,
+    DayRule,
+    Holiday,
+    WeekPlan,
+    check_world_window,
+)
 from gameworld.playtime.service import (
     ChildResult,
     ChildView,
@@ -63,18 +70,28 @@ _TIME_ZONES = frozenset(available_timezones())
 MAX_HOLIDAY_DAYS = 366
 MAX_LABEL_LENGTH = 60
 
+# Validator texts (German = message ID, D-25). They reach the client as 422
+# ("Value error, <text>" or as detail via _http_error) and are translated there.
+MSG_PLAYTIME_LABEL_CONTROL = "Die Bezeichnung darf keine Steuerzeichen oder Zeilenumbrüche enthalten."
+MSG_PLAYTIME_UNKNOWN_ZONE = "Unbekannte Zeitzone."
+TEXT_HOLIDAY_MAX_DAYS = "Ein Ferienzeitraum dauert höchstens {days} Tage."
+MSG_WINDOW_SEVEN_DAYS = "Ein Zeitfenster braucht genau die sieben Wochentage 1 bis 7."
+MSG_WEEKDAY_TWICE = "Jeder Wochentag darf nur einmal vorkommen."
+MSG_CLOSED_DAY_WINDOW = "Ein geschlossener Tag hat kein Zeitfenster."
+MSG_OPEN_DAY_NEEDS_TIMES = "Ein offener Tag braucht Anfang und Ende des Zeitfensters."
+
 
 def _printable_label(value: str) -> str:
     """Bezeichnung ohne Steuerzeichen und Zeilenumbrüche (T-04-23)."""
     if not value.isprintable():
-        raise ValueError("Die Bezeichnung darf keine Steuerzeichen oder Zeilenumbrüche enthalten.")
+        raise ValueError(MSG_PLAYTIME_LABEL_CONTROL)
     return value.strip()
 
 
 def _known_zone(value: str) -> str:
     """Nur IANA-Namen aus available_timezones(), nie ein Pfad (T-04-22)."""
     if value not in _TIME_ZONES:
-        raise ValueError("Unbekannte Zeitzone.")
+        raise ValueError(MSG_PLAYTIME_UNKNOWN_ZONE)
     return value
 
 
@@ -109,9 +126,9 @@ class HolidayIn(BaseModel):
     @model_validator(mode="after")
     def _range(self) -> Self:
         if self.start_date > self.end_date:
-            raise ValueError("Ein Ferienzeitraum endet nicht vor seinem Beginn.")
+            raise ValueError(MSG_HOLIDAY_ENDS_BEFORE_START)
         if (self.end_date - self.start_date).days + 1 > MAX_HOLIDAY_DAYS:
-            raise ValueError(f"Ein Ferienzeitraum dauert höchstens {MAX_HOLIDAY_DAYS} Tage.")
+            raise ValueError(TEXT_HOLIDAY_MAX_DAYS.format(days=MAX_HOLIDAY_DAYS))
         return self
 
 
@@ -139,7 +156,7 @@ class WorldWindowIn(BaseModel):
     @model_validator(mode="after")
     def _seven_days(self) -> Self:
         if {day.weekday for day in self.days} != set(range(1, 8)):
-            raise ValueError("Ein Zeitfenster braucht genau die sieben Wochentage 1 bis 7.")
+            raise ValueError(MSG_WINDOW_SEVEN_DAYS)
         return self
 
 
@@ -218,7 +235,7 @@ def _to_week(days: list[DayIn]) -> WeekPlan:
     """Tage in einen WeekPlan; jede ungültige Regel wirft ValueError (422)."""
     # Das dict unten schluckte Dubletten (der letzte Eintrag gewänne), daher jeder Tag nur einmal (AR-4-07).
     if len(days) != len({day.weekday for day in days}):
-        raise ValueError("Jeder Wochentag darf nur einmal vorkommen.")
+        raise ValueError(MSG_WEEKDAY_TWICE)
     return WeekPlan(
         {day.weekday: DayRule(day.allowed, day.limit_minutes, day.window_start, day.window_end) for day in days}
     )
@@ -230,10 +247,10 @@ def _to_windows(days: list[WindowDayIn]) -> dict[int, tuple[int, int]]:
     for day in days:
         if not day.open:
             if day.window_start is not None or day.window_end is not None:
-                raise ValueError("Ein geschlossener Tag hat kein Zeitfenster.")
+                raise ValueError(MSG_CLOSED_DAY_WINDOW)
             continue
         if day.window_start is None or day.window_end is None:
-            raise ValueError("Ein offener Tag braucht Anfang und Ende des Zeitfensters.")
+            raise ValueError(MSG_OPEN_DAY_NEEDS_TIMES)
         windows[day.weekday] = check_world_window(day.window_start, day.window_end)
     return windows
 

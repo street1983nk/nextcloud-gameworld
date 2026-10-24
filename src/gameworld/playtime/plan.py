@@ -21,6 +21,14 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 DEFAULT_TIME_ZONE = "Europe/Berlin"
+# Rule texts (German = message ID, D-25); they reach the client as 422 via str(exc).
+MSG_LIMIT_RANGE = "Das Tageslimit liegt zwischen 1 und 1440 Minuten oder ist None."
+MSG_WINDOW_BOTH_OR_NONE = "Ein Zeitfenster braucht Anfang und Ende oder keins von beiden."
+MSG_WINDOW_START_RANGE = "Der Fensteranfang liegt zwischen 0 und 1439 Minuten."
+MSG_WINDOW_END_RANGE = "Das Fensterende liegt zwischen 1 und 1440 Minuten."
+MSG_WINDOW_START_BEFORE_END = "Der Fensteranfang liegt vor dem Fensterende."
+MSG_WEEK_SEVEN_DAYS = "Ein Wochenplan braucht genau die sieben Wochentage 1 bis 7."
+MSG_HOLIDAY_ENDS_BEFORE_START = "Ein Ferienzeitraum endet nicht vor seinem Beginn."
 # ISO-Wochentag 1..7 (Mo = 1) auf das ASCII-Token für den Kindertext.
 WEEKDAY_TOKENS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 _FULL_DAY_MINUTES = 1440
@@ -39,17 +47,17 @@ class DayRule:
 
     def __post_init__(self) -> None:
         if self.limit_minutes is not None and not 1 <= self.limit_minutes <= _FULL_DAY_MINUTES:
-            raise ValueError("Das Tageslimit liegt zwischen 1 und 1440 Minuten oder ist None.")
+            raise ValueError(MSG_LIMIT_RANGE)
         start, end = self.window_start, self.window_end
         if (start is None) != (end is None):
-            raise ValueError("Ein Zeitfenster braucht Anfang und Ende oder keins von beiden.")
+            raise ValueError(MSG_WINDOW_BOTH_OR_NONE)
         if start is not None and end is not None:
             if not 0 <= start <= _FULL_DAY_MINUTES - 1:
-                raise ValueError("Der Fensteranfang liegt zwischen 0 und 1439 Minuten.")
+                raise ValueError(MSG_WINDOW_START_RANGE)
             if not 1 <= end <= _FULL_DAY_MINUTES:
-                raise ValueError("Das Fensterende liegt zwischen 1 und 1440 Minuten.")
+                raise ValueError(MSG_WINDOW_END_RANGE)
             if start >= end:
-                raise ValueError("Der Fensteranfang liegt vor dem Fensterende.")
+                raise ValueError(MSG_WINDOW_START_BEFORE_END)
 
 
 def check_world_window(window_start: int, window_end: int) -> tuple[int, int]:
@@ -66,7 +74,7 @@ class WeekPlan:
 
     def __post_init__(self) -> None:
         if set(self.days) != set(range(1, 8)):
-            raise ValueError("Ein Wochenplan braucht genau die sieben Wochentage 1 bis 7.")
+            raise ValueError(MSG_WEEK_SEVEN_DAYS)
 
 
 @dataclass(frozen=True)
@@ -79,7 +87,7 @@ class Holiday:
 
     def __post_init__(self) -> None:
         if self.start > self.end:
-            raise ValueError("Ein Ferienzeitraum endet nicht vor seinem Beginn.")
+            raise ValueError(MSG_HOLIDAY_ENDS_BEFORE_START)
 
 
 @dataclass(frozen=True)

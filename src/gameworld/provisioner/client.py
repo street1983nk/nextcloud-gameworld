@@ -67,6 +67,18 @@ TEXT_DOCKER_UNREACHABLE = (
 )
 TEXT_START_REJECTED = "Docker hat den Start der Welt abgelehnt: {explanation}"
 TEXT_PORT_IN_USE = "Der UDP-Port {port} ist auf dem Server schon belegt."
+# Fixed Docker refusals (D-25); they can reach logs, last_error and answers via str(exc).
+MSG_PAYLOAD_REJECTED = "Docker hat die Weltdaten nicht angenommen."
+MSG_ACCESS_LIST_REJECTED = "Docker hat die Zugangsliste der Welt nicht angenommen."
+MSG_BACKUP_REJECTED = "Docker hat die Sicherung nicht angenommen."
+MSG_ORPHAN_BAD_ID = "Ungültige Container-ID."
+MSG_ORPHAN_CONTAINER_REFUSED = "Der Container gehört zu dieser Installation oder nicht zu Gameworld."
+MSG_ORPHAN_VOLUME_REFUSED = "Das Volume gehört zu dieser Installation oder nicht zu Gameworld."
+MSG_VOLUME_IN_USE = "Das Volume wird noch benutzt."
+MSG_STATUS_FILE_UNREADABLE = "Die Status-Datei der Welt ist nicht lesbar."
+MSG_ACCESS_STATE_UNREADABLE = "Der Zugangsstand der Welt ist nicht lesbar."
+MSG_LEDGER_UNREADABLE = "Das Spielzeit-Zählbuch der Welt ist nicht lesbar."
+MSG_EVENTS_UNREADABLE = "Die Ereignisdatei der Welt ist nicht lesbar."
 # Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
 # Leseversuch heilt (Pitfall 4). Timeouts werden nie wiederholt; Achtung:
 # ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
@@ -363,7 +375,7 @@ class DockerProvisioner:
             container = api.containers.create(**spec)
             try:
                 if not container.put_archive(DATA_DIR, payload.archive):
-                    raise ProvisionerError("Docker hat die Weltdaten nicht angenommen.")
+                    raise ProvisionerError(MSG_PAYLOAD_REJECTED)
             except Exception:
                 # Halb erzeugte Welt nicht liegen lassen; der Aufrufer kennt die ID noch nicht.
                 with contextlib.suppress(Exception):
@@ -402,7 +414,7 @@ class DockerProvisioner:
         with self._guarded():
             container = self._owned(world_id)
             if not container.put_archive(WORLD_PATH, archive):
-                raise ProvisionerError("Docker hat die Zugangsliste der Welt nicht angenommen.")
+                raise ProvisionerError(MSG_ACCESS_LIST_REJECTED)
 
     def snapshot_to[T](self, world_id: str, write: Callable[[Iterator[bytes]], T]) -> T:
         """Reicht den Tar-Strom des Weltordners an ``write`` und gibt dessen Ergebnis zurück.
@@ -435,7 +447,7 @@ class DockerProvisioner:
         with self._guarded():
             container = self._owned(world_id)
             if not container.put_archive(WORLD_PATH, archive):
-                raise ProvisionerError("Docker hat die Sicherung nicht angenommen.")
+                raise ProvisionerError(MSG_BACKUP_REJECTED)
 
     def stop(self, world_id: str, *, timeout: int = STOP_TIMEOUT) -> None:
         """Stoppt die Welt; ``timeout`` kürzer nur beim Aufräumen unter Frist (teardown_all)."""
@@ -564,14 +576,14 @@ class DockerProvisioner:
         er schon, ist das kein Fehler.
         """
         if not ORPHAN_ID_PATTERN.fullmatch(container_id):
-            raise OrphanRefusedError("Ungültige Container-ID.")
+            raise OrphanRefusedError(MSG_ORPHAN_BAD_ID)
         with self._guarded():
             try:
                 container = self._docker().containers.get(container_id)
             except docker.errors.NotFound:
                 return
             if not str(container.id).startswith(container_id) or not self._is_foreign(container):
-                raise OrphanRefusedError("Der Container gehört zu dieser Installation oder nicht zu Gameworld.")
+                raise OrphanRefusedError(MSG_ORPHAN_CONTAINER_REFUSED)
             try:
                 container.remove(force=True, v=False)
             except docker.errors.NotFound:
@@ -585,21 +597,21 @@ class DockerProvisioner:
         das kein Fehler.
         """
         if not ORPHAN_VOLUME_PATTERN.fullmatch(name) or name in owned_volumes:
-            raise OrphanRefusedError("Das Volume gehört zu dieser Installation oder nicht zu Gameworld.")
+            raise OrphanRefusedError(MSG_ORPHAN_VOLUME_REFUSED)
         with self._guarded():
             try:
                 volume = self._docker().volumes.get(name)
             except docker.errors.NotFound:
                 return
             if str(volume.name) != name:
-                raise OrphanRefusedError("Das Volume gehört zu dieser Installation oder nicht zu Gameworld.")
+                raise OrphanRefusedError(MSG_ORPHAN_VOLUME_REFUSED)
             try:
                 volume.remove()
             except docker.errors.NotFound:
                 return
             except docker.errors.APIError as exc:
                 if exc.status_code == 409:
-                    raise OrphanInUseError("Das Volume wird noch benutzt.") from exc
+                    raise OrphanInUseError(MSG_VOLUME_IN_USE) from exc
                 raise
 
     def read_status_file(self, world_id: str) -> StatusFile | None:
@@ -609,7 +621,7 @@ class DockerProvisioner:
         Volume noch nie geschrieben. Den Container löst _owned auf, fremde
         Container sind ausgeschlossen. Kein Follow-Stream (Pitfall 8).
         """
-        return self._read(lambda: self._read_world_file(world_id, PLAYERS_FILE, "Die Status-Datei der Welt"))
+        return self._read(lambda: self._read_world_file(world_id, PLAYERS_FILE, MSG_STATUS_FILE_UNREADABLE))
 
     def read_access_state(self, world_id: str) -> StatusFile | None:
         """State-Datei des Zugangs-Mods (mtime und gekappter Inhalt) oder None.
@@ -619,7 +631,7 @@ class DockerProvisioner:
         geladenen Zugangsschutz (03-RESEARCH.md Pitfall 4). Gleiche Kappung und
         Fehlerabbildung wie bei der Status-Datei.
         """
-        return self._read(lambda: self._read_world_file(world_id, STATE_FILE, "Der Zugangsstand der Welt"))
+        return self._read(lambda: self._read_world_file(world_id, STATE_FILE, MSG_ACCESS_STATE_UNREADABLE))
 
     def read_time_ledger(self, world_id: str) -> StatusFile | None:
         """Zählbuch des Zeit-Mods (mtime und gekappter Inhalt) oder None.
@@ -634,7 +646,7 @@ class DockerProvisioner:
             lambda: self._read_world_file(
                 world_id,
                 LEDGER_FILE,
-                "Das Spielzeit-Zählbuch der Welt",
+                MSG_LEDGER_UNREADABLE,
                 file_max=LEDGER_FILE_MAX,
                 archive_max=LEDGER_ARCHIVE_MAX,
                 warn_truncated=True,
@@ -652,7 +664,7 @@ class DockerProvisioner:
             lambda: self._read_world_file(
                 world_id,
                 EVENTS_FILE,
-                "Die Ereignisdatei der Welt",
+                MSG_EVENTS_UNREADABLE,
                 file_max=EVENTS_FILE_MAX,
                 archive_max=EVENTS_ARCHIVE_MAX,
                 warn_truncated=True,
@@ -663,7 +675,7 @@ class DockerProvisioner:
         self,
         world_id: str,
         path: str,
-        label: str,
+        unreadable: str,
         *,
         file_max: int = STATUS_FILE_MAX,
         archive_max: int = STATUS_ARCHIVE_MAX,
@@ -680,10 +692,10 @@ class DockerProvisioner:
             # Gekappter oder abgebrochener Strom, Datei mitten im Umbenennen: Der
             # Inhalt stammt aus von Lua beschreibbarer Datei. Als ProvisionerError
             # bleibt der Fehler an dieser einen Welt (WR-04), ohne zweiten Versuch.
-            raise ProvisionerError(f"{label} ist nicht lesbar.") from exc
+            raise ProvisionerError(unreadable) from exc
         if truncated and warn_truncated:
             # Nur Größe und Grenze ins Log, nie den Inhalt.
-            LOG.warning("Welt %s: %s ist größer als %d Bytes und wurde gekappt", world_id, label, file_max)
+            LOG.warning("Welt %s: %s ist größer als %d Bytes und wurde gekappt", world_id, path, file_max)
         return StatusFile(mtime=str((stat or {}).get("mtime") or ""), content=content)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:

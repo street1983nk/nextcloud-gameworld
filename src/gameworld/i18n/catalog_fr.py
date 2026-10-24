@@ -18,7 +18,9 @@ from gameworld.backup import service as backup_service
 from gameworld.notify import links
 from gameworld.play import ticket_api
 from gameworld.playtime import pause as playtime_pause
+from gameworld.playtime import plan
 from gameworld.playtime import service as playtime_service
+from gameworld.provisioner import archive as game_archive
 from gameworld.provisioner import client, presets, setup_check
 from gameworld.talk import rooms
 from gameworld.worlds import ports, status
@@ -108,7 +110,9 @@ MESSAGES: dict[str, str] = {
     backup_service.RESTORE_SWAP_FAILED: "La restauration a échoué. Relance la restauration.",
     # nc.py, notify/links.py
     nc.MSG_NO_USER: "Un client Nextcloud agissant pour un compte a besoin d\u2019un identifiant de compte.",
-    links.MSG_INVALID_ORIGIN: "L\u2019adresse doit ressembler à https://cloud.example ou https://example.org/nextcloud.",
+    links.MSG_INVALID_ORIGIN: (
+        "L\u2019adresse doit ressembler à https://cloud.example ou https://example.org/nextcloud."
+    ),
     # play/ticket_api.py (seen by kids)
     ticket_api.TEXT_NICHT_EINGELADEN: "Tu n\u2019as pas d\u2019invitation pour ce monde.",
     ticket_api.TEXT_WELT_AUS: "Ce monde ne tourne pas en ce moment. Préviens tes parents.",
@@ -278,6 +282,60 @@ TEMPLATES: dict[str, str] = {
     status.TEXT_CRASHED: "Le monde s\u2019est arrêté de façon inattendue (code {code}).",
     status.TEXT_ODD_STATE: "État inattendu du serveur ({state}).",
 }
+
+# Task 3: raise texts of validators, rules, Docker refusals and the bundled game file.
+MESSAGES.update(
+    {
+        # api/playtime.py (validators, 422)
+        playtime_api.MSG_PLAYTIME_LABEL_CONTROL: (
+            "Le libellé ne doit contenir ni caractères de contrôle ni sauts de ligne."
+        ),
+        playtime_api.MSG_PLAYTIME_UNKNOWN_ZONE: "Fuseau horaire inconnu.",
+        playtime_api.MSG_WINDOW_SEVEN_DAYS: "Une plage horaire a besoin exactement des sept jours de la semaine 1 à 7.",
+        playtime_api.MSG_WEEKDAY_TWICE: "Chaque jour de la semaine ne peut apparaître qu\u2019une fois.",
+        playtime_api.MSG_CLOSED_DAY_WINDOW: "Un jour fermé n\u2019a pas de plage horaire.",
+        playtime_api.MSG_OPEN_DAY_NEEDS_TIMES: "Un jour ouvert a besoin du début et de la fin de sa plage horaire.",
+        # playtime/plan.py (rules, 422 via str(exc))
+        plan.MSG_LIMIT_RANGE: "La limite quotidienne est comprise entre 1 et 1440 minutes ou vaut None.",
+        plan.MSG_WINDOW_BOTH_OR_NONE: (
+            "Une plage horaire a besoin d\u2019un début et d\u2019une fin, ou d\u2019aucun des deux."
+        ),
+        plan.MSG_WINDOW_START_RANGE: "Le début de la plage est compris entre 0 et 1439 minutes.",
+        plan.MSG_WINDOW_END_RANGE: "La fin de la plage est comprise entre 1 et 1440 minutes.",
+        plan.MSG_WINDOW_START_BEFORE_END: "Le début de la plage doit précéder sa fin.",
+        plan.MSG_WEEK_SEVEN_DAYS: "Un planning hebdomadaire a besoin exactement des sept jours de la semaine 1 à 7.",
+        plan.MSG_HOLIDAY_ENDS_BEFORE_START: "Une période de vacances ne peut pas se terminer avant de commencer.",
+        # provisioner/client.py
+        client.MSG_PAYLOAD_REJECTED: "Docker n\u2019a pas accepté les données de monde.",
+        client.MSG_ACCESS_LIST_REJECTED: "Docker n\u2019a pas accepté la liste d\u2019accès du monde.",
+        client.MSG_BACKUP_REJECTED: "Docker n\u2019a pas accepté la sauvegarde.",
+        client.MSG_ORPHAN_BAD_ID: "Identifiant de conteneur invalide.",
+        client.MSG_ORPHAN_CONTAINER_REFUSED: (
+            "Le conteneur appartient à cette installation ou n\u2019appartient pas à Gameworld."
+        ),
+        client.MSG_ORPHAN_VOLUME_REFUSED: (
+            "Le volume appartient à cette installation ou n\u2019appartient pas à Gameworld."
+        ),
+        client.MSG_VOLUME_IN_USE: "Le volume est encore utilisé.",
+        client.MSG_STATUS_FILE_UNREADABLE: "Le fichier d\u2019état du monde est illisible.",
+        client.MSG_ACCESS_STATE_UNREADABLE: "L\u2019état d\u2019accès du monde est illisible.",
+        client.MSG_LEDGER_UNREADABLE: "Le registre du temps de jeu du monde est illisible.",
+        client.MSG_EVENTS_UNREADABLE: "Le fichier d\u2019événements du monde est illisible.",
+        # provisioner/archive.py
+        game_archive.MSG_NO_GAME_CONF: "Le fichier de jeu fourni ne contient pas de game.conf.",
+    }
+)
+TEMPLATES.update(
+    {
+        playtime_api.TEXT_HOLIDAY_MAX_DAYS: "Une période de vacances dure au maximum {days} jours.",
+        game_archive.TEXT_GAME_ZIP_MISSING: (
+            "Le fichier de jeu fourni est manquant\u00a0: {game_zip}. Exécute sh scripts/fetch-games.sh."
+        ),
+        game_archive.TEXT_GAME_ZIP_TAMPERED: (
+            "Le fichier de jeu fourni est endommagé ou modifié ({game_zip}). Réinstalle Gameworld."
+        ),
+    }
+)
 
 # Messages whose inserted value is itself a German text: complete messages instead of templates.
 MESSAGES[presets.unknown_preset_message([preset.title for preset in presets.PRESETS.values()])] = TEMPLATES[

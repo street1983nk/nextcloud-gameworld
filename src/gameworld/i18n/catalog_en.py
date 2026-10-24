@@ -17,7 +17,9 @@ from gameworld.backup import service as backup_service
 from gameworld.notify import links
 from gameworld.play import ticket_api
 from gameworld.playtime import pause as playtime_pause
+from gameworld.playtime import plan
 from gameworld.playtime import service as playtime_service
+from gameworld.provisioner import archive as game_archive
 from gameworld.provisioner import client, presets, setup_check
 from gameworld.talk import rooms
 from gameworld.worlds import ports, status
@@ -252,6 +254,52 @@ TEMPLATES: dict[str, str] = {
     status.TEXT_CRASHED: "The world stopped unexpectedly (code {code}).",
     status.TEXT_ODD_STATE: "Unexpected server state ({state}).",
 }
+
+# Task 3: raise texts of validators, rules, Docker refusals and the bundled game file.
+MESSAGES.update(
+    {
+        # api/playtime.py (validators, 422)
+        playtime_api.MSG_PLAYTIME_LABEL_CONTROL: "The label must not contain control characters or line breaks.",
+        playtime_api.MSG_PLAYTIME_UNKNOWN_ZONE: "Unknown time zone.",
+        playtime_api.MSG_WINDOW_SEVEN_DAYS: "A time window needs exactly the seven weekdays 1 to 7.",
+        playtime_api.MSG_WEEKDAY_TWICE: "Each weekday may only appear once.",
+        playtime_api.MSG_CLOSED_DAY_WINDOW: "A closed day has no time window.",
+        playtime_api.MSG_OPEN_DAY_NEEDS_TIMES: "An open day needs the start and end of its time window.",
+        # playtime/plan.py (rules, 422 via str(exc))
+        plan.MSG_LIMIT_RANGE: "The daily limit is between 1 and 1440 minutes or None.",
+        plan.MSG_WINDOW_BOTH_OR_NONE: "A time window needs both start and end, or neither.",
+        plan.MSG_WINDOW_START_RANGE: "The window start is between 0 and 1439 minutes.",
+        plan.MSG_WINDOW_END_RANGE: "The window end is between 1 and 1440 minutes.",
+        plan.MSG_WINDOW_START_BEFORE_END: "The window start must be before the window end.",
+        plan.MSG_WEEK_SEVEN_DAYS: "A weekly plan needs exactly the seven weekdays 1 to 7.",
+        plan.MSG_HOLIDAY_ENDS_BEFORE_START: "A holiday period cannot end before it starts.",
+        # provisioner/client.py
+        client.MSG_PAYLOAD_REJECTED: "Docker did not accept the world data.",
+        client.MSG_ACCESS_LIST_REJECTED: "Docker did not accept the world's access list.",
+        client.MSG_BACKUP_REJECTED: "Docker did not accept the backup.",
+        client.MSG_ORPHAN_BAD_ID: "Invalid container ID.",
+        client.MSG_ORPHAN_CONTAINER_REFUSED: "The container belongs to this installation or not to Gameworld.",
+        client.MSG_ORPHAN_VOLUME_REFUSED: "The volume belongs to this installation or not to Gameworld.",
+        client.MSG_VOLUME_IN_USE: "The volume is still in use.",
+        client.MSG_STATUS_FILE_UNREADABLE: "The world's status file cannot be read.",
+        client.MSG_ACCESS_STATE_UNREADABLE: "The world's access state cannot be read.",
+        client.MSG_LEDGER_UNREADABLE: "The world's playtime ledger cannot be read.",
+        client.MSG_EVENTS_UNREADABLE: "The world's event file cannot be read.",
+        # provisioner/archive.py
+        game_archive.MSG_NO_GAME_CONF: "The bundled game file contains no game.conf.",
+    }
+)
+TEMPLATES.update(
+    {
+        playtime_api.TEXT_HOLIDAY_MAX_DAYS: "A holiday period lasts at most {days} days.",
+        game_archive.TEXT_GAME_ZIP_MISSING: (
+            "The bundled game file is missing: {game_zip}. Please run sh scripts/fetch-games.sh."
+        ),
+        game_archive.TEXT_GAME_ZIP_TAMPERED: (
+            "The bundled game file is damaged or modified ({game_zip}). Please reinstall Gameworld."
+        ),
+    }
+)
 
 # Messages whose inserted value is itself a German text: complete messages instead of templates.
 MESSAGES[presets.unknown_preset_message([preset.title for preset in presets.PRESETS.values()])] = TEMPLATES[

@@ -1,1 +1,14 @@
 file	line	reason
+src/gameworld/api/alerts.py	250	intern: concurrency signal inside save_origin, caught as sqlite3.Error and answered with MSG_UNAVAILABLE
+src/gameworld/backup/files.py	184	intern: action label for the log line in _map_error, never part of a message
+src/gameworld/backup/files.py	209	intern: action label for the log line in _map_error, never part of a message
+src/gameworld/backup/files.py	211	intern: action label for the log line in _map_error, never part of a message
+src/gameworld/backup/files.py	219	intern: action label for the log line in _map_error, never part of a message
+src/gameworld/backup/files.py	232	intern: action label for the log line in _map_error, never part of a message
+src/gameworld/backup/files.py	234	intern: action label for the log line in _map_error, never part of a message
+src/gameworld/backup/files.py	241	intern: action label for the log line in _map_error, never part of a message
+src/gameworld/backup/naming.py	61	intern: programming error, every caller passes an aware datetime; no API path
+src/gameworld/backup/naming.py	63	intern: programming error, kind comes from the KIND_ constants; no API path
+src/gameworld/provisioner/archive.py	183	intern: invariant of the fixed mod list WORLD_MODS, never user input; no API path
+src/gameworld/worlds/store.py	480	intern: programming error, column names come from code; no API path
+src/gameworld/worlds/store.py	1304	intern: programming error, talk states come from the TALK_STATES constants; no API path

@@ -105,6 +105,7 @@ _CONSTANT_FILES = (
     "nc.py",
     "notify/links.py",
     "play/ticket_api.py",
+    "provisioner/archive.py",
     "provisioner/presets.py",
     "provisioner/setup_check.py",
     "provisioner/client.py",
