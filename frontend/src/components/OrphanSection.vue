@@ -1,0 +1,385 @@
+<!-- Reste früherer Installationen (UI-SPEC B3, D-15/D-17): nur für Nextcloud-Admins eingehängt; gesperrt ist das Entfernen serverseitig (require_nc_admin, nur fremde gameworld-Objekte). -->
+<template>
+	<section class="orphans">
+		<h3>Reste früherer Installationen</h3>
+		<p class="orphans__hint">
+			{{ INTRO_TEXT }}
+		</p>
+		<p class="orphans__hint">
+			{{ LIFECYCLE_TEXT }}
+		</p>
+
+		<NcLoadingIcon v-if="loading && entries === null" :size="20" />
+		<template v-else-if="entries !== null">
+			<ul
+				v-if="entries.length > 0"
+				ref="listEl"
+				class="orphans__list"
+				tabindex="-1"
+				aria-label="Reste früherer Installationen">
+				<li v-for="entry in entries" :key="entry.key" class="orphans__entry">
+					<div class="orphans__entry-text">
+						<div class="orphans__entry-head">
+							<NcChip
+								v-if="entry.kind === 'container'"
+								variant="tertiary"
+								text="Container"
+								no-close />
+							<NcChip
+								v-else
+								variant="secondary"
+								text="Spielstand"
+								no-close />
+							<span class="orphans__name">{{ entry.name }}</span>
+						</div>
+						<span v-if="entry.meta" class="orphans__meta">{{ entry.meta }}</span>
+					</div>
+					<NcButton
+						v-if="entry.kind === 'container'"
+						class="orphans__remove"
+						variant="error"
+						:aria-label="`Container ${entry.name} entfernen`"
+						:disabled="busy || loading"
+						@click="ask(entry)">
+						Entfernen
+					</NcButton>
+					<NcButton
+						v-else
+						class="orphans__remove"
+						variant="error"
+						:aria-label="`Spielstand ${entry.name} endgültig löschen`"
+						:disabled="busy || loading"
+						@click="ask(entry)">
+						Löschen
+					</NcButton>
+				</li>
+			</ul>
+			<p
+				v-else
+				ref="emptyEl"
+				class="orphans__hint"
+				tabindex="-1">
+				{{ EMPTY_TEXT }}
+			</p>
+		</template>
+
+		<div class="orphans__notice" aria-live="polite">
+			<NcNoteCard v-if="notice" type="success">
+				{{ notice }}
+			</NcNoteCard>
+		</div>
+		<NcNoteCard v-if="warning" type="warning">
+			{{ warning }}
+		</NcNoteCard>
+		<NcNoteCard v-if="error" type="error">
+			{{ error }}
+		</NcNoteCard>
+
+		<NcButton
+			class="orphans__rescan"
+			variant="secondary"
+			aria-label="Reste erneut suchen"
+			:disabled="busy || loading"
+			@click="rescan">
+			<template v-if="loading" #icon>
+				<NcLoadingIcon :size="20" />
+			</template>
+			Erneut suchen
+		</NcButton>
+
+		<p class="orphans__hint">
+			<template v-for="(part, index) in SCRIPT_SEGMENTS" :key="index">
+				<code v-if="part.code">{{ part.text }}</code>
+				<template v-else>
+					{{ part.text }}
+				</template>
+			</template>
+		</p>
+		<p class="orphans__hint">
+			<a
+				class="orphans__link"
+				:href="CLEANUP_DOCS_URL"
+				target="_blank"
+				rel="noopener noreferrer">
+				Anleitung zum Aufräum-Skript
+			</a>
+		</p>
+
+		<NcDialog
+			v-if="pending"
+			:open="true"
+			:name="pending.kind === 'container' ? 'Container entfernen' : 'Spielstand endgültig löschen'"
+			:message="pendingMessage"
+			:buttons="pendingButtons"
+			@update:open="onDialogOpen" />
+	</section>
+</template>
+
+<script setup>
+import { computed, nextTick, onMounted, ref } from 'vue'
+import NcButton from '@nextcloud/vue/components/NcButton'
+import NcChip from '@nextcloud/vue/components/NcChip'
+import NcDialog from '@nextcloud/vue/components/NcDialog'
+import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
+import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
+import { errorText, listOrphans, removeOrphanContainer, removeOrphanVolume } from '../api.js'
+import {
+	CLEANUP_DOCS_URL,
+	EMPTY_TEXT,
+	INTRO_TEXT,
+	LIFECYCLE_TEXT,
+	SCRIPT_SEGMENTS,
+	containerMeta,
+	containerQuestion,
+	inUseText,
+	removedText,
+	unavailableText,
+	volumeMeta,
+	volumeQuestion,
+} from '../orphans.js'
+import { NC_ADMIN_ONLY_TEXT } from '../roles.js'
+
+// 403: Rechte inzwischen entzogen; der Elternteil lädt /api/me neu und blendet aus.
+const emit = defineEmits(['forbidden'])
+
+// Backend-Text bei 409 für einen Spielstand in Benutzung (06-08, api/admin.py).
+const IN_USE_MARK = 'noch von einem Container benutzt'
+
+const loading = ref(true)
+const busy = ref(false)
+// Letzter Serverstand als flache Liste; null, solange nichts geladen ist.
+const entries = ref(null)
+const notice = ref('')
+const warning = ref('')
+const error = ref('')
+const pending = ref(null)
+const listEl = ref(null)
+const emptyEl = ref(null)
+
+function toEntries(data) {
+	const containers = Array.isArray(data?.containers) ? data.containers : []
+	const volumes = Array.isArray(data?.volumes) ? data.volumes : []
+	return [
+		...containers.map((item) => ({
+			kind: 'container',
+			key: `container-${item.id}`,
+			ref: item.id,
+			name: item.name || item.id,
+			meta: containerMeta(item),
+		})),
+		...volumes.map((item) => ({
+			kind: 'volume',
+			key: `volume-${item.name}`,
+			ref: item.name,
+			name: item.name,
+			meta: volumeMeta(item),
+		})),
+	]
+}
+
+// Fokuspunkt B3 (UI-SPEC-Nachtrag): die Restliste, im Leerzustand der Leer-Absatz.
+async function focusList() {
+	await nextTick()
+	const target = listEl.value ?? emptyEl.value
+	target?.focus()
+}
+
+function failed(err, entry) {
+	const status = err?.response?.status
+	const detail = errorText(err)
+	if (status === 403) {
+		error.value = NC_ADMIN_ONLY_TEXT
+		emit('forbidden')
+	} else if (status === 503) {
+		warning.value = unavailableText(detail)
+	} else if (status === 409 && entry?.kind === 'volume' && detail.includes(IN_USE_MARK)) {
+		error.value = inUseText(entry.name)
+	} else {
+		error.value = detail
+	}
+}
+
+// Nur die Antwort des zuletzt gestarteten Abrufs zählt.
+let seq = 0
+
+async function load() {
+	const mine = ++seq
+	loading.value = true
+	warning.value = ''
+	error.value = ''
+	try {
+		const data = await listOrphans()
+		if (mine === seq) {
+			entries.value = toEntries(data)
+		}
+	} catch (err) {
+		if (mine === seq) {
+			failed(err, null)
+		}
+	} finally {
+		if (mine === seq) {
+			loading.value = false
+		}
+	}
+}
+
+async function rescan() {
+	if (busy.value || loading.value) {
+		return
+	}
+	notice.value = ''
+	await load()
+	await focusList()
+}
+
+function ask(entry) {
+	if (busy.value || loading.value) {
+		return
+	}
+	pending.value = entry
+}
+
+const pendingMessage = computed(() => {
+	const entry = pending.value
+	if (!entry) {
+		return ''
+	}
+	return entry.kind === 'container' ? containerQuestion(entry.name) : volumeQuestion(entry.name)
+})
+
+const pendingButtons = computed(() => [
+	{ label: 'Abbrechen', variant: 'tertiary' },
+	{
+		label: pending.value?.kind === 'container' ? 'Container entfernen' : 'Endgültig löschen',
+		variant: 'error',
+		callback: () => {
+			const entry = pending.value
+			pending.value = null
+			if (entry) {
+				remove(entry)
+			}
+		},
+	},
+])
+
+function onDialogOpen(open) {
+	if (!open) {
+		pending.value = null
+	}
+}
+
+async function remove(entry) {
+	if (busy.value) {
+		return
+	}
+	busy.value = true
+	notice.value = ''
+	warning.value = ''
+	error.value = ''
+	// Ein laufender Abruf darf die Serverantwort des Entfernens nicht überschreiben.
+	const mine = ++seq
+	try {
+		const data = entry.kind === 'container'
+			? await removeOrphanContainer(entry.ref)
+			: await removeOrphanVolume(entry.ref)
+		if (mine === seq) {
+			entries.value = toEntries(data)
+		}
+		notice.value = removedText(entry.kind, entry.name)
+	} catch (err) {
+		failed(err, entry)
+	} finally {
+		busy.value = false
+		loading.value = false
+	}
+	await focusList()
+}
+
+onMounted(load)
+</script>
+
+<style scoped>
+.orphans {
+	margin-top: 32px;
+}
+
+.orphans__hint {
+	margin: 4px 0;
+	color: var(--color-text-maxcontrast);
+}
+
+.orphans__list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 8px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.orphans__list:focus,
+.orphans__hint:focus {
+	outline: 2px solid var(--color-primary-element);
+	outline-offset: 2px;
+}
+
+.orphans__entry {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.orphans__entry-text {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.orphans__entry-head {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	min-width: 0;
+}
+
+.orphans__name {
+	font-weight: bold;
+	overflow-wrap: anywhere;
+	min-width: 0;
+}
+
+.orphans__meta {
+	font-size: 0.9em;
+	color: var(--color-text-maxcontrast);
+	overflow-wrap: anywhere;
+}
+
+.orphans__remove {
+	margin-inline-start: auto;
+}
+
+.orphans__rescan {
+	margin-top: 16px;
+}
+
+.orphans__notice {
+	margin-top: 8px;
+}
+
+.orphans__link {
+	color: var(--color-primary-element);
+	text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+	.orphans__entry-text {
+		flex: 1 1 100%;
+	}
+}
+</style>

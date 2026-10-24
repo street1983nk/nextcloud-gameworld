@@ -95,4 +95,12 @@ if (vue !== null) {
 	assert.match(vue, /\.focus\(\)/)
 }
 
+// Weiche in ParentView: genau ein Einhängepunkt, nur bei nc_admin === true (nicht bloß wahrheitsartig).
+const parent = await readFile(new URL('../src/views/ParentView.vue', import.meta.url), 'utf8')
+if (vue !== null) {
+	const mounts = [...parent.matchAll(/<OrphanSection\b[^>]*>/g)].map((m) => m[0])
+	assert.equal(mounts.length, 1, `OrphanSection-Einhängepunkte: ${mounts.length}`)
+	assert.match(mounts[0], /v-if="me\?\.nc_admin === true"/)
+}
+
 console.log('orphans.check: alle Prüfungen bestanden')

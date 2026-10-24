@@ -254,6 +254,7 @@
 		<NcNoteCard v-else-if="verwalterForbidden" type="error" class="gameworld__verwalter-forbidden">
 			{{ NC_ADMIN_ONLY_TEXT }}
 		</NcNoteCard>
+		<OrphanSection v-if="me?.nc_admin === true" @forbidden="onVerwalterForbidden" />
 	</div>
 </template>
 
@@ -273,6 +274,7 @@ import ConnectionCard from '../components/ConnectionCard.vue'
 import HolidayList from '../components/HolidayList.vue'
 import InviteDialog from '../components/InviteDialog.vue'
 import JoinHostSettings from '../components/JoinHostSettings.vue'
+import OrphanSection from '../components/OrphanSection.vue'
 import PlayerManager from '../components/PlayerManager.vue'
 import PlaytimeSection from '../components/PlaytimeSection.vue'
 import ReviewSetting from '../components/ReviewSetting.vue'
