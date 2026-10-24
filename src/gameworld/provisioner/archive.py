@@ -3,9 +3,17 @@
 Inhalt: ``minetest.conf`` (root-eigen, 0444, der Server kann sie lesen, aber
 nicht umschreiben), die Welt-Metadaten, die Welt-Mods gameworld_status,
 gameworld_access und gameworld_time, Zugangs- und Regeldatei (root-eigen, 0444)
-und das Spiel des Presets. Alles außer conf, Zugangs- und Regeldatei gehört dem
-Luanti-Nutzer 30000. Das Zählbuch des Zeit-Mods steht nie im Tar: Es gehört dem
-Mod und überlebt so jeden Neustart.
+und das Spiel des Presets. Das Zählbuch des Zeit-Mods steht nie im Tar: Es
+gehört dem Mod und überlebt so jeden Neustart.
+
+Rechte (AR-23, 06-07, gegen echtes Luanti belegt in
+tests/e2e/test_world_dir_hardening_e2e.py): Der Weltordner gehört root mit
+Gruppe 30000 und Modus 1775. Luanti legt darin eigene Dateien an und benennt
+sie um (map.sqlite, env_meta.txt, Zählbuch per Temp-Datei), kann wegen des
+Sticky-Bits aber root-eigene Dateien (Zugangs- und Regeldatei) weder löschen
+noch umbenennen. ``worldmods`` mit allen Mods gehört root (Ordner 0755,
+Dateien 0644), Luanti liest die Mods nur. Alles andere (world.mt, Spiel,
+übrige Ordner) gehört dem Luanti-Nutzer 30000.
 
 Dazu kommen drei kleine Tars relativ zum Weltordner: ``build_world_files``
 (alle Mods, Zugangs- und Regeldatei, vor jedem Start), ``build_access_tar``
@@ -50,6 +58,11 @@ WORLD_MODS = (
     (time_mod.MOD_DIR, time_mod.MOD_INIT_LUA, time_mod.MOD_CONF),
 )
 ACCESS_FILE_MODE = 0o444
+# AR-23: Weltordner root:30000 mit Sticky-Bit, root-eigene Ordner (worldmods) 0755.
+WORLD_DIR_MODE = 0o1775
+ROOT_DIR_MODE = 0o755
+LUANTI_DIR_MODE = 0o755
+FILE_MODE = 0o644
 
 
 def _verified_zip(preset: Preset) -> pathlib.Path:
@@ -113,13 +126,27 @@ def _game_entries(zipped: zipfile.ZipFile) -> list[tuple[str, zipfile.ZipInfo]]:
     return sorted(game, key=lambda entry: entry[0])
 
 
-def _add_dir(tar: tarfile.TarFile, name: str) -> None:
+def _add_dir(
+    tar: tarfile.TarFile, name: str, *, uid: int = LUANTI_UID, gid: int = LUANTI_UID, mode: int = LUANTI_DIR_MODE
+) -> None:
     info = tarfile.TarInfo(name)
     info.type = tarfile.DIRTYPE
-    info.uid = info.gid = LUANTI_UID
-    info.mode = 0o755
+    info.uid = uid
+    info.gid = gid
+    info.mode = mode
     info.mtime = FIXED_MTIME
     tar.addfile(info)
+
+
+def _add_root_dir(tar: tarfile.TarFile, name: str) -> None:
+    """Ordner, den Luanti nur liest (worldmods und die Mods darin)."""
+    _add_dir(tar, name, uid=ROOT_UID, gid=ROOT_UID, mode=ROOT_DIR_MODE)
+
+
+def _add_mod_files(tar: tarfile.TarFile, mod_dir: str, init_lua: str, mod_conf: str) -> None:
+    """init.lua und mod.conf eines Welt-Mods, root-eigen und nur für root schreibbar."""
+    _add_file(tar, f"{mod_dir}/init.lua", init_lua.encode("utf-8"), uid=ROOT_UID, mode=FILE_MODE)
+    _add_file(tar, f"{mod_dir}/mod.conf", mod_conf.encode("utf-8"), uid=ROOT_UID, mode=FILE_MODE)
 
 
 def _file_info(name: str, size: int, *, uid: int, mode: int, mtime: int = FIXED_MTIME) -> tarfile.TarInfo:
@@ -137,7 +164,7 @@ def _add_file(
     data: bytes,
     *,
     uid: int = LUANTI_UID,
-    mode: int = 0o644,
+    mode: int = FILE_MODE,
     mtime: int = FIXED_MTIME,
 ) -> None:
     tar.addfile(_file_info(name, len(data), uid=uid, mode=mode, mtime=mtime), io.BytesIO(data))
@@ -162,17 +189,20 @@ def build_world_files(access_file: bytes, time_file: bytes | None = None) -> byt
     Läuft vor jedem Start (``_launch``): aktualisiert den Mod-Code nach
     App-Updates und rüstet Welten ohne Zugangs- oder Zeit-Mod nach. Alle Namen
     sind relativ zum Weltordner, ohne ``..`` und ohne absoluten Pfad.
+    ``worldmods`` und die Mods darin sind root-eigen (AR-23); den Weltordner
+    selbst setzt nur ``build_world_payload``, denn einen Eintrag für ``.``
+    übergeht Docker beim Einspielen. Bestehende Welten behalten deshalb ihren
+    Weltordner, bekommen aber beim nächsten Start ein root-eigenes worldmods.
     ``time_file`` None lässt die Regeldatei weg (nur für ältere Testaufrufe;
     ``_launch`` übergibt sie immer).
     """
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
-        _add_dir(tar, "worldmods")
+        _add_root_dir(tar, "worldmods")
         for mod_dir, init_lua, mod_conf in WORLD_MODS:
             relative = _relative_to_world(mod_dir)
-            _add_dir(tar, relative)
-            _add_file(tar, f"{relative}/init.lua", init_lua.encode("utf-8"))
-            _add_file(tar, f"{relative}/mod.conf", mod_conf.encode("utf-8"))
+            _add_root_dir(tar, relative)
+            _add_mod_files(tar, relative, init_lua, mod_conf)
         _add_access_file(tar, access_mod.ACCESS_FILE_NAME, access_file)
         if time_file is not None:
             _add_access_file(tar, time_mod.RULES_FILE_NAME, time_file)
@@ -213,15 +243,9 @@ def build_world_payload(
     try:
         with zipfile.ZipFile(zip_path) as zipped:
             game = _game_entries(zipped)
-            directories = {
-                ".minetest",
-                ".minetest/worlds",
-                WORLD_DIR,
-                f"{WORLD_DIR}/worldmods",
-                *(mod_dir for mod_dir, _, _ in WORLD_MODS),
-                ".minetest/games",
-                game_root,
-            }
+            # Luanti-eigene Ordner; Weltordner und worldmods kommen gesondert (AR-23).
+            root_dirs = [f"{WORLD_DIR}/worldmods", *(mod_dir for mod_dir, _, _ in WORLD_MODS)]
+            directories = {".minetest", ".minetest/worlds", ".minetest/games", game_root}
             for name, _ in game:
                 parts = name.split("/")[:-1]
                 for depth in range(1, len(parts) + 1):
@@ -231,16 +255,20 @@ def build_world_payload(
                 _add_file(tar, "minetest.conf", minetest_conf.encode("utf-8"), uid=ROOT_UID, mode=0o444)
                 for directory in sorted(directories, key=lambda path: (path.count("/"), path)):
                     _add_dir(tar, directory)
+                _add_dir(tar, WORLD_DIR, uid=ROOT_UID, gid=LUANTI_UID, mode=WORLD_DIR_MODE)
+                for directory in root_dirs:
+                    _add_root_dir(tar, directory)
+                # world.mt bleibt Luanti: Im e2e-Lauf schreibt Luanti sie nicht neu (mtime bleibt 0),
+                # müsste es aber (etwa beim Speichern geänderter Welteinstellungen), ginge das nur so.
                 _add_file(tar, f"{WORLD_DIR}/world.mt", world_mt.encode("utf-8"))
                 for mod_dir, init_lua, mod_conf in WORLD_MODS:
-                    _add_file(tar, f"{mod_dir}/init.lua", init_lua.encode("utf-8"))
-                    _add_file(tar, f"{mod_dir}/mod.conf", mod_conf.encode("utf-8"))
+                    _add_mod_files(tar, mod_dir, init_lua, mod_conf)
                 _add_access_file(tar, f"{WORLD_DIR}/{access_mod.ACCESS_FILE_NAME}", access_file)
                 if time_file is not None:
                     _add_access_file(tar, f"{WORLD_DIR}/{time_mod.RULES_FILE_NAME}", time_file)
                 for name, info in game:
                     with zipped.open(info) as source:
-                        member = _file_info(f"{game_root}/{name}", info.file_size, uid=LUANTI_UID, mode=0o644)
+                        member = _file_info(f"{game_root}/{name}", info.file_size, uid=LUANTI_UID, mode=FILE_MODE)
                         tar.addfile(member, source)
         spool.seek(0)
     except BaseException:

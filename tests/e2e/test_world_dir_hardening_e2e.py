@@ -1,14 +1,16 @@
-"""AR-23 (D-21): Luanti 5.17.0 mit gehärtetem Weltordner, gegen den echten Docker-Proxy.
+"""AR-23 (D-21, 06-07): Luanti 5.17.0 im gehärteten Weltordner, gegen den echten Docker-Proxy.
 
-Zielrechte: Weltordner root:30000 Modus 1775 (Sticky-Bit, Gruppen-Schreibrecht
-für Luanti), worldmods mit allen Unterordnern root:root 0755, Mod-Dateien root
-0644, Zugangs- und Regeldatei root 0444. Belegt wird zweierlei:
+Erst Spike (Rechte von Hand gesetzt, Commit 7032359), jetzt dauerhafter Beleg
+für die echte Erzeugung: Eine über die API angelegte Welt hat den Weltordner
+root:30000 Modus 1775 (Sticky-Bit, Gruppen-Schreibrecht für Luanti), worldmods
+mit allen Unterordnern root:root 0755, Mod-Dateien root 0644, Zugangs- und
+Regeldatei root 0444; world.mt bleibt Luanti. Belegt wird zweierlei:
 
-1. Luanti läuft damit sauber: startet, lässt einen eingeladenen Spieler 10 s
-   spielen und schreibt map.sqlite, players.sqlite/auth.sqlite, env_meta.txt
-   und das Zählbuch des Zeit-Mods (alle per eigener Temp-Datei und
-   Umbenennen); im Containerlog steht kein "Permission denied" und kein
-   "ERROR[Main]".
+1. Luanti läuft damit sauber: startet über den normalen Startpfad, lässt einen
+   eingeladenen Spieler 10 s spielen und schreibt map.sqlite,
+   players.sqlite/auth.sqlite, env_meta.txt und das Zählbuch des Zeit-Mods
+   (per eigener Temp-Datei und Umbenennen); im Containerlog steht kein
+   "Permission denied" und kein "ERROR[Main]".
 2. Ein Prozess mit Luantis Rechten (uid 30000, keine Capabilities) kann
    Zugangsdatei, Regeldatei und worldmods weder löschen noch umbenennen noch
    überschreiben; eigene Dateien im Weltordner anlegen und umbenennen kann er.
@@ -22,9 +24,6 @@ ausgegeben.
 
 from __future__ import annotations
 
-import io
-import tarfile
-import time
 from collections.abc import Iterator
 from functools import partial
 
@@ -44,12 +43,10 @@ pytestmark = [pytest.mark.docker, pytest.mark.usefixtures("docker_cleanup")]
 # Eigene Literale, bewusst nicht aus gameworld.provisioner importiert.
 IMAGE = "ghcr.io/luanti-org/luanti@sha256:db682caec367977ac2661c81e3cdbd1f1dbbae596f6fa7d791c0031107d59947"
 DATA = "/var/lib/minetest"
-WORLDS = f"{DATA}/.minetest/worlds"
-WORLD = f"{WORLDS}/world"
+WORLD = f"{DATA}/.minetest/worlds/world"
 LUANTI = 30000
 HOLD = 10.0
 JOIN_TIMEOUT = 30.0
-STOP_SECONDS = 30
 HELPER_SECONDS = 60
 # Dateien, die Luanti selbst schreibt (Spielstand) plus das Zählbuch des Zeit-Mods.
 WRITTEN_BY_LUANTI = ("map.sqlite", "env_meta.txt", "gameworld_time_used.txt")
@@ -66,7 +63,15 @@ ATTACKS = {
 }
 # Positivkontrolle: so legt Luanti seine Temp-Dateien an.
 OWN_FILE = "printf x > ar23_probe.tmp && mv ar23_probe.tmp ar23_probe.txt && rm ar23_probe.txt"
-STAT_PATHS = (".", "worldmods", "worldmods/*", "worldmods/*/*", "gameworld_access.txt", "gameworld_time.txt")
+STAT_PATHS = (
+    ".",
+    "worldmods",
+    "worldmods/*",
+    "worldmods/*/*",
+    "gameworld_access.txt",
+    "gameworld_time.txt",
+    "world.mt",
+)
 
 
 @pytest.fixture
@@ -82,62 +87,6 @@ def _world_container(api: docker.DockerClient, world_id: str) -> Container:
     [container] = api.containers.list(all=True, filters={"label": [f"gameworld.world_id={world_id}"]})
     container.reload()
     return container
-
-
-def _fetch(container: Container, path: str) -> list[tuple[tarfile.TarInfo, bytes | None]]:
-    stream, _stat = container.get_archive(path)
-    raw = b"".join(stream)
-    members: list[tuple[tarfile.TarInfo, bytes | None]] = []
-    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as tar:
-        for member in tar.getmembers():
-            handle = tar.extractfile(member) if member.isfile() else None
-            members.append((member, None if handle is None else handle.read()))
-    return members
-
-
-def _owned_by_root(members: list[tuple[tarfile.TarInfo, bytes | None]], *, dir_mode: int, file_mode: int) -> bytes:
-    """Dieselben Einträge als Tar, aber root-eigen mit festen Modi (aktuelle mtime)."""
-    buffer = io.BytesIO()
-    now = int(time.time())
-    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
-        for member, data in members:
-            info = tarfile.TarInfo(member.name)
-            info.uid = info.gid = 0
-            info.uname = info.gname = ""
-            info.mtime = now
-            if member.isdir():
-                info.type = tarfile.DIRTYPE
-                info.mode = dir_mode
-                tar.addfile(info)
-            else:
-                assert member.isfile(), member.name
-                assert data is not None, member.name
-                info.mode = file_mode
-                info.size = len(data)
-                tar.addfile(info, io.BytesIO(data))
-    return buffer.getvalue()
-
-
-def _world_dir_tar() -> bytes:
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
-        info = tarfile.TarInfo("world")
-        info.type = tarfile.DIRTYPE
-        info.uid, info.gid = 0, LUANTI
-        info.mode = 0o1775
-        info.mtime = int(time.time())
-        tar.addfile(info)
-    return buffer.getvalue()
-
-
-def harden_by_hand(container: Container) -> None:
-    """Setzt die Zielrechte im Volume der gestoppten Welt per put_archive (eigener Client)."""
-    worldmods = _fetch(container, f"{WORLD}/worldmods")
-    assert container.put_archive(WORLD, _owned_by_root(worldmods, dir_mode=0o755, file_mode=0o644))
-    for name in ("gameworld_access.txt", "gameworld_time.txt"):
-        rules = _fetch(container, f"{WORLD}/{name}")
-        assert container.put_archive(WORLD, _owned_by_root(rules, dir_mode=0o755, file_mode=0o444))
-    assert container.put_archive(WORLDS, _world_dir_tar())
 
 
 def run_as_luanti(api: docker.DockerClient, volume: str, script: str) -> str:
@@ -166,7 +115,7 @@ def run_as_luanti(api: docker.DockerClient, volume: str, script: str) -> str:
 
 
 def _mtimes(api: docker.DockerClient, volume: str) -> dict[str, int]:
-    names = " ".join((*WRITTEN_BY_LUANTI, *PLAYER_DBS))
+    names = " ".join((*WRITTEN_BY_LUANTI, *PLAYER_DBS, "world.mt"))
     out = run_as_luanti(api, volume, f"for f in {names}; do stat -c 'M %n %Y' \"$f\" 2>/dev/null || true; done")
     stamps: dict[str, int] = {}
     for line in out.splitlines():
@@ -213,6 +162,7 @@ def assert_hardened(rights: dict[str, str]) -> None:
     assert all(value == "0:0 644" for value in mod_files.values()), mod_files
     assert rights["gameworld_access.txt"] == "0:0 444", rights
     assert rights["gameworld_time.txt"] == "0:0 444", rights
+    assert rights["world.mt"] == f"{LUANTI}:{LUANTI} 644", rights
 
 
 def assert_luanti_locked_out(codes: dict[str, int]) -> None:
@@ -231,56 +181,47 @@ async def _invite(client: httpx.AsyncClient, world_id: str) -> tuple[str, str]:
     return str(player["player_name"]), str(player["password"])
 
 
-def _wait_listening(container: Container, since: int, timeout: float = MTG_READY) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        container.reload()
-        if "listening on" in container.logs(since=since).decode("utf-8", errors="replace"):
-            return
-        if container.status == "exited":
-            break
-        time.sleep(0.5)
-    tail = container.logs(tail=40).decode("utf-8", errors="replace")
-    pytest.fail(f"Luanti startet mit gehärtetem Weltordner nicht (Status {container.status}):\n{tail}")
-
-
-async def test_luanti_runs_and_is_locked_out_with_hardened_world_dir(
-    client: httpx.AsyncClient, api: docker.DockerClient
-) -> None:
-    world_id, port = await create_running_world(client, "mtg_kreativ", MTG_READY)
-    name, password = await _invite(client, world_id)
+async def _stop(client: httpx.AsyncClient, world_id: str) -> None:
     stopped = await client.post(f"/api/worlds/{world_id}/stop", headers=appapi_headers())
     assert stopped.status_code == 200, stopped.text
     await wait_for_status(client, world_id, "stopped", MTG_READY)
 
-    container = _world_container(api, world_id)
-    volume = str(container.name)
-    harden_by_hand(container)
+
+async def test_new_world_is_hardened_and_luanti_still_writes(
+    client: httpx.AsyncClient, api: docker.DockerClient
+) -> None:
+    world_id, _ = await create_running_world(client, "mtg_kreativ", MTG_READY)
+    name, password = await _invite(client, world_id)
+    await _stop(client, world_id)
+
+    volume = str(_world_container(api, world_id).name)
+    # Echte Erzeugung, nichts von Hand gesetzt.
     assert_hardened(stat_rights(api, volume))
     before = _mtimes(api, volume)
 
-    # Start am Provisioner vorbei: _launch würde worldmods heute wieder Luanti übergeben.
-    since = int(time.time()) - 1
-    container.start()
-    _wait_listening(container, since)
+    # Normaler Startpfad (_launch schreibt Mods, Zugangs- und Regeldatei neu).
+    started = await client.post(f"/api/worlds/{world_id}/start", headers=appapi_headers())
+    assert started.status_code == 200, started.text
+    world = await wait_for_status(client, world_id, "running", MTG_READY)
+    port = int(str(world["port"]))
     held = await anyio.to_thread.run_sync(partial(session, HOST, port, name, password, HOLD, JOIN_TIMEOUT))
     assert held["result"] == "held", {key: value for key, value in held.items() if key != "events"}
-    container.stop(timeout=STOP_SECONDS)
+    await _stop(client, world_id)
 
-    log = container.logs().decode("utf-8", errors="replace")
+    log = _world_container(api, world_id).logs().decode("utf-8", errors="replace")
     bad = [line for line in log.splitlines() if "Permission denied" in line or "ERROR[Main]" in line]
     assert not bad, bad
 
     after = _mtimes(api, volume)
+    print(f"AR-23 mtime vorher {before}, nachher {after}")
     for written in WRITTEN_BY_LUANTI:
         assert written in after, f"{written} fehlt nach dem Spiel: {after}"
         assert after[written] > before.get(written, 0), (written, before, after)
     assert any(db in after and after[db] > before.get(db, 0) for db in PLAYER_DBS), (before, after)
 
-    # Luanti hat die Rechte nicht verändert (kann es auch nicht), dann die Schreibversuche.
+    # Nach dem Start (worldmods frisch eingespielt) weiter gehärtet, dann die Schreibversuche.
     rights = stat_rights(api, volume)
     print(f"AR-23 Rechte nach dem Spiel: {rights}")
-    print(f"AR-23 mtime vorher {before}, nachher {after}")
     assert_hardened(rights)
     codes = attack_results(api, volume)
     print(f"AR-23 Exit-Codes als uid 30000: {codes}")
