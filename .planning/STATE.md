@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-10-PLAN.md
-last_updated: "2026-10-24T10:58:45.807Z"
-last_activity: 2026-10-24 -- 06-10 ExApp-Image, Workflow, Store-Archiv, Version 1.0.0 abgeschlossen
+stopped_at: Completed 06-09-PLAN.md
+last_updated: "2026-10-24T11:20:54.499Z"
+last_activity: 2026-10-24 -- 06-09 Setup-Check-Ursachen und Reste früherer Installationen (B3) abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 65
-  percent: 90
+  completed_plans: 66
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 9 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10)
+Plan: 10 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-10 ExApp-Image (USER 10001, frpc 0.71.1 SHA-Pin, HaRP-start, Healthcheck), image.yml Multi-Arch + Lockstep, Store-Archiv-Skript, Version 1.0.0 / NC bis 35 (47aa5af, 7f22d67, 857c923, 5f9b557)
+Last activity: 2026-10-24 -- 06-09 Setup-Check mit Ursachen proxy_dns/proxy_timeout/proxy_refused, Warnungen docker_url_socket/docker_url_exposed, feste Doku-URL install.md#setup-check; OrphanSection.vue (B3) nur für NC-Admins (c0ff87b, d489c82, a94bce0, 2127fb7, 26cccff)
 
-Progress: [█████████░] 90%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -294,6 +294,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T10:58:42.082Z
-Stopped at: Completed 06-10-PLAN.md
+Last session: 2026-10-24T11:20:54.482Z
+Stopped at: Completed 06-09-PLAN.md
 Resume file: None
