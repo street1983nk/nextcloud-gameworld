@@ -121,7 +121,9 @@ Gameworld ist ein kindgerechtes Gameserver-Portal als Nextcloud-ExApp. Familien 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+- Quellcode-Kommentare und Docstrings IMMER auf Englisch (Owner-Entscheid 24.10.2026); Bestand wird im Zuge der i18n-Arbeit uebersetzt.
+- Nutzersichtbare Texte: mehrsprachig DE/EN/FR (Owner-Entscheid 24.10.2026, D-25); deutsche Texte mit echten Umlauten, keine Em-Dashes, keine Emojis. Vor jeder Abnahme Umlaut-Audit ueber alle Texte.
+- UI-Sprache folgt der Nextcloud-Kontosprache; Spieltexte (Mods) pro Welt, Standard = Sprache des anlegenden Verwalters (D-27).
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
