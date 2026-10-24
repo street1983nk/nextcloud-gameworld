@@ -2,22 +2,22 @@
 <template>
 	<NcDialog
 		:open="true"
-		:name="`Zeitfenster für ${world.name}`"
+		:name="t('kids.worldWindow.title', { name: world.name })"
 		size="large"
 		@update:open="onOpen">
 		<div class="world-window">
 			<p class="world-window__hint">
-				Diese Welt ist nur zu diesen Zeiten offen. Eltern und Lehrkräfte kommen immer hinein.
+				{{ t('kids.worldWindow.hint') }}
 			</p>
 			<DayTiles v-model:days="days" :with-limit="false" :disabled="saving" />
 			<p class="world-window__hint">
-				Außerhalb der Zeiten läuft die Welt weiter, nur kommt niemand Neues hinein. Wer noch spielt, wird am Ende des Zeitfensters mit Vorwarnung getrennt.
+				{{ t('kids.worldWindow.outside') }}
 			</p>
 			<NcNoteCard v-if="invalid" type="warning">
-				Bei mindestens einem Tag liegt das Ende nicht nach dem Beginn.
+				{{ t('kids.common.endNotAfterStart') }}
 			</NcNoteCard>
 			<NcNoteCard v-if="noOpenDay" type="warning">
-				Mindestens ein Tag muss offen sein. Soll die Welt immer offen sein, wähle "Immer offen".
+				{{ t('kids.worldWindow.noOpenDay') }}
 			</NcNoteCard>
 			<NcNoteCard v-if="error" type="error">
 				{{ error }}
@@ -29,20 +29,20 @@
 
 		<template #actions>
 			<NcButton v-if="pending" variant="primary" @click="close">
-				Schließen
+				{{ t('kids.common.close') }}
 			</NcButton>
 			<template v-else>
 				<NcButton variant="tertiary" :disabled="saving" @click="close">
-					Abbrechen
+					{{ t('kids.common.cancel') }}
 				</NcButton>
 				<NcButton variant="secondary" :disabled="saving" @click="submit(true)">
-					Immer offen
+					{{ t('kids.worldWindow.alwaysOpen') }}
 				</NcButton>
 				<NcButton variant="primary" :disabled="saving || invalid || noOpenDay" @click="submit(false)">
 					<template v-if="saving" #icon>
 						<NcLoadingIcon :size="20" />
 					</template>
-					Speichern
+					{{ t('kids.common.save') }}
 				</NcButton>
 			</template>
 		</template>
@@ -57,6 +57,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import DayTiles from './DayTiles.vue'
 import { clearWorldWindow, errorText, setWorldWindow } from '../api.js'
+import { t } from '../i18n/index.js'
 import { fromWindowDays, notAppliedText, toWindowDays, validateDays } from '../playtime.js'
 
 const props = defineProps({

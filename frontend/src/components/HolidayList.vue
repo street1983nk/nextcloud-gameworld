@@ -1,25 +1,25 @@
 <!-- Abschnitt "Ferien": Zeiträume für den ganzen Haushalt (O-08); die Regeln für die Ferien stehen je Kind im Spielzeit-Dialog. -->
 <template>
 	<section class="holidays">
-		<h3>Ferien</h3>
+		<h3>{{ t('kids.holidays.title') }}</h3>
 		<p class="holidays__hint">
-			Gilt für alle Kinder. Was in den Ferien erlaubt ist, stellst du im Spielzeit-Dialog je Kind ein.
+			{{ t('kids.holidays.hint') }}
 		</p>
 
 		<p v-if="holidays.length === 0" class="holidays__empty">
-			Noch keine Ferien eingetragen.
+			{{ t('kids.holidays.empty') }}
 		</p>
 		<ul v-else class="holidays__list">
 			<li v-for="entry in holidays" :key="entry.id" :data-holiday-id="entry.id">
-				<span class="holidays__label">{{ entry.label || 'Ferien' }}</span>
-				<span class="holidays__range">{{ formatDate(entry.start_date) }} bis {{ formatDate(entry.end_date) }}</span>
-				<NcChip v-if="entry.active" text="läuft gerade" variant="success" no-close />
+				<span class="holidays__label">{{ entry.label || t('kids.holidays.defaultLabel') }}</span>
+				<span class="holidays__range">{{ t('kids.holidays.range', { start: formatDate(entry.start_date), end: formatDate(entry.end_date) }) }}</span>
+				<NcChip v-if="entry.active" :text="t('kids.holidays.running')" variant="success" no-close />
 				<NcButton
 					variant="tertiary"
 					:disabled="busy"
-					:aria-label="`${entry.label || 'Ferien'} entfernen`"
+					:aria-label="t('kids.holidays.removeLabel', { label: entry.label || t('kids.holidays.defaultLabel') })"
 					@click="pendingRemove = entry">
-					Entfernen
+					{{ t('kids.holidays.remove') }}
 				</NcButton>
 			</li>
 		</ul>
@@ -27,24 +27,24 @@
 		<form class="holidays__form" @submit.prevent="add">
 			<NcTextField
 				v-model="label"
-				label="Bezeichnung (optional)"
+				:label="t('kids.holidays.labelField')"
 				:maxlength="60"
 				:disabled="busy" />
 			<NcDateTimePickerNative
 				v-model="startDate"
 				type="date"
-				label="von"
+				:label="t('kids.holidays.from')"
 				:disabled="busy" />
 			<NcDateTimePickerNative
 				v-model="endDate"
 				type="date"
-				label="bis"
+				:label="t('kids.holidays.to')"
 				:disabled="busy" />
 			<NcButton type="submit" variant="primary" :disabled="!canAdd">
 				<template v-if="busy" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Hinzufügen
+				{{ t('kids.holidays.add') }}
 			</NcButton>
 		</form>
 		<NcNoteCard v-if="rangeProblem" type="warning">
@@ -60,7 +60,7 @@
 		<NcDialog
 			v-if="pendingRemove"
 			:open="true"
-			name="Ferien entfernen"
+			:name="t('kids.holidays.removeTitle')"
 			:message="removeMessage"
 			:buttons="removeButtons"
 			@update:open="onDialogOpen" />
@@ -77,6 +77,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { addHoliday, errorText, removeHoliday } from '../api.js'
+import { dateLocale, t } from '../i18n/index.js'
 import { notAppliedText } from '../playtime.js'
 
 defineProps({
@@ -102,25 +103,36 @@ function isoDate(date) {
 	return `${yyyy}-${mm}-${dd}`
 }
 
-// "2026-12-24" -> "24.12.2026"
+// "2026-12-24" in the account language: de "24.12.2026", en and fr "24/12/2026". UTC on both
+// sides, so the browser time zone never shifts the day; anything unexpected is shown as is.
 function formatDate(value) {
-	const [yyyy, mm, dd] = String(value).split('-')
-	return `${dd}.${mm}.${yyyy}`
+	const [yyyy, mm, dd] = String(value).split('-').map(Number)
+	if (!yyyy || !mm || !dd) {
+		return String(value)
+	}
+	return new Date(Date.UTC(yyyy, mm - 1, dd)).toLocaleDateString(dateLocale(), {
+		timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric',
+	})
 }
 
 const rangeProblem = computed(() => (startDate.value && endDate.value && isoDate(endDate.value) < isoDate(startDate.value)
-	? 'Die Ferien enden nicht vor ihrem Beginn.'
+	? t('kids.holidays.rangeProblem')
 	: ''))
 const canAdd = computed(() => !busy.value && Boolean(startDate.value) && Boolean(endDate.value) && !rangeProblem.value)
 
 const removeMessage = computed(() => (pendingRemove.value
-	? `»${pendingRemove.value.label || 'Ferien'}« (${formatDate(pendingRemove.value.start_date)} bis ${formatDate(pendingRemove.value.end_date)}) entfernen? Danach gilt in diesem Zeitraum die normale Woche.`
+	? t('kids.holidays.removeQuestion', {
+		label: pendingRemove.value.label || t('kids.holidays.defaultLabel'),
+		start: formatDate(pendingRemove.value.start_date),
+		end: formatDate(pendingRemove.value.end_date),
+	})
 	: ''))
 
-const removeButtons = [
-	{ label: 'Abbrechen', variant: 'tertiary' },
+// Computed so that the button labels are resolved when rendering.
+const removeButtons = computed(() => [
+	{ label: t('kids.common.cancel'), variant: 'tertiary' },
 	{
-		label: 'Entfernen',
+		label: t('kids.holidays.remove'),
 		variant: 'error',
 		callback: () => {
 			const entry = pendingRemove.value
@@ -130,7 +142,7 @@ const removeButtons = [
 			}
 		},
 	},
-]
+])
 
 function onDialogOpen(open) {
 	if (!open) {

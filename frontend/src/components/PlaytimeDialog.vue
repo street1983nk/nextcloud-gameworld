@@ -2,7 +2,7 @@
 <template>
 	<NcDialog
 		:open="true"
-		:name="`Spielzeit für ${child.display_name}`"
+		:name="t('kids.playtimeDialog.title', { name: child.display_name })"
 		size="large"
 		@update:open="onOpen">
 		<div class="playtime-dialog">
@@ -10,38 +10,38 @@
 				{{ PLAYTIME_RESTING_TEXT(child.display_name) }}
 			</NcNoteCard>
 			<p class="playtime-dialog__hint">
-				Die Regeln gelten sofort in allen Welten zusammen. Wähle eine Voreinstellung und passe danach jeden Tag an.
+				{{ t('kids.playtimeDialog.hint') }}
 			</p>
-			<div class="playtime-dialog__presets" role="group" aria-label="Voreinstellungen">
+			<div class="playtime-dialog__presets" role="group" :aria-label="t('kids.playtimeDialog.presetsLabel')">
 				<NcButton
 					v-for="choice in PRESET_CHOICES"
 					:key="choice.key"
 					:variant="activePreset === choice.key ? 'primary' : 'secondary'"
 					:disabled="saving"
 					@click="applyPreset(choice.key)">
-					{{ choice.label }}
+					{{ t(`kids.playtimeDialog.preset.${choice.key}`) }}
 				</NcButton>
 			</div>
 
 			<p v-if="!limited" class="playtime-dialog__none">
-				Ohne Regel spielt {{ child.display_name }} ohne Begrenzung. Wähle oben eine Voreinstellung, um Spielzeiten festzulegen.
+				{{ t('kids.playtimeDialog.none', { name: child.display_name }) }}
 			</p>
 			<template v-else>
-				<h3>Normale Woche</h3>
+				<h3>{{ t('kids.playtimeDialog.normalWeek') }}</h3>
 				<DayTiles v-model:days="normal" :disabled="saving" @update:days="activePreset = ''" />
 
-				<h3>In den Ferien</h3>
+				<h3>{{ t('kids.playtimeDialog.holidays') }}</h3>
 				<NcCheckboxRadioSwitch v-model="ownHoliday" type="switch" :disabled="saving">
-					Eigene Regeln in den Ferien
+					{{ t('kids.playtimeDialog.ownHoliday') }}
 				</NcCheckboxRadioSwitch>
 				<p v-if="!ownHoliday" class="playtime-dialog__hint">
-					In den Ferien gilt dieselbe Woche wie oben.
+					{{ t('kids.playtimeDialog.sameWeek') }}
 				</p>
 				<DayTiles v-else v-model:days="holiday" :disabled="saving" />
 			</template>
 
 			<NcNoteCard v-if="invalid" type="warning">
-				Bei mindestens einem Tag liegt das Ende nicht nach dem Beginn.
+				{{ t('kids.common.endNotAfterStart') }}
 			</NcNoteCard>
 			<NcNoteCard v-if="error" type="error">
 				{{ error }}
@@ -53,17 +53,17 @@
 
 		<template #actions>
 			<NcButton v-if="pending" variant="primary" @click="close">
-				Schließen
+				{{ t('kids.common.close') }}
 			</NcButton>
 			<template v-else>
 				<NcButton variant="tertiary" :disabled="saving" @click="close">
-					Abbrechen
+					{{ t('kids.common.cancel') }}
 				</NcButton>
 				<NcButton variant="primary" :disabled="saving || invalid" @click="save">
 					<template v-if="saving" #icon>
 						<NcLoadingIcon :size="20" />
 					</template>
-					Speichern
+					{{ t('kids.common.save') }}
 				</NcButton>
 			</template>
 		</template>
@@ -80,6 +80,7 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import DayTiles from './DayTiles.vue'
 import { clearChildPlan, errorText, saveChildPlan } from '../api.js'
 import { PLAYTIME_RESTING_TEXT } from '../adult.js'
+import { t } from '../i18n/index.js'
 import {
 	HOLIDAY_PRESET,
 	PRESETS,
@@ -95,12 +96,13 @@ const props = defineProps({
 })
 const emit = defineEmits(['saved', 'close'])
 
-// Reihenfolge und Beschriftung der Voreinstellungsknöpfe (O-07); die Tage stehen in playtime.js.
+// Order of the preset buttons (O-07); the days are in playtime.js, the labels in the kids
+// dictionary under kids.playtimeDialog.preset.<key> (keys are API values, not translated).
 const PRESET_CHOICES = [
-	{ key: 'keine', label: 'Keine Begrenzung' },
-	{ key: 'wochenende', label: 'Nur am Wochenende' },
-	{ key: 'taeglich', label: 'Jeden Tag 1 Stunde' },
-	{ key: 'schultage', label: 'Schultage kurz, Wochenende länger' },
+	{ key: 'keine' },
+	{ key: 'wochenende' },
+	{ key: 'taeglich' },
+	{ key: 'schultage' },
 ]
 
 // Ohne Regeln ist "Keine Begrenzung" gewählt (Opt-in, O-10).

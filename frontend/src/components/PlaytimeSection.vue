@@ -1,16 +1,16 @@
 <!-- Abschnitt "Spielzeit": eine Zeile je eingeladenem Kind (ohne Verwalter) mit Zusammenfassung, heutigem Verbrauch und Dialog. -->
 <template>
 	<section class="playtime">
-		<h3>Spielzeit</h3>
+		<h3>{{ t('kids.playtimeSection.title') }}</h3>
 		<p class="playtime__hint">
-			Ohne Regel spielt ein Kind ohne Begrenzung. Eine Regel gilt für alle Welten zusammen.
+			{{ t('kids.playtimeSection.hint') }}
 		</p>
 		<NcNoteCard v-if="error" type="warning">
 			{{ error }}
 		</NcNoteCard>
 		<NcLoadingIcon v-if="loading" :size="32" />
 		<p v-else-if="children.length === 0" class="playtime__empty">
-			Noch keine Kinder eingeladen.
+			{{ t('kids.playtimeSection.empty') }}
 		</p>
 		<table v-else class="playtime__list">
 			<tbody>
@@ -27,7 +27,7 @@
 						<!-- ROLLE-04: Erwachsene bleiben in der Liste, ihre Regel ruht nur. -->
 						<NcChip
 							v-if="child.adult"
-							text="Erwachsen: Regel ruht"
+							:text="t('kids.playtimeSection.adultResting')"
 							variant="secondary"
 							no-close />
 						<NcChip
@@ -41,7 +41,7 @@
 					</td>
 					<td class="playtime__actions">
 						<NcButton @click="editing = child">
-							Bearbeiten
+							{{ t('kids.playtimeSection.edit') }}
 						</NcButton>
 					</td>
 				</tr>
@@ -64,6 +64,7 @@ import NcChip from '@nextcloud/vue/components/NcChip'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import PlaytimeDialog from './PlaytimeDialog.vue'
+import { t } from '../i18n/index.js'
 import { summarize, todayRule, usageText, weekdayIn } from '../playtime.js'
 
 const props = defineProps({
@@ -83,7 +84,7 @@ const holidayActive = computed(() => (props.playtime?.holidays ?? []).some((entr
 // "heute 45 von 60 min", nur wenn heute ein Limit gilt; bei Erwachsenen zählt nichts.
 function usage(child) {
 	if (child.adult) {
-		return 'zählt nicht'
+		return t('kids.playtimeSection.notCounted')
 	}
 	if (!child.has_rules) {
 		return ''
@@ -93,7 +94,7 @@ function usage(child) {
 		return ''
 	}
 	if (!rule.allowed) {
-		return 'heute kein Spieltag'
+		return t('kids.playtimeSection.noPlayDay')
 	}
 	return rule.limit_minutes === null ? '' : usageText(child.used_today_s, rule.limit_minutes)
 }

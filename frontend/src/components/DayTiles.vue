@@ -15,7 +15,7 @@
 				:model-value="entry.allowed"
 				:disabled="disabled"
 				@update:model-value="patch(entry.weekday, { allowed: $event })">
-				{{ withLimit ? 'Spielen erlaubt' : 'Offen' }}
+				{{ withLimit ? t('kids.dayTiles.playAllowed') : t('kids.dayTiles.open') }}
 			</NcCheckboxRadioSwitch>
 			<template v-if="entry.allowed">
 				<NcSelect
@@ -25,25 +25,25 @@
 					:clearable="false"
 					:searchable="false"
 					:disabled="disabled"
-					input-label="Tageslimit"
+					:input-label="t('kids.dayTiles.dailyLimit')"
 					@update:model-value="patch(entry.weekday, { limit: $event?.value ?? null })" />
 				<NcCheckboxRadioSwitch
 					:model-value="entry.fullDay"
 					:disabled="disabled"
 					@update:model-value="patch(entry.weekday, { fullDay: $event })">
-					ganzer Tag
+					{{ t('kids.dayTiles.fullDay') }}
 				</NcCheckboxRadioSwitch>
 				<div v-if="!entry.fullDay" class="day-tiles__window">
 					<NcDateTimePickerNative
 						type="time"
-						label="von"
+						:label="t('kids.dayTiles.from')"
 						step="900"
 						:model-value="minutesToDate(entry.start)"
 						:disabled="disabled"
 						@update:model-value="onTime(entry.weekday, 'start', $event)" />
 					<NcDateTimePickerNative
 						type="time"
-						label="bis"
+						:label="t('kids.dayTiles.to')"
 						step="900"
 						:model-value="minutesToDate(entry.end)"
 						:disabled="disabled"
@@ -54,14 +54,14 @@
 				</p>
 			</template>
 			<p v-else class="day-tiles__off">
-				{{ withLimit ? 'Kein Spieltag' : 'Geschlossen' }}
+				{{ withLimit ? t('kids.dayTiles.noPlayDay') : t('kids.dayTiles.closed') }}
 			</p>
 			<NcButton
 				v-if="entry.weekday === 1"
 				variant="tertiary"
 				:disabled="disabled"
 				@click="copyToSchoolDays">
-				Für alle Schultage übernehmen
+				{{ t('kids.dayTiles.copySchoolDays') }}
 			</NcButton>
 		</div>
 	</div>
@@ -73,6 +73,7 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
 import NcDateTimePickerNative from '@nextcloud/vue/components/NcDateTimePickerNative'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
+import { t } from '../i18n/index.js'
 import {
 	dateToMinutes,
 	limitOptions as buildLimitOptions,
