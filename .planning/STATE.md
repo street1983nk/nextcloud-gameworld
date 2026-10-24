@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-22-PLAN.md
-last_updated: "2026-10-24T21:35:00.000Z"
-last_activity: 2026-10-24 -- 06-22 Weltsprache (Schema 9) und Mod-Texte de/en/fr abgeschlossen, deutsche Mods byte-gleich (Golden-SHA-256)
+stopped_at: Completed 06-23-PLAN.md
+last_updated: "2026-10-24T22:40:00.000Z"
+last_activity: 2026-10-24 -- 06-23 Benachrichtigungen je Empfängersprache, Talk-Bot je Weltsprache, Bot-Beschreibung englisch
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 84
-  completed_plans: 74
-  percent: 88
+  completed_plans: 75
+  percent: 89
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 18 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20, 06-21, 06-22)
+Plan: 19 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20, 06-21, 06-22, 06-23)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-22 Weltsprache pro Welt (Schema 9, Standard Kontosprache des Verwalters, POST /api/worlds/{id}/language, language_restart_needed), Welt-Mods sprechen de/en/fr bei gleichem Lua-Code, deutsche init.lua byte-gleich (7c04ac5, 97eb215, 904b830)
+Last activity: 2026-10-24 -- 06-23 Glocke in der Kontosprache jedes Empfängers (de wortgleich, Rückfall en), Talk-Bot in der Weltsprache (Rückfall de), Sicherungsfehler mit übersetztem Grund, Bot-Beschreibung englisch (effb19d, 23e7e6f, 214a556, 5e10e78)
 
 Progress: [█████████░] 88%
 
@@ -281,6 +281,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-20 Doku-Links bleiben für alle Sprachen auf docs/install.md (Setup-Check-Link kommt vom Backend, CLEANUP_DOCS_URL ist core); Backend-Erkennungsmarken (422 unbekannte Gruppe, 409 Spielstand in Benutzung) im Frontend als Liste in de/en/fr, weil 06-18 die Servertexte übersetzt
 - [Phase 06]: 06-21 JoinGuide en/fr mit den Original-Menünamen des Luanti-Clients (Join Game, Address, Port, Name, Password, Login; geprüft gegen tab_online.lua), de wortgleich; Werte in <strong> über Platzhalter-Segmente statt v-html; Ferien-Datum über dateLocale() (de unverändert); keine Servertext-Erkennung in Kinder-/Spielzeit-Komponenten, also keine Markenliste nötig
 - [Phase 06]: 06-22 Weltsprache D-27: worlds.language (Bestand de, neu = Kontosprache des Verwalters), Umschalten nur per POST ohne Neustart, Hinweis language_restart_needed (launched_language NULL zählt als de); Mod-Texte als NamedTuple-Bündel MOD_TEXTS je Sprache, Lua-Code identisch, Golden-SHA-256 für de; Mod-Texte nicht im translate()-Katalog
+- [Phase 06]: 06-23 Benachrichtigungen je Empfängersprache (NOTIFY_TEXTS, Rückfall en), Bot-Texte je Weltsprache (BOT_TEXTS, Rückfall de); _deliver baut je uid über RoleService.language; FAILED_SUBJECTS durch failed_subject(kind, language) ersetzt; Bot-Beschreibung englisch, sichtbar nach nächstem App-Aktivieren
 
 ### Pending Todos
 
@@ -310,6 +311,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T21:35:00.000Z
-Stopped at: Completed 06-22-PLAN.md
+Last session: 2026-10-24T22:40:00.000Z
+Stopped at: Completed 06-23-PLAN.md
 Resume file: None
