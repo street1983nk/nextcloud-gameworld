@@ -13,6 +13,7 @@ from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
 from gameworld.playtime.engine import META_TIME_ADMINS
 from gameworld.provisioner.client import DockerProvisioner
+from gameworld.talk.rooms import TalkUnavailableError
 from gameworld.talk.service import get_talk_service
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldStore
@@ -162,6 +163,8 @@ async def test_talk_status_and_read_only(
                 "token": row.token,
                 # Nur gefüllt, wenn der Raum-Owner kein Verwalter mehr ist (D-27).
                 "owner_display": None,
+                # Nur im Sperrfall gefüllt (D-16).
+                "orphaned_token": None,
             }
         ],
     }
@@ -199,9 +202,87 @@ async def test_read_only_validates_world_id(client: httpx.AsyncClient, service: 
         ("GET", "/api/talk"),
         ("POST", f"/api/worlds/{W1}/talk/read-only"),
         ("DELETE", f"/api/worlds/{W1}/talk/read-only"),
+        ("POST", f"/api/worlds/{W1}/talk/recreate"),
     ],
 )
 async def test_kid_is_forbidden(client: httpx.AsyncClient, service: WorldService, method: str, path: str) -> None:
     del service
     response = await client.request(method, path, headers=appapi_headers("gw-kind"))
     assert response.status_code == 403
+
+
+# Raum neu anlegen (06-06, D-19)
+
+
+async def test_recreate_gives_new_room_without_ex_admin(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_talk: FakeTalkRooms
+) -> None:
+    store.set_meta(META_TIME_ADMINS, json.dumps(["admin", "gw-alt"]))
+    await get_talk_service(service.store).ensure_room(W1, "gw-alt")
+    old = store.talk_room(W1)
+    assert old is not None
+    store.set_meta(META_TIME_ADMINS, json.dumps(["admin"]))
+    await get_talk_service(service.store).reconcile_all("admin")
+    before = await client.get("/api/talk", headers=appapi_headers())
+    line = before.json()["worlds"][0]
+    assert (line["owner_not_admin"], line["owner_display"], line["orphaned_token"]) == (True, "gw-alt", None)
+    response = await client.post(f"/api/worlds/{W1}/talk/recreate", headers=appapi_headers())
+    assert response.status_code == 200, response.text
+    body = response.json()
+    new = store.talk_room(W1)
+    assert new is not None
+    assert new.token != old.token
+    assert body == {
+        "world_id": W1,
+        "world_name": "Wiese",
+        "has_room": True,
+        "read_only": False,
+        "owner_not_admin": False,
+        "token": new.token,
+        "owner_display": None,
+        "orphaned_token": None,
+    }
+    assert old.token not in fake_talk.rooms
+    assert "gw-alt" not in {m.actor_id for m in fake_talk.rooms[new.token]}
+
+
+async def test_recreate_unknown_world_is_404(client: httpx.AsyncClient, service: WorldService) -> None:
+    del service
+    response = await client.post(f"/api/worlds/{UNKNOWN}/talk/recreate", headers=appapi_headers())
+    assert response.status_code == 404
+
+
+async def test_recreate_without_room_is_409(
+    client: httpx.AsyncClient, service: WorldService, fake_talk: FakeTalkRooms
+) -> None:
+    del service
+    response = await client.post(f"/api/worlds/{W1}/talk/recreate", headers=appapi_headers())
+    assert response.status_code == 409
+    assert "create" not in fake_talk.methods()
+
+
+async def test_recreate_talk_down_is_503_and_keeps_room(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_talk: FakeTalkRooms
+) -> None:
+    await get_talk_service(service.store).ensure_room(W1, "admin")
+    old = store.talk_room(W1)
+    assert old is not None
+    fake_talk.error = TalkUnavailableError("weg")
+    response = await client.post(f"/api/worlds/{W1}/talk/recreate", headers=appapi_headers())
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Talk antwortet gerade nicht. Bitte gleich noch einmal versuchen."
+    assert store.talk_room(W1) == old
+    assert old.token in fake_talk.rooms
+
+
+async def test_kid_cannot_recreate_and_room_stays(
+    client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_talk: FakeTalkRooms
+) -> None:
+    await get_talk_service(service.store).ensure_room(W1, "admin")
+    old = store.talk_room(W1)
+    assert old is not None
+    fake_talk.calls.clear()
+    response = await client.post(f"/api/worlds/{W1}/talk/recreate", headers=appapi_headers("gw-kind"))
+    assert response.status_code == 403
+    assert store.talk_room(W1) == old
+    assert fake_talk.calls == []
