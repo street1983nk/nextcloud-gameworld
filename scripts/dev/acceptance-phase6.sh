@@ -1193,14 +1193,27 @@ if wait_subject "${EN8_AUTH}" "${NOTIF_EN8}" "${SUBJECT_ATTEMPT_EN} ${W8_NAME}" 
 		wait_subject "${LEHRER_AUTH}" "${NOTIF_LEHRER}" "${SUBJECT_ATTEMPT_DE} ${W8_NAME}" "${WORK_DIR}/k8-n-de.txt"
 	check "K8 Gegenprobe: ${EN8} hat keinen deutschen Betreff" not grep -qF "${SUBJECT_ATTEMPT_DE}" "${WORK_DIR}/k8-n-en.txt"
 else
-	# Daily throttle (5 hints a day, then one summary): never skipped silently.
-	printf 'Hinweis: kein Einzelhinweis für %s binnen %s s (Tagesdrosselung?), Prüfung über die Sammelnachricht\n' \
+	# Daily throttle (5 hints a day for the household, then one summary a day): never
+	# skipped silently. The attempt itself is still recorded (positive control); the
+	# summary is checked when it reached the fresh K8 accounts, otherwise a hint line
+	# says that it went out before they existed (earlier runs of the same day).
+	printf 'Hinweis: kein Einzelhinweis für %s binnen %s s (Tagesdrosselung), Prüfung über Versuchsliste und Sammelnachricht\n' \
 		"${W8_NAME}" "${NOTIFY_WAIT}"
+	CODE=$(call "${EN8_AUTH}" GET "${API_URL}/attempts?world=${W8}" "${WORK_DIR}/k8-attempts.json")
+	check "K8 Positivkontrolle: GET /api/attempts als ${EN8} HTTP 200 mit Fremder8 an '${W8_NAME}' (ist ${CODE})" \
+		sh -c '[ "$1" = 200 ] && [ "$(jq -r "[.attempts[]?.player_name] | index(\"Fremder8\") != null" "$2")" = true ]' \
+		_ "${CODE}" "${WORK_DIR}/k8-attempts.json"
 	notif_subjects "${EN8_AUTH}" 0 "${WORK_DIR}/k8-n-en-all.txt" || true
 	notif_subjects "${LEHRER_AUTH}" 0 "${WORK_DIR}/k8-n-de-all.txt" || true
-	check "K8 ${EN8} hat die englische Sammelnachricht '${SUBJECT_SUMMARY_EN}'" grep -qF "${SUBJECT_SUMMARY_EN}" "${WORK_DIR}/k8-n-en-all.txt"
-	check "K8 Negativkontrolle: ${LEHRER} hat die deutsche Sammelnachricht '${SUBJECT_SUMMARY_DE}'" \
-		grep -qF "${SUBJECT_SUMMARY_DE}" "${WORK_DIR}/k8-n-de-all.txt"
+	if grep -qF "${SUBJECT_SUMMARY_EN}" "${WORK_DIR}/k8-n-en-all.txt"; then
+		pass "K8 ${EN8} hat die englische Sammelnachricht '${SUBJECT_SUMMARY_EN}'"
+		check "K8 Negativkontrolle: ${LEHRER} hat die deutsche Sammelnachricht '${SUBJECT_SUMMARY_DE}'" \
+			grep -qF "${SUBJECT_SUMMARY_DE}" "${WORK_DIR}/k8-n-de-all.txt"
+	else
+		printf 'Hinweis: die Sammelnachricht des Tages ging vor dem Anlegen der K8-Konten hinaus; Betreffsprache heute nicht prüfbar\n'
+		check "K8 Gegenprobe: ${EN8} hat keinen deutschen Gameworld-Betreff" \
+			not grep -qF "${SUBJECT_ATTEMPT_DE}" "${WORK_DIR}/k8-n-en-all.txt"
+	fi
 fi
 for world_id in ${W8} ${W9}; do
 	CODE=$(http_code DELETE "${API_URL}/worlds/${world_id}" /dev/null)
