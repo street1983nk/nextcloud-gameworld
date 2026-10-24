@@ -112,11 +112,14 @@ class TalkService:
         raw = await anyio.to_thread.run_sync(self.store.get_meta, META_TIME_ADMINS)
         return sorted(parse_admins(raw))
 
-    async def is_available(self, acting_uid: str) -> tuple[bool, bool]:
-        """(Talk da, Bots da); höchstens alle TALK_INTERVAL_SECONDS gefragt, Fehler heißt: nicht da."""
+    async def is_available(self, acting_uid: str, *, fresh: bool = False) -> tuple[bool, bool]:
+        """(Talk da, Bots da); höchstens alle TALK_INTERVAL_SECONDS gefragt, Fehler heißt: nicht da.
+
+        ``fresh`` umgeht den Cache (nur der seltene Abgleich, reconcile_all).
+        """
         state = TALK_STATE
         now = monotonic()
-        if state.checked_at is not None and now - state.checked_at < TALK_INTERVAL_SECONDS:
+        if not fresh and state.checked_at is not None and now - state.checked_at < TALK_INTERVAL_SECONDS:
             return state.available, state.bots
         try:
             talk, bots = await self._rooms.available(acting_uid)
@@ -407,7 +410,10 @@ class TalkService:
         if not admins:
             return
         acting = acting_uid if acting_uid in admins else None
-        talk, bots = await self.is_available(acting or admins[0])
+        # Frisch statt aus dem Cache: Cache und Wartung laufen beide im 300-s-Takt, ein
+        # knapp nicht abgelaufener Cache verschob das Nachlegen sonst um einen ganzen
+        # Takt (06-12, gemessen in der Regression 4.1 K6).
+        talk, bots = await self.is_available(acting or admins[0], fresh=True)
         if not talk:
             return
         if bots:
