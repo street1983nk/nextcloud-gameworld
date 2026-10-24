@@ -43,6 +43,8 @@ LOG_KEEP=20
 PID_FILE="${RUN_DIR}/exapp.pid"
 SECRET_FILE="${RUN_DIR}/exapp.secret"
 VERSION_FILE="${RUN_DIR}/exapp.version"
+# Version und Routen-Prüfsumme der letzten erfolgreichen Registrierung.
+REGISTRATION_FILE="${RUN_DIR}/exapp.registered"
 # 0.0.0.0, weil Docker Desktop den Host über eine eigene Bridge-Adresse
 # erreicht. Das Secret schützt den Port; mit GAMEWORLD_APP_HOST lässt sich die
 # Bindung auf diese Bridge-Adresse einengen.
@@ -281,6 +283,28 @@ else
 	stop_backend
 fi
 
+# Schutz der laufenden Welten (D-17, Plan 06-12): Das Entfernen einer aktiven
+# Registrierung ruft vorher /enabled?enabled=0 auf, und Gameworld räumt dabei
+# alle eigenen Welt-Container ab. Mit wiederverwendetem Backend gilt dessen
+# Secret noch, der Aufruf käme also an. Darum: Passt die Registrierung schon
+# (gleiche Version, gleiche Routen), bleibt sie stehen. Sonst startet das Backend
+# mit neuem Secret neu, dann weist es den Aufruf mit dem alten Secret ab (401)
+# und keine Welt wird abgeräumt.
+ROUTES_SUM=$(printf '%s' "${ROUTES_JSON}" | cksum | awk '{print $1}')
+WANT_REGISTRATION="${BACKEND_VERSION} ${ROUTES_SUM}"
+if [ "${REUSE_BACKEND}" -eq 1 ] && nextcloud_occ app_api:app:list 2>/dev/null | grep "^${BACKEND_ID} " | grep -q .; then
+	if nextcloud_occ app_api:app:list 2>/dev/null | grep "^${BACKEND_ID} " | grep -q "${BACKEND_VERSION}.*enabled" \
+		&& [ "$(cat "${REGISTRATION_FILE}" 2>/dev/null || true)" = "${WANT_REGISTRATION}" ]; then
+		printf 'Registrierung passt schon (Version %s, gleiche Routen), bleibt unverändert\n' "${BACKEND_VERSION}"
+		printf 'registriert und aktiviert: %s/index.php/apps/app_api/embedded/%s/%s\n' \
+			"${NEXTCLOUD_URL}" "${BACKEND_ID}" "${BACKEND_ID}"
+		exit 0
+	fi
+	printf 'starte das Backend mit neuem Secret neu, weil die Registrierung erneuert wird (sonst räumte /enabled?enabled=0 die Welten ab)\n'
+	stop_backend
+	REUSE_BACKEND=0
+fi
+
 if [ "${REUSE_BACKEND}" -eq 0 ]; then
 	# Neues Secret pro Lauf, nie ein festes im Repository (T-01-11).
 	BACKEND_SECRET=$(new_secret)
@@ -349,5 +373,6 @@ if ! nextcloud_occ app_api:app:list 2>/dev/null | grep "${BACKEND_ID}" | grep -q
 	nextcloud_occ app_api:app:list >&2 || true
 	exit 1
 fi
+printf '%s\n' "${WANT_REGISTRATION}" >"${REGISTRATION_FILE}"
 printf 'registriert und aktiviert: %s/index.php/apps/app_api/embedded/%s/%s\n' \
 	"${NEXTCLOUD_URL}" "${BACKEND_ID}" "${BACKEND_ID}"

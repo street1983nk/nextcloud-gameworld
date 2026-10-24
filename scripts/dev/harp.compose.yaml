@@ -1,0 +1,126 @@
+# Dev-HaRP für Gameworld (Plan 06-12): prüft den Installationsweg des App Stores
+# vor dem ersten Push und vor dem Zertifikat. Ein echter HaRP-Daemon zieht das
+# Gameworld-Image aus einer lokalen Registry und legt den ExApp-Container selbst
+# an, genau wie bei einer Store-Installation; nur Archiv-Download und
+# Signaturprüfung fehlen (06-RESEARCH Abschnitt 5.2 und 9).
+#
+# Eigene Test-Instanz, getrennt vom Dev-Stack (scripts/dev/compose.yaml): eigene
+# Nextcloud 34.0.3 (Dienst harp-nc), eigener gescopter Docker-Proxy, eigenes Netz
+# gameworld-dev-harp_default. Die laufende Dev-Nextcloud, ihre ExApp-Registrierung
+# und ihre Welten bleiben dadurch unberührt; Deaktivieren (D-17) oder ein
+# gestoppter Proxy in der Abnahme treffen nur diese Test-Instanz.
+#
+# Nicht direkt starten, sondern über scripts/dev/harp-install.sh: Das Skript
+# erzeugt den gemeinsamen Schlüssel in .dev/harp.key (gitignored) und reicht ihn
+# als GAMEWORLD_HARP_KEY herein. Von Hand nur mit gesetzter Variable:
+#   GAMEWORLD_HARP_KEY=$(cat .dev/harp.key) docker compose -f scripts/dev/harp.compose.yaml up -d
+# Rückbau: sh scripts/dev/harp-install.sh --uninstall
+#
+# Images per Index-Digest (docker buildx imagetools inspect, abgerufen am
+# 24.10.2026), damit ein bewegter Tag nicht unbemerkt ändert, was der Lauf belegt.
+# Ausnahme harp-nc: dieselbe Zeile wie compose.yaml (nextcloud:34.0.3-apache).
+name: gameworld-dev-harp
+
+services:
+  harp-nc:
+    image: nextcloud:34.0.3-apache
+    container_name: gameworld-dev-harp-nc
+    restart: unless-stopped
+    environment:
+      SQLITE_DATABASE: nextcloud
+      NEXTCLOUD_ADMIN_USER: admin
+      # Reines Dev-Konto einer Test-Instanz ohne Host-Port; erreichbar nur über
+      # die Front auf 127.0.0.1:8093.
+      NEXTCLOUD_ADMIN_PASSWORD: gameworld-harp-admin
+      # localhost: Abnahme und Browser über die Front; harp-front: HaRP und der
+      # ExApp-Container (nextcloud_url des Daemons). Port wird beim Vergleich ignoriert.
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost harp-front"
+    volumes:
+      - harp-nextcloud:/var/www/html
+
+  gameworld-docker-proxy:
+    # Gleiches Image und gleiche Flags wie in compose.yaml (docs/install.md).
+    image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    container_name: gameworld-dev-harp-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+      VOLUMES: 1
+      EXEC: 0
+      INFO: 0
+      NETWORKS: 0
+      BUILD: 0
+      SYSTEM: 0
+      SECRETS: 0
+      SWARM: 0
+      NODES: 0
+      SERVICES: 0
+      TASKS: 0
+      PLUGINS: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      AUTH: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Kein Host-Port: Nur der ExApp-Container im selben Netz spricht den Proxy.
+
+  appapi-harp:
+    # Tag release, Index-Digest vom 24.10.2026.
+    image: ghcr.io/nextcloud/nextcloud-appapi-harp:release@sha256:2c994c9b3d59fb04d09da236d9caccaadf8db22b848c7f48980fbb813d1de7d6
+    container_name: gameworld-dev-appapi-harp
+    hostname: appapi-harp
+    restart: unless-stopped
+    environment:
+      # Kein Vorgabewert: Ohne Schlüssel bricht compose ab, statt einen Proxy mit
+      # leerem Geheimnis zu starten (T-06-52). Wert nur in .dev/harp.key.
+      HP_SHARED_KEY: ${GAMEWORLD_HARP_KEY:?GAMEWORLD_HARP_KEY fehlt, zuerst sh scripts/dev/harp-install.sh}
+      # Wo HaRP die Instanz erreicht: über die Front (vertrauter Host-Kopf).
+      NC_INSTANCE_URL: http://harp-front
+      # Negativkontrollen der Abnahme erzeugen 401; die Vorgabe sperrt sonst nach
+      # 10 Fehlversuchen in 5 Minuten die Adresse der Front (Muster harp-probe).
+      HP_BLACKLIST_COUNT: "1000"
+      HP_LOG_LEVEL: info
+      # FRP-TLS bleibt an (Vorgabe von HaRP): HaRP erzeugt die Zertifikate in
+      # /certs und kopiert sie beim Deploy in den ExApp-Container (start.sh).
+    volumes:
+      # Der Docker-Socket nur hier: HaRP ist der Deploy-Daemon und legt den
+      # ExApp-Container an. Zugriff auf den Socket ist root-äquivalent auf dem
+      # Host; HaRP gibt es genau dafür, dass nur EINE Komponente ihn hält. Die
+      # ExApp selbst bekommt ihn nie, sie spricht nur den gescopten Proxy oben.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - harp-certs:/certs
+    # Keine Host-Ports: Nextcloud, Front und ExApp erreichen HaRP im Compose-Netz.
+
+  gameworld-registry:
+    # registry:2, Index-Digest vom 24.10.2026. Nur für das lokal gebaute Image,
+    # kein Push nach ghcr.io.
+    image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+    container_name: gameworld-dev-registry
+    restart: unless-stopped
+    ports:
+      # Nur Loopback (T-06-53): Der Docker-Daemon zieht unter localhost:5000.
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+
+  harp-front:
+    # nginx:1.29-alpine, Index-Digest vom 24.10.2026.
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    container_name: gameworld-dev-harp-front
+    restart: unless-stopped
+    depends_on:
+      - appapi-harp
+      - harp-nc
+    ports:
+      # Nur Loopback (T-06-53): eine Adresse vor beiden Hälften, wie der Webserver
+      # vor einer echten Nextcloud.
+      - "127.0.0.1:8093:80"
+    volumes:
+      - ./harp-front.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  harp-nextcloud: {}
+  harp-certs: {}
+  registry-data: {}
