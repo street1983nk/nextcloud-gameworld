@@ -172,3 +172,30 @@ async def test_nc_as_options_reach_real_session(app_env: Path) -> None:
         assert session.cfg.options.upload_chunk_v2 is False
     for spy in spies:
         spy.assert_awaited_once()
+
+
+async def test_group_members_uses_endpoint_open_to_members(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gruppenmitglieder über /cloud/groups/{gid}/users (06-12, Kriterium 5).
+
+    Der alte Endpunkt /cloud/groups/{gid} (nc_py_api ``users_groups.get_members``)
+    verlangt Subadmin-Rechte; ein Gruppen-Verwalter, der nur Mitglied seiner Gruppe
+    ist, bekam dort 403 und konnte niemanden einladen (am Test-Stack mit HaRP
+    belegt, 24.10.2026). /users erlaubt Nextcloud Mitgliedern, Nicht-Mitglieder
+    bleiben abgewiesen.
+    """
+    app = MagicMock()
+    app.ocs = AsyncMock(return_value={"users": ["gw-kind-k", "gw-lehrer"]})
+    app.users_groups.get_members = AsyncMock(side_effect=AssertionError("Subadmin-Endpunkt benutzt"))
+    recorder = install_fake_nc(monkeypatch, app)
+    members = await NcDirectory().group_members("gw-lehrer", "klasse/../admin")
+    assert members == ["gw-kind-k", "gw-lehrer"]
+    app.ocs.assert_awaited_once_with("GET", "/ocs/v1.php/cloud/groups/klasse%2F..%2Fadmin/users")
+    assert recorder.users == ["gw-lehrer"]
+    assert_closed(app, times=1)
+
+
+async def test_group_members_empty_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = MagicMock()
+    app.ocs = AsyncMock(return_value={"users": {}})
+    install_fake_nc(monkeypatch, app)
+    assert await NcDirectory().group_members("gw-lehrer", "klasse") == []
