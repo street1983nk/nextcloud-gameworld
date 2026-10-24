@@ -36,26 +36,19 @@ from zoneinfo import ZoneInfo
 import anyio.to_thread
 
 from gameworld.access.directory import Directory, DirectoryUnavailableError, get_directory
-from gameworld.access.roles import ADMIN_GROUP
+from gameworld.access.roles import ADMIN_GROUP, get_role_service
 from gameworld.access.secret import get_player_secret
 from gameworld.access.service import AccessService
 from gameworld.notify.links import clean_origin, page_link
 from gameworld.notify.review import review_due, review_line
 from gameworld.notify.service import Notifier, get_notifier
 from gameworld.notify.texts import (
-    BOT_JOIN,
-    BOT_LEAVE,
-    BOT_PAUSE,
-    BOT_PAUSE_END,
-    BOT_SCHLUSS,
-    BOT_START,
-    BOT_STOP,
-    BOT_WARN10,
     MAX_DISPLAY,
     NotifyText,
     attempt_message,
     bot_clock,
     bot_name,
+    bot_text,
     clean_value,
     review_message,
     summary_message,
@@ -67,7 +60,7 @@ from gameworld.playtime.plan import local_day
 from gameworld.playtime.service import META_NC_ADMINS, TimeService
 from gameworld.talk.bot import get_bot
 from gameworld.talk.service import get_talk_service
-from gameworld.worlds.service import WorldService
+from gameworld.worlds.service import WorldService, world_language
 from gameworld.worlds.store import TALK_STATE_OK, OutboxRow, WorldRow, WorldStore
 
 LOG = logging.getLogger(__name__)
@@ -116,6 +109,8 @@ class NotifyContext:
 
 
 Handler = Callable[[NotifyContext, OutboxRow], Awaitable[None]]
+# Builds the notification text in the recipient's language (D-25).
+TextBuilder = Callable[[str], NotifyText]
 MaintenanceHook = Callable[[WorldService, str], Awaitable[None]]
 # Wartungsschritt und ob er einen bestätigten Nextcloud-Admin braucht (statt irgendeines Verwalters).
 MaintenanceStep = tuple[MaintenanceHook, bool]
@@ -175,12 +170,20 @@ async def display_name(directory: Directory, acting_uid: str, store: WorldStore,
 
 
 async def _deliver(
-    context: NotifyContext, uids: Iterable[str], text: NotifyText, page: str, params: dict[str, str]
+    context: NotifyContext, uids: Iterable[str], build: TextBuilder, page: str, params: dict[str, str]
 ) -> None:
+    """Send to each recipient in their account language (D-25).
+
+    RoleService.language never raises: on a lookup failure it gives the last
+    known language or en, so the notification still goes out. No log line here
+    names the recipient or the text (T-06-90).
+    """
     if context.origin is None:
         return
     link = page_link(context.origin, page, params)
+    roles = get_role_service()
     for uid in uids:
+        text = build(await roles.language(uid))
         await context.notifier.notify(uid, text.subject, text.message, text.params, link)
 
 
@@ -206,10 +209,18 @@ async def handle_deny(context: NotifyContext, row: OutboxRow) -> None:
 
     decision = await anyio.to_thread.run_sync(claim)
     if decision == "single":
-        text = attempt_message(world.id, world.name, row.name, clock_text(row.at, context.tz))
-        await _deliver(context, context.admins, text, "versuch", {"welt": world.id, "tag": day.isoformat()})
+        clock = clock_text(row.at, context.tz)
+
+        def attempt(language: str) -> NotifyText:
+            return attempt_message(world.id, world.name, row.name, clock, language=language)
+
+        await _deliver(context, context.admins, attempt, "versuch", {"welt": world.id, "tag": day.isoformat()})
     elif decision == "summary":
-        await _deliver(context, context.admins, summary_message(), "versuch", {"tag": day.isoformat()})
+
+        def summary(language: str) -> NotifyText:
+            return summary_message(language=language)
+
+        await _deliver(context, context.admins, summary, "versuch", {"tag": day.isoformat()})
 
 
 # Gameworld-Bot im Talk-Raum der Welt (TALK-02, D-21 bis D-24, D-28)
@@ -218,18 +229,22 @@ async def handle_deny(context: NotifyContext, row: OutboxRow) -> None:
 PRESENCE_SECONDS = 600
 
 
-def _room_token(store: WorldStore, world_id: str) -> str | None:
+# Talk room token and world language (D-27: everyone in the world sees the same language).
+BotRoom = tuple[str, str]
+
+
+def _room_token(store: WorldStore, world_id: str) -> BotRoom | None:
     world = store.get_world(world_id)
     if world is None or world.desired_state == "deleted":
         return None
     row = store.talk_room(world_id)
     if row is None or row.state != TALK_STATE_OK:
         return None
-    return row.token
+    return row.token, world_language(world)
 
 
-async def _bot_room(context: NotifyContext, world_id: str) -> str | None:
-    """Raum-Token, wenn Talk mit Bots da ist und die Welt einen Raum hat; sonst None."""
+async def _bot_room(context: NotifyContext, world_id: str) -> BotRoom | None:
+    """(Room token, world language) if Talk with bots is there and the world has a room; else None."""
     if context.acting is None:
         return None
     store = context.service.store
@@ -260,30 +275,32 @@ async def _bot_person(context: NotifyContext, player_name: str) -> tuple[str, st
     return result
 
 
-def _fixed(text: str, *, silent: bool) -> Handler:
-    """Handler für einen festen Bot-Text ohne Namen (Start, Stopp, Schluss, Pausenende)."""
+def _fixed(key: str, *, silent: bool) -> Handler:
+    """Handler for a fixed bot text without names (start, stop, end of day, end of break), world language."""
 
     async def handler(context: NotifyContext, row: OutboxRow) -> None:
-        token = await _bot_room(context, row.world_id)
-        if token is not None:
-            await get_bot().send(token, text, silent=silent)
+        room = await _bot_room(context, row.world_id)
+        if room is not None:
+            token, language = room
+            await get_bot().send(token, bot_text(key, language), silent=silent)
 
     return handler
 
 
-def _presence(template: str) -> Handler:
-    """Beitritt oder Verlassen, still und gedrosselt über bot_presence (D-22, D-28)."""
+def _presence(key: str) -> Handler:
+    """Join or leave, silent and throttled via bot_presence (D-22, D-28), world language."""
 
     async def handler(context: NotifyContext, row: OutboxRow) -> None:
-        token = await _bot_room(context, row.world_id)
-        if token is None:
+        room = await _bot_room(context, row.world_id)
+        if room is None:
             return
+        token, language = room
         store = context.service.store
         person, name = await _bot_person(context, row.name)
         last = await anyio.to_thread.run_sync(store.bot_presence_at, row.world_id, person)
         if last is not None and row.at - last < PRESENCE_SECONDS:
             return
-        if await get_bot().send(token, template.format(name=name), silent=True):
+        if await get_bot().send(token, bot_text(key, language, name=name), silent=True):
             await anyio.to_thread.run_sync(store.set_bot_presence, row.world_id, person, row.kind, row.at)
 
     return handler
@@ -301,15 +318,16 @@ async def handle_warn10(context: NotifyContext, row: OutboxRow) -> None:
     erst den Tages-Merker beanspruchen, dann senden: Neuverbinden klingelt nie
     wieder auf allen Handys im Raum, auch nicht nach einem Neustart der ExApp.
     """
-    token = await _bot_room(context, row.world_id)
-    if token is None:
+    room = await _bot_room(context, row.world_id)
+    if room is None:
         return
+    token, language = room
     person, name = await _bot_person(context, row.name)
     day = local_day(row.at, context.tz)
     store = context.service.store
     if not await anyio.to_thread.run_sync(store.claim_daily_flag, day, warn10_flag(row.world_id, person)):
         return
-    await get_bot().send(token, BOT_WARN10.format(name=name), silent=False)
+    await get_bot().send(token, bot_text("warn10", language, name=name), silent=False)
 
 
 async def handle_pause_start(context: NotifyContext, row: OutboxRow) -> None:
@@ -318,21 +336,22 @@ async def handle_pause_start(context: NotifyContext, row: OutboxRow) -> None:
         bis = int(row.detail)
     except ValueError:
         return
-    token = await _bot_room(context, row.world_id)
-    if token is not None:
-        await get_bot().send(token, BOT_PAUSE.format(clock=bot_clock(bis, context.tz)), silent=False)
+    room = await _bot_room(context, row.world_id)
+    if room is not None:
+        token, language = room
+        await get_bot().send(token, bot_text("pause", language, clock=bot_clock(bis, context.tz)), silent=False)
 
 
 HANDLERS: dict[str, Handler] = {
     "deny": handle_deny,
-    "join": _presence(BOT_JOIN),
-    "leave": _presence(BOT_LEAVE),
+    "join": _presence("join"),
+    "leave": _presence("leave"),
     "warn10": handle_warn10,
-    "start": _fixed(BOT_START, silent=True),
-    "stop": _fixed(BOT_STOP, silent=True),
+    "start": _fixed("start", silent=True),
+    "stop": _fixed("stop", silent=True),
     OUTBOX_PAUSE_START: handle_pause_start,
-    OUTBOX_PAUSE_SCHLUSS: _fixed(BOT_SCHLUSS, silent=False),
-    OUTBOX_PAUSE_END: _fixed(BOT_PAUSE_END, silent=True),
+    OUTBOX_PAUSE_SCHLUSS: _fixed("schluss", silent=False),
+    OUTBOX_PAUSE_END: _fixed("pause_end", silent=True),
 }
 
 
@@ -413,15 +432,18 @@ async def _reviews(context: NotifyContext) -> None:
         )
         for nc_user, worlds in sorted(play.items())
     ]
-    line = review_line(entries)
-    if line is None:
+    if review_line(entries) is None:
         for uid in due:
             await anyio.to_thread.run_sync(store.claim_review, uid, day)
         return
-    text = review_message(line)
+
+    def review(language: str) -> NotifyText:
+        # The line was not None above, and the entries do not depend on the language.
+        return review_message(review_line(entries, language=language) or "", language=language)
+
     for uid in due:
         if await anyio.to_thread.run_sync(store.claim_review, uid, day):
-            await _deliver(context, (uid,), text, "rueckblick", {"tag": day.isoformat()})
+            await _deliver(context, (uid,), review, "rueckblick", {"tag": day.isoformat()})
 
 
 def _context_data(store: WorldStore, service: WorldService) -> tuple[tuple[str, ...], str | None, ZoneInfo]:

@@ -49,6 +49,7 @@ from typing import IO, Any, BinaryIO, cast
 import anyio
 import anyio.to_thread
 
+from gameworld.access.roles import get_role_service
 from gameworld.backup.archive import (
     KIND_BACKUP,
     KIND_VOR_RESTORE,
@@ -66,10 +67,11 @@ from gameworld.backup.archive import (
 from gameworld.backup.files import MSG_FILE_GONE, BackupFiles, FilesEntry, FilesError, get_backup_files
 from gameworld.backup.naming import backup_file_name, folder_name, folder_path, with_suffix
 from gameworld.config import load_settings
+from gameworld.i18n import translate
 from gameworld.notify.links import app_link
 from gameworld.notify.loop import link_origin
 from gameworld.notify.service import Notifier, get_notifier
-from gameworld.notify.texts import BACKUP_FAILED_SUBJECT, RESTORE_FAILED_SUBJECT, job_failed_message
+from gameworld.notify.texts import failed_subject, job_failed_message
 from gameworld.provisioner.client import ProvisionerError, WorldNotFoundError
 from gameworld.provisioner.spec import LUANTI_VERSION
 from gameworld.provisioner.time_mod import parse_ledger
@@ -94,7 +96,6 @@ PLAYERS_ONLINE_MANY = "In der Welt spielen gerade {count} Kinder, sie werden kur
 JOB_INTERRUPTED = "Die Sicherung wurde durch einen Neustart des Servers unterbrochen."
 RESTORE_JOB_INTERRUPTED = "Das Wiederherstellen wurde durch einen Neustart des Servers unterbrochen."
 KIND_RESTORE = "restore"
-FAILED_SUBJECTS = {KIND_BACKUP: BACKUP_FAILED_SUBJECT, KIND_RESTORE: RESTORE_FAILED_SUBJECT}
 
 # Wiederherstellen (BACKUP-02, D-04, D-05, D-13, D-15).
 RESTORE_NOT_CONFIRMED = "Bitte das Wiederherstellen bestätigen."
@@ -413,7 +414,10 @@ class BackupService:
         if target is None:
             return
         world_name, origin = target
-        text = job_failed_message(FAILED_SUBJECTS.get(kind, BACKUP_FAILED_SUBJECT), world_id, world_name, message)
+        # Subject and reason in the account language of the recipient (D-25); the
+        # reason is a fixed German job text, translate keeps unknown parts unchanged.
+        language = await get_role_service().language(uid)
+        text = job_failed_message(failed_subject(kind, language), world_id, world_name, translate(message, language))
         link = app_link(origin) if origin is not None else ""
         try:
             delivered = await self._notifier().notify(uid, text.subject, text.message, text.params, link)
