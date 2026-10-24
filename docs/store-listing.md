@@ -6,8 +6,10 @@
 # Die Store-Texte von Gameworld, in einer Quelle
 
 Diese Datei ist die eine Quelle aller Texte, die Gameworld im Nextcloud App Store zeigt:
-`<name>`, `<summary>` und `<description>` je Sprache (Englisch ohne `lang`, Deutsch
-`lang="de"`, Französisch `lang="fr"`, D-09). Die Blöcke unten stehen wortgleich in
+`<summary>` und `<description>` je Sprache (Englisch ohne `lang`, Deutsch
+`lang="de"`, Französisch `lang="fr"`, D-09) und `<name>` genau einmal ohne `lang`: AppAPI
+macht aus mehreren `<name>` ein Array, die App hieß dann "Array" (belegt in Plan 06-12 per
+HaRP-Installation aus der info.xml). Der Name ist in allen Sprachen "Gameworld". Die Blöcke unten stehen wortgleich in
 `appinfo/info.xml`; `tests/test_info_xml.py` prüft das mechanisch
 (`test_store_listing_matches_info_xml`). Wer hier etwas ändert, ändert alle drei Sprachen
 und die `info.xml` mit.
@@ -94,12 +96,6 @@ Installation guide: [docs/install.md](https://github.com/street1983nk/nextcloud-
 
 ## Deutsch (`lang="de"`)
 
-### `<name lang="de">`
-
-```text
-Gameworld
-```
-
 ### `<summary lang="de">`
 
 ```text
@@ -146,12 +142,6 @@ Installationsanleitung: [docs/install.de.md](https://github.com/street1983nk/nex
 ```
 
 ## Französisch (`lang="fr"`)
-
-### `<name lang="fr">`
-
-```text
-Gameworld
-```
 
 ### `<summary lang="fr">`
 

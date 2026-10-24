@@ -46,9 +46,8 @@
 	Store-Texte: Quelle ist docs/store-listing.md, wortgleich (test_store_listing_matches_info_xml).
 	Reihenfolge der Elemente folgt info.xsd und ist bindend (test_element_order_follows_xsd).
 	-->
+	<!-- Genau ein name ohne lang: AppAPI macht aus mehreren ein Array (App hieß "Array", 06-12). -->
 	<name>Gameworld</name>
-	<name lang="de">Gameworld</name>
-	<name lang="fr">Gameworld</name>
 	<summary>Private Luanti worlds for families and schools, running on your own Nextcloud</summary>
 	<summary lang="de">Private Luanti-Welten für Familien und Schulen, auf der eigenen Nextcloud</summary>
 	<summary lang="fr">Mondes Luanti privés pour familles et écoles, sur votre propre Nextcloud</summary>
