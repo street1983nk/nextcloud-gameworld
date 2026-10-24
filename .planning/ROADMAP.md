@@ -341,7 +341,7 @@ Plans:
   6. Verwalter können ein eingeladenes Konto per Schalter als "Erwachsen" markieren; es spielt frei von Pause, Welt-Zeitfenstern und Spielzeitregeln, erscheint nicht im Tagesrückblick, hat aber weder Verwaltungs- noch Luanti-Adminrechte; Negativtests belegen, dass ein Kind sich nicht selbst freistellen kann (Owner-Entscheid 22.10.2026)
   7. Gehört der Talk-Raum einer Welt einem Konto, das in Nextcloud gelöscht wurde oder kein Verwalter mehr ist, geht der Raum an einen bestätigten Verwalter über (talk_rooms.owner_uid); kein Raum bleibt ohne handlungsfähigen Besitzer (Owner-Entscheid 22.10.2026, Rest aus dem Konten-Fix dabe0c0)
 
-**Plans**: 28 plans (12 ausgeführt; 06-17 bis 06-28 nach Owner-Entscheiden D-25/D-26/D-27 vom 24.10.2026 ergänzt, Release-Gate: erst übersetzen, dann releasen)
+**Plans**: 28 plans (12 ausgeführt; 06-17 bis 06-28 nach Owner-Entscheiden D-25/D-26/D-27/D-28/D-29 vom 24.10.2026 ergänzt, Release-Gate: erst übersetzen, dann releasen)
 Plans:
 **Wave 1**
 
@@ -399,28 +399,31 @@ Plans:
 
 - [ ] 06-24-PLAN.md , Sprachauswahl je Welt, i18n-Strukturtest und Umlaut-Audit, Bundle, Abnahme K8 plus Regression
 
-**Wave 13** *(blocked on Wave 12 completion)*
+**Wave 13** *(blocked on Wave 12 completion; Läufe innerhalb der Welle seriell, RAM-Regel)*
 
-- [ ] 06-25-PLAN.md , Kommentare/Docstrings Englisch (D-26) Teil 1: access, api, backup, events, notify, i18n, Wurzelmodule
-- [ ] 06-26-PLAN.md , Kommentare/Docstrings Englisch (D-26) Teil 2: play, playtime, provisioner (inkl. Lua-Kommentare), talk, worlds
-- [ ] 06-27-PLAN.md , Kommentare Englisch (D-26) Teil 3: Frontend, Skripte, Compose, Dockerfile, Workflows
-- [ ] 06-28-PLAN.md , Kommentare/Docstrings Englisch (D-26) Teil 4: Testsuite
+- [ ] 06-25-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 1: access, api, backup, events, notify, i18n, Wurzelmodule, samt zugehöriger Log-Tests
+- [ ] 06-26-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 2: play, playtime, provisioner (inkl. Lua-Kommentare und Lua-Syntaxtest), talk, worlds, samt zugehöriger Log-Tests
+- [ ] 06-28-PLAN.md , Kommentare/Docstrings Englisch (D-26) Teil 4: Testsuite ohne die Log-Tests aus 06-25/06-26
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 06-13-PLAN.md , Owner-Abnahme per Playwright inkl. Sprachen, Screenshots DE/EN/FR -v1, Freigabe der Store-Texte (nicht autonom)
+- [ ] 06-27-PLAN.md , Kommentare Englisch (D-26) Teil 3: Frontend, Skripte, Compose, Dockerfile, Workflows, pyproject/.gitattributes/.dockerignore, webplay, info.xml-Kommentare, vendor-README, repo-weite Abschluss-Suche
 
 **Wave 15** *(blocked on Wave 14 completion)*
 
-- [ ] 06-14-PLAN.md , Push nach Owner-Wort, Image 1.0.0-rc.1, ghcr-Paket öffentlich (nicht autonom)
+- [ ] 06-13-PLAN.md , Owner-Abnahme per Playwright inkl. Sprachen, Screenshots DE/EN/FR -v1, Cross-Promo-Sätze und Forum-Thread mit discussion-Link (D-28), Freigabe der Store-Texte (nicht autonom)
 
 **Wave 16** *(blocked on Wave 15 completion)*
 
-- [ ] 06-15-PLAN.md , Installationstests aus ghcr.io: Compose NC 34 und 35, AIO auf Cloud-VM (nicht autonom)
+- [ ] 06-14-PLAN.md , Push nach Owner-Wort, Image 1.0.0-rc.1, ghcr-Paket öffentlich (nicht autonom)
 
 **Wave 17** *(blocked on Wave 16 completion)*
 
-- [ ] 06-16-PLAN.md , Store-Upload nach gemergtem Zertifikat: Tag v1.0.0, Signatur, 2x HTTP 201 (nicht autonom)
+- [ ] 06-15-PLAN.md , Installationstests aus ghcr.io: Compose NC 34 und 35, AIO auf Cloud-VM (nicht autonom)
+
+**Wave 18** *(blocked on Wave 17 completion)*
+
+- [ ] 06-16-PLAN.md , Store-Upload nach gemergtem Zertifikat: discussion-Link geprüft, Tag v1.0.0, Signatur, 2x HTTP 201 (nicht autonom)
 
 **UI hint**: yes
 
