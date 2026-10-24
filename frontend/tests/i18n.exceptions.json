@@ -8,5 +8,8 @@
   { "file": "frontend/src/i18n/en/core.js", "key": "core.playtime.summary.daysRule", "reason": "Format only: day list followed by the rule" },
   { "file": "frontend/src/i18n/fr/core.js", "key": "core.playtime.summary.daysRule", "reason": "Format only: day list followed by the rule" },
   { "file": "frontend/src/i18n/en/core.js", "key": "core.playtime.kid.remainingOnly", "reason": "Format only: remaining time followed by a full stop" },
-  { "file": "frontend/src/i18n/fr/core.js", "key": "core.playtime.kid.remainingOnly", "reason": "Format only: remaining time followed by a full stop" }
+  { "file": "frontend/src/i18n/fr/core.js", "key": "core.playtime.kid.remainingOnly", "reason": "Format only: remaining time followed by a full stop" },
+  { "file": "frontend/src/i18n/en/parent.js", "key": "parent.view.column.name", "reason": "Column header Name is the same word in German and English" },
+  { "file": "frontend/src/i18n/en/parent.js", "key": "parent.view.column.status", "reason": "Column header Status is the same word in German and English" },
+  { "file": "frontend/src/i18n/fr/parent.js", "key": "parent.view.pauseOpen", "reason": "Button Pause is the same word in German and French (term table: Pause = pause)" }
 ]

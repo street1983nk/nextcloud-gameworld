@@ -3,12 +3,12 @@
 	<NcDialog
 		v-if="!confirm"
 		:open="true"
-		:name="`Sicherungen von ${world.name}`"
+		:name="t('parent.backup.title', { name: world.name })"
 		size="large"
 		@update:open="onOpen">
 		<div class="backup-section">
 			<p class="backup-section__hint">
-				Sicherungen liegen in deinen Nextcloud-Dateien unter Gameworld/Sicherungen. Aufräumen kannst du dort.
+				{{ t('parent.backup.hint') }}
 			</p>
 			<p v-if="note" class="backup-section__job" aria-live="polite">
 				{{ note }}
@@ -23,7 +23,7 @@
 			<NcLoadingIcon v-if="loading" :size="32" />
 			<template v-else-if="listing">
 				<p v-if="listing.backups.length === 0" class="backup-section__empty">
-					Noch keine Sicherung für diese Welt.
+					{{ t('parent.backup.empty') }}
 				</p>
 				<ul v-else class="backup-section__list">
 					<li v-for="entry in listing.backups" :key="entry.file_id" class="backup-section__entry">
@@ -35,27 +35,27 @@
 							<NcChip
 								v-if="entry.kind === 'vor-restore'"
 								class="backup-section__kind"
-								text="vor dem Wiederherstellen"
+								:text="t('parent.backup.beforeRestore')"
 								variant="secondary"
 								no-close />
 						</div>
 						<NcButton :disabled="locked" @click="askRestore(entry)">
-							Wiederherstellen
+							{{ t('parent.backup.restore') }}
 						</NcButton>
 					</li>
 				</ul>
 				<p class="backup-section__total">
-					Gesamtgröße: {{ formatBytes(listing.total_size) }}
+					{{ t('parent.backup.totalSize', { size: formatBytes(listing.total_size) }) }}
 				</p>
 				<p v-if="listing.other_files > 0" class="backup-section__hint">
-					Weitere Dateien im Ordner: {{ listing.other_files }} (nicht von Gameworld geprüft)
+					{{ t('parent.backup.otherFiles', { count: listing.other_files }) }}
 				</p>
 			</template>
 		</div>
 
 		<template #actions>
 			<NcButton variant="tertiary" :disabled="saving" @click="close">
-				Schließen
+				{{ t('parent.common.close') }}
 			</NcButton>
 			<NcButton
 				v-if="!world.delete_only"
@@ -65,7 +65,7 @@
 				<template v-if="saving" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Jetzt sichern
+				{{ t('parent.backup.backupNow') }}
 			</NcButton>
 		</template>
 	</NcDialog>
@@ -74,7 +74,7 @@
 	<NcDialog
 		v-else
 		:open="true"
-		:name="confirm.kind === 'restore' ? 'Welt wiederherstellen' : 'Welt sichern'"
+		:name="confirm.kind === 'restore' ? t('parent.backup.restoreTitle') : t('parent.backup.backupTitle')"
 		@update:open="onConfirmOpen">
 		<div class="backup-section">
 			<p v-if="confirm.kind === 'restore'">
@@ -90,13 +90,13 @@
 
 		<template #actions>
 			<NcButton variant="tertiary" :disabled="saving" @click="cancelConfirm">
-				Abbrechen
+				{{ t('parent.common.cancel') }}
 			</NcButton>
 			<NcButton variant="primary" :disabled="locked" @click="runConfirmed">
 				<template v-if="saving" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				{{ confirm.kind === 'restore' ? 'Wiederherstellen' : 'Trotzdem sichern' }}
+				{{ confirm.kind === 'restore' ? t('parent.backup.restore') : t('parent.backup.backupAnyway') }}
 			</NcButton>
 		</template>
 	</NcDialog>
@@ -111,6 +111,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { errorText, listBackups, restoreBackup, startBackup } from '../api.js'
 import { formatBytes, formatDate, jobFinished, jobNote, playersWarning, restoreQuestion } from '../backup.js'
+import { t } from '../i18n/index.js'
 
 const props = defineProps({
 	// { id, name, players, delete_only, status } der Welt, aktuell aus dem Polling.
@@ -150,7 +151,7 @@ async function load() {
 		}
 	} catch (err) {
 		if (seq === loadSeq) {
-			listError.value = `Die Sicherungen konnten nicht geladen werden: ${errorText(err)}`
+			listError.value = t('parent.backup.loadError', { detail: errorText(err) })
 		}
 	} finally {
 		if (seq === loadSeq) {

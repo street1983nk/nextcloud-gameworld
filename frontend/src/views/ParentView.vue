@@ -3,19 +3,19 @@
 	<div class="gameworld">
 		<h2>Gameworld</h2>
 		<p class="gameworld__hint">
-			Jede Welt ist privat: Nur eingeladene Nextcloud-Konten können beitreten. Gameworld kündigt keine Welt im Internet an.
+			{{ t('parent.view.privacyHint') }}
 		</p>
 
 		<!-- Pause für alle Kinder (ELTERN-01, D-06): Einstieg zur Pause-Seite und Stand der laufenden Pause. -->
 		<section class="gameworld__pause" :class="{ 'gameworld__pause--active': pause?.active }">
 			<div class="gameworld__pause-text">
-				<h3>Pause für alle Kinder</h3>
+				<h3>{{ t('parent.view.pauseTitle') }}</h3>
 				<p v-if="pause?.active" class="gameworld__pause-state" aria-live="polite">
 					{{ pauseText }}
 				</p>
 			</div>
 			<NcButton :variant="pause?.active ? 'secondary' : 'primary'" @click="navigate('pause')">
-				{{ pause?.active ? 'Pause verwalten' : 'Pause' }}
+				{{ pause?.active ? t('parent.view.pauseManage') : t('parent.view.pauseOpen') }}
 			</NcButton>
 		</section>
 
@@ -26,7 +26,7 @@
 		</NcNoteCard>
 
 		<form class="gameworld__form" @submit.prevent="submit">
-			<NcRadioGroup v-if="presets.length > 0" v-model="selectedPreset" label="Spielart">
+			<NcRadioGroup v-if="presets.length > 0" v-model="selectedPreset" :label="t('parent.view.gameType')">
 				<NcRadioGroupButton
 					v-for="preset in presets"
 					:key="preset.id"
@@ -40,7 +40,7 @@
 			<div class="gameworld__create">
 				<NcTextField
 					v-model="name"
-					label="Weltname"
+					:label="t('parent.view.worldName')"
 					:maxlength="40"
 					:disabled="creating" />
 				<NcButton
@@ -50,15 +50,15 @@
 					<template v-if="creating" #icon>
 						<NcLoadingIcon :size="20" />
 					</template>
-					Welt erstellen
+					{{ t('parent.view.createWorld') }}
 				</NcButton>
 			</div>
 		</form>
 
 		<NcNoteCard v-if="createdWorld" type="success">
-			<p>Welt erstellt. Lade jetzt Spieler ein.</p>
+			<p>{{ t('parent.view.created') }}</p>
 			<NcButton variant="primary" @click="openInvite(createdWorld)">
-				Spieler einladen
+				{{ t('parent.common.invitePlayers') }}
 			</NcButton>
 		</NcNoteCard>
 		<NcNoteCard v-if="error" type="error">
@@ -75,18 +75,18 @@
 
 		<NcLoadingIcon v-if="loading" :size="32" />
 		<p v-else-if="worlds.length === 0" class="gameworld__empty">
-			Noch keine Welt. Wähle eine Spielart, gib einen Namen ein und klicke auf Welt erstellen.
+			{{ t('parent.view.empty') }}
 		</p>
 		<table v-else class="gameworld__list">
 			<thead>
 				<tr>
-					<th>Name</th>
-					<th>Spielart</th>
-					<th>UDP-Port</th>
-					<th>Status</th>
-					<th>Spieler</th>
-					<th>Arbeitsspeicher</th>
-					<th>Aktionen</th>
+					<th>{{ t('parent.view.column.name') }}</th>
+					<th>{{ t('parent.view.column.gameType') }}</th>
+					<th>{{ t('parent.view.column.port') }}</th>
+					<th>{{ t('parent.view.column.status') }}</th>
+					<th>{{ t('parent.view.column.players') }}</th>
+					<th>{{ t('parent.view.column.memory') }}</th>
+					<th>{{ t('parent.view.column.actions') }}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -117,16 +117,16 @@
 							:variant="chipVariant(world.status)"
 							no-close />
 						<NcNoteCard v-if="world.access_restart_needed && world.time_restart_needed" type="warning" class="gameworld__restart">
-							Neustart nötig, damit nur Eingeladene spielen können und Spielzeiten gelten.
+							{{ t('parent.view.restart.accessAndTime') }}
 						</NcNoteCard>
 						<NcNoteCard v-else-if="world.access_restart_needed" type="warning" class="gameworld__restart">
-							Neustart nötig, damit nur Eingeladene spielen können.
+							{{ t('parent.view.restart.access') }}
 						</NcNoteCard>
 						<NcNoteCard v-else-if="world.time_restart_needed" type="warning" class="gameworld__restart">
-							Neustart nötig, damit Spielzeiten gelten.
+							{{ t('parent.view.restart.time') }}
 						</NcNoteCard>
 						<NcNoteCard v-else-if="world.events_restart_needed" type="warning" class="gameworld__restart">
-							Neustart nötig, damit Pause und Hinweise gelten.
+							{{ t('parent.view.restart.events') }}
 						</NcNoteCard>
 						<!-- D-11: Ein fehlgeschlagener Auftrag bleibt stehen, bis der nächste läuft (auch nach Neuladen). -->
 						<NcNoteCard v-if="world.backup_job?.state === 'failed'" type="error" class="gameworld__restart">
@@ -147,7 +147,7 @@
 								:aria-label="memoryText(world)" />
 							<span class="gameworld__memory-text">{{ memoryText(world) }}</span>
 						</template>
-						<span v-else class="gameworld__memory-text">nicht aktiv</span>
+						<span v-else class="gameworld__memory-text">{{ t('parent.view.memoryInactive') }}</span>
 					</td>
 					<td class="gameworld__actions">
 						<NcLoadingIcon v-if="busy[world.id]" :size="20" />
@@ -157,41 +157,41 @@
 								<NcButton
 									:disabled="actionsLocked(world)"
 									@click="run(world, stopWorld)">
-									Stoppen
+									{{ t('parent.view.action.stop') }}
 								</NcButton>
 								<NcButton
 									:disabled="actionsLocked(world)"
 									@click="run(world, restartWorld)">
-									Neustarten
+									{{ t('parent.view.action.restart') }}
 								</NcButton>
 							</template>
 							<NcButton
 								v-else
 								:disabled="actionsLocked(world)"
 								@click="run(world, startWorld)">
-								Starten
+								{{ t('parent.view.action.start') }}
 							</NcButton>
 						</template>
 						<template v-if="!world.delete_only">
 							<NcButton :disabled="backupBusy(world)" @click="openInvite(world)">
-								Einladen
+								{{ t('parent.common.invite') }}
 							</NcButton>
 							<NcButton :disabled="backupBusy(world)" @click="openPlayers(world)">
-								Spieler
+								{{ t('parent.view.action.players') }}
 							</NcButton>
 							<NcButton :disabled="backupBusy(world)" @click="openWindow(world)">
-								Zeitfenster
+								{{ t('parent.view.action.timeWindow') }}
 							</NcButton>
 						</template>
 						<!-- Auch bei fehlenden Weltdaten: Wiederherstellen rettet die Welt (D-15). -->
 						<NcButton @click="openBackups(world)">
-							Sicherungen
+							{{ t('parent.view.action.backups') }}
 						</NcButton>
 						<NcButton
 							variant="error"
 							:disabled="Boolean(busy[world.id]) || backupBusy(world)"
 							@click="pendingDelete = world">
-							Löschen
+							{{ t('parent.view.action.delete') }}
 						</NcButton>
 					</td>
 				</tr>
@@ -201,7 +201,7 @@
 		<NcDialog
 			v-if="pendingDelete"
 			:open="true"
-			name="Welt löschen"
+			:name="t('parent.view.deleteTitle')"
 			:message="deleteMessage"
 			:buttons="deleteButtons"
 			@update:open="onDialogOpen" />
@@ -243,7 +243,7 @@
 
 		<!-- Hat sich ein Elternteil selbst eingeladen, steht hier die eigene Verbindungsinfo. -->
 		<section v-if="myWorlds.length > 0" class="gameworld__mine">
-			<h3>Meine Verbindungsinfo</h3>
+			<h3>{{ t('parent.view.myConnection') }}</h3>
 			<ConnectionCard v-for="world in myWorlds" :key="world.id" :world="world" />
 		</section>
 
@@ -284,6 +284,7 @@ import TimeZoneSetting from '../components/TimeZoneSetting.vue'
 import VerwalterGroupsSection from '../components/VerwalterGroupsSection.vue'
 import WorldWindowDialog from '../components/WorldWindowDialog.vue'
 import { formatBytes, jobNote } from '../backup.js'
+import { t } from '../i18n/index.js'
 import { pauseUntilText, talkHint, windowSummary } from '../playtime.js'
 import { ncAdminOnlyText } from '../roles.js'
 import { navigate } from '../route.js'
@@ -375,7 +376,7 @@ const pause = ref(null)
 const talk = ref(null)
 
 const pauseText = computed(() => (pause.value?.art === 'schluss'
-	? 'Für heute ist Schluss.'
+	? t('parent.view.pauseEndOfDay')
 	: pauseUntilText(pause.value?.until_clock)))
 
 const backupSource = computed(() => (backupsWorldId.value === null
@@ -411,16 +412,17 @@ const deleteMessage = computed(() => {
 	if (!pendingDelete.value) {
 		return ''
 	}
-	const base = `Welt »${pendingDelete.value.name}« endgültig löschen? Die Spielwelt und alle gebauten Dinge werden entfernt.`
+	const base = t('parent.view.deleteMessage', { name: pendingDelete.value.name })
 	return talk.value?.available
-		? `${base} Der Talk-Raum der Welt und sein Verlauf werden ebenfalls gelöscht.`
+		? `${base} ${t('parent.view.deleteTalk')}`
 		: base
 })
 
-const deleteButtons = [
-	{ label: 'Abbrechen', variant: 'tertiary' },
+// Computed so the labels are resolved at render time, not at module evaluation.
+const deleteButtons = computed(() => [
+	{ label: t('parent.common.cancel'), variant: 'tertiary' },
 	{
-		label: 'Endgültig löschen',
+		label: t('parent.view.deleteConfirm'),
 		variant: 'error',
 		callback: () => {
 			const world = pendingDelete.value
@@ -430,7 +432,7 @@ const deleteButtons = [
 			}
 		},
 	},
-]
+])
 
 function onDialogOpen(open) {
 	if (!open) {
@@ -483,7 +485,7 @@ function switchToInvite() {
 // Spielernamen kommen gefiltert aus der API ([A-Za-z0-9_-]), Ausgabe nur per Textinterpolation.
 function invitedText(world) {
 	const invited = world.invited_players ?? []
-	return invited.length === 0 ? 'Noch niemand eingeladen' : invited.join(', ')
+	return invited.length === 0 ? t('parent.view.nobodyInvited') : invited.join(', ')
 }
 
 function chipVariant(status) {
@@ -494,9 +496,9 @@ function chipVariant(status) {
 function playersText(world) {
 	const players = world.players ?? []
 	if (players.length === 0) {
-		return 'Niemand online'
+		return t('parent.view.nobodyOnline')
 	}
-	return `Gerade online: ${players.join(', ')}`
+	return t('parent.view.onlineNow', { names: players.join(', ') })
 }
 
 function memoryPercent(world) {
@@ -505,7 +507,7 @@ function memoryPercent(world) {
 }
 
 function memoryText(world) {
-	return `Arbeitsspeicher: ${formatBytes(world.memory_used_bytes)} von ${formatBytes(world.memory_limit_bytes)}`
+	return t('parent.view.memory', { used: formatBytes(world.memory_used_bytes), limit: formatBytes(world.memory_limit_bytes) })
 }
 
 // Sichern oder Wiederherstellen läuft (Status oder Auftrag aus der API, D-10).
@@ -563,7 +565,7 @@ async function loadPlaytime() {
 		}
 	} catch (err) {
 		if (seq === playtimeSeq) {
-			playtimeError.value = `Die Spielzeiten konnten nicht geladen werden: ${errorText(err)}`
+			playtimeError.value = t('parent.view.playtimeLoadError', { detail: errorText(err) })
 		}
 	} finally {
 		if (seq === playtimeSeq) {
@@ -649,7 +651,7 @@ async function loadPresets() {
 		selectedPreset.value = presets.value[0]?.id ?? ''
 		presetsError.value = ''
 	} catch (err) {
-		presetsError.value = `Die Spielarten konnten nicht geladen werden: ${errorText(err)}`
+		presetsError.value = t('parent.view.presetsLoadError', { detail: errorText(err) })
 	}
 }
 
