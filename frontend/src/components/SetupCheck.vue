@@ -2,11 +2,11 @@
 	<div class="setup-check">
 		<NcLoadingIcon v-if="checking && !result" :size="20" />
 
-		<NcNoteCard v-if="unreachable" type="error" heading="Gameworld ist noch nicht startklar">
-			<p>Gameworld antwortet nicht. Bitte die App in den Nextcloud-Einstellungen prüfen.</p>
+		<NcNoteCard v-if="unreachable" type="error" :heading="t('admin.setup.notReady')">
+			<p>{{ t('admin.setup.unreachable') }}</p>
 		</NcNoteCard>
 
-		<NcNoteCard v-if="errors.length > 0" type="error" heading="Gameworld ist noch nicht startklar">
+		<NcNoteCard v-if="errors.length > 0" type="error" :heading="t('admin.setup.notReady')">
 			<ul class="setup-check__list">
 				<li v-for="item in errors" :key="item.id">
 					{{ item.message }}
@@ -14,7 +14,7 @@
 			</ul>
 		</NcNoteCard>
 
-		<NcNoteCard v-if="warnings.length > 0" type="warning" heading="Sicherheitshinweis zum Docker-Proxy">
+		<NcNoteCard v-if="warnings.length > 0" type="warning" :heading="t('admin.setup.proxyWarning')">
 			<ul class="setup-check__list">
 				<li v-for="item in warnings" :key="item.id">
 					{{ item.message }}
@@ -26,7 +26,7 @@
 			<template v-if="checking" #icon>
 				<NcLoadingIcon :size="20" />
 			</template>
-			Erneut prüfen
+			{{ t('admin.setup.recheck') }}
 		</NcButton>
 	</div>
 </template>
@@ -37,6 +37,7 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { getSetupCheck } from '../api.js'
+import { t } from '../i18n/index.js'
 
 // checked: nach jedem Prüflauf (Erfolg wie Fehler), damit die Weltenliste mitzieht.
 const emit = defineEmits(['update:ok', 'checked'])

@@ -4,6 +4,7 @@
 export default {
 	// Shared by several admin components
 	'admin.common.cancel': 'Annuler',
+	'admin.common.save': 'Enregistrer',
 
 	// VerwalterGroupsSection.vue
 	'admin.groups.title': 'Groupes de gestionnaires',
@@ -36,4 +37,36 @@ export default {
 	'admin.talk.recreate': 'Recréer le salon',
 	'admin.talk.recreateTitle': 'Recréer le salon Talk',
 	'admin.talk.savedLater': 'Enregistré. Talk l’appliquera à la prochaine synchronisation.',
+
+	// SetupCheck.vue
+	'admin.setup.notReady': 'Gameworld n’est pas encore prêt',
+	'admin.setup.unreachable': 'Gameworld ne répond pas. Vérifie l’application dans les paramètres de Nextcloud.',
+	'admin.setup.proxyWarning': 'Avertissement de sécurité sur le proxy Docker',
+	'admin.setup.recheck': 'Vérifier à nouveau',
+
+	// JoinHostSettings.vue
+	'admin.joinHost.title': 'Paramètres',
+	'admin.joinHost.label': 'Adresse de jeu',
+	'admin.joinHost.helper': 'Laisse vide\u00a0: Gameworld utilise l’adresse à laquelle tu ouvres Nextcloud en ce moment.',
+	'admin.joinHost.effective': 'Les joueurs voient cette adresse\u00a0:',
+	'admin.joinHost.loopback': 'Les autres appareils ne peuvent pas joindre cette adresse. Saisis l’adresse du serveur domestique sur le réseau local.',
+	'admin.joinHost.internet': 'Cela ressemble à une adresse Internet. Les jeux passent par UDP et non par un tunnel web\u00a0; saisis l’adresse du serveur domestique sur le réseau local.',
+	'admin.joinHost.saved': 'Enregistré. Les joueurs verront la nouvelle adresse à la prochaine actualisation.',
+
+	// ReviewSetting.vue
+	'admin.review.title': 'Récap du jour le soir',
+	'admin.review.hint': 'S’applique uniquement à toi. Sans temps de jeu ce jour-là, aucun message n’est envoyé.',
+	'admin.review.time': 'Heure',
+	'admin.review.unsaved': 'Pas encore enregistré.',
+	'admin.review.loadError': 'Impossible de charger le réglage\u00a0: {error}',
+	'admin.review.savedAt': 'Enregistré. Le récap arrive à {time}.',
+	'admin.review.savedOff': 'Enregistré. Tu ne reçois pas de récap du jour.',
+
+	// TimeZoneSetting.vue
+	'admin.timeZone.title': 'Fuseau horaire pour les temps de jeu',
+	'admin.timeZone.hint': 'Les temps de jeu, les plages horaires et les vacances s’appliquent dans ce fuseau horaire.',
+	'admin.timeZone.useBrowser': 'Utiliser le fuseau horaire de ce navigateur',
+	'admin.timeZone.browserUses': 'Ce navigateur utilise {zone}.',
+	'admin.timeZone.savedLater': 'Enregistré. Les mondes injoignables pour l’instant appliqueront le fuseau horaire à leur prochain démarrage.',
+	'admin.timeZone.saved': 'Enregistré. Les temps de jeu sont désormais calculés dans ce fuseau horaire.',
 }

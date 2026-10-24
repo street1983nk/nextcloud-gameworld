@@ -1,9 +1,9 @@
 <!-- Tagesrückblick am Abend (D-12, D-14, D-15): an/aus und Uhrzeit, gespeichert nur für den angemeldeten Verwalter. -->
 <template>
 	<section class="review-setting">
-		<h4>Tagesrückblick am Abend</h4>
+		<h4>{{ t('admin.review.title') }}</h4>
 		<p class="review-setting__hint">
-			Gilt nur für dich. Ohne Spielzeit an dem Tag kommt keine Nachricht.
+			{{ t('admin.review.hint') }}
 		</p>
 		<NcLoadingIcon v-if="loading" :size="20" />
 		<div v-else class="review-setting__form">
@@ -12,7 +12,7 @@
 				:model-value="enabled"
 				:disabled="saving"
 				@update:model-value="enabled = $event">
-				Tagesrückblick am Abend
+				{{ t('admin.review.title') }}
 			</NcCheckboxRadioSwitch>
 			<NcSelect
 				:model-value="selectedOption"
@@ -20,17 +20,17 @@
 				:clearable="false"
 				:searchable="false"
 				:disabled="saving || !enabled"
-				input-label="Uhrzeit"
+				:input-label="t('admin.review.time')"
 				@update:model-value="onMinute" />
 			<NcButton variant="primary" :disabled="saving || !changed" @click="save">
 				<template v-if="saving" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Speichern
+				{{ t('admin.common.save') }}
 			</NcButton>
 		</div>
 		<p v-if="changed && !saving" class="review-setting__hint">
-			Noch nicht gespeichert.
+			{{ t('admin.review.unsaved') }}
 		</p>
 		<NcNoteCard v-if="notice" type="success">
 			{{ notice }}
@@ -50,6 +50,7 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
 import { errorText, getReviewPrefs, saveReviewPrefs } from '../api.js'
 import { reviewSelectOptions } from '../playtime.js'
+import { t } from '../i18n/index.js'
 
 const loading = ref(true)
 const saving = ref(false)
@@ -89,7 +90,7 @@ async function load() {
 	try {
 		apply(await getReviewPrefs())
 	} catch (err) {
-		error.value = `Die Einstellung konnte nicht geladen werden: ${errorText(err)}`
+		error.value = t('admin.review.loadError', { error: errorText(err) })
 	} finally {
 		loading.value = false
 	}
@@ -105,8 +106,8 @@ async function save() {
 	try {
 		apply(await saveReviewPrefs(enabled.value, minute.value))
 		notice.value = enabled.value
-			? `Gespeichert. Der Rückblick kommt um ${selectedOption.value?.label ?? ''}.`
-			: 'Gespeichert. Du bekommst keinen Tagesrückblick.'
+			? t('admin.review.savedAt', { time: selectedOption.value?.label ?? '' })
+			: t('admin.review.savedOff')
 	} catch (err) {
 		error.value = errorText(err)
 	} finally {

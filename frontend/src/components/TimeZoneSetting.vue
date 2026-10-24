@@ -1,9 +1,9 @@
 <!-- Zeitzone des Haushalts (O-02): Vorgabe Europe/Berlin, Vorschlag aus diesem Browser; Spielzeiten und Ferien rechnen in dieser Zone. -->
 <template>
 	<section class="time-zone">
-		<h4>Zeitzone für Spielzeiten</h4>
+		<h4>{{ t('admin.timeZone.title') }}</h4>
 		<p class="time-zone__hint">
-			Spielzeiten, Zeitfenster und Ferien gelten in dieser Zeitzone.
+			{{ t('admin.timeZone.hint') }}
 		</p>
 		<div class="time-zone__form">
 			<NcTimezonePicker v-model="value" :uid="pickerId" />
@@ -12,17 +12,17 @@
 				variant="tertiary"
 				:disabled="saving"
 				@click="value = browserZone">
-				Zeitzone dieses Browsers übernehmen
+				{{ t('admin.timeZone.useBrowser') }}
 			</NcButton>
 			<NcButton variant="primary" :disabled="saving || !changed" @click="save">
 				<template v-if="saving" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Speichern
+				{{ t('admin.common.save') }}
 			</NcButton>
 		</div>
 		<p v-if="browserZone && browserZone !== value" class="time-zone__hint">
-			Dieser Browser nutzt {{ browserZone }}.
+			{{ t('admin.timeZone.browserUses', { zone: browserZone }) }}
 		</p>
 		<NcNoteCard v-if="notice" type="success">
 			{{ notice }}
@@ -40,6 +40,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcTimezonePicker from '@nextcloud/vue/components/NcTimezonePicker'
 import { errorText, setTimeZone } from '../api.js'
+import { t } from '../i18n/index.js'
 
 const DEFAULT_ZONE = 'Europe/Berlin'
 
@@ -91,8 +92,8 @@ async function save() {
 		saved.value = result.time_zone
 		value.value = result.time_zone
 		notice.value = result.applied === false
-			? 'Gespeichert. Welten, die gerade nicht erreichbar sind, übernehmen die Zeitzone beim nächsten Start.'
-			: 'Gespeichert. Die Spielzeiten rechnen ab sofort in dieser Zeitzone.'
+			? t('admin.timeZone.savedLater')
+			: t('admin.timeZone.saved')
 		emit('changed')
 	} catch (err) {
 		error.value = errorText(err)

@@ -1,30 +1,30 @@
 <!-- Einstellung der Eltern: Adresse, die Spieler in Luanti eintragen (join_host, Pattern 7). -->
 <template>
 	<section class="join-host">
-		<h3>Einstellungen</h3>
+		<h3>{{ t('admin.joinHost.title') }}</h3>
 		<form class="join-host__form" @submit.prevent="save">
 			<NcTextField
 				v-model="value"
-				label="Adresse für Spieler"
+				:label="t('admin.joinHost.label')"
 				:maxlength="253"
 				:disabled="loading || saving"
-				helper-text="Leer lassen: Gameworld nimmt die Adresse, unter der du Nextcloud gerade öffnest." />
+				:helper-text="t('admin.joinHost.helper')" />
 			<NcButton type="submit" variant="primary" :disabled="loading || saving || !changed">
 				<template v-if="saving" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Speichern
+				{{ t('admin.common.save') }}
 			</NcButton>
 		</form>
 		<p class="join-host__effective">
-			Spieler sehen als Adresse: <strong>{{ effective }}</strong>
+			{{ t('admin.joinHost.effective') }} <strong>{{ effective }}</strong>
 		</p>
 
 		<NcNoteCard v-if="warning === 'loopback'" type="warning">
-			Andere Geräte erreichen diese Adresse nicht. Trag die Adresse des Heimservers im Heimnetz ein.
+			{{ t('admin.joinHost.loopback') }}
 		</NcNoteCard>
 		<NcNoteCard v-else-if="warning === 'internet'" type="warning">
-			Das sieht nach einer Internetadresse aus. Spiele laufen über UDP und nicht durch einen Web-Tunnel; trag die Adresse des Heimservers im Heimnetz ein.
+			{{ t('admin.joinHost.internet') }}
 		</NcNoteCard>
 		<NcNoteCard v-if="notice" type="success">
 			{{ notice }}
@@ -42,6 +42,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { errorText, getSettings, saveSettings } from '../api.js'
+import { t } from '../i18n/index.js'
 
 // Endungen typischer Heimnetz-Namen; sonst gilt ein Name mit Punkt als Internetadresse.
 const HOME_SUFFIXES = ['.local', '.lan', '.home', '.fritz.box']
@@ -108,7 +109,7 @@ async function save() {
 		const settings = await saveSettings(value.value.trim())
 		saved.value = settings.join_host
 		value.value = settings.join_host
-		notice.value = 'Gespeichert. Spieler sehen die neue Adresse beim nächsten Aktualisieren.'
+		notice.value = t('admin.joinHost.saved')
 	} catch (err) {
 		error.value = errorText(err)
 	} finally {
