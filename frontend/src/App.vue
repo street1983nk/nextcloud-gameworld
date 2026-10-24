@@ -12,17 +12,17 @@
 			<template v-else-if="me.role === 'verwalter'">
 				<div v-if="originAsk" class="gameworld-origin">
 					<NcNoteCard type="info">
-						<p>Links in Hinweisen künftig über diese Adresse öffnen?</p>
+						<p>{{ t('kids.app.originQuestion') }}</p>
 						<p class="gameworld-origin__urls">
-							Bisher: <span>{{ originAsk.current }}</span><br>
-							Neu: <span>{{ originAsk.proposed }}</span>
+							{{ t('kids.app.originCurrent') }} <span>{{ originAsk.current }}</span><br>
+							{{ t('kids.app.originProposed') }} <span>{{ originAsk.proposed }}</span>
 						</p>
 						<div class="gameworld-origin__actions">
 							<NcButton variant="primary" :disabled="originSaving" @click="confirmOrigin">
-								Ja, diese Adresse
+								{{ t('kids.app.originYes') }}
 							</NcButton>
 							<NcButton variant="tertiary" :disabled="originSaving" @click="dismissOrigin">
-								Nein
+								{{ t('kids.app.originNo') }}
 							</NcButton>
 						</div>
 					</NcNoteCard>
@@ -51,6 +51,7 @@ import PauseView from './views/PauseView.vue'
 import PlayerView from './views/PlayerView.vue'
 import ReviewView from './views/ReviewView.vue'
 import { getMe, reportOrigin } from './api.js'
+import { t } from './i18n/index.js'
 import { originQuestion, readDismissed, rememberDismissed } from './origin.js'
 import { ROUTE_EVENT, currentPage } from './route.js'
 
@@ -120,7 +121,7 @@ onMounted(async () => {
 		const detail = err?.response?.data?.detail
 		error.value = typeof detail === 'string' && detail !== ''
 			? detail
-			: 'Gameworld konnte nicht geladen werden. Bitte lade die Seite neu.'
+			: t('kids.app.loadFailed')
 	} finally {
 		loading.value = false
 	}

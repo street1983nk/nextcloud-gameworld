@@ -18,30 +18,30 @@
 		<!-- Browser-Spike 04.2: nur bei laufender Welt und eingeschaltetem Spike. Neuer Tab, keine Einbettung. -->
 		<div v-if="showPlay" class="connection-card__play">
 			<NcButton variant="primary" :disabled="playStarting" @click="playInBrowser">
-				Im Browser spielen
+				{{ t('kids.connection.play') }}
 			</NcButton>
 		</div>
 		<NcNoteCard v-if="playError" type="error">
-			Das Spiel im Browser konnte nicht starten. {{ playError }}
+			{{ t('kids.connection.playFailed', { detail: playError }) }}
 		</NcNoteCard>
 
 		<NcFormBox>
-			<NcFormBoxCopyButton label="Adresse" :value="host" />
-			<NcFormBoxCopyButton label="Port" :value="String(world.port)" />
-			<NcFormBoxCopyButton label="Spielername" :value="world.player_name" />
+			<NcFormBoxCopyButton :label="t('kids.connection.address')" :value="host" />
+			<NcFormBoxCopyButton :label="t('kids.connection.port')" :value="String(world.port)" />
+			<NcFormBoxCopyButton :label="t('kids.connection.playerName')" :value="world.player_name" />
 			<!-- Der Kopierknopf zeigt seinen Wert immer an, darum fürs Passwort erst nach "Anzeigen". -->
-			<NcFormBoxCopyButton v-if="revealed" label="Passwort" :value="world.password" />
+			<NcFormBoxCopyButton v-if="revealed" :label="t('kids.connection.password')" :value="world.password" />
 		</NcFormBox>
 
 		<div class="connection-card__password">
-			<span v-if="!revealed" class="connection-card__masked" aria-label="Passwort verdeckt">
-				Passwort: ••••-••••-••••
+			<span v-if="!revealed" class="connection-card__masked" :aria-label="t('kids.connection.maskedLabel')">
+				{{ t('kids.connection.masked') }}
 			</span>
 			<NcButton variant="tertiary" @click="revealed = !revealed">
-				{{ revealed ? 'Verbergen' : 'Anzeigen' }}
+				{{ revealed ? t('kids.connection.hide') : t('kids.connection.show') }}
 			</NcButton>
 			<NcButton v-if="!revealed" variant="tertiary" @click="copyPassword">
-				{{ copied ? 'Kopiert' : 'Passwort kopieren' }}
+				{{ copied ? t('kids.connection.copied') : t('kids.connection.copyPassword') }}
 			</NcButton>
 		</div>
 		<NcNoteCard v-if="copyError" type="warning">
@@ -61,6 +61,7 @@ import NcFormBoxCopyButton from '@nextcloud/vue/components/NcFormBoxCopyButton'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import JoinGuide from './JoinGuide.vue'
 import { errorText, getPlayStatus, getPlayTicket } from '../api.js'
+import { t } from '../i18n/index.js'
 import { windowText } from '../playtime.js'
 
 const props = defineProps({
@@ -132,7 +133,7 @@ async function copyPassword() {
 			copied.value = false
 		}, 2000)
 	} catch {
-		copyError.value = 'Kopieren geht in diesem Browser nicht. Klick auf Anzeigen und schreib das Passwort ab.'
+		copyError.value = t('kids.connection.copyFailed')
 	}
 }
 </script>

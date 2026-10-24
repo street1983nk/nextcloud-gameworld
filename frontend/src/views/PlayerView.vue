@@ -1,9 +1,9 @@
 <!-- Spieleransicht: nur eigene Daten (/api/me, /api/my/worlds, /api/my/playtime), nie die Verwaltungs-API. -->
 <template>
 	<div class="gameworld-player">
-		<h2>Meine Welten</h2>
+		<h2>{{ t('kids.player.title') }}</h2>
 		<p class="gameworld-player__hello">
-			Hallo {{ user.display_name }}!
+			{{ t('kids.player.hello', { name: user.display_name }) }}
 		</p>
 
 		<NcNoteCard v-if="error" type="error">
@@ -15,8 +15,8 @@
 		<NcLoadingIcon v-if="loading" :size="32" />
 		<NcEmptyContent
 			v-else-if="worlds.length === 0 && !error"
-			name="Du bist noch zu keiner Welt eingeladen"
-			description="Sobald deine Eltern dich in eine Welt einladen, steht hier, wie du hineinkommst." />
+			:name="t('kids.player.emptyName')"
+			:description="t('kids.player.emptyDescription')" />
 		<template v-else>
 			<ConnectionCard v-for="world in worlds" :key="world.id" :world="world" />
 		</template>
@@ -31,6 +31,7 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import ConnectionCard from '../components/ConnectionCard.vue'
 import PlaytimeCard from '../components/PlaytimeCard.vue'
 import { errorText, getMyPlaytime, listMyWorlds } from '../api.js'
+import { t } from '../i18n/index.js'
 
 // Antwort von /api/me: Anrede mit dem Anzeigenamen.
 defineProps({

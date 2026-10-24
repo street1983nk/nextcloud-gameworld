@@ -1,7 +1,7 @@
 <!-- Handy-Seite Tagesrückblick (ELTERN-03, D-12 bis D-14): Minuten je Kind und Welt eines Tages. -->
 <template>
 	<div class="mobile-page">
-		<h2>Tagesrückblick</h2>
+		<h2>{{ t('kids.review.title') }}</h2>
 		<p v-if="heading" class="mobile-page__day">
 			{{ heading }}
 		</p>
@@ -12,23 +12,23 @@
 
 		<template v-else-if="!error">
 			<p v-if="kids.length === 0" class="mobile-page__empty">
-				An diesem Tag hat niemand gespielt.
+				{{ t('kids.review.empty') }}
 			</p>
 			<ul v-else class="review">
 				<li v-for="kid in kids" :key="kid.nc_user" class="review__kid">
 					<p class="review__line">
 						<strong>{{ kid.display_name }}</strong>
-						{{ minutesText(kid.minutes) }}<span v-if="kid.limit_reached" class="review__limit"> (Limit erreicht)</span>
+						{{ minutesText(kid.minutes) }}<span v-if="kid.limit_reached" class="review__limit"> {{ t('kids.review.limitReached') }}</span>
 					</p>
 					<ul v-if="kid.worlds.length > 0" class="review__worlds">
 						<li v-for="world in kid.worlds" :key="world.world_id">
-							{{ world.world_name }}: {{ minutesText(world.minutes) }}
+							{{ t('kids.review.worldMinutes', { world: world.world_name, minutes: minutesText(world.minutes) }) }}
 						</li>
 					</ul>
 				</li>
 			</ul>
 			<p class="mobile-page__hint">
-				Gezählt werden nur Kinder, für die hier Spielzeit-Regeln eingestellt sind.
+				{{ t('kids.review.hint') }}
 			</p>
 		</template>
 
@@ -38,7 +38,7 @@
 
 		<div class="mobile-page__buttons mobile-page__back">
 			<NcButton variant="tertiary" @click="navigate('')">
-				Zur Übersicht
+				{{ t('kids.common.back') }}
 			</NcButton>
 		</div>
 	</div>
@@ -50,6 +50,7 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { errorText, getReview } from '../api.js'
+import { t } from '../i18n/index.js'
 import { minutesText } from '../playtime.js'
 import { currentParams, dayLabel, navigate } from '../route.js'
 

@@ -1,4 +1,70 @@
 // Area "kids" (en). Filled by plan 06-21 (App.vue, player views, playtime and window components).
 // Flat table: every key starts with "kids."; values are plain text, never HTML.
+// Texts children read themselves (player, connection, guide, playtime card) use short, simple sentences.
 export default {
+	'kids.common.back': 'Back to overview',
+
+	'kids.app.loadFailed': 'Gameworld could not be loaded. Please reload the page.',
+	'kids.app.originQuestion': 'Open links in notifications through this address from now on?',
+	'kids.app.originCurrent': 'So far:',
+	'kids.app.originProposed': 'New:',
+	'kids.app.originYes': 'Yes, this address',
+	'kids.app.originNo': 'No',
+
+	'kids.player.title': 'My worlds',
+	'kids.player.hello': 'Hi {name}!',
+	'kids.player.emptyName': 'You are not invited to a world yet',
+	'kids.player.emptyDescription': 'When your parents invite you to a world, you will see here how to get in.',
+
+	'kids.connection.play': 'Play in the browser',
+	'kids.connection.playFailed': 'The game could not start in the browser. {detail}',
+	'kids.connection.address': 'Address',
+	'kids.connection.port': 'Port',
+	'kids.connection.playerName': 'Player name',
+	'kids.connection.password': 'Password',
+	'kids.connection.maskedLabel': 'Password hidden',
+	'kids.connection.masked': 'Password: ••••-••••-••••',
+	'kids.connection.hide': 'Hide',
+	'kids.connection.show': 'Show',
+	'kids.connection.copied': 'Copied',
+	'kids.connection.copyPassword': 'Copy password',
+	'kids.connection.copyFailed': 'Copying does not work in this browser. Click Show and write the password down.',
+
+	'kids.guide.title': 'How to get into the world',
+	'kids.guide.install': 'Install Luanti from {site}.',
+	'kids.guide.platforms': 'Luanti works on Windows, macOS and Linux. For Android, get it from Google Play or F-Droid.',
+	'kids.guide.noIos': 'There is no official version for iPhone and iPad.',
+	'kids.guide.openTab': 'Open Luanti and choose the "Join Game" tab.',
+	'kids.guide.address': 'Enter {host} under Address and {port} under Port.',
+	'kids.guide.name': 'Enter {name} under Name and your password under Password, exactly as shown here.',
+	'kids.guide.case': 'Capital and small letters matter.',
+	'kids.guide.join': 'Click Login. The first time, Luanti loads the game files. With "Adventure (gentle)" this can take a while.',
+	'kids.guide.note': 'Please do not change your password in the game. The right password is always shown here.',
+
+	'kids.playtimeCard.title': 'Your playtime today',
+
+	'kids.pause.title': 'Break for all children',
+	'kids.pause.warning': 'After a 30-second warning, all children are disconnected. Managers stay in the world.',
+	'kids.pause.notCounted': 'The break does not count toward playtime. The time windows of the worlds keep running.',
+	'kids.pause.minutes.one': '{count} minute',
+	'kids.pause.minutes.other': '{count} minutes',
+	'kids.pause.stopToday': 'Done for today',
+	'kids.pause.stoppedToday': 'Playing is over for today. The children can play again tomorrow.',
+	'kids.pause.resume': 'Resume',
+	'kids.pause.restarted': '{name} was restarted so that the break takes effect for sure.',
+	'kids.pause.later': '{name} applies the break at its next start.',
+
+	'kids.review.title': 'Daily summary',
+	'kids.review.empty': 'Nobody played on this day.',
+	'kids.review.limitReached': '(limit reached)',
+	'kids.review.worldMinutes': '{world}: {minutes}',
+	'kids.review.hint': 'Only children with playtime rules set here are counted.',
+
+	'kids.attempts.title': 'Join attempts',
+	'kids.attempts.intro': 'Only invited Nextcloud accounts get into Gameworld. To let someone play along, invite their Nextcloud account.',
+	'kids.attempts.emptyToday': 'There were no join attempts today.',
+	'kids.attempts.emptyDay': 'There were no join attempts on this day.',
+	'kids.attempts.repeated': ', several times',
+	'kids.attempts.invite': 'Invite someone',
+	'kids.attempts.inviteWorld': 'Invite someone: {name}',
 }

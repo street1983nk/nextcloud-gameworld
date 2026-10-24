@@ -1,13 +1,13 @@
 <!-- Handy-Seite Beitrittsversuche (ELTERN-02, D-07 bis D-09): wer nicht eingeladen war, und der Weg zum Einladen. -->
 <template>
 	<div class="mobile-page">
-		<h2>Beitrittsversuche</h2>
+		<h2>{{ t('kids.attempts.title') }}</h2>
 		<p v-if="heading" class="mobile-page__day">
 			{{ heading }}
 		</p>
 
 		<NcNoteCard type="info">
-			In Gameworld kommen nur eingeladene Nextcloud-Konten. Willst du jemanden mitspielen lassen, lade das Nextcloud-Konto ein.
+			{{ t('kids.attempts.intro') }}
 		</NcNoteCard>
 
 		<div v-if="loading" class="mobile-page__loading">
@@ -25,7 +25,7 @@
 					class="attempts__item">
 					<strong class="attempts__name">{{ attempt.player_name }}</strong>
 					<span class="attempts__meta">
-						{{ attempt.world_name }}, {{ attempt.clock }}<template v-if="attempt.count >= 2">, mehrmals</template>
+						{{ attempt.world_name }}, {{ attempt.clock }}<template v-if="attempt.count >= 2">{{ t('kids.attempts.repeated') }}</template>
 					</span>
 				</li>
 			</ul>
@@ -36,7 +36,7 @@
 					:key="world.id"
 					variant="primary"
 					@click="inviteWorld = world">
-					{{ worlds.length > 1 ? `Jemanden einladen: ${world.name}` : 'Jemanden einladen' }}
+					{{ worlds.length > 1 ? t('kids.attempts.inviteWorld', { name: world.name }) : t('kids.attempts.invite') }}
 				</NcButton>
 			</div>
 		</template>
@@ -47,7 +47,7 @@
 
 		<div class="mobile-page__buttons mobile-page__back">
 			<NcButton variant="tertiary" @click="navigate('')">
-				Zur Übersicht
+				{{ t('kids.common.back') }}
 			</NcButton>
 		</div>
 
@@ -68,6 +68,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import InviteDialog from '../components/InviteDialog.vue'
 import { errorText, listAttempts } from '../api.js'
+import { t } from '../i18n/index.js'
 import { currentParams, dayLabel, navigate } from '../route.js'
 
 defineProps({
@@ -90,8 +91,8 @@ const today = ref('')
 
 const heading = computed(() => (day.value ? dayLabel(day.value, today.value) : ''))
 const emptyText = computed(() => (day.value !== '' && day.value === today.value
-	? 'Heute gab es keine Beitrittsversuche.'
-	: 'An diesem Tag gab es keine Beitrittsversuche.'))
+	? t('kids.attempts.emptyToday')
+	: t('kids.attempts.emptyDay')))
 
 // Je Welt einmal { id, name } für den Einladen-Dialog, in der Reihenfolge der Liste.
 const worlds = computed(() => {

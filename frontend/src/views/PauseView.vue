@@ -1,7 +1,7 @@
 <!-- Handy-Seite Pause (ELTERN-01, D-01 bis D-06, D-25, D-29): Pause für alle Kinder in allen Welten. -->
 <template>
 	<div class="mobile-page">
-		<h2>Pause für alle Kinder</h2>
+		<h2>{{ t('kids.pause.title') }}</h2>
 
 		<div v-if="loading" class="mobile-page__loading">
 			<NcLoadingIcon :size="32" />
@@ -10,10 +10,10 @@
 		<template v-else>
 			<template v-if="!pause?.active">
 				<NcNoteCard type="info">
-					Nach 30 Sekunden Vorwarnung werden alle Kinder getrennt. Verwalter bleiben in der Welt.
+					{{ t('kids.pause.warning') }}
 				</NcNoteCard>
 				<NcNoteCard type="info">
-					Die Pausenzeit zählt nicht auf die Spielzeit. Zeitfenster der Welten laufen weiter.
+					{{ t('kids.pause.notCounted') }}
 				</NcNoteCard>
 				<div class="mobile-page__buttons mobile-page__buttons--stack">
 					<NcButton
@@ -24,12 +24,12 @@
 						wide
 						:disabled="saving"
 						@click="start(option.minutes)">
-						{{ option.label }}
+						{{ tn('kids.pause.minutes', option.minutes) }}
 					</NcButton>
 				</div>
 				<div class="mobile-page__buttons">
 					<NcButton variant="secondary" :disabled="saving" @click="schluss">
-						Für heute Schluss
+						{{ t('kids.pause.stopToday') }}
 					</NcButton>
 				</div>
 			</template>
@@ -37,12 +37,12 @@
 			<template v-else-if="pause.art === 'schluss'">
 				<div aria-live="polite">
 					<NcNoteCard type="warning">
-						Für heute ist Schluss. Die Kinder können morgen wieder spielen.
+						{{ t('kids.pause.stoppedToday') }}
 					</NcNoteCard>
 				</div>
 				<div class="mobile-page__buttons">
 					<NcButton variant="primary" size="large" :disabled="saving" @click="end">
-						Weiter
+						{{ t('kids.pause.resume') }}
 					</NcButton>
 				</div>
 			</template>
@@ -55,10 +55,10 @@
 				</div>
 				<div class="mobile-page__buttons">
 					<NcButton variant="primary" size="large" :disabled="saving" @click="end">
-						Weiter
+						{{ t('kids.pause.resume') }}
 					</NcButton>
 					<NcButton variant="secondary" size="large" :disabled="saving" @click="schluss">
-						Für heute Schluss
+						{{ t('kids.pause.stopToday') }}
 					</NcButton>
 				</div>
 			</template>
@@ -77,7 +77,7 @@
 
 		<div class="mobile-page__buttons mobile-page__back">
 			<NcButton variant="tertiary" @click="navigate('')">
-				Zur Übersicht
+				{{ t('kids.common.back') }}
 			</NcButton>
 		</div>
 	</div>
@@ -89,14 +89,15 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { endPause, errorText, getPause, startPause, stopForToday } from '../api.js'
+import { t, tn } from '../i18n/index.js'
 import { pauseUntilText } from '../playtime.js'
 import { navigate } from '../route.js'
 
-// Genau die Dauern, die das Backend annimmt (D-02).
+// Exactly the durations the backend accepts (D-02); labels are resolved when rendering.
 const PAUSE_OPTIONS = Object.freeze([
-	{ minutes: 15, label: '15 Minuten' },
-	{ minutes: 30, label: '30 Minuten' },
-	{ minutes: 60, label: '60 Minuten' },
+	{ minutes: 15 },
+	{ minutes: 30 },
+	{ minutes: 60 },
 ])
 // Abruf nur bei sichtbarer Seite (T-04.1-39).
 const POLL_MS = 15000
@@ -135,9 +136,9 @@ function notesFrom(result) {
 	const notes = []
 	for (const world of result?.worlds ?? []) {
 		if (world.restarted) {
-			notes.push({ key: `restart-${world.id}`, text: `${world.name} wurde neu gestartet, damit die Pause sicher greift.` })
+			notes.push({ key: `restart-${world.id}`, text: t('kids.pause.restarted', { name: world.name }) })
 		} else if (world.applied === false) {
-			notes.push({ key: `later-${world.id}`, text: `${world.name} übernimmt die Pause beim nächsten Start.` })
+			notes.push({ key: `later-${world.id}`, text: t('kids.pause.later', { name: world.name }) })
 		}
 	}
 	return notes

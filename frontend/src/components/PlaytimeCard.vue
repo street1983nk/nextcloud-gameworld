@@ -1,7 +1,7 @@
 <!-- Block "Deine Spielzeit heute" in der Kind-Ansicht; ohne Regeln (limited false) erscheint nichts. -->
 <template>
 	<section v-if="text" class="playtime-card" aria-live="polite">
-		<h3>Deine Spielzeit heute</h3>
+		<h3>{{ t('kids.playtimeCard.title') }}</h3>
 		<NcNoteCard :type="blocked ? 'warning' : 'info'">
 			{{ text }}
 		</NcNoteCard>
@@ -11,6 +11,7 @@
 <script setup>
 import { computed } from 'vue'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
+import { t } from '../i18n/index.js'
 import { kidPlaytimeBlocked, kidPlaytimeText } from '../playtime.js'
 
 const props = defineProps({

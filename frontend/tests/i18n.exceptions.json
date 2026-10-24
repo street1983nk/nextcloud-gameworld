@@ -12,5 +12,9 @@
   { "file": "frontend/src/i18n/en/parent.js", "key": "parent.view.column.name", "reason": "Column header Name is the same word in German and English" },
   { "file": "frontend/src/i18n/en/parent.js", "key": "parent.view.column.status", "reason": "Column header Status is the same word in German and English" },
   { "file": "frontend/src/i18n/fr/parent.js", "key": "parent.view.pauseOpen", "reason": "Button Pause is the same word in German and French (term table: Pause = pause)" },
-  { "file": "frontend/src/i18n/en/admin.js", "key": "admin.orphans.chipContainer", "reason": "Chip Container is the same word in German and English (term table: Container = container)" }
+  { "file": "frontend/src/i18n/en/admin.js", "key": "admin.orphans.chipContainer", "reason": "Chip Container is the same word in German and English (term table: Container = container)" },
+  { "file": "frontend/src/i18n/en/kids.js", "key": "kids.connection.port", "reason": "Field label Port is the same word in German and English (also the Luanti client label)" },
+  { "file": "frontend/src/i18n/fr/kids.js", "key": "kids.connection.port", "reason": "Field label Port is the same word in German and French" },
+  { "file": "frontend/src/i18n/fr/kids.js", "key": "kids.connection.address", "reason": "Field label Adresse is the same word in German and French" },
+  { "file": "frontend/src/i18n/en/kids.js", "key": "kids.review.worldMinutes", "reason": "Format only: world name, colon and minutes" }
 ]
