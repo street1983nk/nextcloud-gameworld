@@ -105,9 +105,23 @@ Werkzeuge wie in Phase 4: docker-CLI, curl, jq, grep und `uv`; Benachrichtigunge
 
 Das Skript legt die Welten "Abnahme Pause", "Abnahme Ohne Talk" und "Abnahme Nachlegen" und die Wegwerfkonten `gw-abnahme41` und `gw-admin2` (in `admin`) an, setzt Regeln für `gw-kind`, startet eine Pause und "Für heute Schluss", schaltet den Tagesrückblick von admin kurz um, deaktiviert Talk einmal (`occ app:disable spreed`) und startet die ExApp dreimal gezielt neu. Bei gestoppter ExApp löscht es die Fremdversuche, Tagesmerker und den Rückblick-Versand des heutigen Tages, damit es an einem Tag mehrfach laufen kann. Ein trap räumt alles in jedem Fall auf: Welten, Pause, Rückblick-Einstellung von admin, Regeln und Verbrauch von `gw-kind`, beide Konten, `gw-kind` nicht in `admin`, Talk wieder aktiviert. Die Benachrichtigungen bleiben in der Glocke von admin stehen (für die Browser-Abnahme). Zwischen 23 Uhr und 0:16 wartet es bis 0:16.
 
-Negativkontrollen erwarten den genauen Code: Ein Kind bekommt auf Verwaltungsrouten von AppAPI 404 (am Dev-Stack belegt), Talk antwortet Nicht-Moderatoren mit 403. Leere Abrufe (SQL, Benachrichtigungsliste mit HTTP-Code ungleich 200) bestehen nie. Prüfungen, die im Dev-Stack nichts belegen können (echter Webhook von Talk an den Bot), weist `smoke-talk.sh` als `ÜBERSPRUNGEN` aus; sie zählen weder als bestanden noch als fehlgeschlagen. Den Webhook selbst prüft das Skript direkt am Backend, so wie AppAPI ihn aufruft.
+Negativkontrollen erwarten den genauen Code: Ein Kind bekommt auf Verwaltungsrouten 403 vom Backend (seit 06-02 sind alle Routen USER, die Sperre ist `require_verwalter`; vorher 404 von AppAPI), Talk antwortet Nicht-Moderatoren mit 403. Leere Abrufe (SQL, Benachrichtigungsliste mit HTTP-Code ungleich 200) bestehen nie. Prüfungen, die im Dev-Stack nichts belegen können (echter Webhook von Talk an den Bot), weist `smoke-talk.sh` als `ÜBERSPRUNGEN` aus; sie zählen weder als bestanden noch als fehlgeschlagen. Den Webhook selbst prüft das Skript direkt am Backend, so wie AppAPI ihn aufruft.
 
 Am Ende ruft es `acceptance-phase4.sh` als Regression, das wiederum Phase 1 bis 3 ruft. Laufzeit etwa 40 Minuten (davon etwa 15 für Phase 4.1, wegen der Wartezeit auf den 5-min-Talk-Abgleich in `smoke-talk.sh` und beim Nachlegen), Exit 0 nur bei "N von N Prüfungen bestanden". Mit `GAMEWORLD_SKIP_REGRESSION=1` entfällt die Regression; der Lauf endet dann bewusst mit Exit 1.
+
+## Phasenabnahme Phase 6 und der Store-Weg lokal (HaRP)
+
+Belegt die sieben Erfolgskriterien von Phase 6 (Installation, Setup-Check, Deaktivieren und Reste, Listing, Verwalter-Gruppen mit 404-Falle, Erwachsen-Schalter mit Pause und Zeitfenster, Talk-Übernahme) in zwei Modi:
+
+```sh
+sh scripts/dev/register-exapp.sh
+sh scripts/dev/acceptance-phase6.sh                     # manual, mit Regression Phase 5 bis 1
+sh scripts/dev/harp-install.sh
+GAMEWORLD_DEPLOY=harp GAMEWORLD_SKIP_REGRESSION=1 sh scripts/dev/acceptance-phase6.sh
+sh scripts/dev/harp-install.sh --uninstall               # Test-Stack samt Volumes weg
+```
+
+`harp-install.sh` geht den Weg einer Store-Installation ohne Archiv und Zertifikat: eigene Test-Nextcloud 34.0.3 mit Talk, eigener Docker-Proxy, echter HaRP-Daemon, Registry auf `127.0.0.1:5000` und eine Front auf `127.0.0.1:8093` (`/exapps/` an HaRP, sonst Nextcloud). Das Skript baut das Image, schiebt es in die lokale Registry, registriert eine Kopie der `info.xml` (`.dev/info-harp.xml`, nur `registry` umgeschrieben) per `occ app_api:app:register --info-xml` und prüft, dass der ExApp-Container als `10001:10001` läuft. Der HaRP-Schlüssel liegt in `.dev/harp.key`. Die Dev-Nextcloud auf 8091 und ihre Welten fasst dieser Weg nie an; Deaktivieren (D-17) prüft die Abnahme darum nur im Modus `harp`. K7 ohne Talk ist ein Fehler, außer mit `GAMEWORLD_SKIP_TALK=1`. Laufzeit ohne Regression etwa 20 Minuten (Abgleich-Intervall und zweimal Talk-Abgleich), mit Regression im Modus manual rund eine Stunde mehr.
 
 ## Talk im Dev-Stack
 
