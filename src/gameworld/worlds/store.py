@@ -1305,6 +1305,29 @@ class WorldStore:
         with self._connect() as connection:
             connection.execute("UPDATE talk_rooms SET state = ? WHERE world_id = ?", (state, world_id))
 
+    def set_talk_owner(self, world_id: str, owner_uid: str, former_owner: str | None) -> None:
+        """Gameworld-Besitzer des Raums (D-16) und Ex-Verwalter, der in Talk noch Owner ist (D-19)."""
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE talk_rooms SET owner_uid = ?, former_owner = ? WHERE world_id = ?",
+                (owner_uid, former_owner, world_id),
+            )
+
+    def set_talk_orphaned(self, world_id: str, token: str | None) -> None:
+        """Merkt den alten Raum, den kein Verwalter mehr moderieren kann (Sperrfall, D-16)."""
+        with self._connect() as connection:
+            connection.execute("UPDATE talk_rooms SET orphaned_token = ? WHERE world_id = ?", (token, world_id))
+
+    def replace_talk_token(self, world_id: str, token: str, owner_uid: str, created_at: str) -> bool:
+        """Neuer Raum für dieselbe Welt; Nur-lesen und ``orphaned_token`` bleiben, ``former_owner`` fällt weg."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE talk_rooms SET token = ?, owner_uid = ?, created_at = ?, former_owner = NULL, state = ? "
+                "WHERE world_id = ?",
+                (token, owner_uid, created_at, TALK_STATE_OK, world_id),
+            )
+        return cursor.rowcount == 1
+
     def delete_talk_room(self, world_id: str) -> None:
         with self._connect() as connection:
             connection.execute("DELETE FROM talk_rooms WHERE world_id = ?", (world_id,))

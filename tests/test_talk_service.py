@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from gameworld.playtime.engine import META_TIME_ADMINS
 from gameworld.talk import service as talk_service
-from gameworld.talk.rooms import RoomMember, TalkUnavailableError
+from gameworld.talk.rooms import RoomGoneError, RoomMember, TalkUnavailableError
 from gameworld.talk.service import TalkService, get_talk_service
 from gameworld.worlds.store import TALK_STATE_DELETE_PENDING, TALK_STATE_OK, WorldStore
 from tests.conftest import FakeTalkRooms
@@ -350,3 +351,206 @@ async def test_shutdown_waits_for_quick_hooks_and_cancels_slow_ones(talk: TalkSe
 async def test_shutdown_talk_without_service_is_noop(app_env: Path) -> None:
     del app_env
     assert await talk_service.shutdown_talk() == 0
+
+
+# Übernahme verwaister Räume (06-06, D-16/D-19). Gegenprobe über rohes SQLite, nicht über den Store.
+
+
+def _raw_room(app_env: Path, world_id: str = W1) -> tuple[str, str, str | None, str | None] | None:
+    connection = sqlite3.connect(app_env / "gameworld.sqlite3")
+    try:
+        row = connection.execute(
+            "SELECT token, owner_uid, former_owner, orphaned_token FROM talk_rooms WHERE world_id = ?", (world_id,)
+        ).fetchone()
+    finally:
+        connection.close()
+    return None if row is None else (str(row[0]), str(row[1]), row[2], row[3])
+
+
+def _ex_admin_room(store: WorldStore, *, senior: str = "admin") -> None:
+    """Danach sind nur admin und gw-lehrer Verwalter (gw-alt nicht mehr), ``senior`` zuerst gesehen."""
+    junior = "gw-lehrer" if senior == "admin" else "admin"
+    store.sync_verwalter_seen({senior}, "2026-01-01T00:00:00+00:00")
+    store.sync_verwalter_seen({senior, junior}, "2026-02-01T00:00:00+00:00")
+    store.set_meta(META_TIME_ADMINS, json.dumps(["admin", "gw-lehrer"]))
+
+
+async def _room_of_gw_alt(talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms) -> str:
+    """Raum der Welt W1 gehört gw-alt (damals Verwalter); W2 gibt es nicht."""
+    store.delete_world(W2)
+    store.set_meta(META_TIME_ADMINS, json.dumps(["admin", "gw-alt", "gw-lehrer"]))
+    await talk.ensure_room(W1, "gw-alt")
+    fake_talk.calls.clear()
+    return _token(store)
+
+
+def _blind(fake_talk: FakeTalkRooms, token: str, *, blind: set[str] | None) -> None:
+    """``blind``: diese Konten sehen den Raum nicht; None: niemand sieht ihn (Sperrfall)."""
+    original = fake_talk.participants
+
+    async def participants(acting_uid: str, room: str) -> list[RoomMember]:
+        if room == token and (blind is None or acting_uid in blind):
+            fake_talk.calls.append(("participants", acting_uid, (room,)))
+            raise RoomGoneError("weg")
+        return await original(acting_uid, room)
+
+    fake_talk.participants = participants  # type: ignore[method-assign]
+
+
+async def test_ex_admin_stays_talk_owner_room_goes_to_senior_admin(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    token = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="admin")
+    assert store.verwalter_seniority() == ["admin", "gw-lehrer"]
+    await talk.reconcile_all("admin")
+    assert _raw_room(app_env) == (token, "admin", "gw-alt", None)
+    members = _members(fake_talk, token)
+    assert members["gw-alt"] == ("users", 1)
+    assert members["admin"] == ("users", 2)
+    status = {w.world_id: w for w in (await talk.status("admin")).worlds}
+    assert status[W1].owner_not_admin is True
+    assert status[W1].owner_display == "gw-alt"
+    assert status[W1].orphaned_token is None
+    # Nichts gelöscht: der Ex-Verwalter bleibt bis zur Neuanlage durch einen Verwalter.
+    assert "delete" not in fake_talk.methods()
+
+
+async def test_takeover_follows_seniority_not_account_id(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    token = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="gw-lehrer")
+    assert store.verwalter_seniority() == ["gw-lehrer", "admin"]
+    await talk.reconcile_all("admin")
+    assert _raw_room(app_env) == (token, "gw-lehrer", "gw-alt", None)
+
+
+async def test_deleted_owner_room_goes_to_senior_admin_without_former_owner(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    token = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="admin")
+    # Nextcloud hat gw-alt gelöscht, Talk hat ihn aus dem Raum entfernt.
+    fake_talk.rooms[token] = [m for m in fake_talk.rooms[token] if m.actor_id != "gw-alt"]
+    await talk.reconcile_all("admin")
+    assert _raw_room(app_env) == (token, "admin", None, None)
+    status = {w.world_id: w for w in (await talk.status("admin")).worlds}
+    assert status[W1].owner_not_admin is False
+    assert status[W1].owner_display is None
+
+
+async def test_senior_admin_blind_second_takes_over_and_is_promoted(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    token = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="admin")
+    lehrer = next(m for m in fake_talk.rooms[token] if m.actor_id == "gw-lehrer")
+    fake_talk._retype(token, lehrer.attendee_id, 3)  # pyright: ignore[reportPrivateUsage]
+    _blind(fake_talk, token, blind={"admin"})
+    await talk.reconcile_all("admin")
+    assert _raw_room(app_env) == (token, "gw-lehrer", "gw-alt", None)
+    assert _members(fake_talk, token)["gw-lehrer"] == ("users", 2)
+    assert any(c[0] == "promote" and c[2][1] == lehrer.attendee_id for c in fake_talk.calls)
+
+
+async def test_locked_room_gets_new_room_and_keeps_old_token_visible(
+    talk: TalkService,
+    store: WorldStore,
+    fake_talk: FakeTalkRooms,
+    app_env: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    old = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="admin")
+    _blind(fake_talk, old, blind=None)
+    with caplog.at_level(logging.INFO):
+        await talk.reconcile_all("admin")
+    raw = _raw_room(app_env)
+    assert raw is not None
+    new, owner, former, orphaned = raw
+    assert new != old
+    assert (owner, former, orphaned) == ("admin", None, old)
+    assert _members(fake_talk, new)["admin"] == ("users", 1)
+    # Den alten Raum löscht nur ein Nextcloud-Admin per occ, Gameworld nicht.
+    assert old in fake_talk.rooms
+    assert not [c for c in fake_talk.calls if c[0] == "delete" and c[2] == (old,)]
+    status = {w.world_id: w for w in (await talk.status("admin")).worlds}
+    assert status[W1].orphaned_token == old
+    assert status[W1].token == new
+    assert old not in caplog.text
+    assert new not in caplog.text
+
+
+async def test_without_confirmed_acting_nothing_is_taken_over(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    token = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="admin")
+    before = _raw_room(app_env)
+    assert before == (token, "gw-alt", None, None)
+    for acting in (None, "gw-alt", "gw-kind"):
+        await talk.reconcile_all(acting)
+        assert _raw_room(app_env) == before
+    # Auch der Sperrfall legt ohne bestätigtes Konto nichts an und löscht nichts.
+    _blind(fake_talk, token, blind=None)
+    await talk.reconcile_all(None)
+    assert _raw_room(app_env) == before
+    assert "create" not in fake_talk.methods()
+    assert "delete" not in fake_talk.methods()
+
+
+async def test_takeover_leaves_room_of_active_admin_alone(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    await talk.ensure_room(W1, "admin")
+    before = _raw_room(app_env)
+    store.sync_verwalter_seen({"papa"}, "2026-01-01T00:00:00+00:00")
+    store.sync_verwalter_seen({"papa", "admin"}, "2026-02-01T00:00:00+00:00")
+    await talk.reconcile_all("admin")
+    # admin ist noch Verwalter: kein Umschreiben auf den dienstälteren papa.
+    assert _raw_room(app_env) == before
+
+
+async def test_recreate_room_drops_ex_admin_and_keeps_read_only(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    old = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="admin")
+    await talk.reconcile_all("admin")
+    assert store.set_talk_read_only(W1, on=True)
+    fake_talk.calls.clear()
+    assert await talk.recreate_room(W1, "admin") is True
+    raw = _raw_room(app_env)
+    assert raw is not None
+    new, owner, former, orphaned = raw
+    assert new != old
+    assert (owner, former, orphaned) == ("admin", None, None)
+    assert old not in fake_talk.rooms
+    assert ("delete", "admin", (old,)) in fake_talk.calls
+    assert set(_members(fake_talk, new)) == {"admin", "gw-lehrer", "gw-kind"}
+    assert fake_talk.read_only[new] is True
+    row = store.talk_room(W1)
+    assert row is not None
+    assert row.read_only is True
+    status = {w.world_id: w for w in (await talk.status("admin")).worlds}
+    assert status[W1].owner_not_admin is False
+
+
+async def test_recreate_room_refuses_non_admin_and_keeps_room_on_talk_error(
+    talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms, app_env: Path
+) -> None:
+    old = await _room_of_gw_alt(talk, store, fake_talk)
+    _ex_admin_room(store, senior="admin")
+    await talk.reconcile_all("admin")
+    before = _raw_room(app_env)
+    fake_talk.calls.clear()
+    assert await talk.recreate_room(W1, "gw-alt") is False
+    assert await talk.recreate_room(W1, "gw-kind") is False
+    assert await talk.recreate_room(W2, "admin") is False
+    assert "delete" not in fake_talk.methods()
+    fake_talk.error = TalkUnavailableError("weg")
+    with pytest.raises(TalkUnavailableError):
+        await talk.recreate_room(W1, "admin")
+    assert _raw_room(app_env) == before
+    assert old in fake_talk.rooms
