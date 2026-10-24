@@ -1,28 +1,71 @@
-# Gameworld installieren
+<!--
+  - SPDX-FileCopyrightText: 2026 street1983nk
+  - SPDX-License-Identifier: AGPL-3.0-or-later
+-->
 
-Anleitung für Nextcloud-Admins. Gilt für die Entwicklungsphase; die Store-Installation folgt mit dem Store-Release.
+# Installing Gameworld
 
-## 1. Was Gameworld zusätzlich braucht
+Deutsche Fassung: [install.de.md](install.de.md)
 
-- Einen eng gescopten Docker-Proxy (`tecnativa/docker-socket-proxy`), über den Gameworld die Welt-Container verwaltet. Gameworld spricht Docker nie direkt über den Socket an.
-- Einen UDP-Portbereich auf dem Server, ein Port pro Welt (Default 30000 bis 30019).
+Guide for Nextcloud admins. What Gameworld may do and why is described in detail in [privacy.md](privacy.md).
 
-## 2. Docker-Proxy einrichten
+The Gameworld interface is in German. Texts shown in the interface are quoted below in German, with an English translation where it helps.
 
-Den Dienst neben dem AppAPI-Deploy-Daemon (z. B. HaRP) in dessen Compose-Datei ergänzen:
+## 1. Installing from the App Store
+
+1. Set up the deploy daemon and the Docker proxy (sections 2 and 3). Without both, AppAPI can not start Gameworld.
+2. In Nextcloud, open "Apps", find Gameworld (category "Games") and install it. AppAPI pulls the image `ghcr.io/street1983nk/gameworld` and starts it through the HaRP deploy daemon.
+3. The default environment variables fit when the proxy is called `gameworld-docker-proxy` and sits in the same network (section 4).
+4. Open Gameworld from the menu. The setup check (section 7) tests the proxy; a world can only be created once it is green.
+
+Requirements:
+
+- Nextcloud 32 to 35 with the AppAPI app and a HaRP deploy daemon. The older Docker Socket Proxy as deploy daemon is deprecated in AppAPI and not supported.
+- Docker on the server with Engine API 1.44 or newer.
+- A UDP port range on the server, one port per world (default 30000 to 30019).
+
+## 2. What Gameworld needs in addition
+
+- A tightly scoped Docker proxy (`tecnativa/docker-socket-proxy`) through which Gameworld manages the world containers. Gameworld never talks to Docker through the socket directly.
+- A UDP port range on the server, one port per world.
+- Both live in the same Docker network as Gameworld. That is the network in which the deploy daemon starts the ExApps.
+
+## 3. Deploy daemon and Docker proxy
+
+### 3a. Default: your own Compose file with HaRP
+
+HaRP, the ExApps and the Docker proxy share their own Docker network `gameworld`. The proxy has no host port.
 
 ```yaml
 services:
+  appapi-harp:
+    image: ghcr.io/nextcloud/nextcloud-appapi-harp:release
+    restart: unless-stopped
+    environment:
+      # Secret from a file, never in clear text in the Compose file.
+      HP_SHARED_KEY_FILE: /run/secrets/harp_shared_key
+      NC_INSTANCE_URL: https://cloud.example.org
+    secrets:
+      - harp_shared_key
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./harp-certs:/certs
+    ports:
+      # Only for the reverse proxy of Nextcloud (forwarding of /exapps/).
+      - "127.0.0.1:8780:8780"
+    networks:
+      - gameworld
+
   gameworld-docker-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
     restart: unless-stopped
     environment:
-      # Nur was Gameworld braucht.
+      # Only what Gameworld needs.
       CONTAINERS: 1
       IMAGES: 1
       POST: 1
       VOLUMES: 1
-      # Alles andere explizit gesperrt, damit ein geänderter Image-Default nichts öffnet.
+      # Everything else explicitly closed, so a changed image default opens nothing.
       EXEC: 0
       INFO: 0
       NETWORKS: 0
@@ -39,223 +82,347 @@ services:
       AUTH: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    # Bewusst kein Host-Port: der Proxy ist nur im Deploy-Netz erreichbar.
+    # No host port on purpose: the proxy is reachable inside the network gameworld only.
     networks:
-      - <netz-des-appapi-deploy-daemons>
+      - gameworld
 
 networks:
-  <netz-des-appapi-deploy-daemons>:
+  gameworld:
+    name: gameworld
+
+secrets:
+  harp_shared_key:
+    file: ./harp_shared_key.txt
+```
+
+- Create the secret once, for example with `openssl rand -hex 32 > harp_shared_key.txt`, and make the file readable for root only.
+- Configure the reverse proxy of Nextcloud so that `/exapps/` goes to `127.0.0.1:8780` (examples for nginx, Apache and Caddy in the HaRP README).
+- Register the daemon in Nextcloud: "Administration settings", "AppAPI", "Register daemon", template HaRP, network `gameworld`, FRP address `appapi-harp:8782`, the same secret. Or with occ:
+  `occ app_api:daemon:register harp_gameworld "HaRP" docker-install http <harp-address>:8780 https://cloud.example.org --net gameworld --harp --harp_frp_address appapi-harp:8782 --harp_shared_key <secret>`
+- The proxy image is pinned by digest; an update is a deliberate decision.
+
+### 3b. Nextcloud All-in-One (AIO)
+
+- In the AIO interface, switch on the optional container "HaRP". AppAPI then creates the daemon `harp_aio` on its own; ExApps run in the network `nextcloud-aio`.
+- Start the Docker proxy from a Compose file of its own next to AIO and attach it to the network `nextcloud-aio`:
+
+```yaml
+services:
+  gameworld-docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+      VOLUMES: 1
+      EXEC: 0
+      INFO: 0
+      NETWORKS: 0
+      BUILD: 0
+      SYSTEM: 0
+      SECRETS: 0
+      SWARM: 0
+      NODES: 0
+      SERVICES: 0
+      TASKS: 0
+      PLUGINS: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      AUTH: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # No host port.
+    networks:
+      - nextcloud-aio
+
+networks:
+  nextcloud-aio:
     external: true
 ```
 
-- `<netz-des-appapi-deploy-daemons>` durch das Docker-Netz ersetzen, in dem der Deploy-Daemon die ExApps startet (`docker network ls`, bei HaRP meist `<projekt>_default`).
-- Der Proxy darf nur in diesem Netz hängen. Keinen Port veröffentlichen, auch nicht auf `127.0.0.1`.
-- Image per Digest gepinnt; ein Update ist eine bewusste Entscheidung.
+- Remaining risk with AIO: every container in the network `nextcloud-aio`, Nextcloud itself included, can then reach the proxy (section 6).
 
-## 3. Gameworld konfigurieren
+### 3c. Host network (not recommended)
 
-| Variable | Default | Bedeutung |
-|----------|---------|-----------|
-| `GAMEWORLD_DOCKER_URL` | `tcp://gameworld-docker-proxy:2375` | Adresse des Docker-Proxys |
-| `GAMEWORLD_PORT_RANGE` | `30000-30019` | UDP-Portbereich für Welten, höchstens 200 Ports |
+- The daemon template "HaRP Proxy (Host)" starts ExApps in the host network. Gameworld can then reach the proxy only through a host port.
+- If you use it anyway, bind the proxy to loopback only (`ports: ["127.0.0.1:2375:2375"]`) and set `GAMEWORLD_DOCKER_URL=tcp://127.0.0.1:2375`.
+- Warning: every process on the server and every container in the host network can then use the proxy, which means controlling Docker with root-equivalent rights. Prefer section 3a.
 
-## 4. UDP-Ports
+## 4. Configuring Gameworld
 
-- Welten sind nur für das Heimnetz gedacht.
-- Keine Portfreigabe im Router einrichten, UPnP am Router nicht nutzen.
-- Fernzugriff kommt später über VPN.
-- Die Firewall des Servers muss den UDP-Bereich im LAN erlauben.
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `GAMEWORLD_DOCKER_URL` | `tcp://gameworld-docker-proxy:2375` | Address of the Docker proxy, never a raw Docker socket |
+| `GAMEWORLD_PORT_RANGE` | `30000-30019` | UDP port range for worlds, at most 200 ports |
 
-## 5. Restrisiko ehrlich benannt
+## 5. UDP ports
 
-- Mit `CONTAINERS=1` und `POST=1` kann jeder, der den Proxy erreicht, beliebige Container erzeugen, auch privilegierte. Das ist root-gleich auf dem Server.
-- Deshalb: den Proxy nie auf einem Host-Port veröffentlichen, nur im Deploy-Netz betreiben.
-- Gameworld selbst erzeugt ausschließlich fest vorgegebene, gehärtete Welt-Container: Benutzer 30000 (nicht root), alle Capabilities entzogen, schreibgeschütztes Dateisystem, 512 MB RAM (Abenteuer-Welt 1 GB), 1 CPU, 128 Prozesse.
-- Gameworld verändert nur Container mit dem eigenen Instanz-Label.
-- Andere ExApps im selben Deploy-Netz könnten den Proxy ebenfalls erreichen. Eine weitere Härtung ist für das Store-Release geplant.
+- Worlds are meant for the home network only.
+- Do not set up port forwarding in the router and do not use UPnP on the router.
+- Remote access comes later through a VPN.
+- The firewall of the server has to allow the UDP range in the LAN.
 
-## 6. Setup-Check
+## 6. Remaining risk, stated honestly
 
-Die Gameworld-Seite prüft beim Öffnen den Docker-Proxy. Die Prüfung verändert nichts: schreibende Anfragen gehen nur an die nicht existierende Ressource `gameworld-probe-nonexistent`. Solange ein Fehler offen ist, bleibt "Welt erstellen" gesperrt.
+- With `CONTAINERS=1` and `POST=1`, anyone who reaches the proxy can create any container, including privileged ones and ones with the host file system mounted. That is root-equivalent on the server.
+- Therefore: never publish the proxy on a host port, run it inside the Docker network of Gameworld only.
+- Shared Docker network: every container in this network can reach the proxy. These are other ExApps of the same deploy daemon and, with AIO, all containers in the network `nextcloud-aio`, Nextcloud included.
+- Gameworld itself only creates fixed, hardened world containers: user 30000 (not root), all capabilities dropped, read-only file system, 512 MB RAM (adventure world 1 GB), 1 CPU, 128 processes.
+- The Gameworld container itself runs as uid 10001, not as root.
+- Gameworld only changes containers that carry its own instance label.
+- New and restored worlds have a root-owned world folder with sticky bit and a root-owned `worldmods` folder: Luanti can neither change nor delete the access file, the rules file or the Gameworld mods. Worlds from versions before 1.0.0 get a root-owned `worldmods` at their next start; the world folder is only hardened by a backup followed by a restore (section 12).
 
-| Meldung | Abhilfe |
-|---------|---------|
-| Gameworld erreicht den Docker-Proxy nicht | Dienst `gameworld-docker-proxy` starten, `GAMEWORLD_DOCKER_URL` und Netz prüfen |
-| Docker-Engine zu alt, benötigt API 1.44 oder neuer | Docker auf dem Server aktualisieren |
-| Kein Zugriff auf Container | `CONTAINERS=1` setzen |
-| Keine schreibenden Anfragen erlaubt | `POST=1` setzen |
-| Kein Zugriff auf Images | `IMAGES=1` setzen |
-| Kein Zugriff auf Volumes | `VOLUMES=1` setzen |
-| Nicht geprüft: Erst POST=1 setzen | `POST=1` setzen, dann erneut prüfen |
-| Proxy zu weit offen: Befehle in Containern erlaubt (Warnung) | `EXEC=0` setzen |
-| Proxy gibt Systeminformationen preis (Warnung) | `INFO=0` setzen |
-| Unerwartete Antwort auf Pfad mit HTTP-Code | Proxy-Image und Flags mit Abschnitt 2 vergleichen |
-| Gameworld antwortet nicht | ExApp in den Nextcloud-Einstellungen (AppAPI) prüfen |
+<a id="setup-check"></a>
 
-Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite "Erneut prüfen" wählen.
+## 7. Setup check
 
-## 7. Speicherbedarf und Neustarts
+The Gameworld page checks the Docker proxy when it opens. The check changes nothing: changing requests only go to the non-existent resource `gameworld-probe-nonexistent`. As long as an error is open, "Welt erstellen" (create world) stays locked. Every message ends with a link to this section.
 
-- Jede Welt hat ein festes Speicherlimit ohne Swap: Kreativ-Welt ("Bauen (kreativ)") 512 MB, Abenteuer-Welt ("Abenteuer (sanft)") 1 GB. Einstellen lässt sich das nicht.
-- Für den Heimserver grob rechnen: Summe der Limits aller gleichzeitig laufenden Welten plus Nextcloud muss in den Arbeitsspeicher passen.
-- Welten haben keine eigene Neustart-Policy in Docker.
-- Nach einem Server-Neustart startet Gameworld beim eigenen Start alle Welten, die vorher liefen. Gestoppte Welten bleiben gestoppt.
-- Eine Welt, die wegen Speichermangel beendet wurde, startet nicht automatisch. Das Dashboard zeigt den Grund, Starten geht per Klick.
-- Nach einem Update von Gameworld bleiben alle Welten samt Daten erhalten; Gameworld übernimmt die vorhandenen Container wieder.
+| Message (German, as shown) | Meaning | Fix |
+|----------------------------|---------|-----|
+| Gameworld findet den Dienst gameworld-docker-proxy nicht (`proxy_dns`) | the name of the proxy can not be resolved | The proxy sits in another Docker network or has another name. Attach it to the network of the deploy daemon (section 3a: `gameworld`, with AIO `nextcloud-aio`) |
+| Der Docker-Proxy unter Host:Port antwortet nicht (`proxy_timeout`) | no answer in time | Usually another Docker network or a firewall in front of the port. Check network and firewall |
+| Der Docker-Proxy unter Host:Port nimmt keine Verbindung an (`proxy_refused`) | connection refused | Start the container `gameworld-docker-proxy` (`docker ps`), check the port in `GAMEWORLD_DOCKER_URL` |
+| Gameworld soll nie direkt mit dem Docker-Socket sprechen (warning, `docker_url_socket`) | the address points at a raw Docker socket | Set `GAMEWORLD_DOCKER_URL` to `tcp://gameworld-docker-proxy:2375`, no `unix://` |
+| Der Docker-Proxy liegt auf einer Adresse außerhalb des privaten Netzes (warning, `docker_url_exposed`) | the proxy address is outside private networks | Remove the host port of the proxy, use the service name inside the Docker network |
+| Gameworld erreicht den Docker-Proxy nicht | proxy not reachable | Start the service `gameworld-docker-proxy`, check `GAMEWORLD_DOCKER_URL` and the network |
+| Docker-Engine zu alt, benötigt API 1.44 oder neuer | Docker engine too old | Update Docker on the server |
+| Kein Zugriff auf Container | no access to containers | Set `CONTAINERS=1` |
+| Keine schreibenden Anfragen erlaubt | no changing requests allowed | Set `POST=1` |
+| Kein Zugriff auf Images | no access to images | Set `IMAGES=1` |
+| Kein Zugriff auf Volumes | no access to volumes | Set `VOLUMES=1` |
+| Nicht geprüft: Erst POST=1 setzen | not checked yet | Set `POST=1`, then check again |
+| Proxy zu weit offen: Befehle in Containern erlaubt (warning) | exec allowed | Set `EXEC=0` |
+| Proxy gibt Systeminformationen preis (warning) | system information exposed | Set `INFO=0` |
+| Unerwartete Antwort auf Pfad mit HTTP-Code | unexpected answer | Compare proxy image and flags with section 3 |
+| Gameworld antwortet nicht | Gameworld does not answer | Check the ExApp in the Nextcloud settings (AppAPI) |
 
-## 8. Zugang, Rollen und Spielpasswörter
+After every change to the proxy, restart the service and choose "Erneut prüfen" (check again) on the Gameworld page.
 
-### Rollen
+## 8. Memory, restarts and updates
 
-- Verwalter sind die Mitglieder der Nextcloud-Gruppe `admin`. Nur sie erstellen, starten, stoppen und löschen Welten und laden Spieler ein.
-- Spieler sind alle eingeladenen Nextcloud-Konten, direkt oder über eine eingeladene Nextcloud-Gruppe. Sie sehen nur ihre eigenen Welten mit der Verbindungsinfo, keine Steuerknöpfe und keine anderen Spieler.
-- Gameworld hat keine eigene Benutzerverwaltung. Rollen kommen bei jeder Anfrage aus Nextcloud (bis zu 30 Sekunden zwischengespeichert). Wer aus der Gruppe `admin` entfernt wird, verliert die Verwaltung spätestens nach 30 Sekunden.
+- Every world has a fixed memory limit without swap: creative world ("Bauen (kreativ)") 512 MB, adventure world ("Abenteuer (sanft)") 1 GB. It can not be changed.
+- Rough sizing for a home server: the sum of the limits of all worlds running at the same time plus Nextcloud has to fit into memory.
+- Worlds have no restart policy of their own in Docker.
+- After a server restart, Gameworld starts all worlds that were running before, during its own start. Stopped worlds stay stopped.
+- A world that was ended because of low memory does not start on its own. The dashboard shows the reason, starting is one click.
 
-### Nur Eingeladene kommen hinein
+### Disabling and updates
 
-- Jede Welt bekommt den Welt-Mod `gameworld_access`. Er lehnt jeden Namen ab, der nicht eingeladen ist, noch vor der Anmeldung im Spiel. Die Meldung im Spiel lautet "Du bist in diese Welt nicht eingeladen. Frag deine Eltern."
-- Einladen, Entfernen und neue Passwörter wirken sofort, ohne Neustart der Welt. Spieler, deren Einladung endet, trennt die Welt binnen weniger Sekunden.
-- Fünf falsche Passwörter sperren einen Spielernamen für zehn Minuten.
-- Welten, die vor diesem Update schon liefen, bekommen den Zugangsschutz erst mit dem nächsten Neustart der Welt (Stoppen und Starten im Dashboard).
+- Every time Gameworld is disabled, also right before an update and before an uninstall, Gameworld stops and removes all its own world containers. Players are disconnected for a short moment.
+- Volumes with the game data, invitations, rules and backups stay unchanged.
+- As soon as Gameworld runs again (after enabling or after the update), Gameworld rebuilds the containers of all worlds that were running before. The worlds come back on their own, children simply join again.
+- So there are never unmanaged game servers without pause and play time rules while Gameworld is not running.
 
-### Spielername und Spielpasswörter
+## 9. Access, roles and game passwords
 
-- Jedes Konto hat genau einen Spielernamen und ein Spielpasswort, gültig für alle Welten, in die es eingeladen ist. Das Passwort hat die Form `xxxx-xxxx-xxxx`.
-- Gameworld speichert keine Spielpasswörter. Sie werden bei Bedarf aus einem Geheimnis abgeleitet, das in der Nextcloud-Konfiguration der ExApp liegt. Die Welt kennt nur einen SRP-Verifier, nicht das Passwort.
-- "Neues Passwort" in der Spielerverwaltung macht das alte sofort ungültig, in allen Welten, ohne Neustart.
-- "Name ändern" vergibt einen neuen Spielernamen. Im Spiel ist das ein neuer Spieler mit eigenem Spielstand.
-- Updates der ExApp behalten das Geheimnis, alle Spielpasswörter bleiben gleich.
-- Randfall Neuinstallation: Wird Gameworld komplett entfernt (mit Daten) und neu installiert, entsteht ein neues Geheimnis. Dann ändern sich alle Spielpasswörter einmalig. Gameworld schreibt die neuen Zugänge automatisch in alle Welten; die Kinder brauchen danach das neue Passwort aus ihrer Gameworld-Seite.
+### Roles
 
-### Adresse für Spieler
+- Managers are the members of the Nextcloud group `admin` and of the manager groups (below). Only they create, start, stop and delete worlds and invite players. All managers see all worlds and operate pause, holidays, time zone and address for players; backups stay separate per manager.
+- Players are all invited Nextcloud accounts, directly or through an invited Nextcloud group. They only see their own worlds with the connection info, no control buttons and no other players.
+- Gameworld has no user management of its own. Roles come from Nextcloud with every request (cached for up to 30 seconds). Whoever is removed from all manager groups loses management after 30 seconds at the latest.
 
-- In den Einstellungen des Dashboards steht die "Adresse für Spieler": Rechnername oder IP-Adresse des Servers im Heimnetz, ohne `http://` und ohne Port. Die Kinder sehen diese Adresse in ihrer Verbindungsinfo.
-- Bleibt das Feld leer, zeigt Gameworld den Rechnernamen aus der Adresszeile des Browsers. Das passt nicht, wenn Nextcloud über `localhost` oder über eine Internetadresse aufgerufen wird; dann die Heimnetz-Adresse eintragen.
-- Der Port jeder Welt ist ein UDP-Port aus dem Bereich in Abschnitt 4. Er muss im Heimnetz erreichbar sein.
-- Kein Zugang aus dem Internet ohne VPN: keine Portfreigabe im Router, siehe Abschnitt 4.
+### Manager groups
 
-## 9. Spielzeit
+- Default: only the group `admin` manages Gameworld. It always stays a manager group.
+- Nextcloud admins add more groups in the section "Verwalter-Gruppen" (manager groups) of the Gameworld page, for example for teachers or group leaders. Only Nextcloud admins see this section. Members of these groups do not become Nextcloud admins.
+- Invitation boundary: group managers without Nextcloud admin rights only invite accounts from groups in which they are a member or group admin themselves. Nextcloud does not show them other accounts; Gameworld does not work around this boundary.
+- Gameworld only cleans up deleted and disabled accounts when a Nextcloud admin has opened Gameworld. Group managers never trigger this, because Nextcloud does not show them all accounts.
+- Warning: do not choose a group that contains children. Every member of a manager group can invite children and lift the pause. Gameworld can not check this.
 
-### Grundregeln
+### Adult switch
 
-- Spielzeit ist Opt-in: Ohne Regel gibt es keine Begrenzung. Jedes Kind startet mit "Keine Begrenzung".
-- Ein Kind hat ein einziges Tageskontingent über alle Welten. Wer eine Stunde am Tag darf, kann sie auf mehrere Welten verteilen, aber nicht in jeder Welt eine Stunde spielen. Gameworld gleicht den Verbrauch alle 15 Sekunden zwischen den Welten ab.
-- Eingestellt wird im Abschnitt "Spielzeit" unter der Weltenliste, mit "Bearbeiten" je Kind. Vier Voreinstellungen helfen beim Start: "Keine Begrenzung", "Nur am Wochenende" (Sa und So je 2 Stunden, 9 bis 19 Uhr), "Jeden Tag 1 Stunde" (9 bis 19 Uhr) und "Schultage kurz, Wochenende länger" (Mo bis Fr 1 Stunde, 15 bis 19 Uhr; Sa und So 2 Stunden, 9 bis 19 Uhr). Danach lässt sich jeder Tag in seiner Kachel ändern: Spielen erlaubt oder nicht, Tageslimit, Uhrzeit von und bis oder ganzer Tag.
-- Der Verbrauch zählt online verbrachte Zeit. Auch wer nur verbunden ist und nichts tut (AFK), verbraucht Spielzeit.
-- Verwalter (Gruppe `admin`) haben nie Zeitregeln und kommen immer hinein. Wird ein Konto aus `admin` entfernt, bemerkt Gameworld das im Hintergrund nach höchstens etwa 60 Sekunden; ab dann gelten für dieses Konto die Regeln wie für alle anderen.
+- Managers mark an account as adult in the invite dialog or later in the player list. It applies to the account globally, in all worlds.
+- Switching it on asks for a confirmation that states the consequences in plain words. Switching it off needs no dialog.
+- What it does: the account plays without pause, time windows and play time rules at once, even in the middle of a game. An existing play time rule stays stored and applies again as soon as the switch is off. Adults do not appear in the daily review.
+- What it never does: adults get no management rights in Gameworld and no Luanti admin rights. They need an invitation and a game password like everybody else.
+- Only mark accounts of adults, never the account of a child.
 
-### Ferien
+### Only invited players get in
 
-- Der Abschnitt "Ferien" ist eine Liste von Zeiträumen für den ganzen Haushalt (von, bis, Bezeichnung optional). Ein laufender Zeitraum ist mit "läuft gerade" markiert.
-- Im Spielzeit-Dialog hat jedes Kind einen eigenen Block "In den Ferien" (Vorschlag: jeden Tag 2 Stunden, 9 bis 20 Uhr). Ohne eigenen Ferienplan gilt in den Ferien die normale Woche.
+- Every world gets the world mod `gameworld_access`. It refuses every name that is not invited, before the login in the game. The message in the game reads "Du bist in diese Welt nicht eingeladen. Frag deine Eltern." (You are not invited to this world. Ask your parents.)
+- Inviting, removing and new passwords take effect at once, without restarting the world. Players whose invitation ends are disconnected by the world within a few seconds.
+- Five wrong passwords lock a player name for ten minutes.
+- Worlds that were already running before this update get the access protection only with the next restart of the world (stop and start in the dashboard).
 
-### Zeitzone
+### Player name and game passwords
 
-- Alle Uhrzeiten gelten in der Zeitzone des Haushalts, Vorgabe `Europe/Berlin`. Sie steht in den Einstellungen unter der Adresse für Spieler; der Knopf "Zeitzone dieses Browsers übernehmen" setzt die Zone des Browsers. Sommer- und Winterzeit rechnet Gameworld selbst.
+- Every account has exactly one player name and one game password, valid for all worlds it is invited to. The password has the form `xxxx-xxxx-xxxx`.
+- Gameworld stores no game passwords. They are derived on demand from a secret that lives in the Nextcloud configuration of the ExApp. The world only knows an SRP verifier, not the password.
+- "Neues Passwort" (new password) in the player management invalidates the old one at once, in all worlds, without restart.
+- "Name ändern" (change name) assigns a new player name. In the game that is a new player with its own game progress.
+- Updates of the ExApp keep the secret, all game passwords stay the same.
+- Edge case reinstall: if Gameworld is uninstalled and installed again, a new secret is created, because AppAPI deletes the configuration of the ExApp on uninstall, even when the data stays. Then all game passwords change once. Gameworld writes the new credentials into all worlds on its own; the children then need the new password from their Gameworld page.
 
-### Zeitfenster pro Welt
+### Address for players
 
-- Mit "Zeitfenster" in der Welt-Zeile ist eine Welt nur zu bestimmten Zeiten offen, etwa für eine Schul- oder Vereinswelt ("Offen Mi 10 bis 12 Uhr").
-- Die Welt läuft außerhalb des Fensters weiter. Kinder kommen nicht hinein und werden am Fensterende getrennt; Verwalter kommen immer hinein.
+- The dashboard settings contain the "Adresse für Spieler" (address for players): host name or IP address of the server in the home network, without `http://` and without port. The children see this address in their connection info.
+- If the field stays empty, Gameworld shows the host name from the address bar of the browser. That does not fit when Nextcloud is opened through `localhost` or through an internet address; then enter the home network address.
+- The port of each world is a UDP port from the range in section 5. It has to be reachable in the home network.
+- No access from the internet without VPN: no port forwarding in the router, see section 5.
 
-### Im Spiel
+## 10. Play time
 
-- Kinder sehen auf ihrer Gameworld-Seite den Block "Deine Spielzeit heute" mit der Restzeit oder der nächsten Spielzeit.
-- Im Spiel warnt der Chat bei 10, 5 und 1 Minute Rest. Am Ende trennt die Welt das Kind mit einem Text wie "Deine Spielzeit für heute ist vorbei. Morgen ab 9 Uhr kannst du wieder spielen." Ein Beitritt außerhalb der erlaubten Zeit wird mit einem passenden Text abgelehnt, etwa "Heute ist kein Spieltag. Am Samstag ab 9 Uhr kannst du wieder spielen." oder "Diese Welt ist gerade zu. Heute ab 10 Uhr ist sie wieder offen." Eine Uhrzeit steht nur da, wenn die Eltern eine Startzeit gesetzt haben; bei "ganzer Tag" heißt es zum Beispiel "Morgen kannst du wieder spielen." Dieselben Sätze stehen auf der Gameworld-Seite des Kindes.
-- Wer die Welt verlässt, muss etwa 2 Sekunden warten, bevor er wieder beitreten kann ("Bitte einen Moment warten und dann nochmal beitreten."). Das schützt die Welt vor einem Absturz von Luanti 5.17.0 bei sofortigem Wiederbeitritt.
-- Welten, die vor diesem Update schon liefen, setzen Spielzeiten erst nach dem nächsten Neustart der Welt durch. Das Dashboard zeigt dann "Neustart nötig, damit Spielzeiten gelten."
+### Basic rules
 
-### Bekanntes Verhalten
+- Play time is opt-in: without a rule there is no limit. Every child starts with "Keine Begrenzung" (no limit).
+- A child has one single daily allowance across all worlds. Whoever may play one hour a day can spread it over several worlds, but can not play one hour in each world. Gameworld balances the usage between the worlds every 15 seconds.
+- It is set in the section "Spielzeit" (play time) below the list of worlds, with "Bearbeiten" (edit) per child. Four presets help to start: "Keine Begrenzung" (no limit), "Nur am Wochenende" (weekends only: Sat and Sun 2 hours each, 9 to 19 o'clock), "Jeden Tag 1 Stunde" (1 hour every day, 9 to 19 o'clock) and "Schultage kurz, Wochenende länger" (school days short, weekend longer: Mon to Fri 1 hour, 15 to 19 o'clock; Sat and Sun 2 hours, 9 to 19 o'clock). After that, every day can be changed in its tile: playing allowed or not, daily limit, time from and to, or the whole day.
+- Usage counts time spent online. Whoever is only connected and does nothing (AFK) uses play time as well.
+- Managers never have time rules and always get in. If an account is removed from all manager groups, Gameworld notices it in the background after about 60 seconds at most; from then on the rules apply to this account like to everyone else.
 
-- Tagesgrenze um 00:00: Ein Kind mit Regeln wird um 00:00 getrennt, auch wenn sein Plan den ganzen Tag erlaubt (fail closed an der Tagesgrenze). Nach dem nächsten Zeittakt, höchstens etwa 15 Sekunden später, kann es wieder beitreten.
-- Betritt ein Kind eine Welt zum allerersten Mal, bleiben die Sekunden bis zum ersten Zeittakt (höchstens etwa 20) ungezählt. Das passiert einmal je Kind und Welt und schützt vor doppelter Zählung.
+### Holidays
 
-### Ausfallverhalten
+- The section "Ferien" (holidays) is a list of periods for the whole household (from, to, optional label). A running period is marked "läuft gerade" (running).
+- In the play time dialog, every child has its own block "In den Ferien" (during holidays; suggestion: 2 hours every day, 9 to 20 o'clock). Without an own holiday plan, the normal week applies during holidays.
 
-- Welt-Neustart: ändert nichts. Die Welt führt ihr eigenes Zählbuch im Welt-Volume; nach einem Neustart, einem Absturz oder einem Server-Neustart gelten Verbrauch und Regeln weiter.
-- ExApp-Neustart oder Update: Die Welten setzen den zuletzt geschriebenen Stand weiter durch und zählen weiter. Nach dem Start verbucht Gameworld den Verbrauch nach.
-- ExApp länger aus, am selben Tag: Das Limit gilt in jeder Welt weiter, aber der Abgleich zwischen den Welten ruht. Wer in zwei Welten gleichzeitig spielt, kann bis zur Rückkehr der ExApp doppelt so lange spielen.
-- ExApp aus über Mitternacht: Kinder mit Regeln kommen nach Tagesende nicht mehr hinein, bis die ExApp wieder läuft (fail closed). Kinder ohne Regeln sind nicht betroffen.
+### Time zone
 
-### Datensparsamkeit
+- All times apply in the time zone of the household, default `Europe/Berlin`. It is set in the settings below the address for players; the button "Zeitzone dieses Browsers übernehmen" (use the time zone of this browser) sets the zone of the browser. Gameworld handles daylight saving time itself.
 
-- Gameworld speichert nur Tagessummen in Sekunden und nur für Kinder mit Regeln. Kinder ohne Regeln werden nicht gezählt.
-- Tagessummen werden nach 7 Tagen gelöscht.
-- Keine Uhrzeiten einzelner Sitzungen, keine IP-Adressen. Das Zählbuch in der Welt enthält nur Spielernamen und Sekunden.
+### Time window per world
 
-## 10. Eltern-Handy und Talk
+- With "Zeitfenster" (time window) in the world row, a world is only open at certain times, for example for a school or club world ("Offen Mi 10 bis 12 Uhr", open Wed 10 to 12).
+- The world keeps running outside the window. Children do not get in and are disconnected at the end of the window; managers and accounts marked as adult always get in.
 
-### Pause für alle Welten
+### In the game
 
-- Oben auf der Gameworld-Seite steht die Karte "Pause für alle Kinder". Sie führt zur Pause-Seite, die auch auf dem Handy gut bedienbar ist: 15, 30 oder 60 Minuten.
-- Kinder bekommen im Spiel 30 Sekunden vorher die Nachricht "In 30 Sekunden ist Pause." und werden dann mit "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen." getrennt. Bis zum Ende der Pause kommen sie nicht hinein. Das gilt für alle Kinder, auch für Kinder ohne Spielzeitregeln.
-- Verwalter (Gruppe `admin`) bleiben in der Welt und kommen jederzeit hinein.
-- "Weiter" beendet die Pause sofort. "Für heute Schluss" sperrt bis Mitternacht; das Kind liest dann zum Beispiel "Für heute ist Schluss. Morgen ab 9 Uhr kannst du wieder spielen." Ist morgen laut Plan kein Spieltag, steht nur "Für heute ist Schluss." da.
-- Die Pausenzeit zählt nicht auf die Spielzeit. Zeitfenster laufen weiter: Endet ein Fenster während der Pause, verlängert die Pause es nicht.
-- Welten mit einem älteren Gameworld-Mod werden beim Start einer Pause automatisch neu gestartet, damit die Pause sicher greift.
+- Children see the block "Deine Spielzeit heute" (your play time today) on their Gameworld page with the remaining time or the next play time.
+- In the game the chat warns at 10, 5 and 1 minute left. At the end the world disconnects the child with a text like "Deine Spielzeit für heute ist vorbei. Morgen ab 9 Uhr kannst du wieder spielen." (Your play time for today is over. Tomorrow from 9 o'clock you can play again.) A join outside the allowed time is refused with a fitting text, such as "Heute ist kein Spieltag. Am Samstag ab 9 Uhr kannst du wieder spielen." or "Diese Welt ist gerade zu. Heute ab 10 Uhr ist sie wieder offen." A time is only shown when the parents have set a start time; with "whole day" it reads for example "Morgen kannst du wieder spielen." The same sentences appear on the Gameworld page of the child.
+- Whoever leaves the world has to wait about 2 seconds before joining again ("Bitte einen Moment warten und dann nochmal beitreten."). This protects the world from a crash of Luanti 5.17.0 on an immediate rejoin.
+- Worlds that were already running before this update enforce play times only after the next restart of the world. The dashboard then shows "Neustart nötig, damit Spielzeiten gelten." (restart needed for play times to apply).
 
-### Benachrichtigungen aufs Handy
+### Known behaviour
 
-- Gameworld schickt Hinweise als normale Nextcloud-Benachrichtigungen an alle Verwalter. Auf dem Handy kommen sie über die Nextcloud-App an. Voraussetzung: Die App "Notifications" ist aktiv, und die Instanz kann Push senden (Push-Proxy der Nextcloud-App, bei öffentlich erreichbaren Instanzen Standard).
-- Ein Tipp auf die Benachrichtigung öffnet die passende Gameworld-Seite im Browser. Wer nicht angemeldet ist, meldet sich an und landet danach direkt auf der Seite.
-- Die Adresse der Links merkt sich Gameworld beim ersten Besuch eines Verwalters (auch mit Nextcloud in einem Unterordner, etwa `https://example.org/nextcloud`). Öffnet ein Verwalter Gameworld später über eine andere Adresse, fragt die Seite einmal: "Links in Hinweisen künftig über diese Adresse öffnen?" mit alter und neuer Adresse. Erst nach "Ja, diese Adresse" gilt die neue. Eine https-Adresse ersetzt Gameworld nie durch eine http-Adresse, dann kommt auch keine Frage.
+- Day boundary at 00:00: a child with rules is disconnected at 00:00, even if the plan allows the whole day (fail closed at the day boundary). After the next time tick, about 15 seconds later at most, it can join again.
+- When a child joins a world for the very first time, the seconds until the first time tick (about 20 at most) stay uncounted. This happens once per child and world and prevents double counting.
 
-### Hinweis bei fremdem Beitrittsversuch
+### Failure behaviour
 
-- Versucht ein nicht eingeladener Spielername einer Welt beizutreten, bekommen alle Verwalter "Unbekannter Spielername in <Welt>" mit Name und Uhrzeit. Die Seite "Beitrittsversuche" zeigt alle Versuche des Tages; mit "Jemanden einladen" lässt sich wie gewohnt einladen. Einen fremden Namen freizugeben gibt es bewusst nicht.
-- Gedrosselt: höchstens ein Hinweis je Name, Welt und Tag, insgesamt höchstens 5 am Tag, danach genau eine Sammelnachricht "Weitere Beitrittsversuche".
-- Kein Hinweis bei einem falschen Spielpasswort eines eingeladenen Kindes und bei einer anderen Groß- und Kleinschreibung eines eingeladenen Namens.
+- World restart: changes nothing. The world keeps its own usage ledger in the world volume; after a restart, a crash or a server restart, usage and rules keep applying.
+- ExApp restart or update: the worlds keep enforcing the last written state and keep counting. After the start, Gameworld books the usage afterwards.
+- ExApp down for longer, same day: the limit keeps applying in every world, but the balancing between worlds rests. Whoever plays in two worlds at the same time can play twice as long until the ExApp returns.
+- ExApp down over midnight: children with rules no longer get in after the end of the day until the ExApp runs again (fail closed). Children without rules are not affected.
 
-### Tagesrückblick
+### Data minimisation
 
-- Jeder Verwalter bekommt einmal am Abend den "Tagesrückblick" mit den Spielminuten je Kind, Vorgabe 20 Uhr. Uhrzeit und An/Aus stellt jeder Verwalter selbst in den Einstellungen ein ("Tagesrückblick am Abend").
-- Der Rückblick kommt nur in der halben Stunde nach der eingestellten Uhrzeit. Hat bis dahin niemand gespielt, kommt an diesem Tag keiner mehr, auch wenn später noch gespielt wird. Auch nach einem Neustart kommt er höchstens einmal am Tag.
-- Im Rückblick (Benachrichtigung und Seite) erscheinen nur Kinder, für die dieser Haushalt Spielzeit-Regeln eingestellt hat. Eingeladene Kinder ohne Regeln, etwa Freundinnen und Freunde aus anderen Familien, erscheinen nirgends mit Minuten.
+- Gameworld only stores daily totals in seconds and only for children with rules. Children without rules are not counted.
+- Daily totals are deleted after 7 days.
+- No times of single sessions, no IP addresses. The ledger in the world only contains player names and seconds.
 
-### Talk-Raum pro Welt
+## 11. Parent phone and Talk
 
-- Ist die App Talk installiert, bekommt jede Welt einen eigenen Raum "Gameworld: <Welt>". Er ist nie öffentlich und nicht auffindbar.
-- Mitglieder folgen den Einladungen der Welt: eingeladene Konten und Gruppen plus alle Verwalter. Wer später in eine eingeladene Gruppe kommt, erscheint nach dem nächsten Abgleich (spätestens nach 5 Minuten) im Raum. Wer in Talk von Hand hinzugefügt wird, ohne eingeladen zu sein, wird beim Abgleich wieder entfernt.
-- Verwalter sind Moderatoren. Mit "Nur lesen" in der Welt-Zeile lässt sich das Schreiben im Raum sperren. Anrufe folgen den Talk-Standards der Instanz.
-- Wird die Welt gelöscht, löscht Gameworld den Raum samt Verlauf; der Lösch-Dialog weist darauf hin.
-- Ohne Talk läuft Gameworld unverändert weiter. Wird Talk später installiert oder wieder aktiviert, legt Gameworld die fehlenden Räume beim nächsten Abgleich an.
+### Pause for all worlds
 
-### Gameworld-Bot
+- At the top of the Gameworld page there is the card "Pause für alle Kinder" (pause for all children). It leads to the pause page, which also works well on a phone: 15, 30 or 60 minutes.
+- Children get the message "In 30 Sekunden ist Pause." (pause in 30 seconds) in the game 30 seconds before and are then disconnected with "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen." (Short pause! Your parents need you right now. You can play on afterwards.) Until the end of the pause they do not get in. This applies to all children, also children without play time rules.
+- Managers and accounts marked as adult stay in the world and can join at any time.
+- "Weiter" (continue) ends the pause at once. "Für heute Schluss" (done for today) locks until midnight; the child then reads for example "Für heute ist Schluss. Morgen ab 9 Uhr kannst du wieder spielen." If tomorrow is no play day according to the plan, only "Für heute ist Schluss." is shown.
+- The pause does not count towards play time. Time windows keep running: if a window ends during the pause, the pause does not extend it.
+- Worlds with an older Gameworld mod are restarted automatically when a pause starts, so the pause takes effect reliably.
 
-- Der Bot "Gameworld" schreibt in den Raum der Welt: "Die Welt ist gestartet." und "Die Welt ist gestoppt.", "<Name> ist jetzt in der Welt." und "<Name> hat die Welt verlassen." (je Person und Welt höchstens alle 10 Minuten), "Pause bis H:MM Uhr.", "Für heute ist Schluss.", "Die Pause ist vorbei." (bei "Weiter" und wenn die Pause von selbst endet) und "Noch 10 Minuten Spielzeit für <Name>." (je Kind und Welt höchstens einmal am Tag, auch wenn es sich neu verbindet).
-- Anzeigenamen stehen ohne echtes "@" im Bot-Text, damit ein Name wie "@all" niemanden anpingt.
-- Mit Ton kommen nur Pause, "Für heute ist Schluss." und die 10-Minuten-Warnung. Start, Stopp, Beitritt, Verlassen und das Pausenende kommen still.
-- Der Bot liest keine Nachrichten der Kinder mit.
+### Notifications on the phone
 
-### Datensparsamkeit
+- Gameworld sends hints as ordinary Nextcloud notifications to all managers. On the phone they arrive through the Nextcloud app. Requirement: the app "Notifications" is enabled and the instance can send push (push proxy of the Nextcloud app, default for instances reachable from the internet).
+- A tap on the notification opens the matching Gameworld page in the browser. Whoever is not logged in logs in and lands on the page right after.
+- Gameworld remembers the address for the links on the first visit of a manager (also with Nextcloud in a sub folder, such as `https://example.org/nextcloud`). If a manager later opens Gameworld through another address, the page asks once: "Links in Hinweisen künftig über diese Adresse öffnen?" (open links in hints through this address from now on?) with the old and the new address. Only after "Ja, diese Adresse" (yes, this address) the new one applies. Gameworld never replaces an https address with an http address; then no question appears either.
 
-- Gameworld speichert keine Chatinhalte aus Talk.
-- Für Rückblick und Hinweise speichert Gameworld nur Tagessummen der Spielzeit je Kind mit Regeln und Welt sowie Spielernamen und Uhrzeit fremder Beitrittsversuche. Beides wird nach 7 Tagen gelöscht.
-- Für die Drossel der Bot-Meldungen merkt sich Gameworld je Welt und Konto den Zeitpunkt der letzten Meldung, ebenfalls höchstens 7 Tage. Die Rückblick-Einstellung eines Kontos, das kein Verwalter mehr ist, wird beim nächsten Abgleich gelöscht. Wer einen Talk-Raum angelegt hat, bleibt als Besitzer gespeichert, solange es den Raum gibt.
+### Hint on a join attempt by a stranger
 
-## 11. Sicherungen
+- If a player name that is not invited tries to join a world, all managers get "Unbekannter Spielername in <world>" (unknown player name in <world>) with name and time. The page "Beitrittsversuche" (join attempts) shows all attempts of the day; "Jemanden einladen" (invite someone) invites as usual. Allowing a foreign name directly is deliberately not possible.
+- Throttled: at most one hint per name, world and day, at most 5 a day in total, then exactly one summary message "Weitere Beitrittsversuche" (more join attempts).
+- No hint on a wrong game password of an invited child and on a different upper and lower case of an invited name.
 
-### Wo die Sicherungen liegen
+### Daily review
 
-- In der Verwaltungsansicht hat jede Welt den Bereich "Sicherungen". "Jetzt sichern" legt eine Datei in den eigenen Nextcloud-Dateien ab: `Gameworld/Sicherungen/<Weltname>/<weltname>-JJJJ-MM-TT-HHMM.tar.gz` (Uhrzeit in der Haushalts-Zeitzone).
-- Die Datei liegt in den Dateien des Verwalters, der gesichert hat. Sie lässt sich wie jede andere Datei herunterladen, teilen oder in eine eigene Datensicherung des Servers aufnehmen.
-- Die Liste zeigt je Sicherung Datum und Größe, darunter die Gesamtgröße. Gameworld löscht nie selbst eine Sicherung, auch nicht beim Löschen der Welt. Alte Sicherungen löscht der Verwalter in Nextcloud Files.
-- Mehrere Verwalter sehen in der Liste nur ihre eigenen Sicherungen. Wiederherstellen kann jeder nur aus seinen eigenen.
+- Every manager gets the "Tagesrückblick" (daily review) once in the evening with the minutes played per child, default 20 o'clock. Every manager sets time and on/off in the settings ("Tagesrückblick am Abend").
+- The review only comes within half an hour after the set time. If nobody has played by then, none comes that day, even if somebody plays later. Also after a restart it comes at most once a day.
+- The review (notification and page) only lists children for whom this household has set play time rules. Invited children without rules, such as friends from other families, never appear with minutes.
 
-### Was gesichert wird und was nicht
+### Talk room per world
 
-- Gesichert wird die ganze Welt: Karte, Spielerdaten, Inventare und Spielstände (die SQLite-Dateien des Weltordners).
-- Nicht gesichert werden die Einladungen, Spielpasswörter, Spielzeitregeln und die Gameworld-Mods. Sie kommen aus Gameworld selbst und werden nach dem Wiederherstellen frisch eingerichtet, ebenso die Welteinstellungen (`world.mt`), die zwar in der Datei stehen, aber nie aus ihr übernommen werden.
+- If the app Talk is installed, every world gets its own room "Gameworld: <world>". It is never open to everyone and can not be found.
+- Members follow the invitations of the world: invited accounts and groups plus all managers. Whoever joins an invited group later appears in the room after the next sync (within 5 minutes). Whoever is added in Talk by hand without being invited is removed again at the sync.
+- Managers are moderators. "Nur lesen" (read only) in the world row locks writing in the room. Calls follow the Talk defaults of the instance.
+- When the world is deleted, Gameworld deletes the room with its history; the delete dialog says so.
+- Without Talk, Gameworld keeps working unchanged. If Talk is installed or enabled again later, Gameworld creates the missing rooms at the next sync.
 
-### Kurze Pause beim Sichern
+### Who owns the Talk room
 
-- Für eine saubere Sicherung hält Gameworld die Welt kurz an: Kinder lesen im Spiel "Die Welt macht gleich eine kurze Pause." und werden mit "Die Welt macht kurz Pause. Gleich geht es weiter." getrennt. Danach startet die Welt von selbst wieder, meist nach wenigen Sekunden.
-- Spielen gerade Kinder, fragt Gameworld vorher nach, zum Beispiel "In der Welt spielt gerade 1 Kind, es wird kurz getrennt." Erst nach der Bestätigung geht es los.
-- Während der Sicherung zeigt die Weltkarte "Wird gesichert ...", die anderen Knöpfe der Welt sind so lange gesperrt. Scheitert die Sicherung, etwa weil der Platz in den Nextcloud-Dateien nicht reicht, steht der Grund an der Weltkarte, die Welt läuft weiter, und der Verwalter, der gesichert hat, bekommt eine Benachrichtigung. Dasselbe gilt für ein gescheitertes Wiederherstellen.
+- Gameworld keeps one acting owner account per room. If this account is deleted or is no manager any more, the longest-serving manager takes over the room on its own at the next sync.
+- Talk itself does not let Gameworld change the owner. A former manager whose account still exists therefore stays owner in the sense of Talk and can keep reading the room. The world card then shows a hint and the button "Raum neu anlegen" (create room again): the old room is deleted with its whole history, the new one gets all invited accounts and managers, but no longer the former manager. This never happens automatically.
+- Locked case: if nobody who could manage the old room is left, Gameworld creates a new room and reports the old one. Only a Nextcloud admin on the server can then delete it with `occ talk:room:delete <token>`; the Gameworld page shows the token.
 
-### Wiederherstellen
+### Gameworld bot
 
-- "Wiederherstellen" an einer Sicherung setzt die Welt auf diesen Stand zurück. Die Sicherheitsabfrage nennt die Datei; ohne Bestätigung passiert nichts.
-- Vorher legt Gameworld den aktuellen Stand als eigene Sicherung mit dem Zusatz `vor-restore` daneben ab. Wer sich vertan hat, stellt diese Datei einfach wieder her.
-- Gameworld prüft jede Sicherung vor dem Einspielen: Nur Sicherungen dieser Welt, unverändert seit dem Ablegen, werden eingespielt. Eine veränderte oder fremde Datei lehnt Gameworld ab, die Welt bleibt dann wie sie war.
-- Platzbedarf auf dem Server: Beim Wiederherstellen braucht Gameworld kurzzeitig bis zum Dreifachen der Sicherungsgröße an freiem Speicher (heruntergeladene Sicherung, Sicherung des aktuellen Stands, entpackte Welt). Beim Sichern reicht etwa die einfache Größe.
+- The bot "Gameworld" writes into the room of the world: "Die Welt ist gestartet." and "Die Welt ist gestoppt." (started, stopped), "<Name> ist jetzt in der Welt." and "<Name> hat die Welt verlassen." (joined, left; at most every 10 minutes per person and world), "Pause bis H:MM Uhr.", "Für heute ist Schluss.", "Die Pause ist vorbei." (on "Weiter" and when the pause ends on its own) and "Noch 10 Minuten Spielzeit für <Name>." (at most once a day per child and world, even if it reconnects).
+- Display names appear without a real "@" in the bot text, so a name like "@all" pings nobody.
+- Only pause, "Für heute ist Schluss." and the 10-minute warning come with sound. Start, stop, join, leave and the end of the pause come silently.
+- The bot does not read the messages of the children.
+
+### Data minimisation
+
+- Gameworld stores no chat content from Talk.
+- For the review and the hints, Gameworld only stores daily totals of play time per child with rules and world, and player names and times of join attempts by strangers. Both are deleted after 7 days.
+- For throttling the bot messages, Gameworld remembers the time of the last message per world and account, also for 7 days at most. The review setting of an account that is no manager any more is deleted at the next sync. The acting owner account of a Talk room stays stored as long as the room exists (takeover see "Who owns the Talk room").
+
+## 12. Backups
+
+### Where the backups are
+
+- In the management view, every world has the area "Sicherungen" (backups). "Jetzt sichern" (back up now) puts a file into your own Nextcloud files: `Gameworld/Sicherungen/<world name>/<world name>-YYYY-MM-DD-HHMM.tar.gz` (time in the household time zone).
+- The file lies in the files of the manager who made the backup. It can be downloaded, shared or included in your own server backup like any other file.
+- The list shows date and size per backup, below it the total size. Gameworld never deletes a backup on its own, not even when the world is deleted. The manager deletes old backups in Nextcloud Files.
+- With several managers, each sees only their own backups in the list. Everyone can restore from their own backups only.
+
+### What is backed up and what is not
+
+- The whole world is backed up: map, player data, inventories and game progress (the SQLite files of the world folder).
+- Not backed up are the invitations, game passwords, play time rules and the Gameworld mods. They come from Gameworld itself and are set up fresh after the restore, as are the world settings (`world.mt`), which are contained in the file but never taken from it.
+
+### Short pause during a backup
+
+- For a clean backup Gameworld halts the world shortly: children read "Die Welt macht gleich eine kurze Pause." (the world takes a short pause in a moment) in the game and are disconnected with "Die Welt macht kurz Pause. Gleich geht es weiter." Afterwards the world starts again on its own, usually after a few seconds.
+- If children are playing, Gameworld asks first, for example "In der Welt spielt gerade 1 Kind, es wird kurz getrennt." (1 child is playing, it will be disconnected shortly). Only after confirming does it start.
+- During the backup the world card shows "Wird gesichert ..." (backing up), the other buttons of the world are locked meanwhile. If the backup fails, for example because the space in the Nextcloud files is not enough, the reason appears on the world card, the world keeps running, and the manager who started the backup gets a notification. The same applies to a failed restore.
+
+### Restore
+
+- "Wiederherstellen" (restore) on a backup resets the world to that state. The confirmation names the file; without confirmation nothing happens.
+- Before that, Gameworld stores the current state as its own backup with the suffix `vor-restore` (before restore) next to it. Whoever made a mistake simply restores that file.
+- Gameworld checks every backup before applying it: only backups of this world, unchanged since they were stored, are applied. Gameworld refuses a changed or foreign file, and the world then stays as it was.
+- Space on the server: a restore temporarily needs up to three times the backup size in free space (downloaded backup, backup of the current state, unpacked world). A backup needs about the single size.
+
+<a id="cleanup"></a>
+
+## 13. Uninstalling and cleaning up
+
+### What stays after uninstalling
+
+- Before uninstalling, AppAPI disables Gameworld. Gameworld then stops and removes all its own world containers (section 8).
+- AppAPI removes the Gameworld container. It deletes the data volume `nc_app_gameworld_data` only when "Delete data" is chosen.
+- The volumes of the worlds (`gameworld-<instance>-<world>`) and the backups in Nextcloud Files always stay, on purpose: no world is lost silently.
+- A reinstall without "Delete data" takes the worlds over again; the game passwords change once (section 9). After "Delete data", a new installation no longer knows the old worlds; their volumes and containers are leftovers then.
+
+### Removing leftovers in the app
+
+- While Gameworld is installed, the section "Reste früherer Installationen" (leftovers of earlier installations) on the Gameworld page shows containers and game data of other, earlier Gameworld installations on this Docker host. Only Nextcloud admins see this section.
+- Every entry can be removed one by one, each with its own confirmation. Gameworld never touches its own worlds or containers without the Gameworld label there.
+- Removing game data deletes the world for good. Check for a backup first.
+
+### Leftovers after uninstalling: gameworld-orphans.sh
+
+After the uninstall, a script on the Docker host helps. It needs the docker CLI with rights on the Docker daemon (root or group docker).
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/scripts/gameworld-orphans.sh
+sh gameworld-orphans.sh
+```
+
+- Without options the script only lists: containers with the label `gameworld.managed=true` and volumes named after the scheme `gameworld-<instance>-<world>`. It changes nothing.
+- `--remove-containers` removes the listed containers after the typed confirmation `yes`.
+- `--remove-volumes` deletes the listed volumes and with them the game data inside, always after the typed confirmation `delete`.
+- `--yes` only skips the question for containers, never the one for volumes.
+- Nextcloud, AppAPI, HaRP, the Docker proxy and other projects are never touched.
+- Warning about `--remove-volumes`: the worlds are gone for good afterwards. Check the backups in Nextcloud Files first. If Gameworld is still running, its own worlds are part of the list; the script warns then.
