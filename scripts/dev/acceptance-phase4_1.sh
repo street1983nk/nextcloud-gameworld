@@ -723,8 +723,9 @@ check "K2 admin hat genau einen Hinweis (ist $(jq -r 'length' "${WORK_DIR}/k2-ad
 jq -r '.[0] | "  Betreff: \(.subject)\n  Text: \(.message)\n  Link: \(.link)"' "${WORK_DIR}/k2-admin.json" 2>/dev/null || true
 check "K2 Betreff nennt die Welt '${NAME_PAUSE}'" \
 	eq "$(jq -r --arg w "${NAME_PAUSE}" '.[0].subject | contains($w)' "${WORK_DIR}/k2-admin.json" 2>/dev/null)" true
+# Seit da2ad56 lautet der Text "<Name> wollte um H:MM beitreten." (ohne "Uhr").
 check "K2 Text nennt Fremder1 und eine Uhrzeit" \
-	eq "$(jq -r '.[0].message | (contains("Fremder1") and test("[0-9]{1,2}:[0-9]{2} Uhr"))' "${WORK_DIR}/k2-admin.json" 2>/dev/null)" true
+	eq "$(jq -r '.[0].message | (contains("Fremder1") and test("um [0-9]{1,2}:[0-9]{2} beitreten"))' "${WORK_DIR}/k2-admin.json" 2>/dev/null)" true
 LINK=$(jq -r '.[0].link // empty' "${WORK_DIR}/k2-admin.json" 2>/dev/null || true)
 check "K2 Link absolut auf die Seite versuch mit welt=${WORLD_ID} und tag=${TODAY} (ist ${LINK:-leer})" sh -c \
 	'case "$1" in "$2"/versuch*) ;; *) exit 1 ;; esac; printf "%s" "$1" | grep -q "welt=$3" && printf "%s" "$1" | grep -q "tag=$4"' \

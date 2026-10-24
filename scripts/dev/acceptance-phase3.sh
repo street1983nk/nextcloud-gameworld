@@ -343,6 +343,12 @@ done
 # Testreste anderer Sitzungen), bleiben unangetastet und zählen am Ende nicht als Rest.
 BASELINE_CONTAINERS=$(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null | tr '
 ' ' ')
+# Grundlinie der Kind-Sicht: Welten, in die gw-kind schon vor dem Lauf eingeladen ist
+# (etwa Owner-Spike-Welten), zählen in K3 nicht als Abnahme-Welt.
+call "${KID_AUTH}" GET "${API_URL}/my/worlds" "${WORK_DIR}/my-pre.json" >/dev/null
+BASELINE_MY_WORLDS=$(jq -c '[.worlds[]?.id]' "${WORK_DIR}/my-pre.json" 2>/dev/null || true)
+[ -n "${BASELINE_MY_WORLDS}" ] || BASELINE_MY_WORLDS='[]'
+printf 'Grundlinie /my/worlds von %s: %s\n' "${KID}" "${BASELINE_MY_WORLDS}"
 
 printf '\n== K1 Einladen und Provisionieren ==\n'
 # K1 Einladen von Konten und Gruppen; Zugang wird in die Welt geschrieben
@@ -443,23 +449,27 @@ check "K3 ${KID} wieder eingeladen, HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 players_to "${WORK_DIR}/p3.json" >/dev/null
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/my/worlds" "${WORK_DIR}/my.json")
 check "K3 GET /my/worlds als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
-check "K3 genau die Abnahme-Welt in der Liste" \
-	eq "$(jq -r '[.worlds[].id] | join(",")' "${WORK_DIR}/my.json" 2>/dev/null)" "${WORLD_ID}"
-MY_PORT=$(jq -r '.worlds[0].port // empty' "${WORK_DIR}/my.json" 2>/dev/null || true)
+# Nur die vom Lauf neu angelegte Welt zählt; Welten der Grundlinie bleiben außen vor.
+MY_NEW=$(jq -r --argjson base "${BASELINE_MY_WORLDS}" \
+	'[.worlds[].id | select(. as $i | $base | index($i) | not)] | join(",")' "${WORK_DIR}/my.json" 2>/dev/null)
+check "K3 genau die Abnahme-Welt neu in der Liste (Grundlinie nicht gezählt, ist ${MY_NEW:-leer})" \
+	eq "${MY_NEW}" "${WORLD_ID}"
+MY_PORT=$(jq -r --arg w "${WORLD_ID}" '.worlds[] | select(.id == $w) | .port // empty' "${WORK_DIR}/my.json" 2>/dev/null || true)
 check "K3 port gleich docker port (UDP) ${PORT} (ist ${MY_PORT:-leer})" eq "${MY_PORT}" "${PORT}"
 check "K3 player_name gleich der Verwalter-Ansicht" \
-	eq "$(jq -r '.worlds[0].player_name // empty' "${WORK_DIR}/my.json" 2>/dev/null)" "$(player_field "${WORK_DIR}/p3.json" "${KID}" player_name)"
-MY_PW=$(jq -r '.worlds[0].password // empty' "${WORK_DIR}/my.json" 2>/dev/null || true)
+	eq "$(jq -r --arg w "${WORLD_ID}" '.worlds[] | select(.id == $w) | .player_name // empty' "${WORK_DIR}/my.json" 2>/dev/null)" "$(player_field "${WORK_DIR}/p3.json" "${KID}" player_name)"
+MY_PW=$(jq -r --arg w "${WORLD_ID}" '.worlds[] | select(.id == $w) | .password // empty' "${WORK_DIR}/my.json" 2>/dev/null || true)
 ADMIN_VIEW_PW=$(player_field "${WORK_DIR}/p3.json" "${KID}" password)
 check "K3 password gleich der Verwalter-Ansicht (sha256-Vergleich)" \
 	sh -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ "$(sha_of "${MY_PW}")" "$(sha_of "${ADMIN_VIEW_PW}")"
 check "K3 Positivkontrolle: diese Daten lassen ${KID} in die Welt (auth_accept)" \
 	probe_expect "${WORK_DIR}/j-kid-my.json" '.result == "auth_accept"' 10 \
-	"$(jq -r '.worlds[0].player_name' "${WORK_DIR}/my.json")" "${MY_PW}"
+	"$(jq -r --arg w "${WORLD_ID}" '.worlds[] | select(.id == $w) | .player_name' "${WORK_DIR}/my.json")" "${MY_PW}"
 CODE=$(http_code POST "${API_URL}/settings" "${WORK_DIR}/set.json" "{\"join_host\":\"${JOIN_HOST}\"}")
 check "K3 POST settings join_host ${JOIN_HOST} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 call "${KID_AUTH}" GET "${API_URL}/my/worlds" "${WORK_DIR}/my2.json" >/dev/null
-check "K3 host in /my/worlds gleich ${JOIN_HOST}" eq "$(jq -r '.worlds[0].host // empty' "${WORK_DIR}/my2.json" 2>/dev/null)" "${JOIN_HOST}"
+check "K3 host in /my/worlds gleich ${JOIN_HOST}" \
+	eq "$(jq -r --arg w "${WORLD_ID}" '.worlds[] | select(.id == $w) | .host // empty' "${WORK_DIR}/my2.json" 2>/dev/null)" "${JOIN_HOST}"
 CODE=$(http_code POST "${API_URL}/settings" "${WORK_DIR}/set-neg.json" '{"join_host":"http://x"}')
 check "K3 Negativkontrolle: join_host 'http://x' HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 http_code GET "${API_URL}/settings" "${WORK_DIR}/set-get.json" >/dev/null
@@ -516,8 +526,15 @@ sleep "${ROLE_CACHE_WAIT}"
 check "K5 ${KID} nach dem Entfernen: role spieler" eq "$(role_of "${KID_AUTH}")" spieler
 
 COLUMNS=$(players_columns)
-check "K5 Tabelle players hat genau nc_user, player_name, rotation (ist ${COLUMNS:-leer})" \
-	eq "${COLUMNS}" "nc_user,player_name,rotation"
+# Seit dabe0c0 hat players zusätzlich die Spalte salt. Die Prüfung verlangt die
+# Pflichtspalten und bleibt tolerant gegenüber weiteren; die Absicht bleibt:
+# keine Passwortspalte in der Datenbank.
+check "K5 Tabelle players hat nc_user, player_name, rotation und keine Passwortspalte (ist ${COLUMNS:-leer})" \
+	sh -c 'cols=",$1,"
+		for c in nc_user player_name rotation; do
+			case "${cols}" in *",${c},"*) ;; *) exit 1 ;; esac
+		done
+		case "${cols}" in *[Pp]ass*) exit 1 ;; esac' _ "${COLUMNS}"
 DB_ALL="${WORK_DIR}/db-all.bin"
 cat "${DB_FILE}" "${DB_FILE}-wal" >"${DB_ALL}" 2>/dev/null || cat "${DB_FILE}" >"${DB_ALL}"
 PW_HITS=$(hits_in "${KID_PW}" "${DB_ALL}")
