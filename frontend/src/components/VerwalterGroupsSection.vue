@@ -3,10 +3,10 @@
 	<section class="verwalter-groups">
 		<h3>Verwalter-Gruppen</h3>
 		<p class="verwalter-groups__hint">
-			{{ SECTION_HINT }}
+			{{ sectionHint() }}
 		</p>
 		<NcNoteCard type="warning">
-			{{ CHILDREN_WARNING }}
+			{{ childrenWarning() }}
 		</NcNoteCard>
 
 		<NcNoteCard v-if="loadError" type="warning">
@@ -38,7 +38,7 @@
 				</li>
 			</ul>
 			<p v-if="groups.length === 0" class="verwalter-groups__hint">
-				{{ ONLY_ADMIN_TEXT }}
+				{{ onlyAdminText() }}
 			</p>
 
 			<div class="verwalter-groups__add">
@@ -68,7 +68,7 @@
 		</template>
 
 		<p class="verwalter-groups__hint">
-			{{ BOUNDARY_TEXT }}
+			{{ boundaryText() }}
 		</p>
 
 		<div class="verwalter-groups__notice" aria-live="polite">
@@ -102,12 +102,12 @@ import {
 	searchGroups,
 } from '../api.js'
 import {
-	BOUNDARY_TEXT,
-	CHILDREN_WARNING,
-	NC_ADMIN_ONLY_TEXT,
-	ONLY_ADMIN_TEXT,
-	SEARCH_DOWN_TEXT,
-	SECTION_HINT,
+	boundaryText,
+	childrenWarning,
+	ncAdminOnlyText,
+	onlyAdminText,
+	searchDownText,
+	sectionHint,
 	groupAddedText,
 	groupRemovedText,
 	groupUnknownText,
@@ -162,7 +162,7 @@ async function load() {
 		groups.value = await getVerwalterGroups()
 	} catch (err) {
 		if (err?.response?.status === 403) {
-			error.value = NC_ADMIN_ONLY_TEXT
+			error.value = ncAdminOnlyText()
 			emit('forbidden')
 		} else {
 			loadError.value = loadErrorText(errorText(err))
@@ -197,7 +197,7 @@ function onSearch(term) {
 			}
 		} catch {
 			if (seq === searchSeq) {
-				searchError.value = SEARCH_DOWN_TEXT
+				searchError.value = searchDownText()
 			}
 		} finally {
 			if (seq === searchSeq) {
@@ -221,7 +221,7 @@ function failed(err, gid) {
 	const status = err?.response?.status
 	const detail = errorText(err)
 	if (status === 403) {
-		error.value = NC_ADMIN_ONLY_TEXT
+		error.value = ncAdminOnlyText()
 		emit('forbidden')
 	} else if (status === 422 && detail.includes(UNKNOWN_MARK)) {
 		error.value = groupUnknownText(gid)

@@ -74,12 +74,12 @@ import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwit
 import NcDateTimePickerNative from '@nextcloud/vue/components/NcDateTimePickerNative'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
 import {
-	LIMIT_OPTIONS,
-	NO_LIMIT_OPTION,
-	WEEKDAYS,
 	dateToMinutes,
+	limitOptions as buildLimitOptions,
+	noLimitOption,
 	minutesToDate,
 	validateDays,
+	weekdays,
 } from '../playtime.js'
 
 defineProps({
@@ -91,15 +91,15 @@ defineProps({
 // Kacheln aus playtime.js: { weekday, allowed, limit, fullDay, start, end }.
 const days = defineModel('days', { type: Array, required: true })
 
-const limitOptions = [NO_LIMIT_OPTION, ...LIMIT_OPTIONS]
+const limitOptions = [noLimitOption(), ...buildLimitOptions()]
 const problems = computed(() => validateDays(days.value))
 
 function longName(weekday) {
-	return WEEKDAYS[weekday - 1].long
+	return weekdays()[weekday - 1].long
 }
 
 function limitOption(limit) {
-	return limitOptions.find((option) => option.value === limit) ?? NO_LIMIT_OPTION
+	return limitOptions.find((option) => option.value === limit) ?? limitOptions[0]
 }
 
 // Immer eine neue Liste, damit der Elterndialog die Änderung sieht.

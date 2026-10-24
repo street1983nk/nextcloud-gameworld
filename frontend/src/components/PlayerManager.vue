@@ -21,7 +21,7 @@
 				Die Änderung wirkt beim nächsten Start der Welt.
 			</NcNoteCard>
 			<NcNoteCard v-if="adultNotApplied" type="info">
-				{{ NOT_APPLIED_TEXT }}
+				{{ notAppliedMessage() }}
 			</NcNoteCard>
 			<NcNoteCard v-if="info" type="info">
 				{{ info }}
@@ -58,7 +58,7 @@
 							type="switch"
 							:model-value="Boolean(adultShown[player.nc_user])"
 							:disabled="busy || adultSaving === player.nc_user"
-							:description="SWITCH_META"
+							:description="switchMeta()"
 							@update:model-value="(on) => toggleAdult(player, on)">
 							Erwachsen
 						</NcCheckboxRadioSwitch>
@@ -168,9 +168,9 @@
 			<p class="players__adult-lead">
 				{{ confirmLead([confirmAdult.display_name]) }}
 			</p>
-			<p>{{ CONFIRM_SCOPE }}</p>
+			<p>{{ confirmScope() }}</p>
 			<p class="players__adult-note">
-				{{ CONFIRM_WARNING }}
+				{{ confirmWarning() }}
 			</p>
 			<p v-if="confirmAdult.has_rules" class="players__adult-note">
 				{{ rulesKeptText(confirmAdult.display_name) }}
@@ -216,14 +216,14 @@ import {
 import {
 	adultOffText,
 	adultOnText,
-	CONFIRM_SCOPE,
-	CONFIRM_WARNING,
 	confirmLead,
+	confirmScope,
+	confirmWarning,
 	nowVerwalterText,
 	rulesKeptText,
-	SWITCH_META,
+	switchMeta,
 } from '../adult.js'
-import { NOT_APPLIED_TEXT } from '../playtime.js'
+import { notAppliedMessage } from '../playtime.js'
 
 const props = defineProps({
 	// { id, name } der Welt; nur id geht an die API.

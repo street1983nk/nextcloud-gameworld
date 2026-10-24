@@ -3,10 +3,10 @@
 	<section class="orphans">
 		<h3>Reste früherer Installationen</h3>
 		<p class="orphans__hint">
-			{{ INTRO_TEXT }}
+			{{ introText() }}
 		</p>
 		<p class="orphans__hint">
-			{{ LIFECYCLE_TEXT }}
+			{{ lifecycleText() }}
 		</p>
 
 		<NcLoadingIcon v-if="loading && entries === null" :size="20" />
@@ -59,7 +59,7 @@
 				ref="emptyEl"
 				class="orphans__hint"
 				tabindex="-1">
-				{{ EMPTY_TEXT }}
+				{{ emptyText() }}
 			</p>
 		</template>
 
@@ -88,7 +88,7 @@
 		</NcButton>
 
 		<p class="orphans__hint">
-			<template v-for="(part, index) in SCRIPT_SEGMENTS" :key="index">
+			<template v-for="(part, index) in scriptSegments()" :key="index">
 				<code v-if="part.code">{{ part.text }}</code>
 				<template v-else>
 					{{ part.text }}
@@ -125,19 +125,19 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { errorText, listOrphans, removeOrphanContainer, removeOrphanVolume } from '../api.js'
 import {
 	CLEANUP_DOCS_URL,
-	EMPTY_TEXT,
-	INTRO_TEXT,
-	LIFECYCLE_TEXT,
-	SCRIPT_SEGMENTS,
 	containerMeta,
 	containerQuestion,
+	emptyText,
+	introText,
 	inUseText,
+	lifecycleText,
 	removedText,
+	scriptSegments,
 	unavailableText,
 	volumeMeta,
 	volumeQuestion,
 } from '../orphans.js'
-import { NC_ADMIN_ONLY_TEXT } from '../roles.js'
+import { ncAdminOnlyText } from '../roles.js'
 
 // 403: Rechte inzwischen entzogen; der Elternteil lädt /api/me neu und blendet aus.
 const emit = defineEmits(['forbidden'])
@@ -188,7 +188,7 @@ function failed(err, entry) {
 	const status = err?.response?.status
 	const detail = errorText(err)
 	if (status === 403) {
-		error.value = NC_ADMIN_ONLY_TEXT
+		error.value = ncAdminOnlyText()
 		emit('forbidden')
 	} else if (status === 503) {
 		warning.value = unavailableText(detail)

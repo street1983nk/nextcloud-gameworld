@@ -42,7 +42,7 @@
 			</NcButton>
 		</template>
 		<NcNoteCard v-if="status.orphaned_token" type="info" class="talk-room__note">
-			{{ ORPHANED_BEFORE }}<code>{{ orphanedCommand(status.orphaned_token) }}</code>{{ ORPHANED_AFTER }}
+			{{ orphanedBefore() }}<code>{{ orphanedCommand(status.orphaned_token) }}</code>{{ orphanedAfter() }}
 		</NcNoteCard>
 		<NcNoteCard v-if="success" type="success" class="talk-room__note">
 			{{ success }}
@@ -73,11 +73,11 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { errorText, recreateTalkRoom, setTalkReadOnly } from '../api.js'
 import {
-	ORPHANED_AFTER,
-	ORPHANED_BEFORE,
-	RECREATED_TEXT,
 	formerOwnerText,
+	orphanedAfter,
+	orphanedBefore,
 	orphanedCommand,
+	recreatedText,
 	recreateQuestion,
 	talkHint,
 } from '../playtime.js'
@@ -166,7 +166,7 @@ async function recreate() {
 	error.value = ''
 	try {
 		await recreateTalkRoom(props.world.id)
-		success.value = RECREATED_TEXT
+		success.value = recreatedText()
 		emit('changed')
 	} catch (err) {
 		error.value = errorText(err)

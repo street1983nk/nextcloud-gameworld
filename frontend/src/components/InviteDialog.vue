@@ -14,7 +14,7 @@
 				{{ scope }}
 			</p>
 			<NcNoteCard v-else type="info">
-				{{ NO_SCOPE_TEXT }}
+				{{ noScopeText() }}
 			</NcNoteCard>
 		</template>
 		<NcSelectUsers
@@ -34,7 +34,7 @@
 				v-model="inviteAdult"
 				type="switch"
 				:disabled="inviting || singleAccounts.length === 0"
-				:description="INVITE_SWITCH_META">
+				:description="inviteSwitchMeta()">
 				Als erwachsen einladen
 			</NcCheckboxRadioSwitch>
 		</div>
@@ -87,9 +87,9 @@
 			<p class="invite__confirm-lead">
 				{{ confirmLead(singleAccounts.map((option) => option.displayName)) }}
 			</p>
-			<p>{{ CONFIRM_SCOPE }}</p>
+			<p>{{ confirmScope() }}</p>
 			<p class="invite__confirm-note">
-				{{ CONFIRM_WARNING }}
+				{{ confirmWarning() }}
 			</p>
 		</div>
 
@@ -118,13 +118,13 @@ import NcSelectUsers from '@nextcloud/vue/components/NcSelectUsers'
 import { errorText, invite, searchAccounts, setAdult } from '../api.js'
 import {
 	adultInviteWarning,
-	CONFIRM_SCOPE,
-	CONFIRM_WARNING,
 	confirmLead,
-	INVITE_SWITCH_META,
+	confirmScope,
+	confirmWarning,
 	invitedLabel,
+	inviteSwitchMeta,
 } from '../adult.js'
-import { NO_SCOPE_TEXT, scopeHint } from '../roles.js'
+import { noScopeText, scopeHint } from '../roles.js'
 
 const props = defineProps({
 	// { id, name } der Welt; nur id geht an die API.

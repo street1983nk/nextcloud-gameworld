@@ -252,7 +252,7 @@
 		<ReviewSetting />
 		<VerwalterGroupsSection v-if="me?.nc_admin === true" @forbidden="onVerwalterForbidden" />
 		<NcNoteCard v-else-if="verwalterForbidden" type="error" class="gameworld__verwalter-forbidden">
-			{{ NC_ADMIN_ONLY_TEXT }}
+			{{ ncAdminOnlyText() }}
 		</NcNoteCard>
 		<OrphanSection v-if="me?.nc_admin === true" @forbidden="onVerwalterForbidden" />
 	</div>
@@ -285,7 +285,7 @@ import VerwalterGroupsSection from '../components/VerwalterGroupsSection.vue'
 import WorldWindowDialog from '../components/WorldWindowDialog.vue'
 import { formatBytes, jobNote } from '../backup.js'
 import { pauseUntilText, talkHint, windowSummary } from '../playtime.js'
-import { NC_ADMIN_ONLY_TEXT } from '../roles.js'
+import { ncAdminOnlyText } from '../roles.js'
 import { navigate } from '../route.js'
 import {
 	createWorld,
