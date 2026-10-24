@@ -315,6 +315,29 @@ export async function setTalkReadOnly(worldId, on) {
 	return response.data
 }
 
+// Verwalter-Gruppen (06-02, nur NC-Admins, sonst 403): Liste ohne admin, das die UI
+// fest voranstellt; Hinzufügen und Entfernen antworten mit der neuen Liste ({ groups }).
+export async function getVerwalterGroups() {
+	const response = await axios.get(`${apiBase}/api/admin/verwalter-groups`)
+	return response.data.groups
+}
+
+export async function addVerwalterGroup(gid) {
+	const response = await post(`${apiBase}/api/admin/verwalter-groups/add`, { gid })
+	return response.data.groups
+}
+
+export async function removeVerwalterGroup(gid) {
+	const response = await post(`${apiBase}/api/admin/verwalter-groups/remove`, { gid })
+	return response.data.groups
+}
+
+// Gruppensuche über Nextcloud ([{ id, display_name }]); 503 heißt: Suche gestört.
+export async function searchGroups(query) {
+	const response = await axios.get(`${apiBase}/api/admin/groups`, { params: { search: query } })
+	return response.data.groups
+}
+
 // Basis-URL für die Links in Benachrichtigungen: Origin des Browsers plus Webroot
 // der Nextcloud (getRootUrl, etwa /nextcloud). Der Server speichert nur die erste
 // Adresse; eine abweichende erst mit confirm (Antwort confirm_needed), und eine
