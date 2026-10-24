@@ -7,3 +7,4 @@ js/
 .claude-active
 vendor/games/mineclone2-*.zip
 vendor/games/*.part
+dist/

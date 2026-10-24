@@ -1,0 +1,143 @@
+# ExApp-Image von Gameworld bauen und nach ghcr.io schieben (D-14, PLATT-01).
+#
+# Zwei Wege:
+#   - Tag v<version>: echtes Release. Lockstep-Prüfung (Tag == info.xml <version> ==
+#     <image-tag> == pyproject version), Multi-Arch-Image ghcr.io/street1983nk/gameworld:<version>,
+#     danach GitHub-Release mit dem Store-Archiv als Asset.
+#   - workflow_dispatch mit image_tag (z. B. 1.0.0-rc.1): nur das Image, kein Release.
+#     image_tag muss <version> oder <version>-rc.N sein.
+#
+# Die Store-Einreichung bleibt Handarbeit (Signatur über das heruntergeladene Asset).
+# Ein Asset wird nie ersetzt (P-10, T-06-46): neue Version statt Re-Upload.
+# Nach dem ersten Push das ghcr-Paket einmal von Hand auf öffentlich stellen.
+name: image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image-Tag, z. B. 1.0.0-rc.1 (nur Image, kein Release)"
+        required: true
+        type: string
+
+# Oben nur Lesen; Schreibrechte stehen am jeweiligen Job (T-06-47).
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/street1983nk/gameworld
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      tag: ${{ steps.lockstep.outputs.tag }}
+      version: ${{ steps.lockstep.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lockstep prüfen
+        id: lockstep
+        env:
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          xml_version="$(sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p' appinfo/info.xml | head -n 1)"
+          xml_tag="$(sed -n 's:.*<image-tag>\([^<]*\)</image-tag>.*:\1:p' appinfo/info.xml | head -n 1)"
+          py_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          echo "info.xml version=${xml_version} image-tag=${xml_tag}, pyproject version=${py_version}"
+          if [ -z "${xml_version}" ] || [ "${xml_version}" != "${xml_tag}" ] || [ "${xml_version}" != "${py_version}" ]; then
+            echo "::error::Lockstep verletzt: info.xml <version> ${xml_version}, <image-tag> ${xml_tag}, pyproject ${py_version}"
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "${tag}" != "${xml_version}" ]; then
+              echo "::error::Git-Tag ${GITHUB_REF_NAME} passt nicht zu info.xml <version> ${xml_version}"
+              exit 1
+            fi
+          else
+            tag="${INPUT_IMAGE_TAG}"
+            if ! printf '%s\n' "${tag}" | grep -Eq "^${xml_version//./\\.}(-rc\.[0-9]+)?$"; then
+              echo "::error::image_tag ${tag} muss ${xml_version} oder ${xml_version}-rc.N sein"
+              exit 1
+            fi
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${xml_version}" >> "${GITHUB_OUTPUT}"
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Bei ghcr.io anmelden
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Multi-Arch-Image bauen und schieben
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ env.IMAGE }}:${{ steps.lockstep.outputs.tag }}
+
+      - name: Herkunft bescheinigen
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  release:
+    needs: image
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Store-Archiv bauen
+        run: sh scripts/build-store-release.sh
+
+      - name: GitHub-Release anlegen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.image.outputs.version }}
+        run: |
+          set -euo pipefail
+          notes="docs/release-notes/${VERSION}.md"
+          if [ ! -f "${notes}" ]; then
+            echo "::error::${notes} fehlt (englische Faktenliste), kein Release ohne Notes"
+            exit 1
+          fi
+          # gh release create scheitert, wenn das Release schon existiert: so wird nie
+          # ein veröffentlichtes Asset ersetzt.
+          gh release create "v${VERSION}" "dist/gameworld-${VERSION}.tar.gz" \
+            --verify-tag \
+            --title "Gameworld ${VERSION}" \
+            --notes-file "${notes}"

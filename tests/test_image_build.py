@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+import tarfile
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = ROOT / "Dockerfile"
@@ -86,3 +91,71 @@ def test_dockerignore_keeps_context_small() -> None:
     lines = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
     for entry in (".git", ".planning/", "tests/", "webplay/", "js/", "node_modules/"):
         assert entry in lines, entry
+
+
+WORKFLOW = ROOT / ".github" / "workflows" / "image.yml"
+
+
+def _workflow() -> str:
+    return WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_workflow_actions_pinned_by_commit_sha() -> None:
+    uses = [line.strip() for line in _workflow().splitlines() if line.strip().startswith(("uses:", "- uses:"))]
+    assert uses
+    for line in uses:
+        assert re.search(r"@[0-9a-f]{40}(\s|$)", line), line
+        assert re.search(r"# v\d+\.\d+\.\d+$", line), line
+
+
+def test_workflow_multi_arch_and_rc_path() -> None:
+    text = _workflow()
+    assert "linux/amd64,linux/arm64" in text
+    assert "workflow_dispatch" in text
+    assert "image_tag" in text
+    assert "ghcr.io/street1983nk/gameworld" in text
+
+
+def test_workflow_top_permissions_read_only() -> None:
+    lines = _workflow().splitlines()
+    start = lines.index("permissions:")
+    block: list[str] = []
+    for line in lines[start + 1 :]:
+        if not line.startswith(" "):
+            break
+        if line.strip() and not line.strip().startswith("#"):
+            block.append(line.strip())
+    assert block == ["contents: read"]
+
+
+def test_workflow_never_replaces_assets() -> None:
+    assert "--clobber" not in _workflow()
+
+
+def test_workflow_lockstep_checks_all_sources() -> None:
+    text = _workflow()
+    for needle in ("<version>", "<image-tag>", "pyproject.toml", "GITHUB_REF_NAME#v"):
+        assert needle in text, needle
+
+
+def test_store_archive_layout(tmp_path: Path) -> None:
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("kein sh verfügbar")
+    work = tmp_path / "repo"
+    for relative in ("appinfo/info.xml", "img/app.svg", "LICENSE", "scripts/build-store-release.sh"):
+        target = work / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, target)
+    subprocess.run([sh, "scripts/build-store-release.sh"], cwd=work, check=True, capture_output=True)  # noqa: S603
+    version = re.search(r"<version>([^<]+)</version>", (ROOT / "appinfo" / "info.xml").read_text(encoding="utf-8"))
+    assert version is not None
+    archive = work / "dist" / f"gameworld-{version.group(1)}.tar.gz"
+    with tarfile.open(archive, "r:gz") as tar:
+        members = tar.getmembers()
+    names = [member.name.removeprefix("./") for member in members]
+    assert {name.split("/")[0] for name in names} == {"gameworld"}
+    files = sorted(member.name for member in members if member.isfile())
+    assert files == ["gameworld/LICENSE", "gameworld/appinfo/info.xml", "gameworld/img/app.svg"]
+    assert not any(".git" in name.split("/") for name in names)
+    assert all(member.uid == 0 and member.gid == 0 for member in members)
