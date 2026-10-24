@@ -20,6 +20,19 @@ und aktiv bestätigt. Die Mitgliedschaft kommt immer frisch aus Nextcloud
 Pitfall 6: Gruppen löst nur ein Admin auf (``get_members`` gibt Nicht-Admins
 403). Darum laufen Auflösung und Abgleich nur im Verwalter-Kontext.
 
+Seit Phase 6 (ROLLE-03, D-01) gibt es Verwalter ohne Nextcloud-Adminrecht. Für
+sie gilt die Regel "404 heißt gelöscht nur als NC-Admin" (P-01, 404-Falle):
+Nextcloud zeigt einem Gruppen-Verwalter fremde Konten als 404. Darum fragt
+Gameworld in ihrem Namen nie ``user()`` je Konto ab, entfernt nie eine direkte
+Einladung wegen einer fehlenden Antwort und bricht den Abgleich einer Welt ohne
+Änderung ab, sobald eine ihrer Gruppen für sie nicht lesbar ist. Eingeladen
+werden nur Konten und Gruppen aus den eigenen Gruppen und Subadmin-Gruppen
+(``Actor.groups``); alles andere scheitert vor jeder Store-Änderung mit
+``InviteScopeError`` (HTTP 403). Deaktivierte Konten erkennt nur der Abgleich
+eines NC-Admins. Ob ein Actor NC-Admin ist, prüft jeder ändernde Ablauf vorher
+frisch an der Gruppe admin (``_confirmed``): Ein gemerktes Profil darf nie den
+gefährlichen Pfad öffnen.
+
 Sperr-Regel (Deadlock-Schutz): ``worlds._LOCK`` ist ein threading.Lock und
 nicht reentrant. ``_ensure_fingerprint`` ist ein eigener asynchroner Schritt
 direkt nach dem Laden des Geheimnisses, außerhalb von ``worlds.mutation()``.
@@ -41,8 +54,14 @@ from time import monotonic
 import anyio.to_thread
 
 from gameworld.access.accounts import derive_password, new_player_salt, suggest_player_name, validate_player_name
-from gameworld.access.directory import Directory, DirectoryUnavailableError, DirectoryUser
-from gameworld.access.roles import Profile
+from gameworld.access.directory import (
+    MSG_UNAVAILABLE,
+    Directory,
+    DirectoryRejectedError,
+    DirectoryUnavailableError,
+    DirectoryUser,
+)
+from gameworld.access.roles import ADMIN_GROUP, Profile
 from gameworld.access.secret import PlayerSecret, SecretUnavailableError, fingerprint
 from gameworld.provisioner.client import WorldNotFoundError
 from gameworld.provisioner.luanti_auth import make_verifier
@@ -62,6 +81,9 @@ MSG_UNKNOWN_GROUP = "Diese Nextcloud-Gruppe gibt es nicht."
 MSG_NO_PLAYER = "Für dieses Nextcloud-Konto gibt es noch keinen Spieler."
 MSG_NAME_TAKEN = "Diesen Spielernamen hat schon jemand anderes."
 MSG_REPROVISION_PENDING = "Die Zugangsdaten werden gerade erneuert; bitte gleich noch einmal abrufen."
+# Einladungs-Umfang eines Gruppen-Verwalters (D-01, UI-SPEC B1), HTTP 403.
+MSG_ACCOUNT_OUT_OF_SCOPE = "Dieses Konto ist in keiner deiner Gruppen."
+MSG_GROUP_OUT_OF_SCOPE = "Diese Gruppe gehört nicht zu deinen Gruppen."
 
 InviteKey = tuple[str, str]
 
@@ -70,12 +92,39 @@ class InviteTargetError(Exception):
     """Das Ziel einer Einladung ist kein vorhandenes, aktives Konto oder keine Gruppe (HTTP 422)."""
 
 
+class InviteScopeError(Exception):
+    """Das Ziel liegt außerhalb der eigenen Gruppen und Subadmin-Gruppen des Verwalters (HTTP 403, D-01)."""
+
+
 class PlayerNotFoundError(Exception):
     """Zu diesem Konto gibt es keinen Spieler (HTTP 404)."""
 
 
 class PlayerNameTakenError(Exception):
     """Der Spielername gehört ohne Rücksicht auf Groß-/Kleinschreibung schon einem anderen Konto (HTTP 409)."""
+
+
+@dataclass(frozen=True)
+class Actor:
+    """Handelnder Verwalter einer Änderung.
+
+    nc_admin: Mitglied der Gruppe admin laut Profil; ändernde Abläufe bestätigen
+    das vorher frisch (``AccessService._confirmed``). groups: eigene Gruppen plus
+    Subadmin-Gruppen, der Einladungs-Umfang eines Nicht-Admins (D-01).
+    """
+
+    uid: str
+    nc_admin: bool
+    groups: frozenset[str] = frozenset()
+
+
+def actor_of(profile: Profile) -> Actor:
+    """Actor aus der Selbstauskunft des angemeldeten Kontos (nie aus Daten des Browsers)."""
+    return Actor(
+        uid=profile.user_id,
+        nc_admin=ADMIN_GROUP in profile.groups,
+        groups=frozenset(profile.groups) | frozenset(profile.subadmin),
+    )
 
 
 @dataclass(frozen=True)
@@ -135,6 +184,8 @@ class _Resolution:
     effective: dict[str, DirectoryUser] = field(default_factory=dict[str, DirectoryUser])
     sources: dict[str, set[InviteKey]] = field(default_factory=dict[str, set[InviteKey]])
     resolved: set[InviteKey] = field(default_factory=set[InviteKey])
+    # Direkt eingeladene Konten, die ein Nicht-Admin nicht prüfen kann: Zugang bleibt, wie er ist.
+    kept: set[str] = field(default_factory=set[str])
 
 
 class AccessService:
@@ -146,62 +197,77 @@ class AccessService:
 
     # Öffentliche Abläufe
 
-    async def invite_user(self, world_id: str, acting_uid: str, uid: str) -> AccessResult:
+    async def invite_user(self, world_id: str, actor: Actor, uid: str) -> AccessResult:
+        """Lädt ein Konto ein; als Nicht-Admin nur aus den eigenen Gruppen (D-01), ohne Kontoabfrage."""
         await self._require_world(world_id)
-        user = await self._directory.user(acting_uid, uid)
-        if user is None or not user.enabled:
-            raise InviteTargetError(MSG_UNKNOWN_ACCOUNT)
+        actor = await self._confirmed(actor)
+        if actor.nc_admin:
+            user = await self._directory.user(actor.uid, uid)
+            if user is None or not user.enabled:
+                raise InviteTargetError(MSG_UNKNOWN_ACCOUNT)
+        else:
+            await self._require_account_in_scope(actor, uid)
+            user = DirectoryUser(uid=uid, display_name=uid, enabled=True)
         secret = await self._secret.get()
         await self._ensure_fingerprint(secret)
         invites = await self._invite_keys(world_id) | {(KIND_USER, user.uid)}
-        resolution = await self._resolve(acting_uid, invites, {user.uid: user})
+        resolution = await self._resolve(actor, invites, {user.uid: user}, strict=False)
         created_at = datetime.now(UTC).isoformat(timespec="seconds")
 
         def change() -> None:
-            self._store.add_invite(world_id, KIND_USER, user.uid, acting_uid, created_at)
+            self._store.add_invite(world_id, KIND_USER, user.uid, actor.uid, created_at)
 
         return await self._apply(world_id, change, resolution, secret)
 
-    async def invite_group(self, world_id: str, acting_uid: str, gid: str) -> AccessResult:
-        """Lädt eine Nextcloud-Gruppe ein; ihre aktiven Mitglieder bekommen Zugang (ZUGANG-02)."""
+    async def invite_group(self, world_id: str, actor: Actor, gid: str) -> AccessResult:
+        """Lädt eine Nextcloud-Gruppe ein; ihre aktiven Mitglieder bekommen Zugang (ZUGANG-02).
+
+        Ein Nicht-Admin lädt nur eigene Gruppen und Subadmin-Gruppen ein (D-01).
+        """
         await self._require_world(world_id)
-        if not await self._directory.group_exists(acting_uid, gid):
+        actor = await self._confirmed(actor)
+        if not actor.nc_admin and gid not in actor.groups:
+            raise InviteScopeError(MSG_GROUP_OUT_OF_SCOPE)
+        if not await self._directory.group_exists(actor.uid, gid):
             raise InviteTargetError(MSG_UNKNOWN_GROUP)
         secret = await self._secret.get()
         await self._ensure_fingerprint(secret)
         invites = await self._invite_keys(world_id) | {(KIND_GROUP, gid)}
-        resolution = await self._resolve(acting_uid, invites)
+        resolution = await self._resolve(actor, invites, strict=False)
         created_at = datetime.now(UTC).isoformat(timespec="seconds")
 
         def change() -> None:
-            self._store.add_invite(world_id, KIND_GROUP, gid, acting_uid, created_at)
+            self._store.add_invite(world_id, KIND_GROUP, gid, actor.uid, created_at)
 
         return await self._apply(world_id, change, resolution, secret)
 
-    async def revoke(self, world_id: str, acting_uid: str, kind: str, target: str) -> AccessResult:
+    async def revoke(self, world_id: str, actor: Actor, kind: str, target: str) -> AccessResult:
+        """Entfernt eine Einladung. Löst die übrigen auf und braucht darum wie der Abgleich einen Actor (P-01)."""
         await self._require_world(world_id)
+        actor = await self._confirmed(actor)
         secret = await self._secret.get()
         await self._ensure_fingerprint(secret)
         # Auch den widerrufenen Schlüssel auflösen: So ist unter der Sperre
         # bekannt, wer nur über ihn Zugang hatte, und die keep-Regel kann den
         # Widerruf nicht still rückgängig machen (siehe _apply_sync).
         invites = await self._invite_keys(world_id) | {(kind, target)}
-        resolution = await self._resolve(acting_uid, invites)
+        resolution = await self._resolve(actor, invites, strict=False)
 
         def change() -> None:
             self._store.remove_invite(world_id, kind, target)
 
         return await self._apply(world_id, change, resolution, secret, revoked=(kind, target))
 
-    async def sync_world(self, world_id: str, acting_uid: str) -> AccessResult:
+    async def sync_world(self, world_id: str, actor: Actor) -> AccessResult:
         """Gleicht eine Welt mit Nextcloud ab: neue Gruppenmitglieder rein, Ausgetretene raus."""
         await self._require_world(world_id)
+        actor = await self._confirmed(actor)
         secret = await self._secret.get()
         await self._ensure_fingerprint(secret)
-        result = await self._sync(world_id, acting_uid, secret, blocking=True)
+        result = await self._sync(world_id, actor, secret, blocking=True)
         return AccessResult(applied=True) if result is None else result
 
-    async def sync_all(self, acting_uid: str) -> bool:
+    async def sync_all(self, actor: Actor) -> bool:
         """Abgleich aller Welten beim Verwalter-Besuch, höchstens alle SYNC_INTERVAL_SECONDS.
 
         Wartet nie auf die Welt-Sperre: Läuft gerade eine Aktion (etwa ein
@@ -213,6 +279,12 @@ class AccessService:
         if SYNC_STATE.last is not None and now - SYNC_STATE.last < SYNC_INTERVAL_SECONDS:
             return False
         SYNC_STATE.last = now
+        try:
+            actor = await self._confirmed(actor)
+        except DirectoryUnavailableError:
+            # Ohne Bestätigung kein Abgleich; die Drossel bleibt verbraucht (keine Last bei Störung).
+            LOG.warning("Abgleich beim Verwalter-Besuch übersprungen: Nextcloud antwortet nicht")
+            return False
         secret = await self._secret.get()
         if not await self._ensure_fingerprint(secret, blocking=False):
             SYNC_STATE.last = None
@@ -220,7 +292,7 @@ class AccessService:
         busy = False
         for row in await anyio.to_thread.run_sync(self._store.list_worlds):
             try:
-                result = await self._sync(row.id, acting_uid, secret, blocking=False)
+                result = await self._sync(row.id, actor, secret, blocking=False)
             except Exception as exc:
                 LOG.warning("Abgleich von Welt %s gescheitert: %s", row.id, type(exc).__name__)
                 continue
@@ -267,7 +339,7 @@ class AccessService:
         player, applied = await anyio.to_thread.run_sync(run)
         return await self._change(acting_uid, player, secret, applied)
 
-    async def list_players(self, world_id: str, acting_uid: str) -> list[PlayerInfo]:
+    async def list_players(self, world_id: str, actor: Actor) -> list[PlayerInfo]:
         await self._require_world(world_id)
         secret = await self._secret.get()
         # Eigener Schritt außerhalb von worlds.mutation() (Sperr-Regel, nicht
@@ -284,7 +356,7 @@ class AccessService:
         members: dict[str, set[str]] = {}
         for gid in groups:
             try:
-                found = await self._directory.group_members(acting_uid, gid)
+                found = await self._directory.group_members(actor.uid, gid)
             except DirectoryUnavailableError:
                 found = None
             members[gid] = set(found or [])
@@ -299,7 +371,7 @@ class AccessService:
             players.append(
                 PlayerInfo(
                     nc_user=nc_user,
-                    display_name=await self._display_name(acting_uid, nc_user),
+                    display_name=await self._display_name(actor.uid, nc_user, lookup=actor.nc_admin),
                     player_name=player.player_name,
                     password=_password(secret, player),
                     via=via,
@@ -356,7 +428,18 @@ class AccessService:
         Ohne diesen Schritt griffe eine alte direkte Einladung wieder, sobald ein
         Admin ein Konto mit derselben ID neu anlegt, und die Spielerzeile mit
         Rotation 0 gäbe ihm das Passwort des gelöschten Kontos.
+
+        Nur im Namen eines bestätigten NC-Admins (meta nc_admins, D-01, 404-Falle):
+        Steht acting_uid dort nicht, gibt es keinen Abgleich und keine Kontoabfrage
+        (Tiefenverteidigung zu ``notify.loop.run_hooks``).
         """
+        from gameworld.playtime.engine import parse_admins  # spät: playtime.service importiert dieses Modul
+        from gameworld.playtime.service import META_NC_ADMINS
+
+        nc_admins = parse_admins(await anyio.to_thread.run_sync(self._store.get_meta, META_NC_ADMINS))
+        if acting_uid not in nc_admins:
+            LOG.warning("Kontenabgleich abgelehnt: das handelnde Konto ist kein bestätigter Nextcloud-Admin")
+            return []
         if await self._directory.user(acting_uid, acting_uid) is None:
             LOG.warning("Nextcloud bestätigt den handelnden Verwalter nicht; gelöschte Konten bleiben vorerst")
             return []
@@ -386,22 +469,66 @@ class AccessService:
         invites = await anyio.to_thread.run_sync(self._store.list_invites, world_id)
         return {(invite.kind, invite.target) for invite in invites}
 
+    async def _confirmed(self, actor: Actor) -> Actor:
+        """Bestätigt nc_admin frisch an der Gruppe admin, sonst gilt der Actor als Nicht-Admin.
+
+        Das Profil hinter dem Actor kann bis zu 30 s alt sein. Nur ein frisch
+        bestätigter NC-Admin darf den Pfad "404 heißt gelöscht" gehen (P-01):
+        Antwortet Nextcloud mit 403/404 oder fehlt das Konto in der Gruppe, folgt
+        der sichere Nicht-Admin-Pfad. Eine Störung wird weitergereicht (nichts geschrieben).
+        """
+        if not actor.nc_admin:
+            return actor
+        try:
+            members = await self._directory.group_members(actor.uid, ADMIN_GROUP)
+        except DirectoryRejectedError:
+            members = None
+        if members is None or actor.uid not in members:
+            LOG.warning("Nextcloud bestätigt das Adminrecht nicht; es gelten die Regeln für Gruppen-Verwalter")
+            return replace(actor, nc_admin=False)
+        return actor
+
+    async def _require_account_in_scope(self, actor: Actor, uid: str) -> None:
+        """Das Konto muss in einer eigenen Gruppe oder Subadmin-Gruppe stehen (D-01), sonst 403.
+
+        Gelesen wird je Gruppe im Namen des Verwalters; eine abgelehnte Gruppe
+        zählt nicht, eine Störung wird weitergereicht (503). Läuft vor jeder Store-Änderung.
+        """
+        for gid in sorted(actor.groups):
+            try:
+                members = await self._directory.group_members(actor.uid, gid)
+            except DirectoryRejectedError:
+                continue
+            if members is not None and uid in members:
+                return
+        raise InviteScopeError(MSG_ACCOUNT_OUT_OF_SCOPE)
+
     async def _resolve(
-        self, acting_uid: str, invites: set[InviteKey], known: dict[str, DirectoryUser] | None = None
+        self,
+        actor: Actor,
+        invites: set[InviteKey],
+        known: dict[str, DirectoryUser] | None = None,
+        *,
+        strict: bool = True,
     ) -> _Resolution:
         """Löst Einladungen bei Nextcloud auf, als handelnder Verwalter (Pitfall 6).
 
-        Eine fehlende Gruppe zählt als leer. Jedes Konto wird höchstens einmal
-        abgefragt, auch wenn es direkt und über Gruppen eingeladen ist.
+        NC-Admin (frisch bestätigt): Eine fehlende Gruppe zählt als leer. Jedes
+        Konto wird höchstens einmal abgefragt, auch wenn es direkt und über
+        Gruppen eingeladen ist.
+
+        Nicht-Admin (404-Falle, P-01): siehe ``_resolve_limited``.
         """
+        if not actor.nc_admin:
+            return await self._resolve_limited(actor, invites, known or {}, strict=strict)
         cache: dict[str, DirectoryUser | None] = dict(known or {})
         resolution = _Resolution()
         for kind, target in sorted(invites):
-            members = None if kind == KIND_USER else await self._directory.group_members(acting_uid, target)
+            members = None if kind == KIND_USER else await self._directory.group_members(actor.uid, target)
             uids = [target] if kind == KIND_USER else (members or [])
             for uid in uids:
                 if uid not in cache:
-                    cache[uid] = await self._directory.user(acting_uid, uid)
+                    cache[uid] = await self._directory.user(actor.uid, uid)
                 user = cache[uid]
                 if user is not None and user.enabled:
                     resolution.effective[user.uid] = user
@@ -409,7 +536,49 @@ class AccessService:
             resolution.resolved.add((kind, target))
         return resolution
 
-    async def _display_name(self, acting_uid: str, nc_user: str) -> str:
+    async def _resolve_limited(
+        self, actor: Actor, invites: set[InviteKey], known: dict[str, DirectoryUser], *, strict: bool
+    ) -> _Resolution:
+        """Auflösung im Namen eines Gruppen-Verwalters ohne Adminrecht; entfernt nie wegen einer 404.
+
+        Nie ``user()`` je Konto. Gruppenmitglieder gelten als aktiv, mit der
+        Konto-ID als Anzeigename. Direkt eingeladene Konten behalten ihren Zugang
+        unverändert (``kept``), außer sie stehen in ``known`` (gerade eingeladen,
+        Umfang geprüft). Ist eine Gruppe nicht lesbar (403 oder 404), bricht
+        ``strict`` (Abgleich) die Welt ohne Änderung ab; sonst bleibt die Gruppe
+        unaufgelöst, und die keep-Regel lässt ihre Zugänge stehen.
+        """
+        resolution = _Resolution()
+        for kind, target in sorted(invites):
+            if kind == KIND_USER:
+                user = known.get(target)
+                if user is None:
+                    resolution.kept.add(target)
+                else:
+                    resolution.effective[user.uid] = user
+                    resolution.sources.setdefault(user.uid, set()).add((kind, target))
+                resolution.resolved.add((kind, target))
+                continue
+            try:
+                members = await self._directory.group_members(actor.uid, target)
+            except DirectoryRejectedError:
+                members = None
+            if members is None:
+                if strict:
+                    raise DirectoryRejectedError(MSG_UNAVAILABLE)
+                LOG.info("Gruppen-Einladung für den Verwalter nicht lesbar; ihre Zugänge bleiben")
+                continue
+            for uid in members:
+                user = known.get(uid) or DirectoryUser(uid=uid, display_name=uid, enabled=True)
+                resolution.effective[user.uid] = user
+                resolution.sources.setdefault(user.uid, set()).add((kind, target))
+            resolution.resolved.add((kind, target))
+        return resolution
+
+    async def _display_name(self, acting_uid: str, nc_user: str, *, lookup: bool = True) -> str:
+        """Anzeigename aus Nextcloud; ohne lookup (Nicht-Admin) die Konto-ID, ohne Abfrage."""
+        if not lookup:
+            return nc_user
         try:
             user = await self._directory.user(acting_uid, nc_user)
         except DirectoryUnavailableError:
@@ -453,8 +622,8 @@ class AccessService:
         result = await anyio.to_thread.run_sync(self._apply_sync, world_id, change, resolution, secret, True, revoked)
         return AccessResult(applied=True) if result is None else result
 
-    async def _sync(self, world_id: str, acting_uid: str, secret: bytes, *, blocking: bool) -> AccessResult | None:
-        resolution = await self._resolve(acting_uid, await self._invite_keys(world_id))
+    async def _sync(self, world_id: str, actor: Actor, secret: bytes, *, blocking: bool) -> AccessResult | None:
+        resolution = await self._resolve(actor, await self._invite_keys(world_id))
         return await anyio.to_thread.run_sync(self._apply_sync, world_id, None, resolution, secret, blocking)
 
     # Unter der Sperre (Worker-Thread)
@@ -523,7 +692,8 @@ class AccessService:
                 if resolution.sources.get(uid, set()) & current_keys
             }
             # Parallel neu Eingeladene (nicht aufgelöst) behalten ihren Stand bis zum nächsten Abgleich.
-            keep: set[str] = set()
+            # Ebenso direkte Einladungen, die ein Nicht-Admin nicht prüfen kann (404-Falle).
+            keep: set[str] = {uid for uid in resolution.kept if (KIND_USER, uid) in current_keys}
             unresolved = current_keys - resolution.resolved
             for kind, target in unresolved:
                 if kind == KIND_USER:

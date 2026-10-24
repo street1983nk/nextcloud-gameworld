@@ -17,6 +17,7 @@ import pytest
 from gameworld.access.directory import DirectoryUser
 from gameworld.access.roles import Profile
 from gameworld.access.secret import PlayerSecret
+from gameworld.access.service import Actor
 from gameworld.talk.rooms import RoomMember
 
 APP_ID = "gameworld"
@@ -541,6 +542,10 @@ def fake_secret(app_env: Path) -> StaticSecret:
     assert isinstance(secret._player_secret, StaticSecret)  # pyright: ignore[reportPrivateUsage]
     return secret._player_secret  # pyright: ignore[reportPrivateUsage]
 
+
+# Handelnde Verwalter für AccessService (06-02): admin ist NC-Admin, gw-lehrer Gruppen-Verwalter.
+ADMIN_ACTOR = Actor(uid="admin", nc_admin=True, groups=frozenset({"admin"}))
+LEHRER_ACTOR = Actor(uid="gw-lehrer", nc_admin=False, groups=frozenset({"klasse", "lehrkraefte"}))
 
 FAKE_PROFILES: dict[str, tuple[str, tuple[str, ...]]] = {
     "admin": ("Admin", ("admin",)),

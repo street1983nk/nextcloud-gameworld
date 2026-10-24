@@ -9,6 +9,7 @@ und mit Rotation 0 war das Spielpasswort das des gelöschten Kontos.
 from __future__ import annotations
 
 import io
+import json
 import sqlite3
 import tarfile
 from datetime import date
@@ -23,11 +24,12 @@ from gameworld.access.roles import Profile
 from gameworld.access.service import AccessService
 from gameworld.config import load_settings
 from gameworld.notify import loop
+from gameworld.playtime.service import META_NC_ADMINS
 from gameworld.provisioner.access_mod import ACCESS_FILE_NAME
 from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import ACCOUNT_TABLES, SCHEMA_VERSION, PlayerRow, WorldRow, WorldStore
-from tests.conftest import TEST_SECRET, FakeDirectory, StaticSecret, give_rules
+from tests.conftest import ADMIN_ACTOR, TEST_SECRET, FakeDirectory, StaticSecret, give_rules
 from tests.test_service_lifecycle import FakeProvisioner
 
 W1 = "aaaaaaaaaaa1"
@@ -68,6 +70,9 @@ def store(app_env: Path) -> WorldStore:
     world_store.migrate()
     world_store.insert_world(_world(W1, 30015))
     world_store.insert_world(_world(W2, 30016))
+    # admin ist bestätigter NC-Admin (wie nach verify_admins); ohne diesen Stand lehnt
+    # purge_missing_accounts jeden Abgleich ab (06-02, eigener Negativtest).
+    world_store.set_meta(META_NC_ADMINS, json.dumps(["admin"]))
     return world_store
 
 
@@ -138,8 +143,8 @@ async def _populate_gone(access: AccessService, store: WorldStore, fake_director
     """GONE als Kind mit allem, was ein Konto anhäufen kann; gw-kind als unbeteiligte Positivkontrolle."""
     fake_directory.users[GONE] = ("Mia Lena", True)
     for world_id in (W1, W2):
-        await access.invite_user(world_id, "admin", GONE)
-    await access.invite_user(W1, "admin", "gw-kind")
+        await access.invite_user(world_id, ADMIN_ACTOR, GONE)
+    await access.invite_user(W1, ADMIN_ACTOR, "gw-kind")
     for uid in (GONE, "gw-kind"):
         give_rules(store, uid)
         store.add_usage(uid, DAY, 600)
@@ -202,7 +207,7 @@ async def test_deleted_account_is_forgotten_completely_and_name_freed(
     assert "Mia" not in _last_access_file(fake, W2)
     # Der Name ist frei: Ein neues Konto mit gleichem Anzeigenamen heißt wieder Mia, nicht Mia2.
     fake_directory.users["gw-neu"] = ("Mia Sophie", True)
-    await access.invite_user(W1, "admin", "gw-neu")
+    await access.invite_user(W1, ADMIN_ACTOR, "gw-neu")
     newcomer = store.get_player("gw-neu")
     assert newcomer is not None
     assert newcomer.player_name == "Mia"
@@ -295,13 +300,13 @@ async def test_recreated_account_has_no_access_and_other_password(
     # Ein Admin legt ein Konto mit derselben ID neu an: ohne neue Einladung kein Zugang.
     fake_directory.users[GONE] = ("Mia Lena", True)
     for world_id in (W1, W2):
-        await access.sync_world(world_id, "admin")
+        await access.sync_world(world_id, ADMIN_ACTOR)
     assert GONE not in store.world_access(W1)
     assert GONE not in store.world_access(W2)
     assert await access.my_worlds(profile) == []
 
     # Neu eingeladen: neue Zeile mit Rotation 0, aber anderem Passwort als das gelöschte Konto.
-    await access.invite_user(W1, "admin", GONE)
+    await access.invite_user(W1, ADMIN_ACTOR, GONE)
     player = store.get_player(GONE)
     assert player is not None
     assert player.rotation == 0
@@ -315,8 +320,8 @@ async def test_new_players_get_individual_salt(
     access: AccessService, store: WorldStore, fake_directory: FakeDirectory
 ) -> None:
     fake_directory.users[GONE] = ("Mia Lena", True)
-    await access.invite_user(W1, "admin", GONE)
-    await access.invite_user(W1, "admin", "gw-kind")
+    await access.invite_user(W1, ADMIN_ACTOR, GONE)
+    await access.invite_user(W1, ADMIN_ACTOR, "gw-kind")
     first, second = store.get_player(GONE), store.get_player("gw-kind")
     assert first is not None
     assert second is not None
@@ -328,13 +333,13 @@ async def test_new_players_get_individual_salt(
 async def test_existing_row_without_salt_keeps_exact_password(access: AccessService, store: WorldStore) -> None:
     """Zeile aus Schema 5 (Zusatz leer): Passwort bleibt das bisherige, auch nach Einladung in eine Welt."""
     store.insert_player(PlayerRow(nc_user="gw-kind", player_name="Kind", rotation=0))
-    await access.invite_user(W1, "admin", "gw-kind")
+    await access.invite_user(W1, ADMIN_ACTOR, "gw-kind")
     player = store.get_player("gw-kind")
     assert player is not None
     assert player.salt == ""
     [world] = await access.my_worlds(Profile(user_id="gw-kind", display_name="Kind (Dev)", groups=()))
     assert world.password == VECTOR_GW_KIND_0
-    [listed] = await access.list_players(W1, "admin")
+    [listed] = await access.list_players(W1, ADMIN_ACTOR)
     assert listed.password == VECTOR_GW_KIND_0
 
 

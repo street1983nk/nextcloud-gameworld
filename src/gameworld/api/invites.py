@@ -21,16 +21,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from gameworld.access.directory import Directory, DirectoryUnavailableError, get_directory
-from gameworld.access.roles import require_verwalter
+from gameworld.access.roles import RolesDep, RoleUnavailableError, require_verwalter
 from gameworld.access.secret import PlayerSecret, SecretUnavailableError, get_player_secret
 from gameworld.access.service import (
     KIND_GROUP,
     AccessResult,
     AccessService,
+    Actor,
+    InviteScopeError,
     InviteTargetError,
     PlayerChange,
     PlayerNameTakenError,
     PlayerNotFoundError,
+    actor_of,
 )
 from gameworld.api.worlds import ServiceDep, WorldId
 from gameworld.provisioner.client import WorldNotFoundError
@@ -39,7 +42,7 @@ from gameworld.worlds.service import NOT_FOUND
 
 LOG = logging.getLogger(__name__)
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-03-22).
+# Jede Route ist Verwaltung: routerweite Sperre require_verwalter (T-03-22, ROLLE-03).
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
@@ -152,8 +155,8 @@ def get_access_service(
 AccessDep = Annotated[AccessService, Depends(get_access_service)]
 
 
-async def _players(access: AccessService, world_id: str, uid: str, result: AccessResult | None) -> PlayersOut:
-    players = await access.list_players(world_id, uid)
+async def _players(access: AccessService, world_id: str, actor: Actor, result: AccessResult | None) -> PlayersOut:
+    players = await access.list_players(world_id, actor)
     invites = await anyio.to_thread.run_sync(access.list_invites, world_id)
     return PlayersOut(
         players=[
@@ -182,56 +185,77 @@ def _http_error(exc: Exception) -> HTTPException:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, PlayerNameTakenError):
         return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, InviteScopeError):
+        # Nur die festen Texte MSG_*_OUT_OF_SCOPE (D-01), nie Nextcloud-Daten.
+        return HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
     if isinstance(exc, (InviteTargetError, ValueError)):
         # Nur eigene, feste Meldungen (MSG_UNKNOWN_*, MSG_INVALID_NAME).
         return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE)
 
 
-_ERRORS = (WorldNotFoundError, InviteTargetError, DirectoryUnavailableError, SecretUnavailableError)
+_ERRORS = (
+    WorldNotFoundError,
+    InviteTargetError,
+    InviteScopeError,
+    DirectoryUnavailableError,
+    SecretUnavailableError,
+)
 # Passwort neu und Umbenennen: dazu Spieler fehlt, Name vergeben, Name ungültig.
 _PLAYER_ERRORS = (*_ERRORS, PlayerNotFoundError, PlayerNameTakenError, ValueError)
 VerwalterDep = Annotated[str, Depends(require_verwalter)]
 
 
-@router.get("/worlds/{world_id}/players")
-async def list_players(world_id: WorldId, access: AccessDep, uid: VerwalterDep) -> PlayersOut:
+async def current_actor(uid: VerwalterDep, roles: RolesDep) -> Actor:
+    """Handelnder Verwalter aus seiner Selbstauskunft (Gruppen, Subadmin-Gruppen, D-01)."""
     try:
-        return await _players(access, world_id, uid, None)
+        profile = await roles.profile(uid)
+    except RoleUnavailableError:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
+    return actor_of(profile)
+
+
+ActorDep = Annotated[Actor, Depends(current_actor)]
+
+
+@router.get("/worlds/{world_id}/players")
+async def list_players(world_id: WorldId, access: AccessDep, actor: ActorDep) -> PlayersOut:
+    try:
+        return await _players(access, world_id, actor, None)
     except _ERRORS as exc:
         raise _http_error(exc) from None
 
 
 @router.post("/worlds/{world_id}/invites")
 async def invite(
-    world_id: WorldId, body: InviteRequest, access: AccessDep, uid: VerwalterDep, service: ServiceDep
+    world_id: WorldId, body: InviteRequest, access: AccessDep, actor: ActorDep, service: ServiceDep
 ) -> PlayersOut:
     try:
         if body.kind == KIND_GROUP:
-            result = await access.invite_group(world_id, uid, body.target)
+            result = await access.invite_group(world_id, actor, body.target)
         else:
-            result = await access.invite_user(world_id, uid, body.target)
+            result = await access.invite_user(world_id, actor, body.target)
     except _ERRORS as exc:
         raise _http_error(exc) from None
     # Talk-Raum folgt world_access (D-16), best effort und nie blockierend (D-20).
     _talk_hook(lambda: get_talk_service(service.store).schedule_sync(world_id))
     try:
-        return await _players(access, world_id, uid, result)
+        return await _players(access, world_id, actor, result)
     except _ERRORS as exc:
         raise _http_error(exc) from None
 
 
 @router.post("/worlds/{world_id}/invites/remove")
 async def remove_invite(
-    world_id: WorldId, body: InviteRequest, access: AccessDep, uid: VerwalterDep, service: ServiceDep
+    world_id: WorldId, body: InviteRequest, access: AccessDep, actor: ActorDep, service: ServiceDep
 ) -> PlayersOut:
     try:
-        result = await access.revoke(world_id, uid, body.kind, body.target)
+        result = await access.revoke(world_id, actor, body.kind, body.target)
     except _ERRORS as exc:
         raise _http_error(exc) from None
     _talk_hook(lambda: get_talk_service(service.store).schedule_sync(world_id))
     try:
-        return await _players(access, world_id, uid, result)
+        return await _players(access, world_id, actor, result)
     except _ERRORS as exc:
         raise _http_error(exc) from None
 

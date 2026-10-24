@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from pathlib import Path
 from typing import cast
 
@@ -18,7 +19,7 @@ from gameworld.config import load_settings
 from gameworld.provisioner.client import DockerProvisioner, DockerUnavailableError
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import WorldRow, WorldStore
-from tests.conftest import TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers
+from tests.conftest import TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers, fake_lookup
 from tests.test_service_lifecycle import FakeProvisioner
 
 # Fester Zusatz neuer Spielerzeilen, damit die Passwörter hier vorab berechenbar sind.
@@ -496,3 +497,97 @@ async def test_rotation_rename_and_groups_leak_nothing(
         for body in error_bodies:
             assert needle not in body
     assert caplog.records, "Ohne Log-Einträge wäre der Test wertlos"
+
+
+# Gruppen-Verwalter über die API (06-02, D-01). Gegenprobe roh per sqlite3.
+
+
+@pytest.fixture
+def teachers(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """lehrkraefte ist Verwalter-Gruppe; gw-lehrer verwaltet damit, ohne NC-Admin zu sein."""
+    del app_env
+    from gameworld.access import roles
+
+    async def groups() -> frozenset[str]:
+        return frozenset({"admin", "lehrkraefte"})
+
+    monkeypatch.setattr(roles, "_role_service", roles.RoleService(fake_lookup, groups))
+
+
+def _raw_rows(app_env: Path) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
+    connection = sqlite3.connect(app_env / "gameworld.sqlite3")
+    try:
+        invites = connection.execute("SELECT world_id, kind, target FROM invites ORDER BY kind, target").fetchall()
+        access = connection.execute("SELECT world_id, nc_user FROM world_access ORDER BY nc_user").fetchall()
+    finally:
+        connection.close()
+    return invites, access
+
+
+@pytest.mark.usefixtures("teachers")
+async def test_teacher_invite_outside_own_groups_is_403_without_db_change(
+    client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner, app_env: Path
+) -> None:
+    del service
+    before = _raw_rows(app_env)
+    written = len(fake.written)
+    response = await _invite(client, {"kind": "user", "target": "gw-kind-out"}, user="gw-lehrer")
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Dieses Konto ist in keiner deiner Gruppen."}
+    response = await _invite(client, {"kind": "group", "target": "familie"}, user="gw-lehrer")
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Diese Gruppe gehört nicht zu deinen Gruppen."}
+    assert _raw_rows(app_env) == before
+    assert len(fake.written) == written
+
+
+@pytest.mark.usefixtures("teachers")
+async def test_teacher_invites_own_class_member(
+    client: httpx.AsyncClient, service: WorldService, fake_directory: FakeDirectory, app_env: Path
+) -> None:
+    del service
+    response = await _invite(client, {"kind": "user", "target": "gw-kind-k"}, user="gw-lehrer")
+    assert response.status_code == 200
+    body = response.json()
+    assert [(p["nc_user"], p["display_name"]) for p in body["players"]] == [("gw-kind-k", "gw-kind-k")]
+    assert _raw_rows(app_env)[1] == [(W1, "gw-kind-k")]
+    assert all(acting != "gw-lehrer" for acting, _uid in fake_directory.calls)
+
+
+@pytest.mark.usefixtures("teachers")
+async def test_teacher_world_list_sync_removes_nothing(
+    client: httpx.AsyncClient, service: WorldService, fake_directory: FakeDirectory, app_env: Path
+) -> None:
+    """Dashboard als Lehrer: Nextcloud antwortet auf jedes Einzelkonto mit 404, kein Zugang fällt weg."""
+    del service
+    assert (await _invite(client, {"kind": "user", "target": "gw-kind-out"})).status_code == 200
+    assert (await _invite(client, {"kind": "group", "target": "klasse"})).status_code == 200
+    from gameworld.access import service as access_service
+
+    access_service.SYNC_STATE.last = None
+    before = _raw_rows(app_env)
+    fake_directory.users.clear()
+    response = await client.get("/api/worlds", headers=appapi_headers("gw-lehrer"))
+    assert response.status_code == 200
+    assert access_service.SYNC_STATE.last is not None  # der Abgleich lief wirklich
+    assert _raw_rows(app_env) == before
+
+
+async def test_actor_lookup_failure_is_503(
+    client: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rolle aus dem Cache, Profil danach nicht lesbar: 503 statt Einladung ohne Umfang."""
+    del service
+    from gameworld.access import roles
+    from gameworld.access.roles import RoleService, RoleUnavailableError
+
+    async def failing_profile(self: RoleService, uid: str) -> roles.Profile:
+        raise RoleUnavailableError(uid)
+
+    async def verwalter(self: RoleService, uid: str) -> str:
+        return roles.ROLE_VERWALTER
+
+    monkeypatch.setattr(RoleService, "role", verwalter)
+    monkeypatch.setattr(RoleService, "profile", failing_profile)
+    response = await _invite(client)
+    assert response.status_code == 503

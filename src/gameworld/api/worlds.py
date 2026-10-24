@@ -16,9 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from gameworld.access.directory import Directory, get_directory
-from gameworld.access.roles import require_verwalter
+from gameworld.access.roles import RolesDep, require_verwalter
 from gameworld.access.secret import PlayerSecret, get_player_secret
-from gameworld.access.service import AccessService
+from gameworld.access.service import AccessService, actor_of
 from gameworld.config import load_settings
 from gameworld.playtime.service import TimeService
 from gameworld.provisioner.client import (
@@ -176,11 +176,14 @@ async def list_worlds(
     uid: Annotated[str, Depends(require_verwalter)],
     directory: Annotated[Directory, Depends(get_directory)],
     secret: Annotated[PlayerSecret, Depends(get_player_secret)],
+    roles: RolesDep,
 ) -> WorldListOut:
     # Abgleich beim Verwalter-Besuch (T-03-26), gedrosselt auf einmal pro Minute.
     # Er darf die Weltenliste nie blockieren (T-03-33): Fehler nur als Warnung.
+    # Im Namen eines Gruppen-Verwalters entfernt er nie wegen einer 404 (P-01).
     try:
-        await AccessService(service.store, service, directory, secret).sync_all(uid)
+        actor = actor_of(await roles.profile(uid))
+        await AccessService(service.store, service, directory, secret).sync_all(actor)
     except Exception as exc:
         LOG.warning("Abgleich der Einladungen beim Verwalter-Besuch gescheitert: %s", type(exc).__name__)
     # Verwalter-Schnappschuss für die Freistellung (A4), gedrosselt und nie
