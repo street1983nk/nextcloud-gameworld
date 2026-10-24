@@ -98,7 +98,8 @@ def test_unknown_preset_message_uses_translated_titles() -> None:
 SRC = Path(__file__).resolve().parents[1] / "src" / "gameworld"
 EXCEPTIONS_FILE = Path(__file__).with_name("i18n_exceptions.tsv")
 
-# API-near modules (06-18 Task 2); access_mod/time_mod (06-22) and notify/texts (06-23) are excluded.
+# API-near modules (06-18 Task 2). access_mod/time_mod carry their own per-language bundles
+# (MOD_TEXTS, checked in tests/test_mod_texts.py, 06-22); notify/texts (06-23) is excluded.
 _CONSTANT_DIRS = ("access", "api", "backup", "playtime", "worlds")
 _CONSTANT_FILES = (
     "config.py",

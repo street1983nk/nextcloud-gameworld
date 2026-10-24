@@ -51,6 +51,7 @@ nie IP-Adressen oder Passwörter.
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 from gameworld.provisioner.spec import DATA_DIR
 from gameworld.provisioner.status_mod import PLAYER_NAME
@@ -83,6 +84,37 @@ TEXT_LOCKED = "Zu viele falsche Passwörter. Bitte in 10 Minuten nochmal versuch
 TEXT_CASE_HINT = "Achte auf Groß- und Kleinschreibung bei deinem Spielernamen."
 TEXT_WAIT = "Bitte einen Moment warten und dann nochmal beitreten."
 
+
+class ModTexts(NamedTuple):
+    """Texts of gameworld_access in one world language (refused join or disconnect)."""
+
+    deny: str
+    kick: str
+    locked: str
+    case_hint: str
+    wait: str
+
+
+# World language (D-27): the Lua code is the same in every language, only these literals change.
+# German is the source language and stays byte-identical (golden test in tests/test_mod_texts.py).
+MOD_TEXTS: dict[str, ModTexts] = {
+    "de": ModTexts(TEXT_DENY, TEXT_KICK, TEXT_LOCKED, TEXT_CASE_HINT, TEXT_WAIT),
+    "en": ModTexts(
+        deny="You are not invited to this world. Ask your parents.",
+        kick="Your invitation to this world has ended.",
+        locked="Too many wrong passwords. Please try again in 10 minutes.",
+        case_hint="Check the capital and small letters in your player name.",
+        wait="Please wait a moment and then join again.",
+    ),
+    "fr": ModTexts(
+        deny="Tu n\u2019as pas d\u2019invitation pour ce monde. Demande à tes parents.",
+        kick="Ton invitation pour ce monde est terminée.",
+        locked="Trop de mots de passe faux. Réessaie dans 10 minutes.",
+        case_hint="Fais attention aux majuscules et aux minuscules de ton nom de joueur.",
+        wait="Attends un instant, puis reviens dans le monde.",
+    ),
+}
+
 VERIFIER = re.compile(r"#1#[A-Za-z0-9+/=]+#[A-Za-z0-9+/=]+")
 
 
@@ -98,20 +130,34 @@ def _lua_string(text: str) -> str:
     return '"' + "".join(parts) + '"'
 
 
+def mod_texts(language: object) -> ModTexts:
+    """Text bundle of ``language``; anything unsupported (value from the database) gives German."""
+    if isinstance(language, str) and language in MOD_TEXTS:
+        return MOD_TEXTS[language]
+    return MOD_TEXTS["de"]
+
+
 _KINDS_LUA = ", ".join(f"{kind} = true" for kind in sorted(EVENT_KINDS))
 
-MOD_INIT_LUA = f"""\
+
+def mod_init_lua(language: object = "de") -> str:
+    """init.lua of gameworld_access; only the text literals depend on ``language`` (T-06-85).
+
+    The value never reaches the Lua source itself, it only selects a fixed bundle.
+    """
+    texts = mod_texts(language)
+    return f"""\
 -- gameworld_access: Nur Eingeladene betreten diese Welt.
 -- Die Zugangsdatei schreibt nur Gameworld. Der Mod schreibt keine IP-Adressen.
 local world = core.get_worldpath()
 local access_path = world .. "/{ACCESS_FILE_NAME}"
 local state_path = world .. "/{STATE_FILE_NAME}"
 local events_path = world .. "/{EVENTS_FILE_NAME}"
-local DENY = {_lua_string(TEXT_DENY)}
-local KICK = {_lua_string(TEXT_KICK)}
-local LOCKED = {_lua_string(TEXT_LOCKED)}
-local CASE_HINT = {_lua_string(TEXT_CASE_HINT)}
-local WAIT = {_lua_string(TEXT_WAIT)}
+local DENY = {_lua_string(texts.deny)}
+local KICK = {_lua_string(texts.kick)}
+local LOCKED = {_lua_string(texts.locked)}
+local CASE_HINT = {_lua_string(texts.case_hint)}
+local WAIT = {_lua_string(texts.wait)}
 local FAIL_LIMIT = 5
 local LOCK_SECONDS = 600
 local TICK_SECONDS = 5
@@ -312,6 +358,9 @@ end)
 -- Luanti-Konvention: Global mit Modnamen; gameworld_time meldet darueber warn10.
 gameworld_access = {{ event = event }}
 """
+
+
+MOD_INIT_LUA = mod_init_lua("de")
 
 MOD_CONF = f"""\
 name = {MOD_NAME}

@@ -103,6 +103,7 @@ from __future__ import annotations
 import itertools
 import re
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from gameworld.provisioner.access_mod import MOD_NAME as ACCESS_MOD_NAME
 from gameworld.provisioner.access_mod import _lua_string  # pyright: ignore[reportPrivateUsage]
@@ -186,6 +187,133 @@ TEXTS = (
     TEXT_HALT_SOON,
     TEXT_HALT,
 )
+
+
+class TimeTexts(NamedTuple):
+    """Texts of gameworld_time in one world language.
+
+    Sentences are always base + " " + day phrase + tail (kid_text here, text() in Lua).
+    """
+
+    limit: str
+    fenster: str
+    fenster_early: str
+    tag: str
+    welt: str
+    start: str
+    warn_10: str
+    warn_5: str
+    warn_1: str
+    play: str
+    play_again: str
+    open_again: str
+    day_today: str
+    day_tomorrow: str
+    day_on: str
+    day_next: str
+    clock_from: str
+    clock_unit: str
+    weekdays: tuple[str, ...]
+    pause: str
+    pause_soon: str
+    schluss: str
+    halt_soon: str
+    halt: str
+
+
+# World language (D-27): the Lua code is the same in every language, only these literals change.
+# The building blocks of en and fr read naturally in the fixed German order
+# (base + " " + day [+ from + clock] + tail). Owner decision 21.10.2026 holds in every
+# language: never midnight, "0 Uhr" or a date; a clock time only for minute > 0.
+MOD_TEXTS: dict[str, TimeTexts] = {
+    "de": TimeTexts(
+        TEXT_LIMIT,
+        TEXT_FENSTER,
+        TEXT_FENSTER_EARLY,
+        TEXT_TAG,
+        TEXT_WELT,
+        TEXT_START,
+        TEXT_WARN_10,
+        TEXT_WARN_5,
+        TEXT_WARN_1,
+        TEXT_PLAY,
+        TEXT_PLAY_AGAIN,
+        TEXT_OPEN_AGAIN,
+        DAY_TODAY,
+        DAY_TOMORROW,
+        DAY_ON,
+        DAY_NEXT,
+        CLOCK_FROM,
+        CLOCK_UNIT,
+        WEEKDAY_NAMES,
+        TEXT_PAUSE,
+        TEXT_PAUSE_SOON,
+        TEXT_SCHLUSS,
+        TEXT_HALT_SOON,
+        TEXT_HALT,
+    ),
+    "en": TimeTexts(
+        limit="Your playtime for today is over.",
+        fenster="It is not playtime right now.",
+        fenster_early="It is not playtime yet.",
+        tag="Today is not a play day.",
+        welt="This world is closed right now.",
+        start="Gameworld is starting. Please try again in a moment.",
+        warn_10="10 minutes of playtime left. Start finishing up and say goodbye.",
+        warn_5="5 minutes left.",
+        warn_1="1 minute left.",
+        play=" you can play.",
+        play_again=" you can play again.",
+        open_again=" it will be open again.",
+        day_today="Today",
+        day_tomorrow="Tomorrow",
+        day_on="On ",
+        day_next="Next ",
+        clock_from=" from ",
+        clock_unit=":00",
+        weekdays=("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
+        pause="Short break! Your parents need you right now. You can keep playing afterwards.",
+        pause_soon="Break in 30 seconds.",
+        schluss="That is it for today.",
+        halt_soon="The world is taking a short break soon.",
+        halt="The world is taking a short break. It will be back in a moment.",
+    ),
+    "fr": TimeTexts(
+        limit="Ton temps de jeu pour aujourd\u2019hui est terminé.",
+        fenster="Ce n\u2019est pas l\u2019heure de jouer.",
+        fenster_early="Ce n\u2019est pas encore l\u2019heure de jouer.",
+        tag="Aujourd\u2019hui, ce n\u2019est pas un jour de jeu.",
+        welt="Ce monde est fermé pour le moment.",
+        start="Gameworld démarre. Réessaie dans un instant.",
+        warn_10="Encore 10 minutes de temps de jeu. Commence à terminer et dis au revoir.",
+        warn_5="Encore 5 minutes.",
+        warn_1="Encore 1 minute.",
+        play=", tu peux jouer.",
+        play_again=", tu pourras rejouer.",
+        open_again=", il sera de nouveau ouvert.",
+        day_today="Aujourd\u2019hui",
+        day_tomorrow="Demain",
+        day_on="Ce ",
+        day_next="La semaine prochaine, ",
+        clock_from=" à partir de ",
+        clock_unit=" h",
+        weekdays=("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"),
+        pause="Petite pause. Tes parents ont besoin de toi. Ensuite, tu pourras continuer à jouer.",
+        pause_soon="Pause dans 30 secondes.",
+        schluss="C\u2019est fini pour aujourd\u2019hui.",
+        halt_soon="Le monde va bientôt faire une petite pause.",
+        halt="Le monde fait une petite pause. Ça reprend dans un instant.",
+    ),
+}
+
+
+def mod_texts(language: object) -> TimeTexts:
+    """Text bundle of ``language``; anything unsupported (value from the database) gives German."""
+    if isinstance(language, str) and language in MOD_TEXTS:
+        return MOD_TEXTS[language]
+    return MOD_TEXTS["de"]
+
+
 PAUSE_ARTS = frozenset({"pause", "schluss"})
 # Vorlauf der Pause: so lange vor dem Trennen gilt die Beitrittssperre und kommt die Vorwarnung.
 PAUSE_LEAD_SECONDS = 30
@@ -195,15 +323,21 @@ NO_TOMORROW = -1
 DAY_COUNT = 9
 MAX_DAYS_AHEAD = 7
 _DAY_MINUTES = 1440
-# Wochentage als Lua-Liste (Dezimal-Escapes, die Lua-Quelle bleibt ASCII).
-_WEEKDAYS_LUA = ", ".join(_lua_string(name) for name in WEEKDAY_NAMES)
-_BASE = {"limit": TEXT_LIMIT, "tag": TEXT_TAG, "fenster": TEXT_FENSTER, "welt": TEXT_WELT, "start": TEXT_START}
 
 
-def _clock(minute: int) -> str:
-    """ "9 Uhr" zur vollen Stunde, sonst "9:30" ohne "Uhr" (Owner-Entscheid 22.10.2026)."""
+def _weekdays_lua(texts: TimeTexts) -> str:
+    """Weekday names as a Lua list (decimal escapes, the Lua source stays ASCII)."""
+    return ", ".join(_lua_string(name) for name in texts.weekdays)
+
+
+def _base(texts: TimeTexts) -> dict[str, str]:
+    return {"limit": texts.limit, "tag": texts.tag, "fenster": texts.fenster, "welt": texts.welt, "start": texts.start}
+
+
+def _clock(minute: int, texts: TimeTexts) -> str:
+    """ "9 Uhr" on the full hour, otherwise "9:30" without unit (owner decision 22.10.2026)."""
     hours, minutes = divmod(minute, 60)
-    return f"{hours}{CLOCK_UNIT}" if minutes == 0 else f"{hours}:{minutes:02d}"
+    return f"{hours}{texts.clock_unit}" if minutes == 0 else f"{hours}:{minutes:02d}"
 
 
 def _is_int(value: object) -> bool:
@@ -217,6 +351,7 @@ def kid_text(
     minute: int | None = None,
     *,
     reached: bool = False,
+    language: object = "de",
 ) -> str:
     """Kindertext zu Grund und nächstem Start; spiegelt text() im Lua-Mod exakt.
 
@@ -227,10 +362,12 @@ def kid_text(
     der Tageswechsel (ganzer Tag ohne Limit, am Tagesende getrennt). Dann gilt
     TEXT_START statt "Jetzt ist noch keine Spielzeit. Heute kannst du spielen.",
     das sich widerspräche (WR-07); die ExApp schreibt binnen 15 s neu.
+    ``language``: world language (D-27); unsupported values give German.
     """
-    base = _BASE.get(reason, TEXT_FENSTER)
+    texts = mod_texts(language)
+    base = _base(texts).get(reason, texts.fenster)
     if reason == "start" or reached:
-        return TEXT_START
+        return texts.start
     if days_ahead is None or weekday is None or minute is None:
         return base
     if not all(_is_int(value) for value in (days_ahead, weekday, minute)):
@@ -238,45 +375,52 @@ def kid_text(
     if not (0 <= days_ahead <= MAX_DAYS_AHEAD and 1 <= weekday <= 7 and 0 <= minute < _DAY_MINUTES):
         return base
     if reason == "fenster" and days_ahead == 0:
-        base = TEXT_FENSTER_EARLY
+        base = texts.fenster_early
     if days_ahead == 0:
-        day = DAY_TODAY
+        day = texts.day_today
     elif days_ahead == 1:
-        day = DAY_TOMORROW
+        day = texts.day_tomorrow
     elif days_ahead < MAX_DAYS_AHEAD:
-        day = DAY_ON + WEEKDAY_NAMES[weekday - 1]
+        day = texts.day_on + texts.weekdays[weekday - 1]
     else:
-        day = DAY_NEXT + WEEKDAY_NAMES[weekday - 1]
+        day = texts.day_next + texts.weekdays[weekday - 1]
     if minute > 0:
-        day += CLOCK_FROM + _clock(minute)
+        day += texts.clock_from + _clock(minute, texts)
     if reason == "welt":
-        tail = TEXT_OPEN_AGAIN
+        tail = texts.open_again
     elif days_ahead == 0:
-        tail = TEXT_PLAY
+        tail = texts.play
     else:
-        tail = TEXT_PLAY_AGAIN
+        tail = texts.play_again
     return f"{base} {day}{tail}"
 
 
-def pause_text(art: str, morgen_minute: int | None) -> str:
+def pause_text(art: str, morgen_minute: int | None, *, language: object = "de") -> str:
     """Kindertext beim Trennen und Ablehnen in der Pause; spiegelt pause_text() im Lua-Mod.
 
     ``pause``: TEXT_PAUSE. ``schluss``: "Für heute ist Schluss. Morgen kannst du
     wieder spielen.", mit Uhrzeit nur bei Minute > 0 (echte Startzeit, nie "0 Uhr").
     Minute -1 (morgen laut Plan kein Spieltag) ergibt nur TEXT_SCHLUSS, damit der
-    Text nichts Falsches verspricht.
+    Text nichts Falsches verspricht. ``language``: world language (D-27).
     """
+    texts = mod_texts(language)
     if art != "schluss":
-        return TEXT_PAUSE
+        return texts.pause
     if morgen_minute == NO_TOMORROW:
-        return TEXT_SCHLUSS
-    day = DAY_TOMORROW
+        return texts.schluss
+    day = texts.day_tomorrow
     if morgen_minute is not None and _is_int(morgen_minute) and 0 < morgen_minute < _DAY_MINUTES:
-        day += CLOCK_FROM + _clock(morgen_minute)
-    return f"{TEXT_SCHLUSS} {day}{TEXT_PLAY_AGAIN}"
+        day += texts.clock_from + _clock(morgen_minute, texts)
+    return f"{texts.schluss} {day}{texts.play_again}"
 
 
-MOD_INIT_LUA = f"""\
+def mod_init_lua(language: object = "de") -> str:
+    """init.lua of gameworld_time; only the text literals depend on ``language`` (T-06-85).
+
+    The value never reaches the Lua source itself, it only selects a fixed bundle.
+    """
+    t = mod_texts(language)
+    return f"""\
 -- gameworld_time: Spielzeiten und Zeitfenster von Gameworld durchsetzen.
 -- Die Regeldatei schreibt nur Gameworld. Der Mod zaehlt die Online-Zeit je
 -- Spieler im Zaehlbuch, das im Welt-Volume bleibt und Neustarts ueberlebt.
@@ -289,34 +433,34 @@ local TICK = 5
 local MIN_LEFT = 60
 local WARN = {{ 600, 300, 60 }}
 local WARN_TEXT = {{
-  [600] = {_lua_string(TEXT_WARN_10)},
-  [300] = {_lua_string(TEXT_WARN_5)},
-  [60] = {_lua_string(TEXT_WARN_1)},
+  [600] = {_lua_string(t.warn_10)},
+  [300] = {_lua_string(t.warn_5)},
+  [60] = {_lua_string(t.warn_1)},
 }}
 local TEXT = {{
-  limit = {_lua_string(TEXT_LIMIT)},
-  fenster = {_lua_string(TEXT_FENSTER)},
-  tag = {_lua_string(TEXT_TAG)},
-  welt = {_lua_string(TEXT_WELT)},
-  start = {_lua_string(TEXT_START)},
+  limit = {_lua_string(t.limit)},
+  fenster = {_lua_string(t.fenster)},
+  tag = {_lua_string(t.tag)},
+  welt = {_lua_string(t.welt)},
+  start = {_lua_string(t.start)},
 }}
-local FENSTER_EARLY = {_lua_string(TEXT_FENSTER_EARLY)}
-local PLAY = {_lua_string(TEXT_PLAY)}
-local PLAY_AGAIN = {_lua_string(TEXT_PLAY_AGAIN)}
-local OPEN_AGAIN = {_lua_string(TEXT_OPEN_AGAIN)}
-local DAY_TODAY = {_lua_string(DAY_TODAY)}
-local DAY_TOMORROW = {_lua_string(DAY_TOMORROW)}
-local DAY_ON = {_lua_string(DAY_ON)}
-local DAY_NEXT = {_lua_string(DAY_NEXT)}
-local CLOCK_FROM = {_lua_string(CLOCK_FROM)}
-local CLOCK_UNIT = {_lua_string(CLOCK_UNIT)}
-local WEEKDAYS = {{ {_WEEKDAYS_LUA} }}
-local PAUSE_TEXT = {_lua_string(TEXT_PAUSE)}
-local PAUSE_SOON = {_lua_string(TEXT_PAUSE_SOON)}
-local SCHLUSS = {_lua_string(TEXT_SCHLUSS)}
+local FENSTER_EARLY = {_lua_string(t.fenster_early)}
+local PLAY = {_lua_string(t.play)}
+local PLAY_AGAIN = {_lua_string(t.play_again)}
+local OPEN_AGAIN = {_lua_string(t.open_again)}
+local DAY_TODAY = {_lua_string(t.day_today)}
+local DAY_TOMORROW = {_lua_string(t.day_tomorrow)}
+local DAY_ON = {_lua_string(t.day_on)}
+local DAY_NEXT = {_lua_string(t.day_next)}
+local CLOCK_FROM = {_lua_string(t.clock_from)}
+local CLOCK_UNIT = {_lua_string(t.clock_unit)}
+local WEEKDAYS = {{ {_weekdays_lua(t)} }}
+local PAUSE_TEXT = {_lua_string(t.pause)}
+local PAUSE_SOON = {_lua_string(t.pause_soon)}
+local SCHLUSS = {_lua_string(t.schluss)}
 local PAUSE_LEAD = {PAUSE_LEAD_SECONDS}
-local HALT_SOON_TEXT = {_lua_string(TEXT_HALT_SOON)}
-local HALT_TEXT = {_lua_string(TEXT_HALT)}
+local HALT_SOON_TEXT = {_lua_string(t.halt_soon)}
+local HALT_TEXT = {_lua_string(t.halt)}
 
 -- valid: nil = noch nie geladen, "missing" = keine Datei (keine Regeln),
 -- "broken" = beim Start nur eine ungueltige Datei (alle zu), "ok" = Regeln da.
@@ -661,6 +805,9 @@ core.register_on_mods_loaded(function()
   core.after(TICK, tick)
 end)
 """
+
+
+MOD_INIT_LUA = mod_init_lua("de")
 
 MOD_CONF = f"""\
 name = {MOD_NAME}

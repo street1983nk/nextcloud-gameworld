@@ -57,12 +57,23 @@ ROOT_UID = 0
 FIXED_MTIME = 0
 SPOOL_MAX_BYTES = 8 * 1024 * 1024
 WORLD_DIR = ".minetest/worlds/world"
+
+
+def world_mods(language: str = "de") -> tuple[tuple[str, str, str], ...]:
+    """The world mods (directory relative to /var/lib/minetest, init.lua, mod.conf).
+
+    ``language`` is the world language (D-27): only the text literals of the access
+    and time mod change, the status mod has no texts. Unsupported values give German.
+    """
+    return (
+        (status_mod.MOD_DIR, status_mod.MOD_INIT_LUA, status_mod.MOD_CONF),
+        (access_mod.MOD_DIR, access_mod.mod_init_lua(language), access_mod.MOD_CONF),
+        (time_mod.MOD_DIR, time_mod.mod_init_lua(language), time_mod.MOD_CONF),
+    )
+
+
 # Die Welt-Mods (Inhalt von init.lua und mod.conf), Verzeichnisse relativ zu /var/lib/minetest.
-WORLD_MODS = (
-    (status_mod.MOD_DIR, status_mod.MOD_INIT_LUA, status_mod.MOD_CONF),
-    (access_mod.MOD_DIR, access_mod.MOD_INIT_LUA, access_mod.MOD_CONF),
-    (time_mod.MOD_DIR, time_mod.MOD_INIT_LUA, time_mod.MOD_CONF),
-)
+WORLD_MODS = world_mods("de")
 ACCESS_FILE_MODE = 0o444
 # AR-23: Weltordner root:30000 mit Sticky-Bit, root-eigene Ordner (worldmods) 0755.
 WORLD_DIR_MODE = 0o1775
@@ -184,7 +195,7 @@ def _relative_to_world(path: str) -> str:
     return path[len(prefix) :]
 
 
-def build_world_files(access_file: bytes, time_file: bytes | None = None) -> bytes:
+def build_world_files(access_file: bytes, time_file: bytes | None = None, *, language: str = "de") -> bytes:
     """Unkomprimiertes Tar für ``put_archive`` in den Weltordner: alle Mods, Zugangs- und Regeldatei.
 
     Läuft vor jedem Start (``_launch``): aktualisiert den Mod-Code nach
@@ -195,12 +206,12 @@ def build_world_files(access_file: bytes, time_file: bytes | None = None) -> byt
     übergeht Docker beim Einspielen. Bestehende Welten behalten deshalb ihren
     Weltordner, bekommen aber beim nächsten Start ein root-eigenes worldmods.
     ``time_file`` None lässt die Regeldatei weg (nur für ältere Testaufrufe;
-    ``_launch`` übergibt sie immer).
+    ``_launch`` übergibt sie immer). ``language``: world language of the mod texts (D-27).
     """
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
         _add_root_dir(tar, "worldmods")
-        for mod_dir, init_lua, mod_conf in WORLD_MODS:
+        for mod_dir, init_lua, mod_conf in world_mods(language):
             relative = _relative_to_world(mod_dir)
             _add_root_dir(tar, relative)
             _add_mod_files(tar, relative, init_lua, mod_conf)
@@ -227,7 +238,13 @@ def build_time_tar(time_file: bytes) -> bytes:
 
 
 def build_world_payload(
-    preset: Preset, minetest_conf: str, world_mt: str, access_file: bytes, time_file: bytes | None = None
+    preset: Preset,
+    minetest_conf: str,
+    world_mt: str,
+    access_file: bytes,
+    time_file: bytes | None = None,
+    *,
+    language: str = "de",
 ) -> WorldPayload:
     """Unkomprimiertes Tar für ``put_archive`` nach ``/var/lib/minetest``.
 
@@ -237,7 +254,9 @@ def build_world_payload(
     gilt auch für die State-Datei des Zugangs-Mods und das Zählbuch des
     Zeit-Mods. ``access_file`` ist die Zugangsdatei (bei neuen Welten: Kopf und
     Schlusszeile, niemand eingeladen), ``time_file`` die Regeldatei (None: keine).
+    ``language``: world language of the mod texts (D-27).
     """
+    mods = world_mods(language)
     game_root = f".minetest/games/{preset.game_dir}"
     zip_path = _verified_zip(preset)
     spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_BYTES)  # noqa: SIM115
@@ -245,7 +264,7 @@ def build_world_payload(
         with zipfile.ZipFile(zip_path) as zipped:
             game = _game_entries(zipped)
             # Luanti-eigene Ordner; Weltordner und worldmods kommen gesondert (AR-23).
-            root_dirs = [f"{WORLD_DIR}/worldmods", *(mod_dir for mod_dir, _, _ in WORLD_MODS)]
+            root_dirs = [f"{WORLD_DIR}/worldmods", *(mod_dir for mod_dir, _, _ in mods)]
             directories = {".minetest", ".minetest/worlds", ".minetest/games", game_root}
             for name, _ in game:
                 parts = name.split("/")[:-1]
@@ -262,7 +281,7 @@ def build_world_payload(
                 # world.mt bleibt Luanti: Im e2e-Lauf schreibt Luanti sie nicht neu (mtime bleibt 0),
                 # müsste es aber (etwa beim Speichern geänderter Welteinstellungen), ginge das nur so.
                 _add_file(tar, f"{WORLD_DIR}/world.mt", world_mt.encode("utf-8"))
-                for mod_dir, init_lua, mod_conf in WORLD_MODS:
+                for mod_dir, init_lua, mod_conf in mods:
                     _add_mod_files(tar, mod_dir, init_lua, mod_conf)
                 _add_access_file(tar, f"{WORLD_DIR}/{access_mod.ACCESS_FILE_NAME}", access_file)
                 if time_file is not None:
