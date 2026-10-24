@@ -341,7 +341,61 @@ Plans:
   6. Verwalter können ein eingeladenes Konto per Schalter als "Erwachsen" markieren; es spielt frei von Pause, Welt-Zeitfenstern und Spielzeitregeln, erscheint nicht im Tagesrückblick, hat aber weder Verwaltungs- noch Luanti-Adminrechte; Negativtests belegen, dass ein Kind sich nicht selbst freistellen kann (Owner-Entscheid 22.10.2026)
   7. Gehört der Talk-Raum einer Welt einem Konto, das in Nextcloud gelöscht wurde oder kein Verwalter mehr ist, geht der Raum an einen bestätigten Verwalter über (talk_rooms.owner_uid); kein Raum bleibt ohne handlungsfähigen Besitzer (Owner-Entscheid 22.10.2026, Rest aus dem Konten-Fix dabe0c0)
 
-**Plans**: TBD
+**Plans**: 16 plans
+Plans:
+**Wave 1**
+
+- [ ] 06-01-PLAN.md , Rollen-Kern: Schema 8, Verwalter-Gruppen-Konfig, Schnappschuss je Gruppe, purge nur als bestätigter NC-Admin
+- [ ] 06-07-PLAN.md , AR-23: Spike gegen echtes Luanti, dann Weltordner-Härtung root:30000/1775
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-02-PLAN.md , 404-Falle und Einladungs-Umfang, Admin-API Verwalter-Gruppen, /api/me, ^/api/.* auf USER mit Strukturtest
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06-03-PLAN.md , UI B1: Abschnitt Verwalter-Gruppen und Einladungsgrenze
+- [ ] 06-04-PLAN.md , Erwachsen-Schalter Backend: frei-Zeile, kein Verbrauch, Route, Negativtests
+- [ ] 06-08-PLAN.md , Lebenszyklus: Deaktivieren räumt Welt-Container auf, Orphan-API, gameworld-orphans.sh
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06-05-PLAN.md , UI B2: Erwachsen-Schalter in Spielerliste, Einladen-Dialog, Spielzeit
+- [ ] 06-10-PLAN.md , ExApp-Image (uid 10001, frpc mit SHA-256), Multi-Arch-Workflow, Store-Archiv, Version 1.0.0, max-version 35
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 06-06-PLAN.md , Talk-Übernahme D-16/D-19 plus UI B4
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 06-09-PLAN.md , Setup-Check mit getrennten Ursachen plus UI B3 Reste früherer Installationen
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 06-11-PLAN.md , privacy.md/.de.md, install.md EN/DE, README, dreisprachiges Store-Listing
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 06-12-PLAN.md , Dev-HaRP mit lokaler Registry, acceptance-phase6.sh K1 bis K7 plus Regression
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 06-13-PLAN.md , Owner-Abnahme per Playwright, Screenshots -v1, Freigabe der Store-Texte (nicht autonom)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 06-14-PLAN.md , Push nach Owner-Wort, Image 1.0.0-rc.1, ghcr-Paket öffentlich (nicht autonom)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 06-15-PLAN.md , Installationstests aus ghcr.io: Compose NC 34 und 35, AIO auf Cloud-VM (nicht autonom)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 06-16-PLAN.md , Store-Upload nach gemergtem Zertifikat: Tag v1.0.0, Signatur, 2x HTTP 201 (nicht autonom)
+
+**UI hint**: yes
 
 ## Progress
 
@@ -355,4 +409,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
 | 5. Backup und Restore | 9/9 | Complete   | 2026-10-24 |
-| 6. Store-Release | 0/TBD | Not started | - |
+| 6. Store-Release | 0/16 | Planned | - |

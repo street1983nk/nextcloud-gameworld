@@ -513,15 +513,15 @@ curl -X POST https://apps.nextcloud.com/api/v1/apps/releases \
 | A7 | Dienstnutzer im Image braucht chown auf das Speicher-Volume | 3.2 | Start scheitert sichtbar im Setup-Check |
 | A8 | Die Mitgliederliste einer Gruppe enthält auch deaktivierte Konten | 1.4 | Deaktivierte Konten behalten Zugang bis zum NC-Admin-Abgleich |
 
-## Open Questions (Owner-Entscheide)
+## Open Questions (RESOLVED)
 
-1. **D-15 und Updates (wichtigster Punkt):** Option A (Container bei jedem Deaktivieren stoppen und entfernen; bei Updates kurze Trennung, Welten kommen von selbst wieder) oder B (Knopf vor Deinstallation, Welten laufen Updates durch)? Empfehlung A.
-2. **NC-Versionsfenster:** min-version 32 lassen (EOL, aber installierbar) oder auf 33 heben? max-version 35 ist Pflicht. Empfehlung: min 32 lassen, getestet wird auf 34 und 35.
-3. **Ex-Verwalter bleibt Talk-Owner:** nur Hinweis plus Knopf "Raum neu anlegen" (Verlauf weg) oder automatisch neu anlegen? Empfehlung: Knopf, weil Verlust des Verlaufs eine bewusste Entscheidung sein soll.
-4. **AIO-Testort:** kurzlebige VM (Kosten wenige Euro) oder vorhandener Testserver des Owners? Lokal ist AIO wegen Domain/TLS und 6,2 GB VM-RAM unpraktisch.
-5. **AR-23 (Pending Todo aus 03-SECURITY.md, Owner 20.10.: in Phase 6 mitnehmen):** Zugangsdatei und worldmods liegen im Luanti-schreibbaren Weltordner. Idee: Weltordner root-eigen mit Sticky-Bit und Gruppenschreibrecht für Luanti (root:30000, 1775), worldmods root-eigen 0755; Luanti kann eigene Dateien anlegen und umbenennen, aber fremde (root) weder löschen noch umbenennen. Ungeprüft [L]; braucht einen Spike mit echter Welt (Luanti schreibt map.sqlite, env_meta.txt per Umbenennen eigener Temp-Dateien). Als eigener kleiner Plan mit Spike oder bewusst auf nach 1.0 verschieben?
-6. **Root oder Dienstnutzer im ExApp-Container:** Skeleton läuft als root; HaRP-Doku empfiehlt gosu. Empfehlung Dienstnutzer (Kindersicherheit, Security-Review), mit chown im Entrypoint.
-7. **Spike-Routen im Store-info.xml:** `^/play/.*` und `^/api/my/play-ticket$` bleiben (antworten 404) oder für 1.0 entfernen? Empfehlung: bleiben, weil die Bauphase sie wieder braucht und ein Update keine Routen-Migration kennt; Test belegt 404.
+1. **D-15 und Updates (wichtigster Punkt):** Option A (Container bei jedem Deaktivieren stoppen und entfernen; bei Updates kurze Trennung, Welten kommen von selbst wieder) oder B (Knopf vor Deinstallation, Welten laufen Updates durch)? Empfehlung A. RESOLVED: D-17
+2. **NC-Versionsfenster:** min-version 32 lassen (EOL, aber installierbar) oder auf 33 heben? max-version 35 ist Pflicht. Empfehlung: min 32 lassen, getestet wird auf 34 und 35. RESOLVED: D-18
+3. **Ex-Verwalter bleibt Talk-Owner:** nur Hinweis plus Knopf "Raum neu anlegen" (Verlauf weg) oder automatisch neu anlegen? Empfehlung: Knopf, weil Verlust des Verlaufs eine bewusste Entscheidung sein soll. RESOLVED: D-19
+4. **AIO-Testort:** kurzlebige VM (Kosten wenige Euro) oder vorhandener Testserver des Owners? Lokal ist AIO wegen Domain/TLS und 6,2 GB VM-RAM unpraktisch. RESOLVED: D-20
+5. **AR-23 (Pending Todo aus 03-SECURITY.md, Owner 20.10.: in Phase 6 mitnehmen):** Zugangsdatei und worldmods liegen im Luanti-schreibbaren Weltordner. Idee: Weltordner root-eigen mit Sticky-Bit und Gruppenschreibrecht für Luanti (root:30000, 1775), worldmods root-eigen 0755; Luanti kann eigene Dateien anlegen und umbenennen, aber fremde (root) weder löschen noch umbenennen. Ungeprüft [L]; braucht einen Spike mit echter Welt (Luanti schreibt map.sqlite, env_meta.txt per Umbenennen eigener Temp-Dateien). Als eigener kleiner Plan mit Spike oder bewusst auf nach 1.0 verschieben? RESOLVED: D-21
+6. **Root oder Dienstnutzer im ExApp-Container:** Skeleton läuft als root; HaRP-Doku empfiehlt gosu. Empfehlung Dienstnutzer (Kindersicherheit, Security-Review), mit chown im Entrypoint. RESOLVED: D-22 (Owner 24.10.: USER 10001 fest, siehe W1)
+7. **Spike-Routen im Store-info.xml:** `^/play/.*` und `^/api/my/play-ticket$` bleiben (antworten 404) oder für 1.0 entfernen? Empfehlung: bleiben, weil die Bauphase sie wieder braucht und ein Update keine Routen-Migration kennt; Test belegt 404. RESOLVED: D-23
 
 ## Environment Availability
 
