@@ -1,4 +1,4 @@
-"""Schema-Migration der Welt-Datenbank (Schema 1 bis 7), Zugangsdaten und Sicherungsnachweise."""
+"""Schema-Migration der Welt-Datenbank (Schema 1 bis 8), Zugangsdaten, Sicherungsnachweise und Verwalter-Stand."""
 
 import pathlib
 import sqlite3
@@ -11,6 +11,7 @@ from gameworld.worlds.store import (
     BACKUP_TABLES,
     NOTIFY_TABLES,
     OUTBOX_MAX,
+    ROLE_TABLES,
     SCHEMA_VERSION,
     TIME_TABLES,
     BackupJobRow,
@@ -627,8 +628,7 @@ def _schema_6_file(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_fresh_db_has_backup_tables(tmp_path: pathlib.Path) -> None:
     db = tmp_path / "gameworld.sqlite3"
     WorldStore(db).migrate()
-    assert SCHEMA_VERSION == "7"
-    assert _schema_version(db) == "7"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert BACKUP_TABLES.issubset(_tables(db))
 
 
@@ -639,7 +639,7 @@ def test_schema_6_is_migrated_to_7_keeps_data(tmp_path: pathlib.Path) -> None:
     store = WorldStore(db)
     store.migrate()
     store.migrate()
-    assert _schema_version(db) == "7"
+    assert _schema_version(db) == SCHEMA_VERSION
     assert BACKUP_TABLES.issubset(_tables(db))
     assert NOTIFY_TABLES.issubset(_tables(db))
     assert store.get_world("w1") is not None
@@ -722,3 +722,122 @@ def test_reset_event_cursor_only_one_world(tmp_path: pathlib.Path) -> None:
     store.reset_event_cursor("w1")
     assert store.event_cursor("w1") is None
     assert store.event_cursor("w2") == 9
+
+
+# Schema 8 (Phase 6): Erwachsen-Schalter, Dienstalter, Verwalter-Stand je Gruppe, Talk-Übernahme.
+
+
+def _talk_columns(db: pathlib.Path) -> set[str]:
+    connection = sqlite3.connect(db)
+    try:
+        return {str(info[1]) for info in connection.execute("PRAGMA table_info(talk_rooms)").fetchall()}
+    finally:
+        connection.close()
+
+
+def _schema_7_file(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Echte Schema-7-Datei: ohne die Tabellen aus Schema 8 und ohne die zwei Talk-Spalten, mit Daten."""
+    db = tmp_path / "gameworld.sqlite3"
+    store = WorldStore(db)
+    store.migrate()
+    store.insert_world(_row("w1", 30001, "mtg_kreativ"))
+    assert store.insert_talk_room("w1", "tok1", "admin", "2026-10-24T08:00:00+00:00")
+    connection = sqlite3.connect(db)
+    try:
+        for table in ROLE_TABLES:
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("ALTER TABLE talk_rooms DROP COLUMN orphaned_token")
+        connection.execute("ALTER TABLE talk_rooms DROP COLUMN former_owner")
+        connection.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
+        connection.commit()
+    finally:
+        connection.close()
+    return db
+
+
+def test_fresh_db_is_schema_8_with_role_tables(tmp_path: pathlib.Path) -> None:
+    db = tmp_path / "gameworld.sqlite3"
+    WorldStore(db).migrate()
+    assert SCHEMA_VERSION == "8"
+    assert _schema_version(db) == "8"
+    assert {"adults", "verwalter_seen", "verwalter_snapshot"} == ROLE_TABLES
+    assert ROLE_TABLES.issubset(_tables(db))
+    assert {"orphaned_token", "former_owner"}.issubset(_talk_columns(db))
+
+
+def test_schema_7_is_migrated_to_8_keeps_data_and_is_idempotent(tmp_path: pathlib.Path) -> None:
+    db = _schema_7_file(tmp_path)
+    assert _schema_version(db) == "7"
+    assert not ROLE_TABLES & set(_tables(db))
+    assert not {"orphaned_token", "former_owner"} & _talk_columns(db)
+    store = WorldStore(db)
+    store.migrate()
+    assert _schema_version(db) == "8"
+    assert ROLE_TABLES.issubset(_tables(db))
+    assert {"orphaned_token", "former_owner"}.issubset(_talk_columns(db))
+    room = store.talk_room("w1")
+    assert room is not None
+    assert (room.token, room.owner_uid, room.orphaned_token, room.former_owner) == ("tok1", "admin", None, None)
+    store.migrate()
+    assert _schema_version(db) == "8"
+    assert store.list_talk_rooms() == [room]
+    assert store.get_world("w1") is not None
+
+
+def test_group_snapshot_is_replaced_per_group(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    assert store.group_snapshot() == {}
+    store.replace_group_snapshot("admin", {"admin"})
+    store.replace_group_snapshot("lehrkraefte", {"gw-lehrer", "gw-lehrer2"})
+    store.replace_group_snapshot("lehrkraefte", {"gw-lehrer"})
+    assert store.group_snapshot() == {"admin": {"admin"}, "lehrkraefte": {"gw-lehrer"}}
+    store.replace_group_snapshot("lehrkraefte", set())
+    assert store.group_snapshot() == {"admin": {"admin"}}
+
+
+def test_drop_group_snapshots_keeps_only_listed_groups(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    store.replace_group_snapshot("admin", {"admin"})
+    store.replace_group_snapshot("lehrkraefte", {"gw-lehrer"})
+    store.replace_group_snapshot("alt", {"gw-alt"})
+    store.drop_group_snapshots(keep={"admin", "lehrkraefte"})
+    assert store.group_snapshot() == {"admin": {"admin"}, "lehrkraefte": {"gw-lehrer"}}
+
+
+def test_verwalter_seen_keeps_first_day_and_orders_by_seniority(tmp_path: pathlib.Path) -> None:
+    store = _store3(tmp_path)
+    store.sync_verwalter_seen({"zora"}, "2026-10-01T08:00:00+00:00")
+    store.sync_verwalter_seen({"zora", "anna", "bert"}, "2026-10-02T08:00:00+00:00")
+    store.sync_verwalter_seen({"zora", "anna", "bert"}, "2026-10-03T08:00:00+00:00")
+    # zora zuerst gesehen; anna und bert am selben Tag, Gleichstand nach Konto-ID.
+    assert store.verwalter_seniority() == ["zora", "anna", "bert"]
+    store.sync_verwalter_seen({"anna", "bert"}, "2026-10-04T08:00:00+00:00")
+    assert store.verwalter_seniority() == ["anna", "bert"]
+    # Wer zurückkommt, beginnt neu (kein Dienstalter aus der Zeit davor).
+    store.sync_verwalter_seen({"anna", "bert", "zora"}, "2026-10-05T08:00:00+00:00")
+    assert store.verwalter_seniority() == ["anna", "bert", "zora"]
+
+
+def _adult_rows(db: pathlib.Path) -> list[str]:
+    connection = sqlite3.connect(db)
+    try:
+        return [str(row[0]) for row in connection.execute("SELECT nc_user FROM adults ORDER BY nc_user")]
+    finally:
+        connection.close()
+
+
+def test_forget_account_removes_adult_row_of_this_account_only(tmp_path: pathlib.Path) -> None:
+    """P-08: Eine neu angelegte gleiche Konto-ID darf nie sofort erwachsen sein."""
+    store = _store3(tmp_path)
+    db = tmp_path / "gameworld.sqlite3"
+    connection = sqlite3.connect(db)
+    try:
+        connection.executemany(
+            "INSERT INTO adults (nc_user, set_by, set_at) VALUES (?, 'admin', '2026-10-24T08:00:00+00:00')",
+            [("gw-weg",), ("gw-bleibt",)],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    assert store.forget_account("gw-weg") is True
+    assert _adult_rows(db) == ["gw-bleibt"]

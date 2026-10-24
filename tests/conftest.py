@@ -438,6 +438,12 @@ class FakeDirectory:
     admin (Verwalter-Schnappschuss, 04-05); im Test änderbar (groups). ``lock_held``
     hält für jede Gruppenabfrage fest, ob die Welt-Sperre dabei belegt war (Sperrregel:
     Nextcloud-Aufrufe nie unter mutation()), ``user_lock_held`` dasselbe für jede Kontoabfrage.
+
+    Schul-Fall (06-01): gw-lehrer in lehrkraefte und klasse, gw-kind-k in klasse,
+    gw-kind-out in keiner Gruppe. ``answers`` steuert die Antwort je (handelndes Konto,
+    Gruppe): Mitgliederliste oder eine Ausnahme (DirectoryRejectedError = 403,
+    DirectoryUnavailableError = Störung); ``calls`` und ``group_calls`` belegen, in wessen
+    Namen welche Abfrage lief.
     """
 
     def __init__(self) -> None:
@@ -446,8 +452,17 @@ class FakeDirectory:
             "gw-kind2": ("Kind 2 (Dev)", True),
             "gw-aus": ("Aus (Dev)", False),
             "admin": ("Admin (Dev)", True),
+            "gw-lehrer": ("Lehrer (Dev)", True),
+            "gw-kind-k": ("Kind Klasse (Dev)", True),
+            "gw-kind-out": ("Kind ohne Gruppe (Dev)", True),
         }
-        self.groups: dict[str, list[str]] = {"familie": ["gw-kind", "gw-aus"], "admin": ["admin"]}
+        self.groups: dict[str, list[str]] = {
+            "familie": ["gw-kind", "gw-aus"],
+            "admin": ["admin"],
+            "lehrkraefte": ["gw-lehrer"],
+            "klasse": ["gw-lehrer", "gw-kind-k"],
+        }
+        self.answers: dict[tuple[str, str], list[str] | Exception] = {}
         self.lock_held: list[bool] = []
         self.user_lock_held: list[bool] = []
         self.calls: list[tuple[str, str]] = []
@@ -476,6 +491,11 @@ class FakeDirectory:
         self.lock_held.append(world_service._LOCK.locked())  # pyright: ignore[reportPrivateUsage]
         if self.error is not None:
             raise self.error
+        answer = self.answers.get((acting_uid, gid))
+        if isinstance(answer, Exception):
+            raise answer
+        if answer is not None:
+            return list(answer)
         if self.strict and acting_uid not in self.groups.get("admin", []):
             from gameworld.access.directory import DirectoryRejectedError
 
@@ -525,6 +545,9 @@ def fake_secret(app_env: Path) -> StaticSecret:
 FAKE_PROFILES: dict[str, tuple[str, tuple[str, ...]]] = {
     "admin": ("Admin", ("admin",)),
     "gw-kind": ("Kind (Dev)", ()),
+    "gw-lehrer": ("Lehrer (Dev)", ("lehrkraefte", "klasse")),
+    "gw-kind-k": ("Kind Klasse (Dev)", ("klasse",)),
+    "gw-kind-out": ("Kind ohne Gruppe (Dev)", ()),
 }
 
 

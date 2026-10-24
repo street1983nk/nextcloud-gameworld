@@ -153,6 +153,19 @@ def _db(app_env: Path) -> Path:
     return app_env / "gameworld.sqlite3"
 
 
+def _mark_adult(db: Path, nc_user: str) -> None:
+    """Erwachsen-Zeile direkt in SQLite (eigener Weg, nicht über eine Store-Methode, P-08)."""
+    connection = sqlite3.connect(db)
+    try:
+        connection.execute(
+            "INSERT INTO adults (nc_user, set_by, set_at) VALUES (?, 'admin', '2026-10-24T08:00:00+00:00')",
+            (nc_user,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 async def test_deleted_account_is_forgotten_completely_and_name_freed(
     access: AccessService,
     store: WorldStore,
@@ -161,6 +174,8 @@ async def test_deleted_account_is_forgotten_completely_and_name_freed(
     app_env: Path,
 ) -> None:
     await _populate_gone(access, store, fake_directory)
+    _mark_adult(_db(app_env), GONE)
+    _mark_adult(_db(app_env), "gw-kind")
     before = _rows_of(_db(app_env), GONE)
     # Vorbedingung: in jeder Tabelle liegt wirklich etwas (sonst bewiese das Leeren nichts).
     assert all(count > 0 for count in before.values()), before

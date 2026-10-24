@@ -26,7 +26,7 @@ from gameworld.playtime.pause import ART_PAUSE, PauseState
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan
 from gameworld.provisioner.presets import DEFAULT_PRESET_ID
 
-SCHEMA_VERSION = "7"
+SCHEMA_VERSION = "8"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -199,6 +199,20 @@ CREATE TABLE IF NOT EXISTS backup_jobs (
   started_at TEXT NOT NULL,
   finished_at TEXT
 );
+CREATE TABLE IF NOT EXISTS adults (
+  nc_user TEXT PRIMARY KEY,
+  set_by TEXT NOT NULL,
+  set_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS verwalter_seen (
+  uid TEXT PRIMARY KEY,
+  first_seen TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS verwalter_snapshot (
+  gid TEXT NOT NULL,
+  uid TEXT NOT NULL,
+  PRIMARY KEY (gid, uid)
+);
 """
 
 # Namen der sechs Spielzeit-Tabellen aus Schema 4 (Migrationstest, Selbstdokumentation).
@@ -221,6 +235,8 @@ NOTIFY_TABLES = frozenset(
 )
 # Namen der Tabellen aus Schema 7 (Phase 5: Sicherungsnachweise und Sicherungs-Aufträge).
 BACKUP_TABLES = frozenset({"backups", "backup_jobs"})
+# Namen der Tabellen aus Schema 8 (Phase 6: Erwachsen-Schalter, Dienstalter und Stand je Verwalter-Gruppe).
+ROLE_TABLES = frozenset({"adults", "verwalter_seen", "verwalter_snapshot"})
 # Zustand eines laufenden Sicherungs- oder Wiederherstellungsauftrags (Boot-Abgleich, D-11).
 BACKUP_JOB_RUNNING = "running"
 # Höchstens so viele Zeilen in der Outbox; die ältesten fallen weg (T-04.1-07).
@@ -243,10 +259,16 @@ ADD_TIME_GENERATION = "ALTER TABLE worlds ADD COLUMN time_generation INTEGER NOT
 # Schema 5 auf 6: Zusatz der Passwortableitung je Spielerzeile. Bestehende Zeilen
 # bekommen den leeren Wert und behalten damit exakt ihr bisheriges Passwort.
 ADD_PLAYER_SALT = "ALTER TABLE players ADD COLUMN salt TEXT NOT NULL DEFAULT ''"
+# Schema 7 auf 8: Token eines alten Raums ohne handlungsfähigen Moderator (D-16) und
+# Ex-Verwalter, der in Talk noch Owner ist (D-19). Beide leer, solange nichts davon zutrifft.
+ADD_TALK_ORPHANED = "ALTER TABLE talk_rooms ADD COLUMN orphaned_token TEXT"
+ADD_TALK_FORMER_OWNER = "ALTER TABLE talk_rooms ADD COLUMN former_owner TEXT"
 # Tabellen, deren Zeilen einem Nextcloud-Konto gehören (Spalte nc_user), für forget_account.
+# adults gehört dazu (P-08): Sonst wäre eine neu angelegte gleiche Konto-ID sofort erwachsen.
 # Nicht dabei: talk_rooms.owner_uid (Raum gehört der Welt), invites.invited_by (wer eingeladen
-# hat), time_ledger_seen (Spielername je Welt, schützt vor doppelter Verbuchung) und
-# backups.owner_uid (ein Verwalter, kein Kinderkonto, wie talk_rooms.owner_uid).
+# hat), time_ledger_seen (Spielername je Welt, schützt vor doppelter Verbuchung),
+# backups.owner_uid (ein Verwalter, kein Kinderkonto, wie talk_rooms.owner_uid) sowie
+# verwalter_seen und verwalter_snapshot (Verwalter, gepflegt über den Gruppen-Schnappschuss).
 ACCOUNT_TABLES = (
     "players",
     "world_access",
@@ -257,6 +279,7 @@ ACCOUNT_TABLES = (
     "review_prefs",
     "review_sent",
     "bot_presence",
+    "adults",
 )
 
 
@@ -324,7 +347,11 @@ class AttemptRow:
 
 @dataclass(frozen=True)
 class TalkRoomRow:
-    """Talk-Raum einer Welt; state ok oder delete_pending (Welt weg, Raum noch nicht)."""
+    """Talk-Raum einer Welt; state ok oder delete_pending (Welt weg, Raum noch nicht).
+
+    ``orphaned_token``: Token eines alten Raums, den kein Verwalter mehr moderieren kann
+    (D-16). ``former_owner``: Ex-Verwalter, der in Talk noch Owner ist (D-19).
+    """
 
     world_id: str
     token: str
@@ -332,6 +359,8 @@ class TalkRoomRow:
     read_only: bool
     created_at: str
     state: str
+    orphaned_token: str | None = None
+    former_owner: str | None = None
 
 
 @dataclass(frozen=True)
@@ -416,6 +445,11 @@ class WorldStore:
             player_columns = {str(info[1]) for info in connection.execute("PRAGMA table_info(players)").fetchall()}
             if "salt" not in player_columns:
                 connection.execute(ADD_PLAYER_SALT)
+            talk_columns = {str(info[1]) for info in connection.execute("PRAGMA table_info(talk_rooms)").fetchall()}
+            if "orphaned_token" not in talk_columns:
+                connection.execute(ADD_TALK_ORPHANED)
+            if "former_owner" not in talk_columns:
+                connection.execute(ADD_TALK_FORMER_OWNER)
             connection.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1217,7 +1251,7 @@ class WorldStore:
     def talk_room(self, world_id: str) -> TalkRoomRow | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT world_id, token, owner_uid, read_only, created_at, state FROM talk_rooms WHERE world_id = ?",
+                f"SELECT {_TALK_SELECT} FROM talk_rooms WHERE world_id = ?",  # noqa: S608
                 (world_id,),
             ).fetchone()
         return None if row is None else _talk_row(row)
@@ -1225,7 +1259,7 @@ class WorldStore:
     def list_talk_rooms(self) -> list[TalkRoomRow]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT world_id, token, owner_uid, read_only, created_at, state FROM talk_rooms ORDER BY world_id"
+                f"SELECT {_TALK_SELECT} FROM talk_rooms ORDER BY world_id"  # noqa: S608
             ).fetchall()
         return [_talk_row(row) for row in rows]
 
@@ -1253,6 +1287,49 @@ class WorldStore:
     def delete_talk_room(self, world_id: str) -> None:
         with self._connect() as connection:
             connection.execute("DELETE FROM talk_rooms WHERE world_id = ?", (world_id,))
+
+    # Verwalter-Gruppen: Stand je Gruppe und Dienstalter (Schema 8, Phase 6, ROLLE-03)
+
+    def group_snapshot(self) -> dict[str, set[str]]:
+        """Letzter bestätigter Mitgliederstand je Verwalter-Gruppe."""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT gid, uid FROM verwalter_snapshot ORDER BY gid, uid").fetchall()
+        snapshot: dict[str, set[str]] = {}
+        for gid, uid in rows:
+            snapshot.setdefault(str(gid), set()).add(str(uid))
+        return snapshot
+
+    def replace_group_snapshot(self, gid: str, uids: set[str]) -> None:
+        """Ersetzt den Stand genau dieser Gruppe in einer Transaktion; andere Gruppen bleiben."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM verwalter_snapshot WHERE gid = ?", (gid,))
+            connection.executemany(
+                "INSERT INTO verwalter_snapshot (gid, uid) VALUES (?, ?)", [(gid, uid) for uid in sorted(uids)]
+            )
+
+    def drop_group_snapshots(self, keep: set[str]) -> None:
+        """Vergisst den Stand aller Gruppen außerhalb ``keep`` (nicht mehr konfigurierte Gruppen)."""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT DISTINCT gid FROM verwalter_snapshot").fetchall()
+            gone = [(str(row[0]),) for row in rows if str(row[0]) not in keep]
+            connection.executemany("DELETE FROM verwalter_snapshot WHERE gid = ?", gone)
+
+    def sync_verwalter_seen(self, uids: set[str], now_iso: str) -> None:
+        """Neue Verwalter bekommen ``now_iso`` als ersten Tag, Ehemalige fallen heraus (D-16)."""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT uid FROM verwalter_seen").fetchall()
+            gone = [(str(row[0]),) for row in rows if str(row[0]) not in uids]
+            connection.executemany("DELETE FROM verwalter_seen WHERE uid = ?", gone)
+            connection.executemany(
+                "INSERT OR IGNORE INTO verwalter_seen (uid, first_seen) VALUES (?, ?)",
+                [(uid, now_iso) for uid in sorted(uids)],
+            )
+
+    def verwalter_seniority(self) -> list[str]:
+        """Verwalter nach Dienstalter: zuerst gesehen zuerst, Gleichstand nach Konto-ID."""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT uid FROM verwalter_seen ORDER BY first_seen, uid").fetchall()
+        return [str(row[0]) for row in rows]
 
     # Sicherungen (Schema 7, Phase 5)
 
@@ -1330,6 +1407,7 @@ class WorldStore:
 
 
 _BACKUP_COLUMNS = tuple(field.name for field in fields(BackupRow))
+_TALK_SELECT = ", ".join(field.name for field in fields(TalkRoomRow))
 _JOB_COLUMNS = tuple(field.name for field in fields(BackupJobRow))
 
 
@@ -1372,4 +1450,6 @@ def _talk_row(row: tuple[object, ...]) -> TalkRoomRow:
         read_only=bool(row[3]),
         created_at=str(row[4]),
         state=str(row[5]),
+        orphaned_token=_optional_text(row[6]),
+        former_owner=_optional_text(row[7]),
     )
