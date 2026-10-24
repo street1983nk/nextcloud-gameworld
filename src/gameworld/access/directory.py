@@ -62,6 +62,10 @@ class Directory(Protocol):
         """Gibt es die Gruppe? Gleiche Prüfung wie group_members."""
         ...
 
+    async def search_groups(self, acting_uid: str, query: str, limit: int = 20) -> list[tuple[str, str]]:
+        """Gruppen (ID, Anzeigename), deren ID oder Name ``query`` enthält, als Admin gelesen; höchstens limit."""
+        ...
+
     async def app_accepted(self) -> bool:
         """Nimmt Nextcloud die ExApp selbst gerade an (Anfrage ohne Konto)? False bei jedem Fehler."""
         ...
@@ -112,6 +116,23 @@ class NcDirectory:
 
     async def group_exists(self, acting_uid: str, gid: str) -> bool:
         return await self.group_members(acting_uid, gid) is not None
+
+    async def search_groups(self, acting_uid: str, query: str, limit: int = 20) -> list[tuple[str, str]]:
+        """Gruppensuche für den Admin-Abschnitt (D-02) per ``users_groups.get_details`` (mit Anzeigenamen).
+
+        nc_py_api reicht ``query`` als Parameter ``search`` durch (kein Pfad). Jede
+        Störung oder Ablehnung heißt DirectoryUnavailableError (503 beim Aufrufer).
+        """
+        try:
+            async with nc_as(acting_uid) as nc:
+                details = await nc.users_groups.get_details(mask=query or None, limit=limit)
+        except NextcloudException as exc:
+            LOG.warning("Gruppensuche bei Nextcloud gescheitert: Status %s", exc.status_code)
+            raise DirectoryUnavailableError(MSG_UNAVAILABLE) from None
+        except Exception as exc:
+            LOG.warning("Gruppensuche bei Nextcloud gescheitert: %s", type(exc).__name__)
+            raise DirectoryUnavailableError(MSG_UNAVAILABLE) from None
+        return [(str(item.group_id), str(item.display_name or item.group_id)) for item in details[:limit]]
 
     async def app_accepted(self) -> bool:
         """Gegenprobe zu einer Ablehnung: eine App-Anfrage ohne Konto (appconfig_ex).

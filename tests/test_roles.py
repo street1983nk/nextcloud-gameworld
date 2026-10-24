@@ -72,13 +72,25 @@ async def test_admin_lists_worlds(client: httpx.AsyncClient, monkeypatch: pytest
 async def test_me_for_player(client: httpx.AsyncClient) -> None:
     response = await client.get("/api/me", headers=appapi_headers(KID))
     assert response.status_code == 200
-    assert response.json() == {"user_id": KID, "display_name": "Kind (Dev)", "role": "spieler"}
+    assert response.json() == {
+        "user_id": KID,
+        "display_name": "Kind (Dev)",
+        "role": "spieler",
+        "nc_admin": False,
+        "invite_groups": [],
+    }
 
 
 async def test_me_for_admin(client: httpx.AsyncClient) -> None:
     response = await client.get("/api/me", headers=appapi_headers())
     assert response.status_code == 200
-    assert response.json() == {"user_id": "admin", "display_name": "Admin", "role": "verwalter"}
+    assert response.json() == {
+        "user_id": "admin",
+        "display_name": "Admin",
+        "role": "verwalter",
+        "nc_admin": True,
+        "invite_groups": ["admin"],
+    }
 
 
 @pytest.mark.parametrize("path", ["/api/worlds", "/api/me"])

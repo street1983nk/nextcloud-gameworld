@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import AppAPIAuthMiddleware, run_app, set_handlers
 
-from gameworld.api import alerts, backups, invites, me, pause, playtime, setup_check, talk, talk_bot, worlds
+from gameworld.api import admin, alerts, backups, invites, me, pause, playtime, setup_check, talk, talk_bot, worlds
 from gameworld.api.csrf import JsonOnlyChangesMiddleware
 from gameworld.backup.service import get_backup_service, shutdown_backups
 from gameworld.lifecycle import enabled_handler
@@ -125,6 +125,7 @@ APP.include_router(playtime.router)
 APP.include_router(pause.router)
 APP.include_router(alerts.router)
 APP.include_router(talk.router)
+APP.include_router(admin.router)
 APP.include_router(talk_bot.router)
 install_play(APP)
 

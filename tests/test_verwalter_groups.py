@@ -39,7 +39,7 @@ from gameworld.provisioner.client import DockerProvisioner
 from gameworld.worlds.service import WorldService
 from gameworld.worlds.store import PlayerRow, WorldStore
 from tests.conftest import FakeDirectory, appapi_headers, fake_lookup
-from tests.test_pause_api import VERIFIER, _row
+from tests.test_pause_api import VERIFIER, _new_mod, _row  # pyright: ignore[reportPrivateUsage]
 from tests.test_service_lifecycle import FakeProvisioner
 
 LEHRER = "gw-lehrer"
@@ -512,3 +512,236 @@ async def test_maintenance_end_to_end_purges_only_with_admin(
     assert store.get_player("gw-kind") is not None
     purge_actors = {acting for acting, _uid in school.calls}
     assert purge_actors == ({"admin"} if forgotten else set())
+
+
+# Admin-API der Verwalter-Gruppen (06-02, D-02, T-06-07, T-06-11) und /api/me (T-06-10)
+
+ADMIN_PATHS = [
+    ("GET", "/api/admin/verwalter-groups", None),
+    ("POST", "/api/admin/verwalter-groups/add", {"gid": "lehrkraefte"}),
+    ("POST", "/api/admin/verwalter-groups/remove", {"gid": "lehrkraefte"}),
+    ("GET", "/api/admin/groups?search=leh", None),
+]
+
+
+@pytest.fixture
+def admin_api(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> WorldService:
+    """Leerer Haushalt mit echter Gruppenquelle; W1 hat admin angelegt (kein owner_uid an Welten)."""
+    from gameworld.main import APP
+
+    world_store = WorldStore(_db(app_env))
+    world_store.migrate()
+    world_store.insert_world(_row(W1, "Wiese", 30015))
+    world_store.insert_player(PlayerRow(nc_user="gw-kind", player_name="Lena", rotation=0))
+    world_store.apply_world_access(W1, {"gw-kind": VERIFIER})
+    provisioner = FakeProvisioner()
+    provisioner.containers[W1] = (30015, "running")
+    _new_mod(provisioner, W1)
+    world_service = WorldService(world_store, cast(DockerProvisioner, provisioner), load_settings())
+    monkeypatch.setitem(APP.dependency_overrides, worlds.get_service, lambda: world_service)
+    monkeypatch.setattr(
+        roles,
+        "_role_service",
+        RoleService(fake_lookup, roles._stored_verwalter_groups),  # pyright: ignore[reportPrivateUsage]
+    )
+    monkeypatch.setattr(worlds, "_service", world_service)
+    return world_service
+
+
+async def _post(client: httpx.AsyncClient, path: str, body: object, user: str = "admin") -> httpx.Response:
+    return await client.post(path, json=body, headers=appapi_headers(user))
+
+
+@pytest.mark.usefixtures("admin_api")
+async def test_admin_reads_empty_verwalter_groups(client: httpx.AsyncClient) -> None:
+    response = await client.get("/api/admin/verwalter-groups", headers=appapi_headers())
+    assert response.status_code == 200
+    assert response.json() == {"groups": []}
+
+
+@pytest.mark.usefixtures("admin_api")
+async def test_add_and_remove_take_effect_without_waiting(client: httpx.AsyncClient, app_env: Path) -> None:
+    db = _db(app_env)
+    # Vorher: Lehrer ist Spieler (und sein Profil liegt jetzt im 30-s-Cache).
+    assert (await client.get("/api/worlds", headers=appapi_headers(LEHRER))).status_code == 403
+
+    added = await _post(client, "/api/admin/verwalter-groups/add", {"gid": "lehrkraefte"})
+    assert added.status_code == 200
+    assert added.json() == {"groups": ["lehrkraefte"]}
+    assert _raw_meta(db, META_VERWALTER_GROUPS) == ["lehrkraefte"]
+    assert (await client.get("/api/worlds", headers=appapi_headers(LEHRER))).status_code == 200
+    # Verwalter-Stand ohne Drossel neu gelesen: lehrkraefte hat jetzt einen Stand.
+    assert _raw_snapshot(db).get("lehrkraefte") == [LEHRER]
+
+    removed = await _post(client, "/api/admin/verwalter-groups/remove", {"gid": "lehrkraefte"})
+    assert removed.status_code == 200
+    assert removed.json() == {"groups": []}
+    assert _raw_meta(db, META_VERWALTER_GROUPS) == []
+    assert (await client.get("/api/worlds", headers=appapi_headers(LEHRER))).status_code == 403
+    assert "lehrkraefte" not in _raw_snapshot(db)
+
+
+@pytest.mark.usefixtures("admin_api")
+async def test_add_is_idempotent_and_remove_of_unknown_keeps_list(client: httpx.AsyncClient, app_env: Path) -> None:
+    assert (await _post(client, "/api/admin/verwalter-groups/add", {"gid": "lehrkraefte"})).status_code == 200
+    again = await _post(client, "/api/admin/verwalter-groups/add", {"gid": "lehrkraefte"})
+    assert again.json() == {"groups": ["lehrkraefte"]}
+    other = await _post(client, "/api/admin/verwalter-groups/remove", {"gid": "gibt-es-nicht"})
+    assert other.status_code == 200
+    assert other.json() == {"groups": ["lehrkraefte"]}
+    assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) == ["lehrkraefte"]
+
+
+@pytest.mark.usefixtures("admin_api")
+@pytest.mark.parametrize(
+    ("path", "body", "detail"),
+    [
+        ("/api/admin/verwalter-groups/add", {"gid": "unbekannt"}, "Diese Gruppe gibt es in Nextcloud nicht."),
+        ("/api/admin/verwalter-groups/add", {"gid": "admin"}, "Die Gruppe admin verwaltet Gameworld immer."),
+        ("/api/admin/verwalter-groups/remove", {"gid": "admin"}, "Die Gruppe admin verwaltet Gameworld immer."),
+    ],
+)
+async def test_invalid_group_changes_are_422_without_meta_change(
+    client: httpx.AsyncClient, app_env: Path, path: str, body: dict[str, str], detail: str
+) -> None:
+    response = await _post(client, path, body)
+    assert response.status_code == 422
+    assert response.json() == {"detail": detail}
+    assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) is None
+
+
+@pytest.mark.usefixtures("admin_api")
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"gid": "lehrkraefte", "extra": 1},
+        {"gid": ""},
+        {"gid": "x" * 65},
+        {"gid": "leh​rkraefte"},
+        {},
+    ],
+)
+async def test_bad_bodies_are_422(client: httpx.AsyncClient, app_env: Path, body: dict[str, object]) -> None:
+    response = await _post(client, "/api/admin/verwalter-groups/add", body)
+    assert response.status_code == 422
+    assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) is None
+
+
+async def test_concurrent_change_gives_409(
+    client: httpx.AsyncClient, admin_api: WorldService, app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts: list[str] = []
+
+    def always_conflict(key: str, expected: str | None, value: str) -> bool:
+        attempts.append(key)
+        return False
+
+    monkeypatch.setattr(admin_api.store, "compare_and_set_meta", always_conflict)
+    response = await _post(client, "/api/admin/verwalter-groups/add", {"gid": "lehrkraefte"})
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Die Verwalter-Gruppen wurden gerade geändert. Bitte neu laden."}
+    assert attempts == [META_VERWALTER_GROUPS, META_VERWALTER_GROUPS]
+    assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) is None
+
+
+@pytest.mark.usefixtures("admin_api")
+async def test_group_search(client: httpx.AsyncClient, fake_directory: FakeDirectory) -> None:
+    response = await client.get("/api/admin/groups?search=leh", headers=appapi_headers())
+    assert response.status_code == 200
+    assert response.json() == {"groups": [{"id": "lehrkraefte", "display_name": "Lehrkräfte"}]}
+    assert fake_directory.search_calls == [("admin", "leh", 20)]
+    for index in range(30):
+        fake_directory.groups[f"gruppe{index:02d}"] = []
+    many = await client.get("/api/admin/groups?search=gruppe", headers=appapi_headers())
+    assert len(many.json()["groups"]) == 20
+    too_long = await client.get(f"/api/admin/groups?search={'x' * 65}", headers=appapi_headers())
+    assert too_long.status_code == 422
+    fake_directory.search_error = DirectoryUnavailableError("weg")
+    down = await client.get("/api/admin/groups?search=leh", headers=appapi_headers())
+    assert down.status_code == 503
+    assert down.json() == {"detail": "Die Gruppensuche in Nextcloud ist gerade nicht möglich."}
+
+
+@pytest.mark.usefixtures("admin_api")
+async def test_add_with_nextcloud_down_is_503(
+    client: httpx.AsyncClient, fake_directory: FakeDirectory, app_env: Path
+) -> None:
+    fake_directory.error = DirectoryUnavailableError("weg")
+    response = await _post(client, "/api/admin/verwalter-groups/add", {"gid": "lehrkraefte"})
+    assert response.status_code == 503
+    assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) is None
+
+
+@pytest.mark.parametrize("user", [LEHRER, "gw-kind", "gw-kind-k"])
+@pytest.mark.parametrize(("method", "path", "body"), ADMIN_PATHS)
+async def test_admin_routes_are_403_for_everyone_but_nc_admins(
+    client: httpx.AsyncClient,
+    admin_api: WorldService,
+    fake_directory: FakeDirectory,
+    app_env: Path,
+    user: str,
+    method: str,
+    path: str,
+    body: dict[str, str] | None,
+) -> None:
+    # Der Lehrer ist Verwalter (lehrkraefte konfiguriert), aber kein NC-Admin.
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte"]))
+    assert (await client.get("/api/worlds", headers=appapi_headers(LEHRER))).status_code == 200
+    fake_directory.group_calls.clear()
+    response = await client.request(method, path, json=body, headers=appapi_headers(user))
+    assert response.status_code == 403
+    assert response.json() == {"detail": MSG_NC_ADMIN_ONLY}
+    assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) == ["lehrkraefte"]
+    assert fake_directory.search_calls == []
+    assert fake_directory.group_calls == []
+    del admin_api
+
+
+@pytest.mark.usefixtures("admin_api")
+@pytest.mark.parametrize(("method", "path", "body"), ADMIN_PATHS)
+async def test_admin_routes_are_503_on_lookup_failure(
+    client: httpx.AsyncClient,
+    role_lookup_error: list[str],
+    method: str,
+    path: str,
+    body: dict[str, str] | None,
+) -> None:
+    response = await client.request(method, path, json=body, headers=appapi_headers())
+    assert response.status_code == 503
+    assert role_lookup_error == ["admin"]
+
+
+@pytest.mark.usefixtures("admin_api")
+async def test_me_carries_nc_admin_and_invite_groups(client: httpx.AsyncClient, app_env: Path) -> None:
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte"]))
+    admin = (await client.get("/api/me", headers=appapi_headers())).json()
+    assert (admin["role"], admin["nc_admin"], admin["invite_groups"]) == (ROLE_VERWALTER, True, ["admin"])
+    teacher = (await client.get("/api/me", headers=appapi_headers(LEHRER))).json()
+    assert teacher == {
+        "user_id": LEHRER,
+        "display_name": "Lehrer (Dev)",
+        "role": ROLE_VERWALTER,
+        "nc_admin": False,
+        "invite_groups": ["klasse", "lehrkraefte"],
+    }
+    child = (await client.get("/api/me", headers=appapi_headers("gw-kind-k"))).json()
+    assert (child["role"], child["nc_admin"], child["invite_groups"]) == (ROLE_SPIELER, False, [])
+
+
+@pytest.mark.usefixtures("admin_api")
+async def test_teacher_manages_all_worlds_and_household_settings(client: httpx.AsyncClient, app_env: Path) -> None:
+    """D-03/D-04: Verwalter aus lehrkraefte sehen alle Welten und bedienen Haushalts-Einstellungen."""
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte"]))
+    headers = appapi_headers(LEHRER)
+    listed = await client.get("/api/worlds", headers=headers)
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["worlds"]] == [W1]
+    assert (await client.post("/api/settings", json={"join_host": "spiel.example"}, headers=headers)).status_code == 200
+    assert (await client.post("/api/pause", json={"minutes": 15}, headers=headers)).status_code == 200
+    holiday = {"label": "Ferien", "start_date": "2026-12-21", "end_date": "2027-01-06"}
+    assert (await client.post("/api/playtime/holidays", json=holiday, headers=headers)).status_code == 200
+    zone = await client.post("/api/playtime/time-zone", json={"time_zone": "Europe/Vienna"}, headers=headers)
+    assert zone.status_code == 200
+    # Gegenprobe: dasselbe als Kind der Klasse bleibt gesperrt.
+    child = appapi_headers("gw-kind-k")
+    assert (await client.post("/api/pause", json={"minutes": 15}, headers=child)).status_code == 403

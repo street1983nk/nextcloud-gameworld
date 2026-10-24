@@ -474,6 +474,10 @@ class FakeDirectory:
         self.strict = False
         # Gegenprobe app_accepted: False wie beim Start, wenn Nextcloud die ExApp noch ablehnt.
         self.app_ok = True
+        # Anzeigenamen der Gruppensuche (06-02); ohne Eintrag ist der Name die ID.
+        self.group_names: dict[str, str] = {"lehrkraefte": "Lehrkräfte", "klasse": "Klasse 4b"}
+        self.search_calls: list[tuple[str, str, int]] = []
+        self.search_error: Exception | None = None
 
     async def user(self, acting_uid: str, uid: str) -> DirectoryUser | None:
         from gameworld.worlds import service as world_service
@@ -506,6 +510,18 @@ class FakeDirectory:
 
     async def group_exists(self, acting_uid: str, gid: str) -> bool:
         return await self.group_members(acting_uid, gid) is not None
+
+    async def search_groups(self, acting_uid: str, query: str, limit: int = 20) -> list[tuple[str, str]]:
+        self.search_calls.append((acting_uid, query, limit))
+        if self.search_error is not None:
+            raise self.search_error
+        needle = query.casefold()
+        hits = [
+            (gid, self.group_names.get(gid, gid))
+            for gid in sorted(self.groups)
+            if needle in gid.casefold() or needle in self.group_names.get(gid, gid).casefold()
+        ]
+        return hits[:limit]
 
     async def app_accepted(self) -> bool:
         return self.app_ok

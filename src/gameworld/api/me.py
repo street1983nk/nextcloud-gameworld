@@ -5,6 +5,10 @@ info.xml auf USER. Jede Antwort enthält darum nur Daten des anfragenden
 Kontos; die UID kommt aus der signierten AppAPI-Anfrage, nie aus dem Browser
 (ROLLE-01, Pitfall 7).
 
+Seit 06-02 liefert /api/me für Verwalter auch nc_admin und invite_groups
+(eigene Gruppen plus Subadmin-Gruppen, der Einladungs-Umfang nach D-01); Spieler
+bekommen nc_admin false und eine leere Liste (kein Gruppen-Leck an Kinder).
+
 Seit 04-07 auch die eigene Restzeit (/api/my/playtime) und je Welt der
 Fensterstatus: nur heutiger Rest, nächste Spielzeit und das aktuelle oder
 nächste Öffnungsfenster, nie Pläne, Verbrauchshistorie oder Werte anderer Kinder.
@@ -17,6 +21,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from gameworld.access.roles import (
+    ADMIN_GROUP,
     MSG_UNAVAILABLE,
     ROLE_VERWALTER,
     RolesDep,
@@ -48,6 +53,9 @@ class MeOut(BaseModel):
     user_id: str
     display_name: str
     role: str
+    # Nur Komfort für die Oberfläche; die Sperre sitzt in require_nc_admin.
+    nc_admin: bool = False
+    invite_groups: list[str] = Field(default_factory=list[str])
 
 
 class WindowOut(BaseModel):
@@ -129,7 +137,16 @@ async def me(uid: UserDep, roles: RolesDep) -> MeOut:
         profile = await roles.profile(uid)
     except RoleUnavailableError:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
-    return MeOut(user_id=profile.user_id, display_name=profile.display_name, role=role_of(profile))
+    role = role_of(profile, await roles.verwalter_groups())
+    if role != ROLE_VERWALTER:
+        return MeOut(user_id=profile.user_id, display_name=profile.display_name, role=role)
+    return MeOut(
+        user_id=profile.user_id,
+        display_name=profile.display_name,
+        role=role,
+        nc_admin=ADMIN_GROUP in profile.groups,
+        invite_groups=sorted(set(profile.groups) | set(profile.subadmin)),
+    )
 
 
 @router.get("/my/worlds")
@@ -185,7 +202,8 @@ async def my_playtime(uid: UserDep, roles: RolesDep, playtime: TimeDep) -> MyPla
     """Eigene Restzeit heute; nur Anzeige, durchgesetzt wird allein im Welt-Mod (T-04-40)."""
     try:
         profile = await roles.profile(uid)
-        result = await playtime.my_playtime(uid, exempt=role_of(profile) == ROLE_VERWALTER)
+        verwalter = role_of(profile, await roles.verwalter_groups()) == ROLE_VERWALTER
+        result = await playtime.my_playtime(uid, exempt=verwalter)
     except (RoleUnavailableError, PlaytimeUnavailableError):
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
     return _playtime_out(result)
