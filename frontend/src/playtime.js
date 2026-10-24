@@ -438,7 +438,8 @@ export function reviewSelectOptions(stored) {
 	return { options, selected: stored, dirty: false }
 }
 
-// Talk-Hinweise (D-20, D-27); leer, wenn nichts zu sagen ist.
+// Talk-Hinweise (D-20); leer, wenn nichts zu sagen ist. Ein Ex-Verwalter als Talk-Owner
+// ist kein Info-Hinweis mehr, sondern die Warnung aus formerOwnerText (UI-SPEC B4).
 export const TALK_MISSING_TEXT = 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.'
 
 export function talkHint(status) {
@@ -448,13 +449,39 @@ export function talkHint(status) {
 	if (status.available === false) {
 		return TALK_MISSING_TEXT
 	}
-	if (status.owner_not_admin) {
-		const owner = status.owner_display
-			? `${status.owner_display}, der kein Verwalter mehr ist`
-			: 'einem früheren Verwalter'
-		return `Der Talk-Raum gehört noch ${owner}. Den Besitz kannst du in Talk in den Raum-Einstellungen übertragen.`
-	}
 	return ''
+}
+
+// Talk-Raum-Übernahme (UI-SPEC B4, D-16/D-19). Talk erlaubt Gameworld keinen Owner-Wechsel,
+// darum bleibt nur "Raum neu anlegen". Namen und Token nur als Text, nie als HTML.
+export function formerOwnerText(ownerDisplay) {
+	if (ownerDisplay) {
+		return `Der Talk-Raum gehört noch ${ownerDisplay}, der kein Verwalter mehr ist. `
+			+ `${ownerDisplay} kann den Raum weiter lesen. Gameworld kann das nicht ändern, nur den Raum neu anlegen.`
+	}
+	return 'Der Talk-Raum gehört noch einem früheren Verwalter, der kein Verwalter mehr ist. '
+		+ 'Diese Person kann den Raum weiter lesen. Gameworld kann das nicht ändern, nur den Raum neu anlegen.'
+}
+
+export function recreateQuestion(worldName, ownerDisplay) {
+	const owner = ownerDisplay || 'der frühere Verwalter'
+	return `Den Talk-Raum von »${worldName}« neu anlegen? Der alte Raum wird mit seinem ganzen Verlauf gelöscht. `
+		+ `Der neue Raum bekommt alle Eingeladenen und Verwalter, ${owner} nicht mehr.`
+}
+
+export const RECREATED_TEXT = 'Neuer Talk-Raum angelegt. Der alte Raum und sein Verlauf sind gelöscht.'
+
+// Sperrfall: Text vor und nach dem occ-Befehl, damit der Befehl als <code> stehen kann.
+export const ORPHANED_BEFORE = 'Der alte Talk-Raum dieser Welt gehört niemandem mehr. Gameworld hat einen neuen Raum angelegt. '
+	+ 'Ein Nextcloud-Admin kann den alten Raum mit '
+export const ORPHANED_AFTER = ' löschen.'
+
+export function orphanedCommand(token) {
+	return `occ talk:room:delete ${token}`
+}
+
+export function orphanedText(token) {
+	return `${ORPHANED_BEFORE}${orphanedCommand(token)}${ORPHANED_AFTER}`
 }
 
 // Antwort mit applied false (WR-08): gespeichert, aber mindestens eine Welt trägt den neuen

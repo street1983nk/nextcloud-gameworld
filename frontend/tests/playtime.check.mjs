@@ -19,6 +19,11 @@ import {
 	reviewTimeOptions,
 	summarize,
 	talkHint,
+	formerOwnerText,
+	recreateQuestion,
+	RECREATED_TEXT,
+	orphanedText,
+	orphanedCommand,
 	toApiDays,
 	toWindowDays,
 	usageText,
@@ -322,13 +327,41 @@ for (const stored of [null, undefined]) {
 // Talk-Hinweise (D-20, D-27)
 assert.equal(talkHint({ available: false }), TALK_MISSING_TEXT)
 assert.equal(TALK_MISSING_TEXT, 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.')
-assert.equal(
-	talkHint({ available: true, owner_not_admin: true, owner_display: 'Anna' }),
-	'Der Talk-Raum gehört noch Anna, der kein Verwalter mehr ist. Den Besitz kannst du in Talk in den Raum-Einstellungen übertragen.',
-)
+// Kein Besitz-Versprechen mehr (Talk erlaubt Gameworld keinen Owner-Wechsel); B4 zeigt die Warnung.
+assert.equal(talkHint({ available: true, owner_not_admin: true, owner_display: 'Anna' }), '')
 assert.equal(talkHint({ available: true, owner_not_admin: false, owner_display: null }), '')
 assert.equal(talkHint(null), '')
-// Ohne Namen trotzdem ein ganzer Satz
-assert.match(talkHint({ available: true, owner_not_admin: true, owner_display: null }), /^Der Talk-Raum gehört noch einem früheren Verwalter\./)
+
+// Talk-Raum-Übernahme (UI-SPEC B4), wörtlich
+assert.equal(
+	formerOwnerText('Anna'),
+	'Der Talk-Raum gehört noch Anna, der kein Verwalter mehr ist. Anna kann den Raum weiter lesen. '
+		+ 'Gameworld kann das nicht ändern, nur den Raum neu anlegen.',
+)
+for (const missing of [null, undefined, '']) {
+	assert.equal(
+		formerOwnerText(missing),
+		'Der Talk-Raum gehört noch einem früheren Verwalter, der kein Verwalter mehr ist. Diese Person kann den Raum weiter lesen. '
+			+ 'Gameworld kann das nicht ändern, nur den Raum neu anlegen.',
+	)
+}
+assert.equal(
+	recreateQuestion('Wiese', 'Anna'),
+	'Den Talk-Raum von »Wiese« neu anlegen? Der alte Raum wird mit seinem ganzen Verlauf gelöscht. '
+		+ 'Der neue Raum bekommt alle Eingeladenen und Verwalter, Anna nicht mehr.',
+)
+assert.match(recreateQuestion('Wiese', null), /Verwalter, der frühere Verwalter nicht mehr\.$/)
+assert.equal(RECREATED_TEXT, 'Neuer Talk-Raum angelegt. Der alte Raum und sein Verlauf sind gelöscht.')
+assert.equal(
+	orphanedText('abc123'),
+	'Der alte Talk-Raum dieser Welt gehört niemandem mehr. Gameworld hat einen neuen Raum angelegt. '
+		+ 'Ein Nextcloud-Admin kann den alten Raum mit occ talk:room:delete abc123 löschen.',
+)
+assert.equal(orphanedCommand('abc123'), 'occ talk:room:delete abc123')
+// Keine Gedankenstriche in den neuen Texten
+for (const text of [formerOwnerText('Anna'), formerOwnerText(null), recreateQuestion('W', 'A'), RECREATED_TEXT, orphanedText('t')]) {
+	assert.equal(/[\u2013\u2014]/.test(text), false)
+	assert.equal(text.includes('Besitz'), false)
+}
 
 console.log('playtime.check: alle Prüfungen bestanden')

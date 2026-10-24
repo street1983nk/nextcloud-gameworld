@@ -321,6 +321,12 @@ export async function setTalkReadOnly(worldId, on) {
 	return response.data
 }
 
+// Talk-Raum neu anlegen (D-19): alter Raum samt Verlauf weg, Antwort ist die neue Zeile aus GET /api/talk.
+export async function recreateTalkRoom(worldId) {
+	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/talk/recreate`)
+	return response.data
+}
+
 // Verwalter-Gruppen (06-02, nur NC-Admins, sonst 403): Liste ohne admin, das die UI
 // fest voranstellt; Hinzufügen und Entfernen antworten mit der neuen Liste ({ groups }).
 export async function getVerwalterGroups() {
