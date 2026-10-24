@@ -8,14 +8,18 @@ Pattern 5 (im Spike gegen tecnativa/docker-socket-proxy v0.5.0 gemessen).
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import socket
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import urlsplit
 
 import requests
 
 MIN_API_VERSION = (1, 44)
-DOCS = "siehe docs/install.md"
+DOCS_URL = "https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md#setup-check"
+DOCS = f"Anleitung: {DOCS_URL}"
 
 Severity = Literal["error", "warning"]
 
@@ -59,7 +63,7 @@ _CONTAINERS = _Probe(
     severity="error",
     ok_message="Zugriff auf Container ist erlaubt.",
     known_code=403,
-    known_message=f"Der Docker-Proxy erlaubt keinen Zugriff auf Container. Bitte CONTAINERS=1 setzen ({DOCS}).",
+    known_message=f"Der Docker-Proxy erlaubt keinen Zugriff auf Container. Bitte CONTAINERS=1 setzen. {DOCS}",
 )
 _POST = _Probe(
     id="post",
@@ -71,7 +75,7 @@ _POST = _Probe(
     known_code=403,
     known_message=(
         "Der Docker-Proxy erlaubt keine schreibenden Anfragen, Welten lassen sich so weder anlegen "
-        f"noch starten. Bitte POST=1 setzen ({DOCS})."
+        f"noch starten. Bitte POST=1 setzen. {DOCS}"
     ),
 )
 _IMAGES = _Probe(
@@ -82,7 +86,7 @@ _IMAGES = _Probe(
     severity="error",
     ok_message="Zugriff auf Images ist erlaubt.",
     known_code=403,
-    known_message=f"Der Docker-Proxy erlaubt keinen Zugriff auf Images. Bitte IMAGES=1 setzen ({DOCS}).",
+    known_message=f"Der Docker-Proxy erlaubt keinen Zugriff auf Images. Bitte IMAGES=1 setzen. {DOCS}",
 )
 _VOLUMES = _Probe(
     id="volumes",
@@ -94,7 +98,7 @@ _VOLUMES = _Probe(
     known_code=403,
     known_message=(
         "Der Docker-Proxy erlaubt keinen Zugriff auf Volumes, Welten lassen sich so nicht löschen. "
-        f"Bitte VOLUMES=1 setzen ({DOCS})."
+        f"Bitte VOLUMES=1 setzen. {DOCS}"
     ),
 )
 _EXEC = _Probe(
@@ -106,7 +110,7 @@ _EXEC = _Probe(
     ok_message="Befehle in Containern sind gesperrt.",
     known_code=404,
     known_message=(
-        f"Der Docker-Proxy ist zu weit offen: Befehle in Containern sind erlaubt. Bitte EXEC=0 setzen ({DOCS})."
+        f"Der Docker-Proxy ist zu weit offen: Befehle in Containern sind erlaubt. Bitte EXEC=0 setzen. {DOCS}"
     ),
 )
 _INFO = _Probe(
@@ -117,10 +121,10 @@ _INFO = _Probe(
     severity="warning",
     ok_message="Systeminformationen sind gesperrt.",
     known_code=200,
-    known_message=f"Der Docker-Proxy gibt Systeminformationen preis. Bitte INFO=0 setzen ({DOCS}).",
+    known_message=f"Der Docker-Proxy gibt Systeminformationen preis. Bitte INFO=0 setzen. {DOCS}",
 )
 
-_NOT_CHECKED = "Nicht geprüft: Erst POST=1 setzen, dann den Setup-Check erneut ausführen."
+_NOT_CHECKED = f"Nicht geprüft: Erst POST=1 setzen, dann den Setup-Check erneut ausführen. {DOCS}"
 
 
 def _http_base(docker_url: str) -> str:
@@ -128,6 +132,83 @@ def _http_base(docker_url: str) -> str:
     if base.startswith("tcp://"):
         return "http://" + base.removeprefix("tcp://")
     return base
+
+
+# Private Netze, in denen ein gescopter Docker-Proxy liegen darf. Bewusst nicht
+# ``ipaddress.is_private``: das zählt auch Dokumentationsnetze wie 203.0.113.0/24 dazu.
+_PRIVATE_NETS = tuple(
+    ipaddress.ip_network(net)
+    for net in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7")
+)
+_DEFAULT_PORT = 2375
+_MAX_CAUSE_DEPTH = 10
+
+
+def _host_port(docker_url: str) -> tuple[str, int]:
+    """Host und Port aus der eigenen Konfiguration, nie aus Ausnahmetexten (T-06-40)."""
+    try:
+        parts = urlsplit(docker_url)
+        host = parts.hostname or "gameworld-docker-proxy"
+        port = parts.port or _DEFAULT_PORT
+    except ValueError:
+        return "gameworld-docker-proxy", _DEFAULT_PORT
+    return host, port
+
+
+def _causes(exc: BaseException) -> list[BaseException]:
+    """Kette über __cause__, __context__ und urllib3-``reason``, höchstens zehn Glieder."""
+    seen: list[BaseException] = []
+    todo: list[BaseException] = [exc]
+    while todo and len(seen) < _MAX_CAUSE_DEPTH:
+        current = todo.pop(0)
+        if any(current is known for known in seen):
+            continue
+        seen.append(current)
+        for nxt in (current.__cause__, current.__context__, getattr(current, "reason", None)):
+            if isinstance(nxt, BaseException):
+                todo.append(nxt)
+    return seen
+
+
+def _has_cause(exc: BaseException, kind: type[BaseException]) -> bool:
+    return any(isinstance(link, kind) for link in _causes(exc))
+
+
+def check_docker_url(docker_url: str) -> CheckItem | None:
+    """Warnt vor rohem Docker-Socket und vor Proxy-Adressen außerhalb privater Netze (T-06-39)."""
+    try:
+        parts = urlsplit(docker_url.strip())
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme in {"unix", "npipe"}:
+        return CheckItem(
+            id="docker_url_socket",
+            ok=False,
+            severity="warning",
+            message=(
+                "Gameworld soll nie direkt mit dem Docker-Socket sprechen. Trage die Adresse des gescopten "
+                f"Docker-Proxys ein, Standard tcp://gameworld-docker-proxy:2375. {DOCS}"
+            ),
+        )
+    if not host:
+        return None
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        # Hostname, etwa gameworld-docker-proxy: im Docker-Netz aufgelöst, kein Befund.
+        return None
+    if any(address in net for net in _PRIVATE_NETS):
+        return None
+    return CheckItem(
+        id="docker_url_exposed",
+        ok=False,
+        severity="warning",
+        message=(
+            "Der Docker-Proxy liegt auf einer Adresse außerhalb des privaten Netzes. Er darf nur im "
+            f"Docker-Netz von Gameworld erreichbar sein. {DOCS}"
+        ),
+    )
 
 
 def _parse_version(raw: object) -> tuple[int, ...] | None:
@@ -151,22 +232,54 @@ class _Checker:
     def request(self, method: str, path: str, params: dict[str, str] | None = None) -> requests.Response:
         return self.session.request(method, self.base + path, params=params, timeout=self.timeout)
 
-    def unreachable(self) -> CheckItem:
+    def unreachable(self, exc: BaseException | None = None) -> CheckItem:
+        """Ursache getrennt melden; Texte fest, Host und Port nur aus der eigenen URL."""
+        host, port = _host_port(self.docker_url)
+        if exc is not None and _has_cause(exc, socket.gaierror):
+            return CheckItem(
+                id="proxy_dns",
+                ok=False,
+                severity="error",
+                message=(
+                    f"Gameworld findet den Dienst {host} nicht. Er muss im selben Docker-Netz laufen wie "
+                    f"Gameworld (das Netz des Deploy-Daemons, bei AIO nextcloud-aio). {DOCS}"
+                ),
+            )
+        if exc is not None and _has_cause(exc, requests.exceptions.Timeout):
+            return CheckItem(
+                id="proxy_timeout",
+                ok=False,
+                severity="error",
+                message=(
+                    f"Der Docker-Proxy unter {host}:{port} antwortet nicht. Meist hängt er in einem anderen "
+                    f"Docker-Netz, oder eine Firewall sperrt Port {port}. {DOCS}"
+                ),
+            )
+        if exc is not None:
+            return CheckItem(
+                id="proxy_refused",
+                ok=False,
+                severity="error",
+                message=(
+                    f"Der Docker-Proxy unter {host}:{port} nimmt keine Verbindung an. Läuft der Container "
+                    f"gameworld-docker-proxy? {DOCS}"
+                ),
+            )
         return CheckItem(
             id="reachable",
             ok=False,
             severity="error",
             message=(
                 f"Gameworld erreicht den Docker-Proxy unter {self.docker_url} nicht. Bitte den Dienst "
-                f"gameworld-docker-proxy starten und GAMEWORLD_DOCKER_URL prüfen ({DOCS})."
+                f"gameworld-docker-proxy starten und GAMEWORLD_DOCKER_URL prüfen. {DOCS}"
             ),
         )
 
     def ping(self) -> CheckItem:
         try:
             response = self.request("GET", "/_ping")
-        except requests.RequestException:
-            return self.unreachable()
+        except requests.RequestException as exc:
+            return self.unreachable(exc)
         if response.status_code != 200:
             return self.unreachable()
         return CheckItem(id="reachable", ok=True, severity="error", message="Der Docker-Proxy ist erreichbar.")
@@ -191,7 +304,7 @@ class _Checker:
                 severity="error",
                 message=(
                     f"Docker-Engine zu alt, benötigt API 1.44 oder neuer (gemeldet: {shown}). "
-                    f"Bitte Docker aktualisieren ({DOCS})."
+                    f"Bitte Docker aktualisieren. {DOCS}"
                 ),
             )
         return CheckItem(id="version", ok=True, severity="error", message=f"Docker-API {raw} wird unterstützt.")
@@ -214,7 +327,7 @@ class _Checker:
             id=item_id,
             ok=False,
             severity=severity,
-            message=f"Unerwartete Antwort des Docker-Proxys auf {method} {path}: HTTP {code} ({DOCS}).",
+            message=f"Unerwartete Antwort des Docker-Proxys auf {method} {path}: HTTP {code}. {DOCS}",
         )
 
     @staticmethod
@@ -223,14 +336,16 @@ class _Checker:
             id=item_id,
             ok=False,
             severity="error",
-            message=f"Die Anfrage an den Docker-Proxy ({path}) ist fehlgeschlagen: {type(exc).__name__} ({DOCS}).",
+            message=f"Die Anfrage an den Docker-Proxy ({path}) ist fehlgeschlagen: {type(exc).__name__}. {DOCS}",
         )
 
     def run(self) -> list[CheckItem]:
+        url_item = check_docker_url(self.docker_url)
+        head = [url_item] if url_item is not None else []
         reachable = self.ping()
         if not reachable.ok:
-            return [reachable]
-        items = [reachable, self.version(), self.probe(_CONTAINERS)]
+            return [*head, reachable]
+        items = [*head, reachable, self.version(), self.probe(_CONTAINERS)]
         post = self.probe(_POST)
         items += [post, self.probe(_IMAGES)]
         if post.ok:
