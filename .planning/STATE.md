@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-10-24T07:55:08.336Z"
-last_activity: 2026-10-24 -- 06-01 Rollen-Kern ROLLE-03 abgeschlossen
+stopped_at: Completed 06-07-PLAN.md
+last_updated: "2026-10-24T08:35:00.000Z"
+last_activity: 2026-10-24 -- 06-07 AR-23 Weltordner-Härtung abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 57
-  percent: 79
+  completed_plans: 58
+  percent: 81
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 1 of 16 complete (06-01)
+Plan: 2 of 16 complete (06-01, 06-07)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-01 Rollen-Kern ROLLE-03 abgeschlossen (d35b8aa, 032e1de)
+Last activity: 2026-10-24 -- 06-07 AR-23-Spike grün, Weltordner root:30000 1775 und root-eigenes worldmods (7032359, 0b9b913, 2031eac)
 
 Progress: [████████░░] 79%
 
@@ -108,6 +108,7 @@ Progress: [████████░░] 79%
 | Phase 05 P06 | 75 min | 3 tasks | 6 files |
 | Phase 05 P09 | 2 Sitzungen | 2 tasks | 8 files |
 | Phase 06 P01 | 25 min | 2 tasks | 10 files |
+| Phase 06 P07 | 25 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -251,10 +252,12 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-01 Verwalter-Stand je Gruppe (verwalter_snapshot); 403 oder Störung lässt nur den Stand dieser Gruppe stehen, time_admins bleibt die Vereinigung aller Gruppen
 - [Phase 06]: 06-01 Kontenabgleich nur mit Konto aus meta nc_admins (frische Antwort der Gruppe admin) plus frischer admin-Gegenprobe in purge_accounts (404-Falle F-04)
 - [Phase 06]: 06-01 Kaputte oder fehlende verwalter_groups-Konfiguration und jede Störung der Gruppenquelle heißen nur admin (fail closed); require_nc_admin fragt ohne Cache
+- [Phase 06]: 06-07 AR-23-Spike grün gegen Luanti 5.17.0; neue und wiederhergestellte Welten: Weltordner root:30000 1775, worldmods root 0755/0644, world.mt bleibt 30000
+- [Phase 06]: 06-07 Docker übergeht put_archive-Einträge für "."; Weltordner nur über build_world_payload, bestehende Welten nicht migriert (worldmods aber ab nächstem Start root-eigen); Hinweis für install.md in 06-11
 
 ### Pending Todos
 
-- [Phase 6, Härtung] AR-23 aus 03-SECURITY.md: Zugangsdatei und worldmods liegen im Luanti-UID-Weltordner (Spiel-Lua könnte sie ersetzen; Spiele hash-gepinnt). Prüfen, ob beides in ein root-eigenes Verzeichnis kann, das Luantis Mod-Security nur lesend erlaubt (Owner-Entscheid 20.10.2026: in Phase 6 mitnehmen).
+- [Phase 6, Härtung] AR-23 erledigt in 06-07 (2031eac). Restrisiko als Owner-Entscheid für später: Eltern des Weltordners (Volume-Wurzel 30000:30000 2755 aus dem Image, .minetest, .minetest/worlds) und das Spiel bleiben Luanti-eigen; ein kompromittierter Luanti-Prozess könnte den ganzen Weltordner umbenennen und neu anlegen (siehe 06-07-SUMMARY Threat Flags).
 
 ### Blockers/Concerns
 
@@ -280,6 +283,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T07:55:08.318Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-10-24T08:35:00.000Z
+Stopped at: Completed 06-07-PLAN.md
 Resume file: .planning/phases/06-store-release/06-02-PLAN.md
