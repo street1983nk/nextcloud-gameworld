@@ -1,0 +1,24 @@
+# Bau-Kontext des ExApp-Images: nur, was das Dockerfile wirklich kopiert.
+.git
+.github/
+.planning/
+.dev/
+.venv/
+.claude/
+.claude-active
+node_modules/
+frontend/node_modules/
+tests/
+frontend/tests/
+webplay/
+docs/
+dist/
+# Bundle und VoxeLibre baut bzw. holt das Image selbst.
+js/
+vendor/games/*.zip
+!vendor/games/minetest_game-38214.zip
+vendor/games/*.part
+__pycache__/
+**/__pycache__/
+*.pyc
+body.json
