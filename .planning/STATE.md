@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-09-PLAN.md
-last_updated: "2026-10-24T11:20:54.499Z"
-last_activity: 2026-10-24 -- 06-09 Setup-Check-Ursachen und Reste früherer Installationen (B3) abgeschlossen
+stopped_at: Completed 06-11-PLAN.md
+last_updated: "2026-10-24T11:41:59.620Z"
+last_activity: 2026-10-24 -- 06-11 Öffentliche Doku und dreisprachiges Store-Listing abgeschlossen
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 72
-  completed_plans: 66
-  percent: 92
+  completed_plans: 67
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 10 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09)
+Plan: 11 of 16 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-09 Setup-Check mit Ursachen proxy_dns/proxy_timeout/proxy_refused, Warnungen docker_url_socket/docker_url_exposed, feste Doku-URL install.md#setup-check; OrphanSection.vue (B3) nur für NC-Admins (c0ff87b, d489c82, a94bce0, 2127fb7, 26cccff)
+Last activity: 2026-10-24 -- 06-11 privacy.md/install.md EN+DE, README EN/DE/FR (Badges, Mermaid), Store-Listing EN/DE/FR in store-listing.md und info.xml, Doku-Tests (6fc5a32, b83b508, 5f5b49c, 3b8c189)
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -294,6 +294,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T11:20:54.482Z
-Stopped at: Completed 06-09-PLAN.md
+Last session: 2026-10-24T11:41:59.602Z
+Stopped at: Completed 06-11-PLAN.md
 Resume file: None
