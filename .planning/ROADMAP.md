@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Spielzeitlimits** - Tageslimit und Zeitfenster pro Kind, serverseitig durchgesetzt (completed 2026-10-21)
 - [x] **Phase 4.1: Eltern-Handy und Talk (INSERTED)** - Pause, Hinweis bei fremdem Beitrittsversuch, Tagesrückblick per Push über die Nextcloud-App; Talk-Raum pro Welt mit Gameworld-Bot (completed 2026-10-22)
 - [x] **Phase 4.2: Browser-Spike (INSERTED)** - Go/No-Go: Spielen im Browser ohne Luanti-Installation (luanti-wasm, eigener Proxy); Bau nur wenn sinnvoll, Mehrwert und sicher (completed 2026-10-23)
-- [ ] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip
+- [x] **Phase 5: Backup und Restore** - Konsistente Weltsicherungen nach Nextcloud Files mit nachgewiesenem Restore-Roundtrip (completed 2026-10-24)
 - [ ] **Phase 6: Store-Release** - Härtung, Setup-Check, Cleanup und Veröffentlichung im Nextcloud App Store
 
 ## Phase Details
@@ -323,7 +323,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 05-09-PLAN.md , Phasenabnahme acceptance-phase5.sh mit WebDAV und Regression plus gemeinsame Playwright-Abnahme mit dem Owner
+- [x] 05-09-PLAN.md , Phasenabnahme acceptance-phase5.sh mit WebDAV und Regression plus gemeinsame Playwright-Abnahme mit dem Owner
 
 ### Phase 6: Store-Release
 
@@ -354,5 +354,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. One-Click-Welten | 7/7 | Complete | 2026-10-19 |
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
-| 5. Backup und Restore | 8/9 | In Progress|  |
+| 5. Backup und Restore | 9/9 | Complete   | 2026-10-24 |
 | 6. Store-Release | 0/TBD | Not started | - |

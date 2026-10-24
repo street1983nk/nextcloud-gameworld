@@ -48,8 +48,8 @@
 
 ### Backup
 
-- [ ] **BACKUP-01**: Elternteil kann pro Welt manuell ein Backup nach Nextcloud Files auslösen; der Snapshot ist konsistent (Welt wird sauber gestoppt oder eingefroren)
-- [ ] **BACKUP-02**: Elternteil kann eine Welt aus einem Backup in Nextcloud Files wiederherstellen (Restore-Roundtrip funktioniert nachweislich)
+- [x] **BACKUP-01**: Elternteil kann pro Welt manuell ein Backup nach Nextcloud Files auslösen; der Snapshot ist konsistent (Welt wird sauber gestoppt oder eingefroren)
+- [x] **BACKUP-02**: Elternteil kann eine Welt aus einem Backup in Nextcloud Files wiederherstellen (Restore-Roundtrip funktioniert nachweislich)
 
 ### Plattform
 
@@ -117,8 +117,8 @@
 | TALK-02 | Phase 4.1 | Complete |
 | ROLLE-03 | Phase 6 | Pending |
 | ROLLE-04 | Phase 6 | Pending |
-| BACKUP-01 | Phase 5 | Pending |
-| BACKUP-02 | Phase 5 | Pending |
+| BACKUP-01 | Phase 5 | Complete |
+| BACKUP-02 | Phase 5 | Complete |
 | PLATT-01 | Phase 6 | Pending |
 | PLATT-02 | Phase 2 | Complete |
 

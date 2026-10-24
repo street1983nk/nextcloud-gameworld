@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: "05-09 Checkpoint Task 2: Owner-Playwright-Abnahme offen"
-last_updated: "2026-10-23T19:55:01.236Z"
-last_activity: 2026-10-23
+status: verifying
+stopped_at: "Completed 05-09-PLAN.md; Phase 5: Bestätigungslauf 103/103, Deep Review und /gsd-secure-phase offen"
+last_updated: "2026-10-24T03:58:04.864Z"
+last_activity: 2026-10-24
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 56
-  completed_plans: 55
-  percent: 75
+  completed_plans: 56
+  percent: 88
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 
 Phase: 05 (backup-und-restore) — EXECUTING
 Plan: 9 of 9
-Status: Ready to execute
-Last activity: 2026-10-23
+Status: Phase complete — ready for verification
+Last activity: 2026-10-24
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -105,6 +105,7 @@ Progress: [██████████] 98%
 | Phase 05 P03 | 20 min | 2 tasks | 4 files |
 | Phase 05 P05 | 70 min | 3 tasks | 9 files |
 | Phase 05 P06 | 75 min | 3 tasks | 6 files |
+| Phase 05 P09 | 2 Sitzungen | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -242,6 +243,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-06: Restore zerstört erst nach Beweis: Phase A (Download, Größe/SHA-256 gegen eigenen Nachweis, prepare_restore) ohne Stopp, Phase B (Halt, Stopp, Zählbuch, geprüfte vor-restore-Sicherung) mit end_offline-Rückweg, Phase C mark_swap, Tausch mit zweitem Versuch, Rückfall auf Sicherheits-Snapshot, sonst RESTORE_INTERRUPTED
 - [Phase 05]: 05-06: Manifest gegen die Spielart der Weltzeile geprüft; Lua/worldmods/world.mt aus Sicherungen verworfen (nicht abgelehnt); Startfehler nach gelungenem Tausch = Auftrag ok, Fehler an der Welt
 - [Phase 05]: 05-06: POST /api/worlds/{id}/restore mit file_id als echter Ganzzahl 1 bis 2^63-1, confirm (sonst 409), fremde/unbekannte Sicherung 404, delete-only erlaubt (D-15)
+- [Phase 05]: 05-09: Owner-Abnahme Phase 5 approved (24.10.2026, 7 Schritte, Welt Browser Minetest); Alt-Container-Kick 'Server shutting down.' vor Neuaufbau kein Produktfehler
+- [Phase 05]: 05-09: Veraltete Regressionsprüfungen auf Produktstand gezogen (Owner-Entscheid): 4.1 K2 Uhrzeit-Text, Phase 3 K5 tolerante Spalten ohne Passwortspalte, Phase 3 K3 /my/worlds-Grundlinie gegen Owner-Spike-Welten
+- [Phase 05]: 05-09: Phase-4-Stabilitätsprüfung bleibt streng; Verbindungsfehler durch offene Abnahme-Browser-Sitzung während geplanter Neustarts sind Umgebung (deferred-items.md, Bestätigungslauf 103/103 offen)
 
 ### Pending Todos
 
@@ -271,6 +275,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-23T19:55:01.219Z
-Stopped at: 05-09 Checkpoint Task 2 (Owner-Playwright-Abnahme); Task 1 committet (19ffbc4, 772ff0f, Fixes 7cf5972, 82871f5); 3 veraltete Regressionsprüfungen siehe phases/05-backup-und-restore/deferred-items.md
+Last session: 2026-10-24T03:58:04.844Z
+Stopped at: Completed 05-09-PLAN.md; Phase 5: Bestätigungslauf 103/103, Deep Review und /gsd-secure-phase offen
 Resume file: None
