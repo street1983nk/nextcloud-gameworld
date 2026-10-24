@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { formatDate } from '../src/backup.js'
-import { setLanguage } from '../src/i18n/index.js'
+import { setLanguage, t } from '../src/i18n/index.js'
 import {
 	CLEANUP_DOCS_URL,
 	emptyText,
@@ -91,9 +91,13 @@ const vue = await readFile(new URL('../src/components/OrphanSection.vue', import
 if (vue !== null) {
 	assert.doesNotMatch(vue, /v-html|setInterval/)
 	assert.match(vue, /rel="noopener noreferrer"/)
-	assert.match(vue, /Container \$\{.*\} entfernen/)
-	assert.match(vue, /Spielstand \$\{.*\} endgültig löschen/)
-	assert.match(vue, /aria-label="Reste erneut suchen"/)
+	// Labels come from the admin dictionary (06-20); the German texts stay word for word.
+	assert.match(vue, /:aria-label="t\('admin\.orphans\.removeContainerLabel', \{ name: entry\.name \}\)"/)
+	assert.match(vue, /:aria-label="t\('admin\.orphans\.deleteVolumeLabel', \{ name: entry\.name \}\)"/)
+	assert.match(vue, /:aria-label="t\('admin\.orphans\.rescanLabel'\)"/)
+	assert.equal(t('admin.orphans.removeContainerLabel', { name: 'x' }), 'Container x entfernen')
+	assert.equal(t('admin.orphans.deleteVolumeLabel', { name: 'x' }), 'Spielstand x endgültig löschen')
+	assert.equal(t('admin.orphans.rescanLabel'), 'Reste erneut suchen')
 	assert.match(vue, /listOrphans/)
 	assert.match(vue, /\.focus\(\)/)
 }
@@ -111,6 +115,8 @@ const local = '2026-10-20T08:15:00'
 setLanguage('en')
 assert.equal(containerMeta({ state: 'running', created: local }), 'Status: running, created 20/10/2026 08:15')
 assert.equal(removedText('volume', 'x'), 'World data x deleted.')
+assert.equal(t('admin.orphans.removeContainerLabel', { name: 'x' }), 'Remove container x')
+assert.equal(t('admin.orphans.chipVolume'), 'World data')
 assert.deepEqual(
 	scriptSegments().filter((part) => part.code).map((part) => part.text),
 	['gameworld-orphans.sh', '--remove-containers', '--remove-volumes'],
@@ -122,6 +128,7 @@ assert.equal(
 	'Arrêter et supprimer le conteneur «\u00a0gw-x\u00a0»\u00a0? Les personnes qui y jouent seront déconnectées. Les données du monde sont conservées.',
 )
 assert.equal(scriptText().includes(' ou --remove-volumes.'), true)
+assert.equal(t('admin.orphans.deleteVolumeLabel', { name: 'x' }), 'Supprimer définitivement les données de monde x')
 setLanguage('de')
 
 console.log('orphans.check: alle Prüfungen bestanden')

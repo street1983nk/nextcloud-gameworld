@@ -1,7 +1,7 @@
 <!-- Reste früherer Installationen (UI-SPEC B3, D-15/D-17): nur für Nextcloud-Admins eingehängt; gesperrt ist das Entfernen serverseitig (require_nc_admin, nur fremde gameworld-Objekte). -->
 <template>
 	<section class="orphans">
-		<h3>Reste früherer Installationen</h3>
+		<h3>{{ t('admin.orphans.title') }}</h3>
 		<p class="orphans__hint">
 			{{ introText() }}
 		</p>
@@ -16,19 +16,19 @@
 				ref="listEl"
 				class="orphans__list"
 				tabindex="-1"
-				aria-label="Reste früherer Installationen">
+				:aria-label="t('admin.orphans.title')">
 				<li v-for="entry in entries" :key="entry.key" class="orphans__entry">
 					<div class="orphans__entry-text">
 						<div class="orphans__entry-head">
 							<NcChip
 								v-if="entry.kind === 'container'"
 								variant="tertiary"
-								text="Container"
+								:text="t('admin.orphans.chipContainer')"
 								no-close />
 							<NcChip
 								v-else
 								variant="secondary"
-								text="Spielstand"
+								:text="t('admin.orphans.chipVolume')"
 								no-close />
 							<span class="orphans__name">{{ entry.name }}</span>
 						</div>
@@ -38,19 +38,19 @@
 						v-if="entry.kind === 'container'"
 						class="orphans__remove"
 						variant="error"
-						:aria-label="`Container ${entry.name} entfernen`"
+						:aria-label="t('admin.orphans.removeContainerLabel', { name: entry.name })"
 						:disabled="busy || loading"
 						@click="ask(entry)">
-						Entfernen
+						{{ t('admin.orphans.remove') }}
 					</NcButton>
 					<NcButton
 						v-else
 						class="orphans__remove"
 						variant="error"
-						:aria-label="`Spielstand ${entry.name} endgültig löschen`"
+						:aria-label="t('admin.orphans.deleteVolumeLabel', { name: entry.name })"
 						:disabled="busy || loading"
 						@click="ask(entry)">
-						Löschen
+						{{ t('admin.orphans.delete') }}
 					</NcButton>
 				</li>
 			</ul>
@@ -78,13 +78,13 @@
 		<NcButton
 			class="orphans__rescan"
 			variant="secondary"
-			aria-label="Reste erneut suchen"
+			:aria-label="t('admin.orphans.rescanLabel')"
 			:disabled="busy || loading"
 			@click="rescan">
 			<template v-if="loading" #icon>
 				<NcLoadingIcon :size="20" />
 			</template>
-			Erneut suchen
+			{{ t('admin.orphans.rescan') }}
 		</NcButton>
 
 		<p class="orphans__hint">
@@ -101,14 +101,14 @@
 				:href="CLEANUP_DOCS_URL"
 				target="_blank"
 				rel="noopener noreferrer">
-				Anleitung zum Aufräum-Skript
+				{{ t('admin.orphans.docsLink') }}
 			</a>
 		</p>
 
 		<NcDialog
 			v-if="pending"
 			:open="true"
-			:name="pending.kind === 'container' ? 'Container entfernen' : 'Spielstand endgültig löschen'"
+			:name="pending.kind === 'container' ? t('admin.orphans.removeContainer') : t('admin.orphans.deleteVolumeTitle')"
 			:message="pendingMessage"
 			:buttons="pendingButtons"
 			@update:open="onDialogOpen" />
@@ -138,12 +138,14 @@ import {
 	volumeQuestion,
 } from '../orphans.js'
 import { ncAdminOnlyText } from '../roles.js'
+import { t } from '../i18n/index.js'
 
 // 403: Rechte inzwischen entzogen; der Elternteil lädt /api/me neu und blendet aus.
 const emit = defineEmits(['forbidden'])
 
-// Backend-Text bei 409 für einen Spielstand in Benutzung (06-08, api/admin.py).
-const IN_USE_MARK = 'noch von einem Container benutzt'
+// Backend text on 409 for world data still in use (06-08, api/admin.py MSG_ORPHAN_IN_USE), in
+// every account language the server translates it to (06-18 catalogs).
+const IN_USE_MARKS = ['noch von einem Container benutzt', 'still used by a container', 'encore utilisées par un conteneur']
 
 const loading = ref(true)
 const busy = ref(false)
@@ -192,7 +194,7 @@ function failed(err, entry) {
 		emit('forbidden')
 	} else if (status === 503) {
 		warning.value = unavailableText(detail)
-	} else if (status === 409 && entry?.kind === 'volume' && detail.includes(IN_USE_MARK)) {
+	} else if (status === 409 && entry?.kind === 'volume' && IN_USE_MARKS.some((mark) => detail.includes(mark))) {
 		error.value = inUseText(entry.name)
 	} else {
 		error.value = detail
@@ -248,9 +250,9 @@ const pendingMessage = computed(() => {
 })
 
 const pendingButtons = computed(() => [
-	{ label: 'Abbrechen', variant: 'tertiary' },
+	{ label: t('admin.common.cancel'), variant: 'tertiary' },
 	{
-		label: pending.value?.kind === 'container' ? 'Container entfernen' : 'Endgültig löschen',
+		label: pending.value?.kind === 'container' ? t('admin.orphans.removeContainer') : t('admin.orphans.deleteVolume'),
 		variant: 'error',
 		callback: () => {
 			const entry = pending.value

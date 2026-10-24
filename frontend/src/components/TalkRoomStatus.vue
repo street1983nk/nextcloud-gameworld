@@ -9,17 +9,17 @@
 				:href="roomUrl"
 				target="_blank"
 				rel="noopener noreferrer">
-				Talk-Raum öffnen
+				{{ t('admin.talk.open') }}
 			</a>
 			<NcCheckboxRadioSwitch
 				type="switch"
 				:model-value="readOnly"
 				:disabled="saving"
 				@update:model-value="toggle">
-				Nur lesen
+				{{ t('admin.talk.readOnly') }}
 			</NcCheckboxRadioSwitch>
 		</template>
-		<span v-else class="talk-room__pending">Talk-Raum wird eingerichtet</span>
+		<span v-else class="talk-room__pending">{{ t('admin.talk.pending') }}</span>
 		<NcNoteCard v-if="hint" type="info" class="talk-room__note">
 			{{ hint }}
 		</NcNoteCard>
@@ -38,7 +38,7 @@
 				<template v-if="recreating" #icon>
 					<NcLoadingIcon :size="20" />
 				</template>
-				Raum neu anlegen
+				{{ t('admin.talk.recreate') }}
 			</NcButton>
 		</template>
 		<NcNoteCard v-if="status.orphaned_token" type="info" class="talk-room__note">
@@ -56,7 +56,7 @@
 		<NcDialog
 			v-if="confirmRecreate"
 			:open="true"
-			name="Talk-Raum neu anlegen"
+			:name="t('admin.talk.recreateTitle')"
 			:message="recreateMessage"
 			:buttons="recreateButtons"
 			@update:open="onDialogOpen" />
@@ -81,6 +81,7 @@ import {
 	recreateQuestion,
 	talkHint,
 } from '../playtime.js'
+import { t } from '../i18n/index.js'
 
 const props = defineProps({
 	// { id, name } der Welt.
@@ -128,17 +129,18 @@ watch(formerOwner, async (text, before) => {
 
 const recreateMessage = computed(() => recreateQuestion(props.world.name, props.status?.owner_display))
 
-const recreateButtons = [
-	{ label: 'Abbrechen', variant: 'tertiary' },
+// Computed, so the labels follow the current language when the dialog renders.
+const recreateButtons = computed(() => [
+	{ label: t('admin.common.cancel'), variant: 'tertiary' },
 	{
-		label: 'Raum neu anlegen',
+		label: t('admin.talk.recreate'),
 		variant: 'error',
 		callback: () => {
 			confirmRecreate.value = false
 			recreate()
 		},
 	},
-]
+])
 
 function askRecreate() {
 	if (saving.value) {
@@ -191,7 +193,7 @@ async function toggle(on) {
 		const result = await setTalkReadOnly(props.world.id, on)
 		readOnly.value = result.read_only
 		if (result.applied === false) {
-			notice.value = 'Gespeichert. Talk übernimmt es beim nächsten Abgleich.'
+			notice.value = t('admin.talk.savedLater')
 		}
 		emit('changed')
 	} catch (err) {

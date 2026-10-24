@@ -1,7 +1,7 @@
 <!-- Verwalter-Gruppen (UI-SPEC B1, ROLLE-03): nur für Nextcloud-Admins eingehängt; gesperrt ist die Änderung serverseitig (require_nc_admin). -->
 <template>
 	<section class="verwalter-groups">
-		<h3>Verwalter-Gruppen</h3>
+		<h3>{{ t('admin.groups.title') }}</h3>
 		<p class="verwalter-groups__hint">
 			{{ sectionHint() }}
 		</p>
@@ -20,7 +20,7 @@
 					<div class="verwalter-groups__entry-text">
 						<span class="verwalter-groups__name">admin</span>
 					</div>
-					<NcChip variant="tertiary" text="immer dabei" no-close />
+					<NcChip variant="tertiary" :text="t('admin.groups.alwaysIncluded')" no-close />
 				</li>
 				<li v-for="gid in groups" :key="gid" class="verwalter-groups__entry">
 					<div class="verwalter-groups__entry-text">
@@ -30,10 +30,10 @@
 					<NcButton
 						class="verwalter-groups__remove"
 						variant="error"
-						:aria-label="`Gruppe ${gid} entfernen`"
+						:aria-label="t('admin.groups.removeLabel', { gid })"
 						:disabled="saving"
 						@click="remove(gid)">
-						Entfernen
+						{{ t('admin.groups.remove') }}
 					</NcButton>
 				</li>
 			</ul>
@@ -50,8 +50,8 @@
 					:disabled="saving"
 					:filterable="false"
 					label="label"
-					input-label="Gruppe"
-					placeholder="Gruppenname eingeben"
+					:input-label="t('admin.groups.groupLabel')"
+					:placeholder="t('admin.groups.placeholder')"
 					@search="onSearch" />
 				<NcButton
 					ref="addButton"
@@ -62,7 +62,7 @@
 					<template v-if="saving" #icon>
 						<NcLoadingIcon :size="20" />
 					</template>
-					Gruppe hinzufügen
+					{{ t('admin.groups.add') }}
 				</NcButton>
 			</div>
 		</template>
@@ -113,14 +113,16 @@ import {
 	groupUnknownText,
 	loadErrorText,
 } from '../roles.js'
+import { t } from '../i18n/index.js'
 
 // 403: Rechte inzwischen entzogen; der Elternteil lädt /api/me neu und blendet aus.
 const emit = defineEmits(['forbidden'])
 
 const ADMIN_GROUP = 'admin'
 const SEARCH_DELAY_MS = 300
-// Backend-Text bei 422 für eine unbekannte Gruppe (api/admin.py MSG_UNKNOWN_GROUP).
-const UNKNOWN_MARK = 'gibt es in Nextcloud nicht'
+// Backend text on 422 for an unknown group (api/admin.py MSG_UNKNOWN_GROUP), in every
+// account language the server translates it to (06-18 catalogs).
+const UNKNOWN_MARKS = ['gibt es in Nextcloud nicht', 'does not exist in Nextcloud', 'n’existe pas dans Nextcloud']
 
 const loading = ref(true)
 const loadError = ref('')
@@ -223,7 +225,7 @@ function failed(err, gid) {
 	if (status === 403) {
 		error.value = ncAdminOnlyText()
 		emit('forbidden')
-	} else if (status === 422 && detail.includes(UNKNOWN_MARK)) {
+	} else if (status === 422 && UNKNOWN_MARKS.some((mark) => detail.includes(mark))) {
 		error.value = groupUnknownText(gid)
 	} else {
 		error.value = detail
