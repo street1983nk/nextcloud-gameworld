@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-23-PLAN.md
-last_updated: "2026-10-24T22:40:00.000Z"
-last_activity: 2026-10-24 -- 06-23 Benachrichtigungen je Empfängersprache, Talk-Bot je Weltsprache, Bot-Beschreibung englisch
+stopped_at: Completed 06-24-PLAN.md
+last_updated: "2026-10-25T00:14:52.853Z"
+last_activity: 2026-10-25 -- 06-24 Weltsprache-Auswahl, i18n-Strukturtest, K8
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 84
-  completed_plans: 75
-  percent: 89
+  completed_plans: 76
+  percent: 88
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 19 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20, 06-21, 06-22, 06-23)
+Plan: 20 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20, 06-21, 06-22, 06-23, 06-24)
 Status: Executing Phase 6
-Last activity: 2026-10-24 -- 06-23 Glocke in der Kontosprache jedes Empfängers (de wortgleich, Rückfall en), Talk-Bot in der Weltsprache (Rückfall de), Sicherungsfehler mit übersetztem Grund, Bot-Beschreibung englisch (effb19d, 23e7e6f, 214a556, 5e10e78)
+Last activity: 2026-10-25 -- 06-24 Weltsprache in der Oberfläche, i18n-Strukturtest mit Umlaut- und Rest-Deutsch-Audit (EN-Doku übersetzt), K8 am Dev-Stack grün (Phase 6 allein 165/165)
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -282,6 +282,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-21 JoinGuide en/fr mit den Original-Menünamen des Luanti-Clients (Join Game, Address, Port, Name, Password, Login; geprüft gegen tab_online.lua), de wortgleich; Werte in <strong> über Platzhalter-Segmente statt v-html; Ferien-Datum über dateLocale() (de unverändert); keine Servertext-Erkennung in Kinder-/Spielzeit-Komponenten, also keine Markenliste nötig
 - [Phase 06]: 06-22 Weltsprache D-27: worlds.language (Bestand de, neu = Kontosprache des Verwalters), Umschalten nur per POST ohne Neustart, Hinweis language_restart_needed (launched_language NULL zählt als de); Mod-Texte als NamedTuple-Bündel MOD_TEXTS je Sprache, Lua-Code identisch, Golden-SHA-256 für de; Mod-Texte nicht im translate()-Katalog
 - [Phase 06]: 06-23 Benachrichtigungen je Empfängersprache (NOTIFY_TEXTS, Rückfall en), Bot-Texte je Weltsprache (BOT_TEXTS, Rückfall de); _deliver baut je uid über RoleService.language; FAILED_SUBJECTS durch failed_subject(kind, language) ersetzt; Bot-Beschreibung englisch, sichtbar nach nächstem App-Aktivieren
+- [Phase 06]: 06-24 Sprachauswahl je Welt (WorldLanguageSetting.vue, Sprachnamen als Konstante); Strukturtest tests/test_frontend_i18n.py mit Zwei-Wege-Ausnahmen (frontend_i18n_exceptions.tsv, i18n_foreign_exceptions.tsv); docs/install.md und privacy.md zitieren jetzt die englische Oberfläche; js/ bleibt gitignored; Phase-6-Abnahme mit gw6-Fixtures und core lang de neben der Demo
 
 ### Pending Todos
 
@@ -289,6 +290,7 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
+- [Phase 06] 06-24: Regression Phase 4.1 (smoke-talk.sh, K2) kollidiert mit den Demo-Verwalter-Gruppen eltern/lehrkraefte (9 von 128 rot); K7 zweiter Raum zeitweise rot (Befund 06-12, Anleger nicht im Schnappschuss, CR-01, nur mit deep Review). Phase 6 allein 165/165 grün. Details deferred-items.md
 - [Phase 1] Research nötig: Welt-Daten-Ablage (Named Volume vs. Container-FS + Archive-API), Luanti-Image-Wahl, Headless-Administration
 - [Phase 3] Erledigt: eigener Welt-Mod gameworld_access statt Whitelist-Mod (ct_whitelist auf ContentDB nicht mehr auffindbar)
 - [Phase 4] Research nötig: Spielzeit-Durchsetzungspfad Mod vs. Scheduler-Stopp, Umgehungs-Caveat bewerten
@@ -311,6 +313,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-24T22:40:00.000Z
-Stopped at: Completed 06-23-PLAN.md
+Last session: 2026-10-25T00:14:52.809Z
+Stopped at: Completed 06-24-PLAN.md
 Resume file: None
