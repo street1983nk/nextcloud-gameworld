@@ -40,3 +40,11 @@
 ### 06-25: Negativ-Log-Asserts ohne Positivkontrolle (Bestand)
 
 - tests/test_backup_archive.py (`GEHEIMNAME` not in caplog.text), tests/test_notify_loop.py (`mama`), tests/test_bot_events.py (`Lena`/`lena`) haben keinen Positiv-Assert auf einen vorhandenen Log-Eintrag. Von 06-25 nicht verändert (AST-Gleichheit); bei Gelegenheit je ein `assert caplog.records` ergänzen.
+
+### 06-26: Deutsche Aktionsnamen in talk/service.py bleiben im englischen Log
+
+- `TalkService._isolated("Löschen"|"Abgleich"|"Anlegen", ...)` und `_spawn(...)` übergeben deutsche Aktionsnamen als `%s`-Argument an die englisch gewordene Log-Zeile "Talk %s for world %s failed: %s". Code-Argumente außerhalb des Log-Aufrufs, D-29 verbietet Code-Änderungen; tests/test_talk_service.py ruft `_spawn("Abgleich", ...)` direkt. Beim nächsten Pass, der Code anfassen darf, auf englische Labels umstellen (wie die Aktionsnamen in backup/files.py aus 06-25).
+
+### 06-26: Lua-Syntaxtest nicht gegen echtes Docker gelaufen
+
+- Docker Desktop startet auf diesem Rechner derzeit nicht ("Docker Desktop is unable to start", Daemon-Pipe fehlt, Dev-Proxy tcp://127.0.0.1:23750 nicht erreichbar). `tests/e2e/test_mod_syntax_e2e.py` (8 Tests) ist angelegt, ruff/pyright grün, wird ohne Proxy übersprungen. Nachholen, sobald Docker läuft: `uv run pytest -m docker -q tests/e2e/test_mod_syntax_e2e.py tests/e2e/test_play_proxy_e2e.py tests/e2e/test_play_srp_e2e.py` und ggf. test_time_mod_e2e.py/test_access_e2e.py. Ob das gepinnte Luanti-Image einen Lua-Compiler mitbringt (luac, luac5.1, luajit), ist damit offen; ohne Compiler überspringt der Test mit Begründung und die bestehenden Welt-Start-e2e-Tests sind der Ersatz.

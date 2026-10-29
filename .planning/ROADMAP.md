@@ -402,7 +402,7 @@ Plans:
 **Wave 13** *(blocked on Wave 12 completion; Läufe innerhalb der Welle seriell, RAM-Regel)*
 
 - [x] 06-25-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 1: access, api, backup, events, notify, i18n, Wurzelmodule, samt zugehöriger Log-Tests
-- [ ] 06-26-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 2: play, playtime, provisioner (inkl. Lua-Kommentare und Lua-Syntaxtest), talk, worlds, samt zugehöriger Log-Tests
+- [x] 06-26-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 2: play, playtime, provisioner (inkl. Lua-Kommentare und Lua-Syntaxtest), talk, worlds, samt zugehöriger Log-Tests
 - [ ] 06-28-PLAN.md , Kommentare/Docstrings Englisch (D-26) Teil 4: Testsuite ohne die Log-Tests aus 06-25/06-26
 
 **Wave 14** *(blocked on Wave 13 completion)*
@@ -439,4 +439,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
 | 5. Backup und Restore | 9/9 | Complete   | 2026-10-24 |
-| 6. Store-Release | 21/28 | In Progress|  |
+| 6. Store-Release | 22/28 | In Progress|  |

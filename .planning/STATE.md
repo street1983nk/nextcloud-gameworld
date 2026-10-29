@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-24-PLAN.md
-last_updated: "2026-10-29T16:54:44.527Z"
+stopped_at: Completed 06-26-PLAN.md
+last_updated: "2026-10-29T17:35:38.633Z"
 last_activity: 2026-10-29
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 84
-  completed_plans: 77
+  completed_plans: 78
   percent: 88
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 ## Current Position
 
 Phase: 6 — EXECUTING
-Plan: 21 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20, 06-21, 06-22, 06-23, 06-24)
+Plan: 22 of 28 complete (06-01, 06-07, 06-02, 06-03, 06-04, 06-08, 06-05, 06-06, 06-10, 06-09, 06-11, 06-12, 06-17, 06-18, 06-19, 06-20, 06-21, 06-22, 06-23, 06-24)
 Status: Ready to execute
 Last activity: 2026-10-29
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -116,6 +116,7 @@ Progress: [█████████░] 92%
 | Phase 06 P17 | 25 min | 3 tasks | 45 files |
 | Phase 06 P18 | 95 min | 3 tasks | 27 files |
 | Phase 06 P25 | 75min | 3 tasks | 49 files |
+| Phase 06 P26 | mehrere Stunden | 3 tasks | 59 files |
 
 ## Accumulated Context
 
@@ -284,6 +285,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-22 Weltsprache D-27: worlds.language (Bestand de, neu = Kontosprache des Verwalters), Umschalten nur per POST ohne Neustart, Hinweis language_restart_needed (launched_language NULL zählt als de); Mod-Texte als NamedTuple-Bündel MOD_TEXTS je Sprache, Lua-Code identisch, Golden-SHA-256 für de; Mod-Texte nicht im translate()-Katalog
 - [Phase 06]: 06-23 Benachrichtigungen je Empfängersprache (NOTIFY_TEXTS, Rückfall en), Bot-Texte je Weltsprache (BOT_TEXTS, Rückfall de); _deliver baut je uid über RoleService.language; FAILED_SUBJECTS durch failed_subject(kind, language) ersetzt; Bot-Beschreibung englisch, sichtbar nach nächstem App-Aktivieren
 - [Phase 06]: 06-24 Sprachauswahl je Welt (WorldLanguageSetting.vue, Sprachnamen als Konstante); Strukturtest tests/test_frontend_i18n.py mit Zwei-Wege-Ausnahmen (frontend_i18n_exceptions.tsv, i18n_foreign_exceptions.tsv); docs/install.md und privacy.md zitieren jetzt die englische Oberfläche; js/ bleibt gitignored; Phase-6-Abnahme mit gw6-Fixtures und core lang de neben der Demo
+- [Phase 06]: 06-26: Vorab-Fix setzt die Engine-Uhr (TimeEngine._clock) in test_admin_snapshot, da time.time als Default-Argument beim Import bindet
+- [Phase 06]: 06-26: Deutsche Aktionsnamen in talk/service.py bleiben als Code-Argumente im englischen Log (D-29), siehe deferred-items
 
 ### Pending Todos
 
@@ -314,6 +317,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-29T16:54:34.554Z
-Stopped at: Completed 06-24-PLAN.md
+Last session: 2026-10-29T17:35:26.575Z
+Stopped at: Completed 06-26-PLAN.md
 Resume file: None
