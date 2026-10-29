@@ -1,4 +1,4 @@
-# Shell-Skripte laufen im Linux-Image und in CI: immer LF, auch bei core.autocrlf=true
-# (sonst kopiert ein lokaler docker build CRLF-Skripte ins Image).
+# Shell scripts run in the Linux image and in CI: always LF, even with core.autocrlf=true
+# (otherwise a local docker build copies CRLF scripts into the image).
 *.sh text eol=lf
 Dockerfile text eol=lf

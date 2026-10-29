@@ -31,8 +31,8 @@ build-backend = "uv_build"
 module-name = "gameworld"
 module-root = "src"
 
-# starlette ist nicht direkt gepinnt, weil nc-py-api die Abhängigkeit besitzt.
-# Der Boden bleibt über CVE-2026-48710 (BadHost).
+# starlette is not pinned directly because nc-py-api owns the dependency.
+# The floor stays above CVE-2026-48710 (BadHost).
 [tool.uv]
 constraint-dependencies = ["starlette>=1.0.1"]
 
@@ -40,7 +40,7 @@ constraint-dependencies = ["starlette>=1.0.1"]
 line-length = 120
 target-version = "py313"
 src = ["src", "tests"]
-# Planungsdokumente sind Prosa; ruff format würde sonst die Codeblöcke darin umschreiben.
+# Planning documents are prose; ruff format would otherwise rewrite the code blocks in them.
 extend-exclude = [".planning"]
 
 [tool.ruff.lint]

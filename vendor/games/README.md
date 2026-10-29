@@ -1,15 +1,15 @@
-# Mitgelieferte Spiele
+# Bundled games
 
-| Datei | Quelle | Release | Lizenz |
+| File | Source | Release | License |
 |-------|--------|---------|--------|
 | `minetest_game-38214.zip` | ContentDB, Paket `Luanti/minetest_game` (https://content.luanti.org/packages/Luanti/minetest_game/) | 38214 vom 17.08.2026 | Code LGPL-2.1-or-later, Medien CC-BY-SA-3.0 |
 | `mineclone2-39534.zip` (VoxeLibre 0.92.4) | ContentDB, Paket `Wuzzy/mineclone2` (https://content.luanti.org/packages/Wuzzy/mineclone2/) | 39534 vom 18.10.2026 | Code GPL-3.0-or-later, Medien CC-BY-SA-4.0 |
 
-- Die Prüfsumme steht in `SHA256SUMS`. Gameworld prüft sie vor jeder Nutzung im Code gegen die Konstante im Preset (`src/gameworld/provisioner/presets.py`, Prüfung in `archive.py`) und bricht bei Abweichung ab.
-- Gameworld lädt zur Laufzeit nie etwas von ContentDB nach. Es gibt keine externen Aufrufe, das Spiel kommt ausschließlich aus dieser Datei.
-- Die vollständigen Lizenztexte liegen im jeweiligen Zip unter `minetest_game/LICENSE.txt` bzw. `mineclone2/LICENSE.txt`.
-- Ein Update ist eine bewusste Entscheidung: neue Datei mit neuer Release-Nummer ablegen, `SHA256SUMS` und die Konstante im Code gemeinsam ändern.
+- The checksum is in `SHA256SUMS`. Before every use, Gameworld checks it in code against the constant in the preset (`src/gameworld/provisioner/presets.py`, check in `archive.py`) and aborts on a mismatch.
+- Gameworld never downloads anything from ContentDB at runtime. There are no external calls, the game comes exclusively from this file.
+- The full license texts are in the respective zip under `minetest_game/LICENSE.txt` and `mineclone2/LICENSE.txt`.
+- An update is a deliberate decision: add a new file with a new release number, change `SHA256SUMS` and the constant in the code together.
 
-## VoxeLibre (nicht im Git)
+## VoxeLibre (not in Git)
 
-`mineclone2-39534.zip` ist rund 84 MB groß und liegt deshalb nicht im Git (`.gitignore`). Abruf mit `sh scripts/fetch-games.sh`; das Skript legt die Datei nur ab, wenn die Prüfsumme aus `SHA256SUMS` stimmt, und `scripts/dev/register-exapp.sh` ruft es automatisch auf. Die Prüfsumme steht in `SHA256SUMS` und als Konstante im Code. Ein Update ist eine bewusste Entscheidung: neue Release-Nummer, `SHA256SUMS` und die Konstante in `src/gameworld/provisioner/presets.py` gemeinsam ändern.
+`mineclone2-39534.zip` is about 84 MB and therefore is not in Git (`.gitignore`). Fetch it with `sh scripts/fetch-games.sh`; the script stores the file only if the checksum from `SHA256SUMS` matches, and `scripts/dev/register-exapp.sh` calls it automatically. The checksum is in `SHA256SUMS` and as a constant in the code. An update is a deliberate decision: change the new release number, `SHA256SUMS` and the constant in `src/gameworld/provisioner/presets.py` together.

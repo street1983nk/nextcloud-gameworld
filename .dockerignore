@@ -1,4 +1,4 @@
-# Bau-Kontext des ExApp-Images: nur, was das Dockerfile wirklich kopiert.
+# Build context of the ExApp image: only what the Dockerfile really copies.
 .git
 .github/
 .planning/
@@ -13,7 +13,7 @@ frontend/tests/
 webplay/
 docs/
 dist/
-# Bundle und VoxeLibre baut bzw. holt das Image selbst.
+# The image builds or fetches the bundle and VoxeLibre itself.
 js/
 vendor/games/*.zip
 !vendor/games/minetest_game-38214.zip

@@ -1,27 +1,27 @@
-// Browser-Spike 04.2: Diagnose, Einzelspieler- und Mehrspieler-Start auf der eigenen Spielseite.
+// Browser spike 04.2: diagnosis, single-player and multiplayer start on the own play page.
 //
-// Die Seite liest aus der Adresse nur zwei Werte (Whitelist): mode und build, dazu im
-// Mehrspieler-Modus das Ein-Mal-Ticket aus dem Fragment (#t=...). Das Fragment geht nie
-// an einen Server und wird sofort aus Adresszeile und Verlauf entfernt (T-04.2-38).
-// Ticket, WS-Ticket und Passwort landen nie in console oder Diagnose (T-04.2-39).
-// Nie die Argument-Helfer von launcher.js für die Adresse benutzen: Sie würden
-// Name und Passwort aus der Adresse übernehmen (RESEARCH Pitfall 6).
+// The page reads only two values from the address (whitelist): mode and build, plus in
+// multiplayer mode the one-time ticket from the fragment (#t=...). The fragment never goes
+// to a server and is removed at once from the address bar and history (T-04.2-38).
+// Ticket, WS ticket and password never end up in console or diagnosis (T-04.2-39).
+// Never use the argument helpers of launcher.js for the address: they would
+// take name and password from the address (RESEARCH Pitfall 6).
 //
-// Reihenfolge ist Sicherheit: Direkt nach dem Anlegen des Launchers kommt der
-// eigene WebSocket-Proxy, sonst nimmt launcher.js seinen fremden Standard-Proxy
-// (D-01, Pitfall 5). Die CSP der Seite lässt fremde Hosts ohnehin nicht zu.
+// Order is security: directly after creating the launcher comes the
+// own WebSocket proxy, otherwise launcher.js takes its foreign default proxy
+// (D-01, Pitfall 5). The CSP of the page does not allow foreign hosts anyway.
 
 const BUILDS = new Set(['a', 'b']);
 const DEFAULT_BUILD = 'b';
-// Minetest Game; das Pack minetest.pack muss im Release-Ordner unter packs/ liegen.
+// Minetest Game; the pack minetest.pack must be in the release folder under packs/.
 const GAME_ID = 'minetest';
 const WORLD_PATH = '/luanti/worlds/gameworld-spike';
 
 const diagNode = document.getElementById('diag');
 const statusNode = document.getElementById('status');
 
-const query = new URLSearchParams(location.search); // nur mode und build
-// Ticket aus dem Fragment lesen und sofort aus Adresszeile und Verlauf löschen, vor allem anderen.
+const query = new URLSearchParams(location.search); // only mode and build
+// Read the ticket from the fragment and delete it at once from address bar and history, before anything else.
 const TICKET_PREFIX = '#t=';
 let launchTicket = null;
 if (location.hash.startsWith(TICKET_PREFIX)) {
@@ -32,7 +32,7 @@ if (location.hash.startsWith(TICKET_PREFIX)) {
   }
   history.replaceState(null, '', location.pathname + location.search);
 }
-// Mehrspieler (Ticket im Fragment) hat Vorrang vor mode=single.
+// Multiplayer (ticket in the fragment) takes precedence over mode=single.
 const mode = launchTicket !== null ? 'multi' : query.get('mode') === 'single' ? 'single' : null;
 const requestedBuild = query.get('build');
 const build = BUILDS.has(requestedBuild) ? requestedBuild : DEFAULT_BUILD;
@@ -52,7 +52,7 @@ const diag = {
 };
 const progress = new Map();
 
-// Millisekunden seit Beginn der Navigation (performance.timeOrigin).
+// Milliseconds since the start of the navigation (performance.timeOrigin).
 function ms() {
   return Math.round(performance.now());
 }
@@ -65,7 +65,7 @@ function render() {
   if (!diagNode) {
     return;
   }
-  // launcher.js ersetzt beim Spielstart den ganzen body; die Diagnose bleibt sichtbar.
+  // launcher.js replaces the whole body on game start; the diagnosis stays visible.
   if (!diagNode.isConnected) {
     document.body.appendChild(diagNode);
   }
@@ -88,7 +88,7 @@ function render() {
   }
   diagNode.textContent = lines.join('\n');
   diagNode.classList.toggle('error', diag.error !== null);
-  // pointer-events ist aus, Touch kann nicht scrollen: immer ans Ende springen.
+  // pointer-events is off, touch cannot scroll: always jump to the end.
   diagNode.scrollTop = diagNode.scrollHeight;
 }
 
@@ -130,7 +130,7 @@ function loadScript(src) {
   });
 }
 
-// Eigener Proxy: gleicher Host wie die Seite, Pfad .../play/ws neben dieser Seite.
+// Own proxy: same host as the page, path .../play/ws next to this page.
 function proxyUrl() {
   const url = new URL('ws', location.href);
   url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -151,18 +151,18 @@ async function fetchRelease() {
   return body.release;
 }
 
-// Text für Kinder, wenn der Start scheitert; Einzelheiten nur in der Diagnose.
+// Text for children when the start fails; details only in the diagnosis.
 const TEXT_START_FAILED = 'Der Start hat nicht geklappt. Frag deine Eltern.';
 
-// Gemeinsamer Teil beider Modi: Shim, Release, launcher.js, Launcher mit eigenem Proxy.
+// Common part of both modes: shim, release, launcher.js, launcher with own proxy.
 async function prepareLauncher(proxy) {
   if (!location.pathname.endsWith('/')) {
     throw new Error('Die Spielseite braucht eine Adresse, die auf / endet.');
   }
   setStatus('Gameworld wird geladen.');
-  // iOS-Safari kennt kein Pointer-Lock-API (nur Maus-Umgebungen haben es); der
-  // Emscripten-Teil von luanti-wasm ruft document.exitPointerLock.bind() ungeprueft
-  // auf und stuerzt sonst nach der Installation ab (Beleg: iPhone, Safari 27.0.1).
+  // iOS Safari has no Pointer Lock API (only mouse environments have it); the
+  // Emscripten part of luanti-wasm calls document.exitPointerLock.bind() unchecked
+  // and otherwise crashes after the installation (evidence: iPhone, Safari 27.0.1).
   if (typeof document.exitPointerLock !== 'function') {
     document.exitPointerLock = function () {};
   }
@@ -175,7 +175,7 @@ async function prepareLauncher(proxy) {
   mark('launcher_loaded');
 
   const launcher = new LuantiLauncher();
-  // Eigener Proxy direkt nach dem Anlegen, vor allem anderen (D-01).
+  // Own proxy directly after creation, before anything else (D-01).
   launcher.setProxy(proxy);
   launcher.setConf('touch_controls', navigator.maxTouchPoints > 0 ? 'true' : 'auto');
 
@@ -221,7 +221,7 @@ async function startSingle() {
   };
 }
 
-// Ticket gegen Spielername, Passwort (Variante B) und WS-Ticket tauschen.
+// Exchange the ticket for player name, password (variant B) and WS ticket.
 async function redeemLaunchTicket(ticket) {
   const response = await fetch('launch', {
     method: 'POST',
@@ -231,7 +231,7 @@ async function redeemLaunchTicket(ticket) {
     cache: 'no-store',
   });
   if (!response.ok) {
-    // Nur der Status, nie der Body der Anfrage.
+    // Only the status, never the body of the request.
     throw new Error(`Spielstart abgelehnt (HTTP ${response.status}).`);
   }
   const body = await response.json();
@@ -248,7 +248,7 @@ async function redeemLaunchTicket(ticket) {
   return body;
 }
 
-// Proxy-Adresse am eigenen Host; das WS-Ticket steht nur in dieser Adresse.
+// Proxy address on the own host; the WS ticket is only in this address.
 function multiProxyUrl(wsPath, wsTicket) {
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${scheme}//${location.host}${wsPath}?t=${encodeURIComponent(wsTicket)}`;
@@ -264,7 +264,7 @@ async function startMulti(ticket) {
   const args = new LuantiArgs();
   args.go = true;
   args.name = start.player_name;
-  // Variante A ersetzt das Passwort am Proxy; Variante B bringt das eigene mit.
+  // Variant A replaces the password at the proxy; variant B brings its own.
   args.password = start.password ?? 'gameworld';
   args.address = start.address;
   args.port = start.port;

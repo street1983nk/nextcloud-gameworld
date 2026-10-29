@@ -1,1 +1,1 @@
-"""Browser-Spike 04.2: Spielseite, Ticket und WebSocket-zu-UDP-Proxy (nur mit GAMEWORLD_BROWSER_SPIKE)."""
+"""Browser spike 04.2: play page, ticket and WebSocket-to-UDP proxy (only with GAMEWORLD_BROWSER_SPIKE)."""
