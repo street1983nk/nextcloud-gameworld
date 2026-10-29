@@ -1,4 +1,4 @@
-"""Spielzeit-API über ASGI: Verwalter-Sperre, Setzen/Entfernen, Validierung und sofortiger Push."""
+"""Play time API over ASGI: manager lock, set/remove, validation and immediate push."""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ async def test_post_sets_rules_and_pushes_immediately(
     assert data["applied"] is True
     assert len(data["normal"]) == 7
     assert data["state"]["reason"] == "ok"
-    # Die Regeldatei der Welt des Kindes wurde sofort geschrieben.
+    # The rules file of the child's world was written immediately.
     assert "\nKind " in _last_rules(fake)
     assert "gw-kind" in store.child_plans()
 
@@ -125,9 +125,9 @@ async def test_post_sets_rules_and_pushes_immediately(
 @pytest.mark.parametrize(
     "body",
     [
-        {"normal": [_day(weekday) for weekday in range(1, 7)]},  # nur 6 Tage
-        {"normal": [_day(1), _day(1), *(_day(weekday) for weekday in range(3, 8))]},  # Dublette
-        # Alle sieben Tage plus eine Dublette: Der letzte Eintrag gewänne sonst (AR-4-07).
+        {"normal": [_day(weekday) for weekday in range(1, 7)]},  # only 6 days
+        {"normal": [_day(1), _day(1), *(_day(weekday) for weekday in range(3, 8))]},  # duplicate
+        # All seven days plus a duplicate: otherwise the last entry would win (AR-4-07).
         {"normal": [*(_day(weekday) for weekday in range(1, 8)), _day(1, limit=1440)]},
         {"normal": [_day(weekday) for weekday in range(1, 8)], "holiday": [_day(w) for w in (*range(1, 8), 7)]},
         {"normal": [_day(1, limit=0), *(_day(weekday) for weekday in range(2, 8))]},  # Limit 0
@@ -137,15 +137,15 @@ async def test_post_sets_rules_and_pushes_immediately(
                 {"weekday": 1, "allowed": True, "window_start": 600, "window_end": 600},
                 *(_day(weekday) for weekday in range(2, 8)),
             ]
-        },  # Fenster Ende <= Anfang
+        },  # window end <= start
         {
             "normal": [
                 {"weekday": 1, "allowed": True, "window_start": 600},
                 *(_day(weekday) for weekday in range(2, 8)),
             ]
-        },  # nur ein Fensterfeld
-        {"normal": [{"weekday": 1, "allowed": True, "foo": 1}, *(_day(weekday) for weekday in range(2, 8))]},  # Feld
-        {"normal": [_day(weekday) for weekday in range(1, 8)], "extra": 1},  # unbekanntes Plan-Feld
+        },  # only one window field
+        {"normal": [{"weekday": 1, "allowed": True, "foo": 1}, *(_day(weekday) for weekday in range(2, 8))]},  # field
+        {"normal": [_day(weekday) for weekday in range(1, 8)], "extra": 1},  # unknown plan field
     ],
 )
 async def test_invalid_body_is_422(
@@ -167,7 +167,7 @@ async def test_post_unknown_account_is_404(client: httpx.AsyncClient, service: W
 async def test_delete_clears_rules_keeps_today_usage(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """WR-04 (Owner-Entscheid): Entfernen und erneutes Setzen am selben Tag gibt kein frisches Kontingent."""
+    """WR-04 (owner decision): removing and setting again on the same day gives no fresh allowance."""
     del service
     posted = await client.post("/api/playtime/children/gw-kind", json=_plan_body(), headers=appapi_headers())
     assert posted.status_code == 200
@@ -184,7 +184,7 @@ async def test_delete_clears_rules_keeps_today_usage(
     assert data["state"] is None
     assert "gw-kind" not in store.child_plans()
     assert store.usage("gw-kind", today) == 300
-    # Ältere Tage braucht niemand mehr (Datensparsamkeit).
+    # Nobody needs older days any more (data minimization).
     assert store.usage("gw-kind", today - timedelta(days=2)) == 0
 
     again = await client.post("/api/playtime/children/gw-kind", json=_plan_body(), headers=appapi_headers())
@@ -211,12 +211,12 @@ async def test_child_is_forbidden(
     response = await client.request(method, f"/api/playtime{path}", json=body, headers=appapi_headers("gw-kind"))
     assert response.status_code != 200
     assert response.status_code == 403
-    # Nichts verändert: der Bestand bleibt, keine neuen Ferien, Zeitzone unverändert.
+    # Nothing changed: the stock stays, no new holidays, time zone unchanged.
     assert len(store.list_holidays()) == 1
     assert store.get_meta("time_zone") in (None, "", "Europe/Berlin")
 
 
-# Ferienplan je Kind, Haushalts-Ferien und Zeitzone (04-04)
+# Holiday plan per child, household holidays and time zone (04-04)
 
 
 def _today() -> date:
@@ -290,13 +290,13 @@ async def test_holidays_add_list_active_and_delete(
 @pytest.mark.parametrize(
     "body",
     [
-        {"label": "x", "start_date": "2026-11-02", "end_date": "2026-11-01"},  # von nach bis
-        {"label": "x", "start_date": "2026-02-30", "end_date": "2026-03-01"},  # kein Datum
-        {"label": "x", "start_date": "2026-01-01", "end_date": "2027-01-03"},  # länger als 366 Tage
-        {"label": "x" * 61, "start_date": "2026-11-01", "end_date": "2026-11-02"},  # Label zu lang
-        {"label": "a\nb", "start_date": "2026-11-01", "end_date": "2026-11-02"},  # Zeilenumbruch
-        {"label": "x", "start_date": "2026-11-01", "end_date": "2026-11-02", "extra": 1},  # Feld
-        {"label": "x", "start_date": "2026-11-01"},  # bis fehlt
+        {"label": "x", "start_date": "2026-11-02", "end_date": "2026-11-01"},  # from after to
+        {"label": "x", "start_date": "2026-02-30", "end_date": "2026-03-01"},  # no date
+        {"label": "x", "start_date": "2026-01-01", "end_date": "2027-01-03"},  # longer than 366 days
+        {"label": "x" * 61, "start_date": "2026-11-01", "end_date": "2026-11-02"},  # label too long
+        {"label": "a\nb", "start_date": "2026-11-01", "end_date": "2026-11-02"},  # line break
+        {"label": "x", "start_date": "2026-11-01", "end_date": "2026-11-02", "extra": 1},  # field
+        {"label": "x", "start_date": "2026-11-01"},  # to missing
     ],
 )
 async def test_invalid_holiday_is_422(
@@ -351,7 +351,7 @@ async def test_invalid_time_zone_is_422(
 
 
 def _second_worlds(store: WorldStore, fake: FakeProvisioner) -> None:
-    """Welt W2 mit Container, Welt W3 ohne Container (der nächste Start schreibt)."""
+    """World W2 with a container, world W3 without a container (the next start writes)."""
     for world_id, port in ((W2, 30016), (W3, 30017)):
         store.insert_world(
             WorldRow(
@@ -406,7 +406,7 @@ async def test_changes_push_all_worlds(
     )
     assert response.status_code == 200, response.text
     assert _rules_worlds(fake) == {W1, W2}
-    # W3 hat keinen Container: nicht alle Welten tragen die Änderung schon.
+    # W3 has no container: not all worlds carry the change yet.
     assert response.json()["applied"] is False
 
 
@@ -430,7 +430,7 @@ async def test_holiday_switches_rules_immediately(
     assert line.split(" ")[3] == "ok"
 
 
-# Welt-Zeitfenster und Verwalter-Freistellung (04-05, ZEIT-05, O-05, A4)
+# World time window and manager exemption (04-05, ZEIT-05, O-05, A4)
 
 
 def _window_days(open_days: dict[int, tuple[int, int]]) -> list[dict[str, object]]:
@@ -474,7 +474,7 @@ async def test_world_window_set_and_cleared(
     assert store.world_window(W1) == {3: (600, 720)}
     assert _world_line(fake) is not None
 
-    # Ein neues Fenster ersetzt das alte vollständig (fehlender Tag = geschlossen).
+    # A new window replaces the old one completely (missing day = closed).
     replaced = await client.post(
         f"/api/playtime/worlds/{W1}/window", json={"days": _window_days({5: (900, 1020)})}, headers=appapi_headers()
     )
@@ -496,19 +496,19 @@ _EXTRA_DAY_FIELD = {"weekday": 1, "open": True, "window_start": 600, "window_end
 @pytest.mark.parametrize(
     "body",
     [
-        {"days": _window_days({3: (600, 720)})[:6]},  # nur 6 Tage
-        {"days": [*_window_days({3: (600, 720)})[:6], {"weekday": 1, "open": False}]},  # Dublette
-        {"days": [{"weekday": 1, "open": True}, *_window_days({})[1:]]},  # offen ohne Fenster
-        {"days": [{"weekday": 1, "open": True, "window_start": 600}, *_window_days({})[1:]]},  # nur Anfang
-        {"days": _window_days({1: (720, 600)})},  # Ende vor Beginn
-        {"days": _window_days({1: (600, 600)})},  # Ende gleich Beginn
-        {"days": _window_days({1: (-1, 600)})},  # Anfang negativ
-        {"days": _window_days({1: (600, 1441)})},  # Ende zu groß
-        {"days": [_CLOSED_WITH_WINDOW, *_window_days({})[1:]]},  # geschlossen mit Fenster
-        {"days": _window_days({})},  # alles geschlossen (immer offen heißt: Fenster entfernen)
-        {"days": [{"weekday": 8, "open": False}, *_window_days({})[1:]]},  # Wochentag 8
-        {"days": _window_days({1: (600, 720)}), "extra": 1},  # unbekanntes Feld
-        {"days": [_EXTRA_DAY_FIELD, *_window_days({})[1:]]},  # unbekanntes Tagesfeld
+        {"days": _window_days({3: (600, 720)})[:6]},  # only 6 days
+        {"days": [*_window_days({3: (600, 720)})[:6], {"weekday": 1, "open": False}]},  # duplicate
+        {"days": [{"weekday": 1, "open": True}, *_window_days({})[1:]]},  # open without a window
+        {"days": [{"weekday": 1, "open": True, "window_start": 600}, *_window_days({})[1:]]},  # start only
+        {"days": _window_days({1: (720, 600)})},  # end before start
+        {"days": _window_days({1: (600, 600)})},  # end equal to start
+        {"days": _window_days({1: (-1, 600)})},  # start negative
+        {"days": _window_days({1: (600, 1441)})},  # end too large
+        {"days": [_CLOSED_WITH_WINDOW, *_window_days({})[1:]]},  # closed with a window
+        {"days": _window_days({})},  # all closed (always open means: remove the window)
+        {"days": [{"weekday": 8, "open": False}, *_window_days({})[1:]]},  # weekday 8
+        {"days": _window_days({1: (600, 720)}), "extra": 1},  # unknown field
+        {"days": [_EXTRA_DAY_FIELD, *_window_days({})[1:]]},  # unknown day field
     ],
 )
 async def test_invalid_world_window_is_422(
@@ -574,7 +574,7 @@ async def test_get_playtime_fills_admin_snapshot_and_hides_admins(
     assert response.status_code == 200, response.text
     assert store.get_meta("time_admins") == '["admin"]'
     assert [child["nc_user"] for child in response.json()["children"]] == ["gw-kind"]
-    # Die geänderte Liste schreibt die Regeldatei aller Welten: Chef ist frei.
+    # The changed list writes the rules file of all worlds: Chef is exempt.
     assert "\nChef -1 -1 -1 frei -\n" in _last_rules(fake)
 
 
@@ -604,12 +604,12 @@ async def test_admin_snapshot_change_rerenders_all_worlds(
     fake_directory.groups["admin"] = ["admin", "gw-kind2"]
     fake.written.clear()
 
-    # Gedrosselt: der zweite Abruf innerhalb von 60 s fragt Nextcloud nicht erneut.
+    # Throttled: the second call within 60 s does not ask Nextcloud again.
     await client.get("/api/playtime", headers=appapi_headers())
     assert fake.written == []
     assert store.get_meta("time_admins") == '["admin"]'
 
-    # Eine Änderung (force) holt die Liste neu und schreibt alle Welten mit Container neu.
+    # A change (force) fetches the list anew and rewrites all worlds with a container.
     await client.post(
         f"/api/playtime/worlds/{W1}/window", json={"days": _window_days({3: (600, 720)})}, headers=appapi_headers()
     )

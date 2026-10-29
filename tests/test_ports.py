@@ -1,4 +1,4 @@
-"""Port-Vergabe: kleinster freier Port im Bereich."""
+"""Port allocation: smallest free port in the range."""
 
 from __future__ import annotations
 

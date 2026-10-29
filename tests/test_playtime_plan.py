@@ -1,9 +1,9 @@
-"""Reine Plan-Auswertung mit Golden Vectors (04-RESEARCH.md Pattern 4).
+"""Pure plan evaluation with golden vectors (04-RESEARCH.md pattern 4).
 
-Die Epoch-Zahlen stammen wörtlich aus der Golden-Vector-Tabelle der Research
-(``spike/golden_tz.py``, in ``python:3.13-slim-trixie`` gerechnet): So ist die
-Zeitrechnung gegen Umstellungstage (23 h und 25 h), Ferienwechsel und Tagesende
-festgeschrieben.
+The epoch numbers come verbatim from the golden vector table of the research
+(``spike/golden_tz.py``, computed in ``python:3.13-slim-trixie``): this pins the
+time calculation against switch days (23 h and 25 h), holiday changes and end of
+day.
 """
 
 import itertools
@@ -33,12 +33,12 @@ from gameworld.playtime.plan import (
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
-# Golden Vectors: lokaler Tag als Epoch [start, end).
+# Golden vectors: local day as epoch [start, end).
 SA_24 = (1792792800, 1792879200)  # 2026-10-24, 24 h
-SO_25 = (1792879200, 1792969200)  # 2026-10-25, 25 h (Ende der Sommerzeit)
+SO_25 = (1792879200, 1792969200)  # 2026-10-25, 25 h (end of summer time)
 MO_26 = (1792969200, 1793055600)  # 2026-10-26, 24 h
-SO_29_03 = (1774738800, 1774821600)  # 2026-03-29, 23 h (Beginn der Sommerzeit)
-# 19:00 lokal an den Umstellungstagen.
+SO_29_03 = (1774738800, 1774821600)  # 2026-03-29, 23 h (start of summer time)
+# 19:00 local on the switch days.
 CLOSE_24 = 1792861200
 CLOSE_25 = 1792951200
 CLOSE_26 = 1793037600
@@ -46,7 +46,7 @@ CLOSE_29_03 = 1774803600
 
 
 def _day(rule: DayRule, **overrides: DayRule) -> WeekPlan:
-    """Wochenplan mit einer Regel für alle Tage, einzelne Tage per Schlüssel wd1..wd7."""
+    """Weekly plan with one rule for all days, single days via the keys wd1..wd7."""
     days = dict.fromkeys(range(1, 8), rule)
     for name, value in overrides.items():
         days[int(name.removeprefix("wd"))] = value
@@ -54,7 +54,7 @@ def _day(rule: DayRule, **overrides: DayRule) -> WeekPlan:
 
 
 def test_zoneinfo_berlin_loads() -> None:
-    # Ohne tzdata wirft dieser Aufruf unter Windows ZoneInfoNotFoundError.
+    # Without tzdata this call raises ZoneInfoNotFoundError on Windows.
     assert load_zone("").key == DEFAULT_TIME_ZONE
     assert load_zone("Europe/Berlin").key == "Europe/Berlin"
 
@@ -119,16 +119,16 @@ def test_evaluate_child_day_not_allowed() -> None:
 def test_evaluate_child_before_window() -> None:
     rule = DayRule(True, None, 15 * 60, 19 * 60)
     plan = _day(rule)
-    now = MO_26[0] + 10 * 3600  # 10:00 lokal, Fenster erst ab 15:00
+    now = MO_26[0] + 10 * 3600  # 10:00 local, window only from 15:00
     state = evaluate_child(now, BERLIN, plan, None, [], 0)
     win_start, win_end = window_bounds(date(2026, 10, 26), BERLIN, rule)
     assert (state.start, state.until, state.rest_s, state.reason) == (win_start, win_end, 0, "fenster")
-    # WR-02: Ohne Limit trägt der Deckel vor dem Fenster schon "kein Limit".
+    # WR-02: without a limit the cap before the window already carries "no limit".
     assert state.cap_rest_s is None
 
 
 def test_evaluate_child_before_window_cap_rest_is_coming_window() -> None:
-    """WR-02: Vor dem Fenster ist rest_s 0 (gesperrt), cap_rest_s der Rest des kommenden Fensters."""
+    """WR-02: before the window rest_s is 0 (blocked), cap_rest_s the rest of the coming window."""
     rule = DayRule(True, 60, 15 * 60, 19 * 60)
     now = MO_26[0] + 10 * 3600
     state = evaluate_child(now, BERLIN, _day(rule), None, [], 20 * 60)
@@ -144,7 +144,7 @@ def test_evaluate_child_before_window_cap_rest_is_coming_window() -> None:
 def test_evaluate_child_in_window_with_limit() -> None:
     rule = DayRule(True, 60, 15 * 60, 19 * 60)
     plan = _day(rule)
-    now = MO_26[0] + 16 * 3600  # 16:00 lokal, im Fenster
+    now = MO_26[0] + 16 * 3600  # 16:00 local, inside the window
     state = evaluate_child(now, BERLIN, plan, None, [], 45 * 60)
     assert state.reason == "ok"
     assert state.rest_s == 900
@@ -166,26 +166,26 @@ def test_evaluate_child_whole_day_without_limit() -> None:
     state = evaluate_child(now, BERLIN, plan, None, [], 0)
     assert state.reason == "ok"
     assert state.rest_s is None
-    assert state.until == MO_26[1]  # lokales Tagesende, nie darüber hinaus (O-04)
+    assert state.until == MO_26[1]  # local end of day, never beyond it (O-04)
 
 
 def test_next_hint_weekend_from_wednesday() -> None:
     allowed = DayRule(True, None, 10 * 60, 19 * 60)
     closed = DayRule(False, None, None, None)
-    # Sa und So erlaubt ab 10:00, Mo bis Fr gesperrt.
+    # Sat and Sun allowed from 10:00, Mon to Fri blocked.
     plan = _day(closed, wd6=allowed, wd7=allowed)
-    wednesday = date(2026, 10, 21)  # ISO-Wochentag 3
+    wednesday = date(2026, 10, 21)  # ISO weekday 3
     assert wednesday.isoweekday() == 3
     now = day_bounds(wednesday, BERLIN)[0] + 12 * 3600
     assert next_hint(now, BERLIN, plan, None, []) == "Sa-10:00"
 
 
 def test_next_hint_crosses_holiday_end() -> None:
-    normal = _day(DayRule(False, None, None, None))  # Normalplan: nie erlaubt
-    holiday = _day(DayRule(True, None, 9 * 60, 20 * 60))  # Ferien: täglich ab 09:00
+    normal = _day(DayRule(False, None, None, None))  # Normal plan: never allowed
+    holiday = _day(DayRule(True, None, 9 * 60, 20 * 60))  # Holidays: daily from 09:00
     holidays = [Holiday(date(2026, 10, 20), date(2026, 10, 22), "Ferien")]
-    now = day_bounds(date(2026, 10, 23), BERLIN)[0] + 12 * 3600  # Fr nach Ferienende
-    # Normalplan ab jetzt nie erlaubt -> keine Spielzeit in 7 Tagen.
+    now = day_bounds(date(2026, 10, 23), BERLIN)[0] + 12 * 3600  # Fri after the end of the holidays
+    # Normal plan never allowed from now on -> no play time in 7 days.
     assert next_hint(now, BERLIN, normal, holiday, holidays) == "-"
 
 
@@ -210,14 +210,14 @@ def test_evaluate_world_no_windows_is_open() -> None:
 
 
 def test_evaluate_world_closed_day() -> None:
-    windows = {3: (10 * 60, 12 * 60)}  # nur Mittwoch offen
-    state = evaluate_world(MO_26[0] + 12 * 3600, BERLIN, windows)  # Montag
+    windows = {3: (10 * 60, 12 * 60)}  # only Wednesday open
+    state = evaluate_world(MO_26[0] + 12 * 3600, BERLIN, windows)  # Monday
     assert isinstance(state, WorldState)
     assert (state.start, state.until, state.reason) == (0, 0, "welt")
 
 
 def test_evaluate_world_in_window() -> None:
-    windows = {1: (15 * 60, 19 * 60)}  # Montag 15 bis 19 Uhr
+    windows = {1: (15 * 60, 19 * 60)}  # Monday 15 to 19 o'clock
     now = MO_26[0] + 16 * 3600
     state = evaluate_world(now, BERLIN, windows)
     assert state is not None
@@ -227,7 +227,7 @@ def test_evaluate_world_in_window() -> None:
 
 def test_evaluate_world_outside_window_same_day() -> None:
     windows = {1: (15 * 60, 19 * 60)}
-    state = evaluate_world(MO_26[0] + 10 * 3600, BERLIN, windows)  # vor dem Fenster
+    state = evaluate_world(MO_26[0] + 10 * 3600, BERLIN, windows)  # before the window
     assert state is not None
     assert state.reason == "welt"
     assert state.next_hint == "Mo-15:00"
@@ -246,7 +246,7 @@ def test_day_rule_validation() -> None:
         DayRule(True, None, 0, 0)
     with pytest.raises(ValueError, match="vor dem Fensterende"):
         DayRule(True, None, 600, 600)
-    # Gültige Randwerte werfen nicht.
+    # Valid boundary values do not raise.
     DayRule(True, 1, 0, 1440)
     DayRule(True, 1440, 1439, 1440)
 
@@ -264,14 +264,14 @@ def test_holiday_validation() -> None:
         Holiday(date(2026, 10, 26), date(2026, 10, 24), "falsch")
 
 
-# Nächster Start als Epoch und Tagesanfänge für die Zeile @tage (Quick 261021-481)
+# Next start as epoch and day starts for the @tage row (quick 261021-481)
 
 
 def test_next_start_carries_epoch_weekday_and_minute() -> None:
     plan = _day(DayRule(True, 60, 540, 1140))
     state = evaluate_child(SA_24[0] + 12 * 3600, BERLIN, plan, None, [], 3600)
     assert state.reason == "limit"
-    # Sonntag 25.10. 09:00 lokal: Die Uhr ist um 3 Uhr schon zurückgestellt, also Tagesanfang + 10 h.
+    # Sunday 25.10. 09:00 local: the clock is already set back at 3:00, so start of day + 10 h.
     assert state.next_start == NextStart(at=SO_25[0] + 10 * 3600, weekday=7, minute=540)
     assert state.next_hint == "So-09:00"
     assert state.next_start is not None
@@ -303,7 +303,7 @@ def test_day_starts_autumn_change() -> None:
     starts = day_starts(SA_24[0] + 12 * 3600, BERLIN)
     assert len(starts) == 9
     assert starts[:3] == (SA_24[0], SO_25[0], MO_26[0])
-    # Sonntag 25.10. hat 25 h, die übrigen Tage 24 h.
+    # Sunday 25.10. has 25 h, the other days 24 h.
     assert starts[2] - starts[1] == 25 * 3600
     assert all(later - earlier == 24 * 3600 for earlier, later in itertools.pairwise(starts[2:]))
 

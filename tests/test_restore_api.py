@@ -1,4 +1,4 @@
-"""Restore-API über ASGI: Verwalter-Sperre, strenger Body, 202, Fehler 403/404/409/422 (05-06)."""
+"""Restore API over ASGI: manager lock, strict body, 202, errors 403/404/409/422 (05-06)."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def _override(service: WorldService) -> Iterator[None]:
 async def _backed_up(
     client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner, store: WorldStore, name: str = "Burg"
 ) -> tuple[str, int]:
-    """Welt mit einer eigenen Sicherung über die echte Backup-Route; liefert (Welt, file_id)."""
+    """World with an own backup via the real backup route; returns (world, file_id)."""
     created = await service.create_world(name)
     fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
     fake.status_files[created.id] = StatusFile(FRESH, b"")
@@ -153,7 +153,7 @@ async def test_file_of_other_admin_is_404(
     store: WorldStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """D-13: Die Sicherung des Verwalters admin ist für papa nicht wiederherstellbar."""
+    """D-13: the backup of manager admin cannot be restored by papa."""
     monkeypatch.setitem(conftest.FAKE_PROFILES, "papa", ("Papa", ("admin",)))
     world_id, file_id = await _backed_up(client, service, fake, store)
 
@@ -256,7 +256,7 @@ async def test_players_online_without_confirm_disconnect_is_409(
 async def test_delete_only_world_can_be_restored(
     client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """D-15: Weltdaten fehlen heißt nicht nur noch löschen, sondern auch wiederherstellen."""
+    """D-15: missing world data means not only delete but also restore."""
     world_id, file_id = await _backed_up(client, service, fake, store)
     store.update_world(world_id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
 
@@ -277,7 +277,7 @@ async def test_restore_of_tampered_file_keeps_world(
     store: WorldStore,
     fake_files: FakeBackupFiles,
 ) -> None:
-    """202, aber im Hintergrund abgelehnt: Die Welt läuft unverändert weiter (T-05-29)."""
+    """202, but rejected in the background: the world keeps running unchanged (T-05-29)."""
     world_id, file_id = await _backed_up(client, service, fake, store)
     proof = store.backup_by_file("admin", file_id)
     assert proof is not None

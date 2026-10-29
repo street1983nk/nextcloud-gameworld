@@ -1,4 +1,4 @@
-"""Welt-Mod gameworld_time, Regeldatei und Zählbuch (04-RESEARCH.md Pattern 1 bis 3)."""
+"""World mod gameworld_time, rules file and ledger (04-RESEARCH.md patterns 1 to 3)."""
 
 from __future__ import annotations
 
@@ -220,10 +220,10 @@ def test_kid_text_next_week_with_minutes() -> None:
 
 @pytest.mark.parametrize("reason", ["fenster", "limit", "tag", "welt"])
 def test_kid_text_reached_start_is_not_contradictory(reason: str) -> None:
-    """WR-07: Ganzer Tag ohne Limit, Folgetag erlaubt, Trennen am Tagesende mit alter Regeldatei.
+    """WR-07: whole day without a limit, next day allowed, disconnect at end of day with the old rules file.
 
-    Der nächste Start (heute, Minute 0) ist schon erreicht; statt "Jetzt ist noch
-    keine Spielzeit. Heute kannst du spielen." kommt der Satz für "gleich wieder".
+    The next start (today, minute 0) has already been reached; instead of
+    "Jetzt ist noch keine Spielzeit. Heute kannst du spielen." the sentence for "back soon" is used.
     """
     assert kid_text(reason, 0, 4, 0) in {
         "Jetzt ist noch keine Spielzeit. Heute kannst du spielen.",
@@ -237,7 +237,7 @@ def test_kid_text_reached_start_is_not_contradictory(reason: str) -> None:
 
 
 def test_lua_text_treats_reached_start_as_soon() -> None:
-    """WR-07: text() im Mod prüft den erreichten Start vor dem Tagesbezug (Spiegel von kid_text)."""
+    """WR-07: text() in the mod checks the reached start before the day reference (mirror of kid_text)."""
     body = MOD_INIT_LUA[MOD_INIT_LUA.index("local function text(why, key)") :]
     guard = body.index("if st and st.at <= now() then return TEXT.start end")
     assert guard < body.index("day_phrase(key)")
@@ -250,7 +250,7 @@ def test_kid_text_never_says_midnight() -> None:
             for weekday in range(1, 8):
                 for minute in (0, 540, 870, 1439):
                     text = kid_text(reason, days_ahead, weekday, minute)
-                    # "0 Uhr" nur als eigene Zahl: "14:30" ist erlaubt, "0 Uhr" nie.
+                    # "0 Uhr" only as a standalone number: "14:30" is allowed, "0 Uhr" never.
                     assert not forbidden.search(text), text
 
 
@@ -328,12 +328,12 @@ def test_invalid_next_start_raises(line: TimeLine) -> None:
 def test_lua_parses_day_and_start_lines() -> None:
     for needle in ("^@tage ", "^@start ([%w_%-]+) (%d+) (%d+)$", "math.floor", "%d:%02d"):
         assert needle in MOD_INIT_LUA, needle
-    # Alte Mods lesen nur Zeilen ab [%w_%-]; das Muster bleibt, @-Zeilen passen nie darauf.
+    # Old mods read only lines starting with [%w_%-]; the pattern stays, @ lines never match it.
     assert "^([%w_%-]+) (%-?%d+) (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$" in MOD_INIT_LUA
 
 
 def test_rules_file_with_base_line() -> None:
-    """WR-06: @base folgt der Zeile mit Deckel (nach @start), Zeilen ohne Anker bleiben wie bisher."""
+    """WR-06: @base follows the line with the cap (after @start), lines without an anchor stay as before."""
     mia = TimeLine(
         cap=3600,
         start=1792800000,
@@ -367,7 +367,7 @@ def test_invalid_base_raises(line: TimeLine) -> None:
 
 
 def test_lua_shifts_cap_when_ledger_is_behind_base() -> None:
-    """WR-06: Der Mod liest @base und zieht den Rückstand des Zählbuchs vom Deckel ab."""
+    """WR-06: the mod reads @base and subtracts the ledger's backlog from the cap."""
     assert "^@base ([%w_%-]+) (%d+)$" in MOD_INIT_LUA
     assert "local behind = base - (used[name] or 0)" in MOD_INIT_LUA
     assert "local rest = r.cap - (shifts[name] or 0) - (used[name] or 0)" in MOD_INIT_LUA
@@ -395,13 +395,13 @@ def test_lua_contains_enforcement_points() -> None:
 
 
 def test_lua_warns_only_smallest_threshold() -> None:
-    # Beitritt mit 4 min Rest: nur "Noch 5 Minuten.", die 10-Minuten-Warnung gilt als gesendet.
+    # Join with 4 min left: only "Noch 5 Minuten.", the 10-minute warning counts as sent.
     assert "if l <= w then hit = w" in MOD_INIT_LUA
     assert "if w >= hit then marks[w] = true end" in MOD_INIT_LUA
 
 
 def test_lua_credits_from_join_time() -> None:
-    # Gutschrift ab Beitritt und anteilig beim Verlassen (Pitfall 3), Zählbuch sofort schreiben.
+    # Credit from join and pro rata on leaving (pitfall 3), write the ledger immediately.
     assert "since[player:get_player_name()] = core.get_us_time()" in MOD_INIT_LUA
     leave = MOD_INIT_LUA.index("core.register_on_leaveplayer")
     assert "write_ledger()" in MOD_INIT_LUA[leave:]
@@ -427,14 +427,14 @@ def test_paths_and_conf() -> None:
     assert RULES_FILE == "/var/lib/minetest/.minetest/worlds/world/gameworld_time.txt"
     assert LEDGER_FILE == "/var/lib/minetest/.minetest/worlds/world/gameworld_time_used.txt"
     assert f"name = {MOD_NAME}" in MOD_CONF
-    # Pitfall 5: Der Zugangstext gewinnt im Modus OR, weil gameworld_access zuerst lädt.
+    # Pitfall 5: the access text wins in mode OR, because gameworld_access loads first.
     assert "depends = gameworld_access" in MOD_CONF
     assert time_mod.TIME_HEADER == "gameworld-time 1"
     assert time_mod.LEDGER_HEADER == "gameworld-time-used 1"
     assert {"ok", "tag", "fenster", "limit", "frei"} == set(time_mod.REASONS)
 
 
-# Phase 4.1: Pause (D-03 bis D-05) und "Für heute Schluss" (D-26).
+# Phase 4.1: pause (D-03 to D-05) and "Für heute Schluss" (D-26).
 
 
 def test_pause_texts() -> None:
@@ -548,7 +548,7 @@ def test_lua_parses_pause_and_morgen_lines() -> None:
 def test_lua_paused_spares_only_frei() -> None:
     body = _lua_function("local function paused(name)")
     assert 'r.reason == "frei"' in body
-    # Kein "if not r then return false": auch Namen ohne Regelzeile pausieren (T-04.1-03).
+    # No "if not r then return false": names without a rules line pause too (T-04.1-03).
     assert "not r then" not in body
     assert "pause.ab - PAUSE_LEAD" in body
     assert "pause.bis" in body
@@ -576,7 +576,7 @@ def test_lua_warn10_event() -> None:
     assert "gameworld_access and gameworld_access.event" in body
 
 
-# Phase 5: Chat-Hinweis vor dem Cold-Backup (D-09, 05-RESEARCH.md Pattern 6).
+# Phase 5: chat notice before the cold backup (D-09, 05-RESEARCH.md pattern 6).
 
 
 def test_halt_texts() -> None:
@@ -638,7 +638,7 @@ def test_lua_halt_warns_once_and_disconnects_everyone() -> None:
     assert "halt_warned = halt" in tick
     assert "local cut = halt and now() >= halt" in tick
     assert "local p = not cut and paused(name)" in tick
-    # Der Halt trennt vor Pause und Regeln, auch frei-Spieler (der Server stoppt gleich).
+    # The halt disconnects before pause and rules, also frei players (the server stops right away).
     assert tick.index("if cut then\n      core.disconnect_player(name, HALT_TEXT)") < tick.index(
         "elseif p and now() >= pause.ab then"
     )

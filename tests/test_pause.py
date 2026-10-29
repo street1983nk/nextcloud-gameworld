@@ -1,4 +1,4 @@
-"""Pause (ELTERN-01): reine Zeitfenster-Logik, Morgen-Minuten und Zustand in SQLite (04.1-03)."""
+"""Pause (ELTERN-01): pure time window logic, tomorrow minutes and state in SQLite (04.1-03)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from gameworld.playtime.pause import (
 from gameworld.playtime.plan import DayRule, Holiday, WeekPlan, day_starts, load_zone, local_day
 from gameworld.worlds.store import WorldStore
 
-# Sa 2026-10-24 12:00 Europe/Berlin; morgen ist Sonntag (Umstellung auf Winterzeit).
+# Sat 2026-10-24 12:00 Europe/Berlin; tomorrow is Sunday (switch to winter time).
 FIXED = 1792836000
 ZONE = load_zone("")
 TOMORROW = local_day(FIXED, ZONE) + timedelta(days=1)
@@ -49,12 +49,12 @@ def test_start_window_fresh() -> None:
 
 def test_start_window_keeps_ab_of_running_pause() -> None:
     current = PauseState(started_by="admin", ab=1030, bis=1930, art=ART_PAUSE)
-    # Längere Dauer: neues Ende ab jetzt gerechnet, ab bleibt (kein zweiter Vorlauf).
+    # Longer duration: new end counted from now, from stays (no second lead time).
     assert start_window(1200, 60, current) == (1030, 1200 + 3600)
 
 
 def test_start_window_never_shortens_running_pause() -> None:
-    # Review-Szenario WR-01: A startet 60 min, B tippt 20 min später "15 Minuten".
+    # Review scenario WR-01: A starts 60 min, B types "15 Minuten" 20 min later.
     current = PauseState(started_by="mama", ab=1030, bis=1030 + 3600, art=ART_PAUSE)
     ab, bis = start_window(1030 + 1200, 15, current)
     assert (ab, bis) == (1030, 1030 + 3600)
@@ -117,12 +117,12 @@ def test_morgen_minutes_uses_holiday_plan() -> None:
     plans = {"gw-mia": (normal, holiday)}
     holidays = [Holiday(TOMORROW, TOMORROW + timedelta(days=3), "Herbst")]
     assert morgen_minutes(FIXED, ZONE, plans, holidays, {"gw-mia": "Mia"}) == {"Mia": 600}
-    # Ferien erst übermorgen: morgen gilt noch der Normalplan.
+    # Holidays only the day after tomorrow: tomorrow the normal plan still applies.
     later = [Holiday(TOMORROW + timedelta(days=1), TOMORROW + timedelta(days=3), "Herbst")]
     assert morgen_minutes(FIXED, ZONE, plans, later, {"gw-mia": "Mia"}) == {"Mia": -1}
 
 
-# Zustand in SQLite
+# State in SQLite
 
 
 @pytest.fixture

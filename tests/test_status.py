@@ -1,4 +1,4 @@
-"""Statusmodell ohne Docker: jede Zeile der Tabelle aus RESEARCH Pattern 3."""
+"""Status model without Docker: every row of the table from RESEARCH pattern 3."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def test_creating_is_starting() -> None:
     [None, ContainerInfo("cid", "n", "w", "exited", 30015), ContainerInfo("cid", "n", "w", "running", 30015)],
 )
 def test_backing_up_wins_over_container_state(container: ContainerInfo | None) -> None:
-    """D-10: Während der Sicherung ist der gestoppte Container kein Fehler."""
+    """D-10: during the backup the stopped container is not an error."""
     status = _derive(container, op_state="backing_up")
     assert status == WorldStatus(BACKING_UP, TEXT_BACKING_UP)
     assert status.text == "Wird gesichert ..."
@@ -111,7 +111,7 @@ def test_failed_without_message_has_fallback() -> None:
 
 
 def test_missing_container_is_error() -> None:
-    """Ohne Volume-Prüfung nie "Weltdaten vorhanden" behaupten (CR-01)."""
+    """Without a volume check never claim "world data present" (CR-01)."""
     status = _derive(None)
     assert status == WorldStatus(
         ERROR, "Der Server der Welt fehlt. Starten stellt ihn wieder her, falls die Weltdaten noch da sind."

@@ -1,4 +1,4 @@
-"""Elterntexte der Benachrichtigungen, Bereinigung und Deep Links (04.1-04, Pitfall 4, Pattern 9)."""
+"""Parent texts of the notifications, sanitizing and deep links (04.1-04, pitfall 4, pattern 9)."""
 
 import re
 
@@ -48,7 +48,7 @@ def test_attempt_message_keeps_values_in_highlight_params() -> None:
     assert params["world"]["name"] == "Baumhaus"
     assert params["player"]["name"] == "Fremder"
     assert params["time"]["name"] == "18:05"
-    # Werte stehen nie roh im Text.
+    # Values never appear raw in the text.
     assert "Baum" not in subject + message
     assert "Fremd" not in subject + message
 
@@ -110,7 +110,7 @@ def test_clean_origin_accepts_scheme_host_port(value: str) -> None:
 
 
 def test_page_link_with_webroot() -> None:
-    """WR-04: Nextcloud im Unterordner; der Link führt nicht mehr ins 404 unter /index.php."""
+    """WR-04: Nextcloud in a subfolder; the link no longer leads to the 404 under /index.php."""
     assert links.page_link("https://example.org/nextcloud", "pause", {}) == (
         "https://example.org/nextcloud/index.php/apps/app_api/embedded/gameworld/gameworld/pause"
     )
@@ -154,7 +154,7 @@ def test_join_base_rejects_manipulated_parts(origin: str, webroot: str) -> None:
         ("https://cloud.example", "https://neu.example", True, True, False),
         ("http://192.168.1.10", "https://cloud.example", False, False, True),
         ("http://192.168.1.10", "https://cloud.example", True, True, False),
-        # https wird nie durch http ersetzt, auch nicht bestätigt, und ohne Rückfrage.
+        # https is never replaced by http, not even confirmed, and without a prompt.
         ("https://cloud.example", "http://192.168.1.10", False, False, False),
         ("https://cloud.example", "http://192.168.1.10", True, False, False),
         ("https://cloud.example", "http://cloud.example", True, False, False),

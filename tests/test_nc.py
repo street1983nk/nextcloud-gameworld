@@ -1,4 +1,4 @@
-"""Kurzlebige Nextcloud-Clients (WR-05): Konto ohne Capabilities-Request, Sessions immer zu."""
+"""Short-lived Nextcloud clients (WR-05): account without capabilities request, sessions always closed."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from tests.conftest import assert_closed, install_fake_nc
 
 
 def _spy_close(nc: AsyncNextcloudApp) -> list[AsyncMock]:
-    """Ersetzt close beider echter Sessions durch einen Spion, der das echte close aufruft."""
+    """Replaces close of both real sessions with a spy that calls the real close."""
     spies: list[AsyncMock] = []
     session: Any = nc._session  # pyright: ignore[reportPrivateUsage]
     for name in ("adapter", "adapter_dav"):
@@ -33,7 +33,7 @@ def _spy_close(nc: AsyncNextcloudApp) -> list[AsyncMock]:
 
 
 async def _auth_user(nc: AsyncNextcloudApp) -> str:
-    """Konto, das nc_py_api beim nächsten Request in AUTHORIZATION-APP-API schreibt."""
+    """Account that nc_py_api writes to AUTHORIZATION-APP-API on the next request."""
     session: Any = nc._session  # pyright: ignore[reportPrivateUsage]
     request = SimpleNamespace(headers={})
     await session._add_auth(request)
@@ -84,7 +84,7 @@ async def test_nc_app_has_no_user_and_closes(app_env: Path) -> None:
 
 
 async def test_parallel_clients_never_share_identity(app_env: Path) -> None:
-    """Kein geteilter Client über set_user: Gleichzeitige Abläufe behalten ihr Konto (Identitäts-Rennen)."""
+    """No shared client via set_user: concurrent flows keep their account (identity race)."""
     del app_env
 
     async def who(uid: str) -> str:
@@ -138,7 +138,7 @@ async def test_player_secret_closes_its_client() -> None:
 
 
 def test_module_builds_clients_only_here() -> None:
-    """Nur gameworld.nc baut AsyncNextcloudApp; alle anderen nutzen nc_as/nc_app (grep-Gegenprobe)."""
+    """Only gameworld.nc builds AsyncNextcloudApp; everyone else uses nc_as/nc_app (grep counter-check)."""
     src = Path(nc_mod.__file__).resolve().parent
     offenders = [
         str(path.relative_to(src))
@@ -149,7 +149,7 @@ def test_module_builds_clients_only_here() -> None:
 
 
 async def test_nc_as_passes_backup_options_and_closes_on_error(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Backup-Clients: Timeout 600 s und Upload v1 kommen beim Konstruktor an; Sessions auch nach Ausnahme zu."""
+    """Backup clients: timeout 600 s and upload v1 reach the constructor; sessions close even after an exception."""
     del app_env
     app = MagicMock()
     recorder = install_fake_nc(monkeypatch, app)
@@ -175,13 +175,12 @@ async def test_nc_as_options_reach_real_session(app_env: Path) -> None:
 
 
 async def test_group_members_uses_endpoint_open_to_members(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Gruppenmitglieder über /cloud/groups/{gid}/users (06-12, Kriterium 5).
+    """Group members via /cloud/groups/{gid}/users (06-12, criterion 5).
 
-    Der alte Endpunkt /cloud/groups/{gid} (nc_py_api ``users_groups.get_members``)
-    verlangt Subadmin-Rechte; ein Gruppen-Verwalter, der nur Mitglied seiner Gruppe
-    ist, bekam dort 403 und konnte niemanden einladen (am Test-Stack mit HaRP
-    belegt, 24.10.2026). /users erlaubt Nextcloud Mitgliedern, Nicht-Mitglieder
-    bleiben abgewiesen.
+    The old endpoint /cloud/groups/{gid} (nc_py_api ``users_groups.get_members``)
+    requires subadmin rights; a group manager who is only a member of their group
+    got 403 there and could not invite anyone (evidenced on the test stack with HaRP,
+    24.10.2026). /users lets Nextcloud members through, non-members stay rejected.
     """
     app = MagicMock()
     app.ocs = AsyncMock(return_value={"users": ["gw-kind-k", "gw-lehrer"]})

@@ -1,4 +1,4 @@
-"""GET/POST /api/settings: Spieler-Adresse (join_host), nur für Verwalter, streng validiert (T-03-41, T-03-42)."""
+"""GET/POST /api/settings: player address (join_host), managers only, strictly validated (T-03-41, T-03-42)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Die gehärtete Container-Spec ist fest kodiert und ohne Docker prüfbar (WELT-05)."""
+"""The hardened container spec is hard-coded and checkable without Docker (WELT-05)."""
 
 import pytest
 

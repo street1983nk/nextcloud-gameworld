@@ -1,4 +1,4 @@
-"""Tagesrückblick: Fälligkeit und Zeile je Kind (D-12 bis D-15)."""
+"""Daily review: due time and row per child (D-12 to D-15)."""
 
 from gameworld.notify.review import REVIEW_GRACE_MINUTES, minutes, review_due, review_line
 
@@ -29,14 +29,14 @@ def test_review_due() -> None:
 
 
 def test_review_due_only_in_window_after_pref() -> None:
-    """WR-03: Nach dem 30-Minuten-Fenster ist der Rückblick nicht mehr fällig, auch nicht spätabends."""
+    """WR-03: after the 30-minute window the review is no longer due, not even late in the evening."""
     assert REVIEW_GRACE_MINUTES == 30
     assert not review_due(1230, 1200, enabled=True)
     assert not review_due(1290, 1200, enabled=True)
     assert not review_due(1439, 1200, enabled=True)
-    # Früh eingestellt (0:15): morgens um 9 nicht mehr fällig.
+    # Set early (0:15): no longer due at 9 in the morning.
     assert review_due(15, 15, enabled=True)
     assert not review_due(540, 15, enabled=True)
-    # Spät eingestellt (23:45): bis Tagesende fällig, nie über den Tag hinaus.
+    # Set late (23:45): due until the end of the day, never beyond the day.
     assert review_due(1439, 1425, enabled=True)
     assert not review_due(0, 1425, enabled=True)

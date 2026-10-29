@@ -1,8 +1,8 @@
-"""Event-Loop-Wahl beim Start (Debug-Session backend-windows-invalidstate).
+"""Event loop choice at startup (debug session backend-windows-invalidstate).
 
-Unter Windows startet uvicorn mit dem Selector-Loop, weil der Proactor-Loop bei
-Off-Thread-Finalisierung offener Verbindungen mit InvalidStateError abstürzt.
-Überall sonst bleibt uvicorns Vorgabe "auto" (im Linux-Container uvloop).
+On Windows uvicorn starts with the selector loop, because the proactor loop crashes
+with InvalidStateError when open connections are finalized off-thread.
+Everywhere else uvicorn's default "auto" stays (uvloop in the Linux container).
 """
 
 from __future__ import annotations

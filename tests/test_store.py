@@ -1,4 +1,4 @@
-"""Schema-Migration der Welt-Datenbank (Schema 1 bis 8), Zugangsdaten, Sicherungsnachweise und Verwalter-Stand."""
+"""Schema migration of the world database (schema 1 to 8), access data, backup records and manager state."""
 
 import pathlib
 import sqlite3
@@ -23,7 +23,7 @@ from gameworld.worlds.store import (
     WorldStore,
 )
 
-# Phase-1-DDL wörtlich, damit die Migration gegen eine echte Altdatei läuft.
+# Phase 1 DDL verbatim, so that the migration runs against a real old file.
 SCHEMA_1 = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE worlds (
@@ -114,7 +114,7 @@ def test_fresh_file_gets_current_schema(tmp_path: pathlib.Path) -> None:
     assert world.time_generation == 0
 
 
-# Schema 3 (03-03): Spieler, Einladungen, Zugang je Welt, ohne Passwortfeld (A3).
+# Schema 3 (03-03): players, invitations, access per world, without a password field (A3).
 
 SCHEMA_2_EXTRA = """
 ALTER TABLE worlds ADD COLUMN preset TEXT NOT NULL DEFAULT 'mtg_kreativ';
@@ -231,9 +231,9 @@ def test_delete_access_data_only_touches_one_world(tmp_path: pathlib.Path) -> No
     assert store.get_player("gw-kind") is not None
 
 
-# Schema 4 (04-02): Spielzeit-Regeln, Ferien, Welt-Fenster, Verbrauch, Zählbuchstände.
+# Schema 4 (04-02): play time rules, holidays, world window, usage, ledger states.
 
-# Echte Schema-3-DDL mit Daten, damit die Migration 3 auf 4 gegen Altbestand läuft.
+# Real schema 3 DDL with data, so that migration 3 to 4 runs against old data.
 SCHEMA_3 = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE worlds (
@@ -310,7 +310,7 @@ def test_set_child_plan_writes_7_or_14_rows(tmp_path: pathlib.Path) -> None:
     normal, holiday = plans["gw-kind"]
     assert holiday is None
     assert normal.days[1] == DayRule(True, 60, 900, 1140)
-    # Mit Ferienplan: 14 Zeilen, Ferienplan vorhanden.
+    # With a holiday plan: 14 rows, holiday plan present.
     store.set_child_plan("gw-kind", _week(), _week(limit=120, start=540, end=1200), "admin", "t2")
     assert _plan_row_count(db) == 14
     normal, holiday = store.child_plans()["gw-kind"]
@@ -319,7 +319,7 @@ def test_set_child_plan_writes_7_or_14_rows(tmp_path: pathlib.Path) -> None:
 
 
 def test_clear_child_removes_rules_and_old_usage_keeps_today(tmp_path: pathlib.Path) -> None:
-    """WR-04: Regeln weg, alter Verbrauch weg, der heutige bleibt (kein frisches Kontingent)."""
+    """WR-04: rules gone, old usage gone, today's stays (no fresh allowance)."""
     store = _store3(tmp_path)
     store.set_child_plan("gw-kind", _week(), None, "admin", "t")
     store.add_usage("gw-kind", date(2026, 10, 20), 300)
@@ -373,7 +373,7 @@ def test_world_windows(tmp_path: pathlib.Path) -> None:
     store = _store3(tmp_path)
     assert store.world_window("w1") is None
     store.set_world_window("w1", 3, 600, 720)
-    store.set_world_window("w1", 3, 600, 780)  # überschreibt denselben Wochentag
+    store.set_world_window("w1", 3, 600, 780)  # overwrites the same weekday
     store.set_world_window("w1", 5, 900, 1020)
     assert store.world_window("w1") == {3: (600, 780), 5: (900, 1020)}
     store.clear_world_window("w1")
@@ -409,11 +409,11 @@ def _plan_row_count(db: pathlib.Path) -> int:
         connection.close()
 
 
-# Schema 5 (Phase 4.1): Benachrichtigung, Pause, Rückblick, Talk.
+# Schema 5 (phase 4.1): notification, pause, review, Talk.
 
 
 def _schema_4_file(tmp_path: pathlib.Path) -> pathlib.Path:
-    """Echte Schema-4-Datei: heutiges Schema ohne die Tabellen aus Schema 5, mit Daten."""
+    """Real schema 4 file: today's schema without the tables from schema 5, with data."""
     db = _schema_3_file(tmp_path)
     store = WorldStore(db)
     store.migrate()
@@ -597,18 +597,18 @@ def test_delete_notify_data_only_touches_one_world(tmp_path: pathlib.Path) -> No
     assert [row.world_id for row in store.outbox_batch()] == ["w2"]
     assert store.run_state("w1") is None
     assert store.run_state("w2") is True
-    # Spielzeit bleibt für den Rückblick des Tages (Abnahme 04.1-09).
+    # Play time stays for the review of the day (acceptance 04.1-09).
     assert store.play_seconds(day) == {("gw-kind", "w1"): 10, ("gw-kind", "w2"): 10}
     assert _world_ids(db, "join_attempts") == ["w2"]
     assert _world_ids(db, "bot_presence") == ["w2"]
     assert _world_ids(db, "talk_rooms") == ["w1", "w2"]
 
 
-# Schema 7 (Phase 5): Sicherungen und Sicherungs-Aufträge.
+# Schema 7 (phase 5): backups and backup jobs.
 
 
 def _schema_6_file(tmp_path: pathlib.Path) -> pathlib.Path:
-    """Echte Schema-6-Datei: heutiges Schema ohne die Tabellen aus Schema 7, mit Daten."""
+    """Real schema 6 file: today's schema without the tables from schema 7, with data."""
     db = tmp_path / "gameworld.sqlite3"
     store = WorldStore(db)
     store.migrate()
@@ -692,7 +692,7 @@ def test_add_backup_same_file_id_replaces(tmp_path: pathlib.Path) -> None:
     replaced = BackupRow(**{**_backup(7).__dict__, "size": 5, "sha256": "cd" * 32})
     store.add_backup(replaced)
     assert store.backups_for("admin", "w1") == [replaced]
-    # Gleiche file_id eines anderen Verwalters ist ein eigener Eintrag.
+    # The same file_id of another manager is a separate entry.
     store.add_backup(_backup(7, owner="papa"))
     assert store.backup_by_file("admin", 7) == replaced
 
@@ -724,7 +724,7 @@ def test_reset_event_cursor_only_one_world(tmp_path: pathlib.Path) -> None:
     assert store.event_cursor("w2") == 9
 
 
-# Schema 8 (Phase 6): Erwachsen-Schalter, Dienstalter, Verwalter-Stand je Gruppe, Talk-Übernahme.
+# Schema 8 (phase 6): adult switch, tenure, manager state per group, Talk takeover.
 
 
 def _talk_columns(db: pathlib.Path) -> set[str]:
@@ -736,7 +736,7 @@ def _talk_columns(db: pathlib.Path) -> set[str]:
 
 
 def _schema_7_file(tmp_path: pathlib.Path) -> pathlib.Path:
-    """Echte Schema-7-Datei: ohne die Tabellen aus Schema 8 und ohne die zwei Talk-Spalten, mit Daten."""
+    """Real schema 7 file: without the tables from schema 8 and without the two Talk columns, with data."""
     db = tmp_path / "gameworld.sqlite3"
     store = WorldStore(db)
     store.migrate()
@@ -810,11 +810,11 @@ def test_verwalter_seen_keeps_first_day_and_orders_by_seniority(tmp_path: pathli
     store.sync_verwalter_seen({"zora"}, "2026-10-01T08:00:00+00:00")
     store.sync_verwalter_seen({"zora", "anna", "bert"}, "2026-10-02T08:00:00+00:00")
     store.sync_verwalter_seen({"zora", "anna", "bert"}, "2026-10-03T08:00:00+00:00")
-    # zora zuerst gesehen; anna und bert am selben Tag, Gleichstand nach Konto-ID.
+    # zora seen first; anna and bert on the same day, tie broken by account ID.
     assert store.verwalter_seniority() == ["zora", "anna", "bert"]
     store.sync_verwalter_seen({"anna", "bert"}, "2026-10-04T08:00:00+00:00")
     assert store.verwalter_seniority() == ["anna", "bert"]
-    # Wer zurückkommt, beginnt neu (kein Dienstalter aus der Zeit davor).
+    # Whoever comes back starts over (no tenure from the time before).
     store.sync_verwalter_seen({"anna", "bert", "zora"}, "2026-10-05T08:00:00+00:00")
     assert store.verwalter_seniority() == ["anna", "bert", "zora"]
 
@@ -828,7 +828,7 @@ def _adult_rows(db: pathlib.Path) -> list[str]:
 
 
 def test_forget_account_removes_adult_row_of_this_account_only(tmp_path: pathlib.Path) -> None:
-    """P-08: Eine neu angelegte gleiche Konto-ID darf nie sofort erwachsen sein."""
+    """P-08: a newly created identical account ID must never be an adult immediately."""
     store = _store3(tmp_path)
     db = tmp_path / "gameworld.sqlite3"
     connection = sqlite3.connect(db)

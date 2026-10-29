@@ -1,15 +1,15 @@
-"""Strukturtest der Routen-Sperren (06-02, RESEARCH F-03, T-06-06, T-06-12).
+"""Structure test of the route blocks (06-02, RESEARCH F-03, T-06-06, T-06-12).
 
-Seit Phase 6 steht ^/api/.* in info.xml auf USER: AppAPI lässt jedes angemeldete
-Konto bis zur ExApp durch. Die einzige Sperre der Verwaltung ist darum
-require_verwalter bzw. require_nc_admin in Python. Dieser Test liest die Routen
-aus der echten App (nicht aus einer Hand-Liste) und verlangt für jede Route
-unter /api/ außer /api/me und /api/my/ eine der beiden Sperren im
-Abhängigkeitsbaum, für /api/admin/ require_nc_admin.
+Since phase 6 ^/api/.* in info.xml is set to USER: AppAPI lets every signed-in
+account through to the ExApp. The only block of the administration is therefore
+require_verwalter or require_nc_admin in Python. This test reads the routes
+from the real app (not from a hand list) and demands for every route
+under /api/ except /api/me and /api/my/ one of the two blocks in the
+dependency tree, for /api/admin/ require_nc_admin.
 
-Gegenprobe (Owner-Regel): Der Prüfer erkennt auf einer frischen App eine bewusst
-ungesperrte Route als Verstoß; der Kind-Negativtest prüft dieselben Routen über
-echte Anfragen.
+Counter-check (owner rule): on a fresh app the checker recognizes a deliberately
+unblocked route as a violation; the child negative test checks the same routes via
+real requests.
 """
 
 from __future__ import annotations
@@ -32,12 +32,12 @@ from tests.conftest import FakeDirectory, appapi_headers
 
 INFO_XML = Path(__file__).resolve().parent.parent / "appinfo" / "info.xml"
 KID = "gw-kind"
-# Beispielwerte für Pfadparameter; die Sperre greift vor jeder Pfadprüfung.
+# Example values for path parameters; the block applies before any path check.
 SAMPLE_PARAMS = {"world_id": "aaaaaaaaaaa1", "nc_user": "gw-kind", "holiday_id": "1"}
 
 
 def _flat_routes(routes: Sequence[BaseRoute]) -> list[BaseRoute]:
-    """Alle Routen samt eingebundener Router; FastAPI 0.14x hält sie nicht mehr flach in app.routes."""
+    """All routes including mounted routers; FastAPI 0.14x no longer keeps them flat in app.routes."""
     flatten: Callable[[Sequence[BaseRoute]], Iterable[BaseRoute]] | None = getattr(
         fastapi.routing, "_iter_included_route_candidates", None
     )
@@ -45,7 +45,7 @@ def _flat_routes(routes: Sequence[BaseRoute]) -> list[BaseRoute]:
 
 
 def _dependency_calls(route: APIRoute) -> set[Callable[..., Any]]:
-    """Alle Abhängigkeits-Callables einer Route, rekursiv über den ganzen Baum."""
+    """All dependency callables of a route, recursively over the whole tree."""
     found: set[Callable[..., Any]] = set()
     stack = list(route.dependant.dependencies)
     while stack:
@@ -57,7 +57,7 @@ def _dependency_calls(route: APIRoute) -> set[Callable[..., Any]]:
 
 
 def _is_self_service(path: str) -> bool:
-    """Nur eigene Daten (ROLLE-01): /api/me und /api/my/... ohne Verwalter-Sperre."""
+    """Own data only (ROLLE-01): /api/me and /api/my/... without a manager block."""
     return path == "/api/me" or path.startswith("/api/my/")
 
 
@@ -66,7 +66,7 @@ def _is_admin(path: str) -> bool:
 
 
 def guard_violations(app: FastAPI) -> list[str]:
-    """Routen unter /api/ ohne passende Sperre, als "METHODEN PFAD"."""
+    """Routes under /api/ without a matching block, as "METHODS PATH"."""
     violations: list[str] = []
     for route in _flat_routes(app.routes):
         path = str(getattr(route, "path", ""))
@@ -92,7 +92,7 @@ def _app() -> FastAPI:
 
 
 def _guarded_requests() -> list[tuple[str, str, bool]]:
-    """(Verb, Pfad mit Beispielwerten, Admin-Abschnitt?) für jede gesperrte Route der echten App."""
+    """(verb, path with example values, admin section?) for every blocked route of the real app."""
     result: list[tuple[str, str, bool]] = []
     for route in _flat_routes(_app().routes):
         if not isinstance(route, APIRoute):
@@ -108,7 +108,7 @@ def _guarded_requests() -> list[tuple[str, str, bool]]:
 GUARDED = _guarded_requests()
 
 
-# Struktur
+# Structure
 
 
 def test_every_api_route_carries_a_guard() -> None:
@@ -116,11 +116,11 @@ def test_every_api_route_carries_a_guard() -> None:
 
 
 def test_route_listing_is_not_vacuous() -> None:
-    """Fände die Auflistung nach einem FastAPI-Update keine Routen mehr, wäre der Strukturtest leer."""
+    """If the listing found no routes after a FastAPI update, the structure test would be empty."""
     paths = {path for _method, path, _admin in GUARDED}
     assert len(GUARDED) >= 40
     assert {"/api/worlds", "/api/admin/verwalter-groups", "/api/admin/groups", "/api/pause"} <= paths
-    # Orphan-Routen (06-08): Liste und gezieltes Entfernen nur für NC-Admins.
+    # Orphan routes (06-08): list and targeted removal only for NC admins.
     assert {"/api/admin/orphans", "/api/admin/orphans/container/remove", "/api/admin/orphans/volume/remove"} <= paths
     assert sum(1 for _method, _path, admin in GUARDED if admin) == 7
 
@@ -136,7 +136,7 @@ def test_admin_routes_carry_nc_admin_guard() -> None:
 
 
 def test_checker_flags_an_unguarded_route() -> None:
-    """Positivkontrolle des Prüfers: ungesperrt und falsch gesperrt (Admin nur mit Verwalter) sind Verstöße."""
+    """Positive control of the checker: unblocked and wrongly blocked (admin only with manager) are violations."""
     probe = FastAPI()
     open_router = APIRouter(prefix="/api")
 
@@ -176,12 +176,12 @@ def test_checker_flags_an_unguarded_route() -> None:
     assert guard_violations(probe) == ["GET /api/probe", "POST /api/admin/probe"]
 
 
-# Negativtest über echte Anfragen
+# Negative test via real requests
 
 
 @pytest.fixture
 def no_service(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Der Weltdienst darf für ein Kind nie gebaut werden."""
+    """The world service must never be built for a child."""
     del app_env
     calls: list[str] = []
 
@@ -210,7 +210,7 @@ async def test_child_gets_403_on_every_guarded_route(
     assert fake_directory.group_calls == []
 
 
-# Spike-Routen (D-23): bleiben im Manifest, antworten ohne Schalter mit 404
+# Spike routes (D-23): stay in the manifest, answer 404 without the switch
 
 
 def test_spike_routes_stay_in_manifest() -> None:
@@ -225,6 +225,6 @@ async def test_spike_routes_are_404_without_switch(client: httpx.AsyncClient, mo
     assert page.status_code == 404
     ticket = await client.post("/api/my/play-ticket", json={"world_id": "aaaaaaaaaaa1"}, headers=appapi_headers(KID))
     assert ticket.status_code == 404
-    # Auch ein Verwalter bekommt ohne Schalter nichts.
+    # Even a manager gets nothing without the switch.
     admin_ticket = await client.post("/api/my/play-ticket", json={"world_id": "aaaaaaaaaaa1"}, headers=appapi_headers())
     assert admin_ticket.status_code == 404

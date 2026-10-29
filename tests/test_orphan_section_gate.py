@@ -1,9 +1,9 @@
-"""B3-Weiche (06-09): /api/me nc_admin und die Server-Sperre der Orphan-Routen stimmen überein.
+"""B3 switch (06-09): /api/me nc_admin and the server block of the orphan routes agree.
 
-Unabhängig von tests/test_orphans.py: eigener Spion statt Docker-Attrappe. Die Oberfläche
-blendet OrphanSection nur bei nc_admin === true ein (frontend/tests/orphans.check.mjs);
-hier wird belegt, dass genau diese Konten die Routen nutzen dürfen und alle anderen 403
-bekommen, ohne dass der Provisioner je angefasst wird.
+Independent of tests/test_orphans.py: own spy instead of a Docker dummy. The UI
+shows OrphanSection only for nc_admin === true (frontend/tests/orphans.check.mjs);
+this proves that exactly these accounts may use the routes and all others get
+403, without the provisioner ever being touched.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ async def test_non_admin_sees_no_section_and_gets_403(
 ) -> None:
     me = (await client.get("/api/me", headers=appapi_headers(user))).json()
     assert me["role"] == role
-    # Die UI-Weiche: ohne nc_admin === true wird OrphanSection nicht eingehängt.
+    # The UI switch: without nc_admin === true OrphanSection is not mounted.
     assert me["nc_admin"] is False
     for method, path, body in ROUTES:
         assert await _call(client, method, path, body, user) == 403, path

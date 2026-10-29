@@ -1,4 +1,4 @@
-"""Pause-API über ASGI: Verwalter-Sperre, Validierung, Ausrollen an alle Welten, Neustart alter Mods (04.1-03)."""
+"""Pause API over ASGI: manager lock, validation, rollout to all worlds, restart of old mods (04.1-03)."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def _row(world_id: str, name: str, port: int) -> WorldRow:
 
 
 def _new_mod(fake: FakeProvisioner, world_id: str) -> None:
-    """Laufende Welt mit neuem Mod: Ereignisdatei jünger als StartedAt."""
+    """Running world with a new mod: event file younger than StartedAt."""
     fake.extra[world_id] = {"started_at": STARTED_AT}
     fake.events[world_id] = StatusFile(FRESH, EVENTS)
 
@@ -170,7 +170,7 @@ async def test_old_mod_world_is_restarted(
     client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner
 ) -> None:
     del service
-    # W1 läuft noch mit altem Mod: keine Ereignisdatei.
+    # W1 still runs with the old mod: no event file.
     del fake.events[W1]
     response = await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())
     assert response.status_code == 200, response.text
@@ -181,14 +181,14 @@ async def test_old_mod_world_is_restarted(
     assert fake.stopped == [W1]
     assert fake.started == [W1]
     assert fake.calls.index(f"stop:{W1}") < fake.calls.index(f"start:{W1}")
-    # Der Neustart schreibt die Regeldatei mit Pause vor dem Start (_launch).
+    # The restart writes the rules file with the pause before the start (_launch).
     assert "@pause" in _rules_of(fake, W1)
 
 
 async def test_unreadable_events_file_restarts_fail_closed(
     client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner
 ) -> None:
-    """AR-41-09: Ohne lesbare Ereignisdatei ist der Mod-Stand unklar, die Pause startet neu."""
+    """AR-41-09: without a readable event file the mod state is unclear, the pause restarts."""
     del service
     fake.events_error = DockerUnavailableError("Proxy weg")
     response = await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())
@@ -203,7 +203,7 @@ async def test_unreadable_events_file_restarts_fail_closed(
 async def test_missing_started_at_restarts_fail_closed(
     client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner
 ) -> None:
-    """AR-41-09: Ohne StartedAt ist nicht entscheidbar, ob die Ereignisdatei aus diesem Lauf stammt."""
+    """AR-41-09: without StartedAt it cannot be decided whether the event file comes from this run."""
     del service
     fake.extra[W1] = {}
     response = await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())
@@ -235,7 +235,7 @@ async def test_end_pause_removes_line_and_is_idempotent(
     again = await client.post("/api/pause/end", headers=appapi_headers())
     assert again.status_code == 200
     assert again.json()["active"] is False
-    # Ohne laufende Pause keine neue Bot-Meldung "Die Pause ist vorbei".
+    # Without a running pause no new bot message "Die Pause ist vorbei".
     assert [kind for _world, kind, _detail in _outbox(store)].count("pause_end") == 2
 
 
@@ -259,7 +259,7 @@ async def test_schluss_until_next_local_day_keeps_usage(
 async def test_second_shorter_pause_never_shortens_or_announces(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake: FakeProvisioner
 ) -> None:
-    """WR-01: Zweiter Elternteil tippt "15 Minuten" in eine laufende 60-min-Pause."""
+    """WR-01: second parent types "15 Minuten" into a running 60-min pause."""
     del service
     first = (await client.post("/api/pause", json={"minutes": 60}, headers=appapi_headers())).json()
     store.delete_outbox([row.id for row in store.outbox_batch(limit=1000)])
@@ -268,14 +268,14 @@ async def test_second_shorter_pause_never_shortens_or_announces(
     data = second.json()
     assert (data["active"], data["art"], data["ab"], data["bis"]) == (True, "pause", first["ab"], first["bis"])
     assert f"@pause {first['ab']} {first['bis']} pause" in _rules_of(fake, W1)
-    # Nichts geändert, also auch keine Bot-Meldung "Pause bis ..." mit falscher Uhrzeit.
+    # Nothing changed, so also no bot message "Pause bis ..." with a wrong time.
     assert _outbox(store) == []
 
 
 async def test_pause_button_during_schluss_keeps_schluss(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake: FakeProvisioner
 ) -> None:
-    """WR-01: "Für heute Schluss" wird nie zur kurzen Pause herabgestuft."""
+    """WR-01: "Für heute Schluss" is never downgraded to a short pause."""
     del service
     schluss = (await client.post("/api/pause/schluss", headers=appapi_headers())).json()
     store.delete_outbox([row.id for row in store.outbox_batch(limit=1000)])
@@ -294,7 +294,7 @@ async def test_pause_button_during_schluss_keeps_schluss(
 async def test_longer_second_pause_extends_and_announces(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """Positivkontrolle: Eine längere Dauer verlängert und meldet das neue Ende."""
+    """Positive control: a longer duration extends and reports the new end."""
     del service
     first = (await client.post("/api/pause", json={"minutes": 15}, headers=appapi_headers())).json()
     store.delete_outbox([row.id for row in store.outbox_batch(limit=1000)])
@@ -337,7 +337,7 @@ async def test_pause_survives_app_restart(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake: FakeProvisioner
 ) -> None:
     started = (await client.post("/api/pause", json={"minutes": 30}, headers=appapi_headers())).json()
-    # Neuer Prozess: neuer Dienst und neue Rechnung über derselben Datenbank.
+    # New process: new service and new calculation over the same database.
     fresh = WorldService(store, cast(DockerProvisioner, fake), load_settings())
     data, _changed = fresh.time.render(W1)
     assert f"@pause {started['ab']} {started['bis']} pause" in data.decode("ascii")

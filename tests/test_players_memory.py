@@ -1,4 +1,4 @@
-"""Spielernamen aus der Status-Datei und RAM-Formel aus docker stats, ohne Docker."""
+"""Player names from the status file and RAM formula from docker stats, without Docker."""
 
 from __future__ import annotations
 

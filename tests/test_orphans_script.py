@@ -1,9 +1,9 @@
-"""Host-Skript scripts/gameworld-orphans.sh (06-08, T-06-36) gegen eine docker-Attrappe.
+"""Host script scripts/gameworld-orphans.sh (06-08, T-06-36) against a docker dummy.
 
-Die Attrappe protokolliert jeden Aufruf und gibt feste Listen aus, darunter
-einen Container ohne managed-Label (als hätte docker den Filter ignoriert) und
-Volumes, die nur ähnlich heißen. Der PATH enthält nur die Attrappe und die
-Werkzeuge der Shell; der Test prüft vorher, dass "docker" wirklich die Attrappe ist.
+The dummy records every call and prints fixed lists, among them
+a container without a managed label (as if docker had ignored the filter) and
+volumes that merely have a similar name. PATH contains only the dummy and the
+shell tools; the test first checks that "docker" really is the dummy.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ pytestmark = pytest.mark.skipif(SH is None, reason="keine POSIX-Shell (sh) verf�
 FOREIGN = "gameworld-deadbeef-000000000002"
 PS_LINES = (
     f"c0ffee000001\t{FOREIGN}\ttrue\tdeadbeef\tExited (0) 2 days ago\n"
-    # Ohne managed-Label: darf trotz Namens nie erscheinen oder entfernt werden.
+    # Without a managed label: must never appear or be removed despite its name.
     "c0ffee000002\tgameworld-dev-app-1\t\t\tUp 4 hours\n"
 )
 VOLUME_LINES = f"{FOREIGN}\ngameworld-dev_nextcloud\ngameworldx-fremd\nnc_data\n"
@@ -70,7 +70,7 @@ class Host:
     def run(self, *args: str, stdin: str = "") -> Run:
         self.log.write_text("", encoding="utf-8")
         assert SH is not None
-        # Bytes statt Text: Unter Windows würde text=True jeden Zeilenumbruch zu CRLF machen.
+        # Bytes instead of text: on Windows text=True would turn every line break into CRLF.
         done = subprocess.run(  # noqa: S603
             [SH, SCRIPT.as_posix(), *args],
             input=stdin.encode(),
@@ -84,7 +84,7 @@ class Host:
 
 
 def _shell_path() -> str:
-    """Nur das Verzeichnis der Shell-Werkzeuge, ohne ein echtes docker."""
+    """Only the directory of the shell tools, without a real docker."""
     assert SH is not None
     dirs: list[str] = []
     for tool in ("sh", "grep", "wc", "tr", "cut", "sed", "cat"):
@@ -119,7 +119,7 @@ def host(tmp_path: Path) -> Host:
         if key in os.environ:
             env[key] = os.environ[key]
     result = Host(bin_dir, log, ps, volumes, env)
-    # Sicherung: "docker" muss die Attrappe sein, nie der echte Daemon.
+    # Safeguard: "docker" must be the dummy, never the real daemon.
     assert SH is not None
     probe = subprocess.run(  # noqa: S603
         [SH, "-c", "command -v docker"], capture_output=True, text=True, env=env, timeout=30, check=False
@@ -135,7 +135,7 @@ def _removals(calls: list[str]) -> list[str]:
 
 
 def test_default_run_never_removes(host: Host) -> None:
-    """Standardlauf ruft nie rm auf."""
+    """The default run never calls rm."""
     run = host.run()
     assert run.code == 0, run.err
     assert _removals(run.calls) == []
@@ -186,7 +186,7 @@ def test_yes_flag_skips_container_question(host: Host) -> None:
 
 @pytest.mark.parametrize("answer", ["", "yes\n", "y\n", "DELETE\n"])
 def test_yes_never_deletes_volumes_without_delete(host: Host, answer: str) -> None:
-    """--yes löscht keine Volumes ohne delete."""
+    """--yes deletes no volumes without delete."""
     run = host.run("--remove-volumes", "--yes", stdin=answer)
     assert run.code == 0, run.err
     assert "This deletes the game worlds stored in 1 volumes permanently. Type delete:" in run.out

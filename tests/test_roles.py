@@ -1,4 +1,4 @@
-"""Rollen aus Nextcloud-Gruppen (ROLLE-01, ROLLE-02): Verwaltung nur für die Gruppe admin."""
+"""Roles from Nextcloud groups (ROLLE-01, ROLLE-02): administration only for the group admin."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ ADMIN_ROUTES = [
 
 @pytest.fixture
 def no_service(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Weltdienst und Setup-Check dürfen für Nicht-Verwalter nie laufen."""
+    """World service and setup check must never run for non-managers."""
     calls: list[str] = []
 
     def forbidden_service() -> worlds.WorldService:

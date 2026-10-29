@@ -1,4 +1,4 @@
-"""Ein nicht erreichbarer Docker-Proxy ergibt 503 bzw. docker_status unknown, nie einen 500er."""
+"""An unreachable Docker proxy yields 503 or docker_status unknown, never a 500."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ MESSAGE = (
 
 
 class FakeProvisioner:
-    """Steht für DockerProvisioner; jede Methode kann einen Fehler werfen."""
+    """Stands in for DockerProvisioner; every method can raise an error."""
 
     def __init__(self) -> None:
         self.fail_list = False
@@ -143,7 +143,7 @@ async def test_create_returns_503_when_proxy_is_down(
     assert response.status_code == 503
     assert "gameworld-docker-proxy" in response.json()["detail"]
     assert "Traceback" not in response.text
-    # Nichts in Docker entstanden: keine failed-Zeile, Port wieder frei.
+    # Nothing created in Docker: no failed row, port free again.
     assert store.list_worlds() == []
     assert store.used_ports() == set()
     assert fake.created == []
@@ -159,7 +159,7 @@ async def test_failed_cleanup_keeps_original_error(
     assert response.status_code == 503
     assert response.json()["detail"] == MESSAGE
     assert len(fake.created) == 1
-    # Aufräumen gescheitert: Die Zeile bleibt als failed mit der Originalmeldung, Löschen räumt später auf.
+    # Cleanup failed: the row stays as failed with the original message, deletion cleans up later.
     assert fake.removed == fake.created
     rows = store.list_worlds()
     assert len(rows) == 1
@@ -171,7 +171,7 @@ async def test_failed_cleanup_keeps_original_error(
 async def test_successful_cleanup_removes_failed_row(
     client: httpx.AsyncClient, store: WorldStore, fake: FakeProvisioner
 ) -> None:
-    """Start scheitert, Aufräumen gelingt: keine Zeile, Port frei, Eltern sehen nur die Meldung."""
+    """Start fails, cleanup succeeds: no row, port free, parents see only the message."""
     response = await client.post("/api/worlds", json={"name": "Testwelt"}, headers=appapi_headers())
     assert response.status_code == 503
     assert response.json()["detail"] == MESSAGE

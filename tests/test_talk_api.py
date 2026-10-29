@@ -1,4 +1,4 @@
-"""Talk-Hooks in Welt- und Einladungs-Routen sowie GET /api/talk und der Nur-lesen-Schalter (04.1-05)."""
+"""Talk hooks in world and invitation routes as well as GET /api/talk and the read-only switch (04.1-05)."""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ async def test_group_invite_counts_via_world_access(
     assert response.status_code == 200
     await _drain(store)
     members = {m.actor_id: m.actor_type for m in fake_talk.rooms[row.token]}
-    # Gruppe familie: gw-kind aktiv (gw-aus deaktiviert, ohne Zugang); nie als Talk-Gruppe.
+    # Group familie: gw-kind active (gw-aus deactivated, without access); never as a Talk group.
     assert members == {"admin": "users", "gw-kind": "users"}
 
 
@@ -161,9 +161,9 @@ async def test_talk_status_and_read_only(
                 "read_only": False,
                 "owner_not_admin": False,
                 "token": row.token,
-                # Nur gefüllt, wenn der Raum-Owner kein Verwalter mehr ist (D-27).
+                # Only filled when the room owner is no longer a manager (D-27).
                 "owner_display": None,
-                # Nur im Sperrfall gefüllt (D-16).
+                # Only filled in the lock case (D-16).
                 "orphaned_token": None,
             }
         ],
@@ -211,7 +211,7 @@ async def test_kid_is_forbidden(client: httpx.AsyncClient, service: WorldService
     assert response.status_code == 403
 
 
-# Raum neu anlegen (06-06, D-19)
+# Recreate the room (06-06, D-19)
 
 
 async def test_recreate_gives_new_room_without_ex_admin(

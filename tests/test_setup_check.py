@@ -1,4 +1,4 @@
-"""Setup-Check gegen einen lokalen Fake-Proxy: Meldungen, Folgefehler, Nebenwirkungsfreiheit."""
+"""Setup check against a local fake proxy: messages, follow-up errors, freedom from side effects."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from tests.conftest import appapi_headers
 
 PROBE = "gameworld-probe-nonexistent"
 
-# Antworten eines korrekt gescopten tecnativa-Proxys (im Spike gemessen).
+# Answers of a correctly scoped tecnativa proxy (measured in the spike).
 GOOD: dict[tuple[str, str], int] = {
     ("GET", "/_ping"): 200,
     ("GET", "/version"): 200,
@@ -88,7 +88,7 @@ def fake_proxy() -> Iterator[FakeProxy]:
     finally:
         server.shutdown()
         server.server_close()
-        # Nebenwirkungsfrei: schreibende Methoden nur auf die Probe-Ressource.
+        # Free of side effects: writing methods only on the probe resource.
         assert all(PROBE in path for path in proxy.mutating_calls())
 
 
@@ -136,7 +136,7 @@ def test_containers_probe_uses_label_filter(fake_proxy: FakeProxy) -> None:
 
 
 def test_missing_post_reports_exactly_one_error(fake_proxy: FakeProxy) -> None:
-    # tecnativa mit POST=0 sperrt alle schreibenden Methoden, also auch DELETE.
+    # tecnativa with POST=0 blocks all writing methods, so DELETE as well.
     for key in list(fake_proxy.statuses):
         if key[0] in {"POST", "DELETE"}:
             fake_proxy.statuses[key] = 403
@@ -151,7 +151,7 @@ def test_missing_post_reports_exactly_one_error(fake_proxy: FakeProxy) -> None:
         assert "nicht geprüft" in item.message.lower()
         assert "POST=1" in item.message
         assert forbidden not in item.message
-    # Die Folgeprobes wurden gar nicht erst gesendet.
+    # The follow-up probes were never even sent.
     assert not [path for method, path in fake_proxy.log if method == "DELETE"]
     assert not [path for _, path in fake_proxy.log if path.startswith("/exec")]
 
@@ -203,7 +203,7 @@ def test_old_engine(fake_proxy: FakeProxy) -> None:
 
 
 def test_api_version_compares_numerically(fake_proxy: FakeProxy) -> None:
-    # Als Text wäre "1.100" kleiner als "1.44".
+    # As text "1.100" would be smaller than "1.44".
     fake_proxy.api_version = "1.100"
     assert _item(run_setup_check(fake_proxy.url), "version").ok is True
 
@@ -224,8 +224,8 @@ def _closed_port() -> int:
 
 
 def test_unreachable_proxy_stops_after_one_item() -> None:
-    # Echter abgelehnter Verbindungsaufbau; Windows wiederholt SYN auf geschlossene Ports
-    # rund zwei Sekunden, daher großzügige Zeitgrenze.
+    # Real refused connection; Windows repeats SYN to closed ports for about two seconds,
+    # hence the generous time limit.
     port = _closed_port()
     result = run_setup_check(f"tcp://127.0.0.1:{port}", timeout=5.0)
     assert result.ok is False
@@ -241,7 +241,7 @@ DOCS_SUFFIX = " Anleitung: https://github.com/street1983nk/nextcloud-gameworld/b
 
 
 def _dns_error() -> requests.ConnectionError:
-    """Kette wie bei urllib3: gaierror -> NameResolutionError -> requests.ConnectionError."""
+    """Chain as in urllib3: gaierror -> NameResolutionError -> requests.ConnectionError."""
     try:
         try:
             try:
@@ -300,7 +300,7 @@ def test_dns_failure_uses_configured_host(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_dns_detection_follows_context_chain(monkeypatch: pytest.MonkeyPatch) -> None:
-    # gaierror nur über __context__ (ohne "from"), wie bei Retries möglich.
+    # gaierror only via __context__ (without "from"), as possible with retries.
     try:
         try:
             raise socket.gaierror(-2, "Name or service not known")

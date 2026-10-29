@@ -1,4 +1,4 @@
-"""TimeEngine: Verbuchen, Rendern, Generation, Tagesende-Grenze und Opt-in (04-03)."""
+"""TimeEngine: booking, rendering, generation, end-of-day boundary and opt-in (04-03)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from gameworld.playtime.plan import DayRule, WeekPlan, day_bounds, day_starts, l
 from gameworld.provisioner.time_mod import LEDGER_HEADER, Ledger
 from gameworld.worlds.store import PlayerRow, WorldRow, WorldStore
 
-# Sa 2026-10-24 12:00 Europe/Berlin (Golden Vector 1792792800 = Tagesanfang, plus 12 h).
+# Sat 2026-10-24 12:00 Europe/Berlin (golden vector 1792792800 = start of day, plus 12 h).
 FIXED = 1792836000
 VERIFIER = "#1#c2FsdA==#dmVyaWZpZXI="
 ZONE = load_zone("")
@@ -86,7 +86,7 @@ def _generation(data: bytes) -> int:
     return int(_lines(data)[0].split(" ")[2])
 
 
-# Verbuchen
+# Booking
 
 
 def test_book_increments_only_children_with_rules(engine: TimeEngine, store: WorldStore) -> None:
@@ -115,7 +115,7 @@ def test_book_first_contact_only_anchors(engine: TimeEngine, store: WorldStore) 
 
 
 def test_book_is_atomic_no_double_count_after_failure(engine: TimeEngine, store: WorldStore, app_env: Path) -> None:
-    """WR-05: Scheitert das Verankern, bleibt auch der Verbrauch alt; der nächste Takt zählt genau einmal."""
+    """WR-05: if anchoring fails, usage stays old as well; the next tick counts exactly once."""
     import sqlite3
 
     _world(store, "w1", 30015)
@@ -154,7 +154,7 @@ def test_book_none_changes_nothing(engine: TimeEngine, store: WorldStore) -> Non
     assert store.ledger_seen("w1") == {"Mia": 40}
 
 
-# Rendern
+# Rendering
 
 
 def test_render_cap_for_child_with_limit(engine: TimeEngine, store: WorldStore) -> None:
@@ -170,10 +170,10 @@ def test_render_cap_for_child_with_limit(engine: TimeEngine, store: WorldStore) 
     assert changed is True
     parts = _line(data, "Mia")
     assert parts is not None
-    # cap = gesehen (900) + rest (3600 - 2700 = 900) = 1800, Grund ok.
+    # cap = seen (900) + rest (3600 - 2700 = 900) = 1800, reason ok.
     assert parts[1] == "1800"
     assert parts[4] == "ok"
-    # Fenster endet nie nach dem lokalen Tagesende (O-04).
+    # The window never ends after the local end of day (O-04).
     assert int(parts[3]) <= day_bounds(TODAY, ZONE)[1]
 
 
@@ -186,7 +186,7 @@ def _base(data: bytes, name: str) -> int | None:
 
 
 def test_render_base_anchor_follows_cap_not_every_tick(engine: TimeEngine, store: WorldStore) -> None:
-    """WR-06: @base = gesehener Stand, gegen den der Deckel gerechnet ist; bleibt, solange der Deckel bleibt."""
+    """WR-06: @base = seen state against which the cap is calculated; stays as long as the cap stays."""
     _world(store, "w1", 30015)
     _player(store, "gw-mia", "Mia")
     _plan(store, "gw-mia", _week(limit=60))
@@ -199,18 +199,18 @@ def test_render_base_anchor_follows_cap_not_every_tick(engine: TimeEngine, store
     assert mia is not None
     assert mia[1] == "4500"
 
-    # Mia spielt hier 120 s: Verbrauch und gesehener Stand wachsen gleich, der Deckel bleibt.
+    # Mia plays 120 s here: usage and seen state grow equally, the cap stays.
     engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Mia": 1020}))
     second, changed = engine.render("w1")
     assert changed is False
     assert second == first
 
-    # Verbrauch aus einer anderen Welt: Deckel sinkt, der Anker folgt dem neuen Stand.
+    # Usage from another world: cap drops, the anchor follows the new state.
     store.add_usage("gw-mia", TODAY, 300)
     third, changed = engine.render("w1")
     assert changed is True
     assert _base(third, "Mia") == 1020
-    # Ohne Limit kein Deckel und kein Anker.
+    # Without a limit no cap and no anchor.
     _plan(store, "gw-mia", _week())
     fourth, _ = engine.render("w1")
     assert _base(fourth, "Mia") is None
@@ -230,7 +230,7 @@ def test_render_shares_quota_across_worlds(engine: TimeEngine, store: WorldStore
 
     parts = _line(data, "Mia")
     assert parts is not None
-    # Deckel in Welt B = gesehen_B (300) + (Limit 1200 - Verbrauch 600) = 900.
+    # Cap in world B = seen_B (300) + (limit 1200 - usage 600) = 900.
     assert parts[1] == "900"
 
 
@@ -258,10 +258,10 @@ def test_render_generation_stable_without_change(engine: TimeEngine, store: Worl
 
 
 def test_render_before_window_caps_coming_window(engine: TimeEngine, store: WorldStore) -> None:
-    """WR-02: Vor dem Fenster (12 Uhr, Fenster 15 bis 19 Uhr) trägt der Deckel schon das Fenster.
+    """WR-02: before the window (12:00, window 15 to 19) the cap already carries the window.
 
-    So öffnet der Mod ab ``from`` selbst; mit Deckel ``seen + 0`` sagte er dann
-    "Spielzeit vorbei", bis die ExApp neu schrieb.
+    This way the mod opens by itself from ``from`` on; with the cap ``seen + 0`` it would
+    have said "Spielzeit vorbei" until the ExApp wrote again.
     """
     _world(store, "w1", 30015)
     _player(store, "gw-mia", "Mia")
@@ -280,9 +280,9 @@ def test_render_before_window_caps_coming_window(engine: TimeEngine, store: Worl
     assert mia is not None
     assert leo is not None
     start = int(datetime.combine(TODAY, time(15), tzinfo=ZONE).timestamp())
-    # Grund bleibt fenster, Grenzen sperren bis 15 Uhr; Deckel 500 + (3600 - 600).
+    # Reason stays window, boundaries block until 15:00; cap 500 + (3600 - 600).
     assert mia[1:5] == ["3500", str(start), mia[3], "fenster"]
-    # Ohne Limit: kein Deckel (-1), auch vor dem Fenster.
+    # Without a limit: no cap (-1), also before the window.
     assert leo[1] == "-1"
     assert leo[4] == "fenster"
 
@@ -328,7 +328,7 @@ def test_render_without_rules_is_empty(engine: TimeEngine, store: WorldStore) ->
     assert _lines(data)[1:] == ["end", ""]
 
 
-# Ferien und Zeitzone (04-04)
+# Holidays and time zone (04-04)
 
 
 def _not_today() -> WeekPlan:
@@ -386,7 +386,7 @@ def test_render_follows_time_zone_without_cache(engine: TimeEngine, store: World
     assert parts[3] != berlin_parts[3]
 
 
-# Kind-Ansicht
+# Child view
 
 
 def test_child_state_none_without_rules(engine: TimeEngine, store: WorldStore) -> None:
@@ -406,7 +406,7 @@ def test_child_state_with_rules(engine: TimeEngine, store: WorldStore) -> None:
     assert state.rest_s == 3600 - 1800
 
 
-# Zählbuch-Format als Eingabe (wie der Mod es schreibt)
+# Ledger format as input (as the mod writes it)
 
 
 def test_book_parses_mod_ledger(engine: TimeEngine, store: WorldStore) -> None:
@@ -425,9 +425,9 @@ def test_book_parses_mod_ledger(engine: TimeEngine, store: WorldStore) -> None:
     assert store.usage("gw-mia", TODAY) == 60
 
 
-# Welt-Fenster und Verwalter-Freistellung (04-05, ZEIT-05, O-11/A4)
+# World window and manager exemption (04-05, ZEIT-05, O-11/A4)
 
-# Mi 2026-10-21 09:00 und Do 2026-10-22 12:00 Europe/Berlin (Sommerzeit, vor der Umstellung am 25.10.).
+# Wed 2026-10-21 09:00 and Thu 2026-10-22 12:00 Europe/Berlin (summer time, before the switch on 25.10.).
 WED_0900 = FIXED - 3 * 86400 - 3 * 3600
 THU_1200 = FIXED - 2 * 86400
 
@@ -463,7 +463,7 @@ def test_world_line_on_closed_day_points_to_next_open_day(store: WorldStore) -> 
     data, _ = engine.render("w1")
 
     assert _line(data, "welt") == ["welt", "0", "0", "welt", "Mi-10:00"]
-    # Nächster Mittwoch 28.10. 10:00 (nach der Umstellung, Winterzeit).
+    # Next Wednesday 28.10. 10:00 (after the switch, winter time).
     next_wed = local_day(THU_1200, ZONE) + timedelta(days=6)
     assert _line(data, "@start") == ["@start", "welt", str(_epoch(next_wed, 10)), "600"]
     assert _lines(data)[1].startswith("@tage 4 ")
@@ -486,9 +486,9 @@ def test_invited_admin_gets_frei_line_without_window(engine: TimeEngine, store: 
     data, _ = engine.render("w1")
 
     assert _line(data, "Chef") == ["Chef", "-1", "-1", "-1", "frei", "-"]
-    # Kind ohne Regeln und ohne Verwaltung: keine Zeile (Opt-in, T-04-27).
+    # Child without rules and without management: no row (opt-in, T-04-27).
     assert _line(data, "Leo") is None
-    # Nur frei-Zeilen: kein @tage und kein @start, Bytes wie vor den @-Zeilen.
+    # Only frei rows: no @tage and no @start, bytes as before the @ lines.
     assert b"@" not in data
 
 
@@ -529,7 +529,7 @@ def test_parse_admins_reads_sorted_json_list() -> None:
     assert parse_admins(None) == frozenset()
 
 
-# Nächster Start und Tagesgrenzen in der Regeldatei (Quick 261021-481)
+# Next start and day boundaries in the rules file (quick 261021-481)
 
 
 def test_render_used_up_child_gets_day_grid_and_start(engine: TimeEngine, store: WorldStore) -> None:
@@ -546,7 +546,7 @@ def test_render_used_up_child_gets_day_grid_and_start(engine: TimeEngine, store:
     mia = _line(data, "Mia")
     assert mia is not None
     assert mia[4:] == ["limit", "So-09:00"]
-    # Sonntag 9 Uhr lokal nach der Umstellung um 3 Uhr: Tagesanfang Sonntag + 10 h (25-h-Tag).
+    # Sunday 9:00 local after the switch at 3:00: start of day Sunday + 10 h (25-hour day).
     assert _lines(data)[_lines(data).index(" ".join(mia)) + 1] == f"@start Mia {starts[1] + 10 * 3600} 540"
 
 
@@ -564,11 +564,11 @@ def test_render_with_day_grid_stays_stable(engine: TimeEngine, store: WorldStore
     assert second == first
 
 
-# 04.1-02: Tagesspielzeit je Konto und Welt (play_daily, Pitfall 3)
+# 04.1-02: daily play time per account and world (play_daily, pitfall 3)
 
 
 def test_book_counts_play_daily_only_for_kids_with_rules(engine: TimeEngine, store: WorldStore) -> None:
-    """IN-03 (Owner 22.10.2026, "Nur Kinder mit Regeln"): Gastkinder ohne Regeln werden nicht gezählt."""
+    """IN-03 (owner 22.10.2026, "Nur Kinder mit Regeln"): guest children without rules are not counted."""
     _world(store, "w1", 30015)
     _player(store, "gw-mia", "Mia")
     _player(store, "gw-leo", "Leo")
@@ -579,12 +579,12 @@ def test_book_counts_play_daily_only_for_kids_with_rules(engine: TimeEngine, sto
 
     engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Mia": 55, "leo": 7, "Papa": 9, "Fremd": 3}))
 
-    # Positivkontrolle Mia (Regeln), Negativ Leo (Gastkind ohne Regeln), Papa (Verwalter), Fremd (kein Konto).
+    # Positive control Mia (rules), negative Leo (guest child without rules), Papa (manager), Fremd (no account).
     assert store.play_seconds(TODAY) == {("gw-mia", "w1"): 15}
     assert store.usage("gw-mia", TODAY) == 15
     assert store.usage("gw-leo", TODAY) == 0
     assert store.usage("papa", TODAY) == 0
-    # Der gesehene Stand wird für alle verankert: Leo zählt auch später nicht doppelt.
+    # The seen state is anchored for everyone: Leo does not count twice later either.
     assert store.ledger_seen("w1")["leo"] == 7
 
 
@@ -633,12 +633,12 @@ def test_render_prunes_notify_tables_after_seven_days(engine: TimeEngine, store:
             days = [str(row[0]) for row in db.execute(f"SELECT day FROM {table}")]  # noqa: S608
             assert days == [kept.isoformat()], table
     db.close()
-    # IN-03: Die Bot-Drossel (Konto und Zeitpunkt) hat dieselbe 7-Tage-Frist.
+    # IN-03: the bot throttle (account and time) has the same 7-day period.
     assert store.bot_presence_at("w1", "gw-alt") is None
     assert store.bot_presence_at("w1", "gw-neu") == kept_at
 
 
-# Pause in der Regeldatei (04.1-03)
+# Pause in the rules file (04.1-03)
 
 
 def _pause_lines(data: bytes) -> list[str]:
@@ -679,7 +679,7 @@ def test_render_schluss_writes_morgen_only_for_world_players_with_plan(engine: T
     data, _ = engine.render("w1")
 
     assert _pause_lines(data) == [f"@pause {FIXED + 30} {midnight} schluss"]
-    # Leo ohne Plan fehlt, Ida spielt in einer anderen Welt.
+    # Leo without a plan is missing, Ida plays in another world.
     assert _morgen_lines(data) == ["@morgen Mia 540"]
 
 
@@ -703,13 +703,13 @@ def test_render_expired_pause_same_bytes_as_without_and_clears_state(store: Worl
     assert changed_after is True
     assert _generation(after) > _generation(paused)
     assert _pause_lines(after) == []
-    # Bis auf Kopf (Generation, Zeitpunkt) dieselben Bytes wie ohne Pause.
+    # Except for the header (generation, time) the same bytes as without a pause.
     assert _lines(after)[1:] == _lines(without)[1:]
     assert store.get_pause() is None
 
 
 def test_expired_pause_announces_end_once_in_every_world(store: WorldStore) -> None:
-    """IN-09: Läuft die Pause von selbst ab, bekommt jede Welt einmal "pause_end" (still wie bei Weiter)."""
+    """IN-09: if the pause expires on its own, each world gets "pause_end" once (silent as with Resume)."""
     clock = [float(FIXED)]
     engine = TimeEngine(store, clock=lambda: clock[0])
     _world(store, "w1", 30015)
@@ -728,7 +728,7 @@ def test_expired_pause_announces_end_once_in_every_world(store: WorldStore) -> N
 
 
 def test_expired_schluss_ends_silently(store: WorldStore) -> None:
-    """Gegenprobe: "Für heute Schluss" endet um Mitternacht ohne Bot-Meldung."""
+    """Counter-check: "Für heute Schluss" ends at midnight without a bot message."""
     clock = [float(FIXED)]
     engine = TimeEngine(store, clock=lambda: clock[0])
     _world(store, "w1", 30015)
@@ -759,7 +759,7 @@ def test_render_pause_change_changes_cache_key(engine: TimeEngine, store: WorldS
     assert _pause_lines(data) == []
 
 
-# Halt vor dem Cold-Backup (05-03, D-09)
+# Halt before the cold backup (05-03, D-09)
 
 
 def _halt_lines(data: bytes) -> list[str]:
@@ -799,7 +799,7 @@ def test_clear_halt_renders_without_halt(engine: TimeEngine, store: WorldStore) 
     assert _halt_lines(data) == []
     assert _generation(data) > _generation(halted)
     assert _lines(data)[1:] == _lines(without)[1:]
-    # Ohne Halt ist clear_halt folgenlos.
+    # Without a halt, clear_halt has no effect.
     engine.clear_halt("w1")
     assert engine.render("w1")[1] is False
 
@@ -824,18 +824,18 @@ def test_halt_is_not_persisted(engine: TimeEngine, store: WorldStore) -> None:
     assert _halt_lines(data) == []
 
 
-# ROLLE-04: Erwachsen-Schalter (frei = Verwalter-Vereinigung | adults)
+# ROLLE-04: adult switch (frei = manager union | adults)
 
 FREI_LINE = ["-1", "-1", "-1", "frei", "-"]
 
 
 def test_adult_renders_frei_and_toggle_changes_bytes(engine: TimeEngine, store: WorldStore) -> None:
-    """Umschalten ändert die Bytes der Regeldatei; der ruhende Plan greift nach dem Zurückschalten wieder."""
+    """Switching changes the bytes of the rules file; the dormant plan applies again after switching back."""
     _world(store, "w1", 30015)
     store.replace_world_window("w1", dict.fromkeys(range(1, 8), (600, 720)))
     _player(store, "gw-kind", "Kind")
     _invite(store, "w1", "gw-kind")
-    # "0 Minuten heute": Tag nicht erlaubt (ein Limit 0 lässt der Plan nicht zu).
+    # "0 Minuten heute": day not allowed (the plan does not permit a limit of 0).
     _plan(store, "gw-kind", _week(allowed=False))
 
     child_bytes, _ = engine.render("w1")
@@ -850,7 +850,7 @@ def test_adult_renders_frei_and_toggle_changes_bytes(engine: TimeEngine, store: 
     assert changed is True
     assert adult_bytes != child_bytes
     assert _line(adult_bytes, "Kind") == ["Kind", *FREI_LINE]
-    # Welt-Zeile bleibt (gilt für Kinder), frei schlägt sie für den Erwachsenen.
+    # World row stays (applies to children), frei overrides it for the adult.
     assert _line(adult_bytes, "welt") is not None
 
     store.clear_adult("gw-kind")
@@ -861,12 +861,12 @@ def test_adult_renders_frei_and_toggle_changes_bytes(engine: TimeEngine, store: 
     back_line = _line(back_bytes, "Kind")
     assert back_line is not None
     assert back_line[1:] == child_line[1:]
-    # Plan blieb in der Datenbank.
+    # Plan stayed in the database.
     assert "gw-kind" in store.child_plans()
 
 
 def test_frei_set_is_part_of_cache_key(engine: TimeEngine, store: WorldStore) -> None:
-    """T-06-18: Auch ohne sichtbare Zeile (Erwachsener nicht eingeladen) neue Generation beim Umschalten."""
+    """T-06-18: new generation on switching even without a visible row (adult not invited)."""
     _world(store, "w1", 30015)
     _player(store, "gw-kind", "Kind")
     _invite(store, "w1", "gw-kind")
@@ -889,9 +889,9 @@ def test_book_skips_adult_usage_and_play(engine: TimeEngine, store: WorldStore) 
 
     engine.book("w1", Ledger(written_at=FIXED, generation=1, seconds={"Kind": 120, "Oma": 120}))
 
-    # Positivkontrolle Kind, Negativ Erwachsene (ruhender Plan zählt nicht).
+    # Positive control child, negative adults (dormant plan does not count).
     assert store.usage("gw-kind", TODAY) == 120
     assert store.usage("gw-oma", TODAY) == 0
     assert store.play_seconds(TODAY) == {("gw-kind", "w1"): 120}
-    # Stand trotzdem verankert: Nach dem Zurückschalten wird nichts nachverbucht.
+    # State anchored anyway: after switching back nothing is booked retroactively.
     assert store.ledger_seen("w1")["Oma"] == 120

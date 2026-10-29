@@ -1,7 +1,7 @@
-"""WR-01: Eine ungültige Umgebung verhindert weder den App-Start noch die Fehlermeldung.
+"""WR-01: an invalid environment prevents neither the app start nor the error message.
 
-Der Prozess muss hochkommen, damit /api/setup-check den Befund "config" melden
-kann; die Welt-Routen antworten dann mit 503 und der deutschen Meldung.
+The process must come up so that /api/setup-check can report the finding "config";
+the world routes then answer with 503 and the German message.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ async def test_lifespan_starts_despite_invalid_port_range(app_env: Path, monkeyp
     del app_env
     monkeypatch.setenv("GAMEWORLD_PORT_RANGE", INVALID_RANGE)
     app = FastAPI()
-    # Ohne den WR-01-Fix bricht der Lifespan hier mit ValueError ab und
-    # uvicorn würde die ExApp gar nicht erst starten.
+    # Without the WR-01 fix the lifespan aborts here with ValueError and
+    # uvicorn would not start the ExApp at all.
     async with lifespan(app):
         pass
 

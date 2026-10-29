@@ -1,4 +1,4 @@
-"""Wiederherstellen ohne Docker und Nextcloud: Prüfungen, Integrität, vor-restore, Tausch, Rückfall (05-06)."""
+"""Restore without Docker and Nextcloud: checks, integrity, pre-restore, swap, fallback (05-06)."""
 
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def backup(service: WorldService, sleeps: list[float], app_env: Path) -> BackupS
 
 
 def env_tar(env: bytes) -> bytes:
-    """Docker-Tar des Weltordners mit eigenem env_meta.txt (unterscheidbare Stände)."""
+    """Docker tar of the world directory with its own env_meta.txt (distinguishable states)."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as tar:
         root = tarfile.TarInfo("world")
@@ -105,7 +105,7 @@ def env_tar(env: bytes) -> bytes:
 
 
 def _restored_env(archive: bytes) -> bytes:
-    """env_meta.txt aus einem eingespielten Restore-Tar (gzip, Namen relativ zum Weltordner)."""
+    """env_meta.txt from an applied restore tar (gzip, names relative to the world directory)."""
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
         handle = tar.extractfile("env_meta.txt")
         assert handle is not None
@@ -126,7 +126,7 @@ async def _backed_up(
     *,
     players: bytes = b"",
 ) -> tuple[str, BackupRow]:
-    """Laufende Welt mit einer echten eigenen Sicherung (Stand "alt"); danach spielt der Stand "neu"."""
+    """Running world with a real own backup (state "alt"); afterwards the state "neu" is played."""
     created = await service.create_world("Welt")
     world_id = created.id
     fake.extra[world_id] = {"schema": "2", "started_at": STARTED_AT}
@@ -146,7 +146,7 @@ async def _backed_up(
 
 
 def _evil_backup(world_id: str, member: tarfile.TarInfo, data: bytes = b"") -> bytes:
-    """Gameworld-Sicherung mit gültigem Manifest und map.sqlite plus einem zusätzlichen Eintrag."""
+    """Gameworld backup with a valid manifest and map.sqlite plus an additional entry."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
         manifest = build_manifest(world_id, PRESET, LUANTI_VERSION, "2026-10-23T12:00:00+00:00", "backup")
@@ -166,7 +166,7 @@ def _evil_backup(world_id: str, member: tarfile.TarInfo, data: bytes = b"") -> b
 
 
 def _register(fake_files: FakeBackupFiles, store: WorldStore, world_id: str, name: str, data: bytes) -> BackupRow:
-    """Legt eine Datei in Files ab und trägt einen passenden eigenen Nachweis ein."""
+    """Puts a file into Files and records a matching own record."""
     path = f"{FOLDER}/{name}"
     file_id = fake_files.put(ADMIN, path, data)
     proof = BackupRow(
@@ -203,7 +203,7 @@ async def _restore(backup: BackupService, world_id: str, proof: BackupRow, *, co
     await backup.drain()
 
 
-# Prüfungen im Request (D-04, D-13, D-09)
+# Checks in the request (D-04, D-13, D-09)
 
 
 async def test_restore_requires_confirmation(
@@ -228,14 +228,14 @@ async def test_foreign_or_unknown_file_is_not_found_without_io(
     store: WorldStore,
     case: str,
 ) -> None:
-    """T-05-28: Nur der eigene Nachweis zu genau dieser Welt zählt, geprüft vor jedem Docker- oder Files-Aufruf."""
+    """T-05-28: only the own record for exactly this world counts, checked before any Docker or Files call."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
     other = await service.create_world("Andere")
     file_id = proof.file_id
     if case == "unbekannt":
         file_id = 999_999
     elif case == "fremder_verwalter":
-        # Nachweis gehört einem anderen Verwalter (D-13): für ADMIN gibt es ihn nicht.
+        # Record belongs to another manager (D-13): for ADMIN it does not exist.
         file_id = 777
         store.add_backup(replace(proof, file_id=file_id, owner_uid="papa"))
     else:
@@ -278,7 +278,7 @@ async def test_second_job_is_refused(
         await backup.start_restore(world_id, ADMIN, proof.file_id, confirm=True, confirm_disconnect=False)
 
 
-# Erfolgsfall
+# Success case
 
 
 async def test_restore_runs_in_order_and_restores_old_state(
@@ -316,8 +316,8 @@ async def test_restore_runs_in_order_and_restores_old_state(
     job = store.get_backup_job(world_id)
     assert job is not None
     assert (job.kind, job.file_name) == ("restore", proof.name)
-    # Download und Prüfung, bevor die Welt angefasst wird; vor-restore-Upload vor der Zerstörung.
-    # WR-02: erst den aktuellen Pfad zur file_id auflösen, dann laden.
+    # Download and check before the world is touched; pre-restore upload before the destruction.
+    # WR-02: first resolve the current path for the file_id, then download.
     assert fake_files.calls[0] == ("listdir", ADMIN, FOLDER)
     assert fake_files.calls[1] == ("download_to", ADMIN, proof.path)
     assert events == ["prepare", "upload"]
@@ -329,14 +329,14 @@ async def test_restore_runs_in_order_and_restores_old_state(
     start = fake.calls.index(f"start:{world_id}")
     assert halt < stop < snapshot < remove < start
     assert world_id in fake.ledger_reads
-    # Der Weltinhalt der gewählten Sicherung ist eingespielt, das Zählbuch bewahrt.
+    # The world content of the chosen backup is applied, the ledger preserved.
     assert _restored_env(fake.put_archives[0][1]) == b"alt"
     with tarfile.open(fileobj=io.BytesIO(fake.put_archives[1][1]), mode="r:") as tar:
         assert tar.getnames() == [LEDGER_FILE_NAME]
         handle = tar.extractfile(LEDGER_FILE_NAME)
         assert handle is not None
         assert handle.read() == ledger
-    # vor-restore liegt mit eigenem Nachweis in Files (D-05).
+    # pre-restore is in Files with its own record (D-05).
     assert _vor_restore_uploads(fake_files) == [f"{FOLDER}/{VOR_RESTORE}"]
     kinds = {row.name: row.kind for row in store.backups_for(ADMIN, world_id)}
     assert kinds[VOR_RESTORE] == "vor-restore"
@@ -354,7 +354,7 @@ async def test_restore_with_player_halts_before_stop_while_restoring(
     store: WorldStore,
     sleeps: list[float],
 ) -> None:
-    """D-09: @halt steht in der Regeldatei, bevor gestoppt wird, auch im Zustand restoring."""
+    """D-09: @halt is in the rules file before stopping, also in the state restoring."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store, players=b"Mia\n")
     states: list[str] = []
     original = fake.write_world_files
@@ -395,7 +395,7 @@ async def test_stopped_world_stays_stopped_after_restore(
     assert _halt_free(service, world_id)
 
 
-# Integrität und Inhalt (T-05-29, T-05-30): abgelehnt, bevor etwas gestoppt wird
+# Integrity and content (T-05-29, T-05-30): rejected before anything is stopped
 
 
 @pytest.mark.parametrize("change", ["inhalt", "groesse"])
@@ -433,7 +433,7 @@ async def test_oversized_swapped_file_aborts_download_early(
     store: WorldStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """WR-01: Eine getauschte, viel größere Datei wird nie voll gepuffert (Deckel ist proof.size)."""
+    """WR-01: a swapped, much larger file is never fully buffered (the cap is proof.size)."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
     file_id, data = fake_files.files[(ADMIN, proof.path)]
     fake_files.files[(ADMIN, proof.path)] = (file_id, data + b"x" * (64 * proof.size))
@@ -458,9 +458,9 @@ async def test_oversized_swapped_file_aborts_download_early(
     await _restore(backup, world_id, proof)
 
     assert _job_state(store, world_id) == ("failed", RESTORE_TAMPERED)
-    # Abbruch am Deckel: höchstens die nachgewiesene Größe landet im Spool, nie die ganze Datei.
+    # Abort at the cap: at most the proven size lands in the spool, never the whole file.
     assert sum(written) <= proof.size
-    # Der Spool ist aufgeräumt (TemporaryFile verschwindet mit dem Schließen).
+    # The spool is cleaned up (TemporaryFile disappears on close).
     assert spools
     assert all(handle.closed for handle in spools)
     assert not _destroyed(fake)
@@ -523,7 +523,7 @@ async def test_code_from_backup_never_reaches_the_world(
     store: WorldStore,
     name: str,
 ) -> None:
-    """T-05-30: Lua und world.mt aus einer Sicherung werden verworfen (Plan 01), nie eingespielt."""
+    """T-05-30: Lua and world.mt from a backup are discarded (plan 01), never applied."""
     world_id, _proof = await _backed_up(backup, service, fake, fake_files, store)
     lua = _register(
         fake_files, store, world_id, "lua.tar.gz", _evil_backup(world_id, tarfile.TarInfo(name), b"os.exit()")
@@ -552,7 +552,7 @@ async def test_missing_file_fails_before_stop(
 async def test_renamed_backup_is_restored_via_file_id(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
 ) -> None:
-    """WR-02: Umbenennen in Files ist vorgesehen; maßgeblich ist die file_id, nicht der alte Pfad."""
+    """WR-02: renaming in Files is expected; the file_id is authoritative, not the old path."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
     data = fake_files.files.pop((ADMIN, proof.path))
     new_path = f"{FOLDER}/Aufgeräumt-und-umbenannt.tar.gz"
@@ -569,10 +569,10 @@ async def test_renamed_backup_is_restored_via_file_id(
 async def test_deleted_backup_with_decoy_at_old_name_is_file_gone(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
 ) -> None:
-    """WR-02: Gelöschte Sicherung plus fremde Datei am alten Namen ergibt FILE_GONE, nicht TAMPERED."""
+    """WR-02: deleted backup plus a foreign file at the old name yields FILE_GONE, not TAMPERED."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
     fake_files.files.pop((ADMIN, proof.path))
-    # Eine andere Datei unter dem alten Namen (neue file_id): sie darf nie geladen werden.
+    # Another file under the old name (new file_id): it must never be loaded.
     fake_files.put(ADMIN, proof.path, b"fremde datei")
 
     await _restore(backup, world_id, proof)
@@ -591,7 +591,7 @@ async def test_not_enough_space_fails_before_download(
     store: WorldStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pitfall 10: Download, Restore-Tar und Sicherheits-Snapshot brauchen das Dreifache."""
+    """Pitfall 10: download, restore tar and safety snapshot need three times the space."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
     monkeypatch.setattr(backup_module, "disk_free", lambda path: 3 * proof.size - 1)
 
@@ -602,7 +602,7 @@ async def test_not_enough_space_fails_before_download(
     assert not _destroyed(fake)
 
 
-# vor-restore-Sicherung (D-05) und kaputte Welten (D-15)
+# pre-restore backup (D-05) and broken worlds (D-15)
 
 
 async def test_failed_safety_upload_restarts_old_world(
@@ -644,7 +644,7 @@ async def test_other_safety_snapshot_error_aborts_before_destruction(
 async def test_delete_only_world_is_restored_without_safety_backup(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
 ) -> None:
-    """D-15: Weltdaten fehlen, Container weg: wiederherstellen ohne vor-restore, danach ready."""
+    """D-15: world data missing, container gone: restore without pre-restore, then ready."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
     store.update_world(world_id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
     fake.containers.pop(world_id)
@@ -665,7 +665,7 @@ async def test_delete_only_world_is_restored_without_safety_backup(
 async def test_world_without_map_is_restored_without_safety_backup(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
 ) -> None:
-    """Ohne Spielstand (nie gestartet) gibt es nichts zu bewahren; der Tausch läuft weiter."""
+    """Without a save game (never started) there is nothing to preserve; the swap continues."""
     world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
     fake.snapshots[world_id] = world_tar(with_map=False)
 
@@ -677,7 +677,7 @@ async def test_world_without_map_is_restored_without_safety_backup(
     assert _op_state(store, world_id) == "ready"
 
 
-# Tausch, Rückfall, unterbrochen
+# Swap, fallback, interrupted
 
 
 async def test_swap_retries_once(
@@ -708,7 +708,7 @@ async def test_two_swap_failures_fall_back_to_safety_snapshot(
 
     assert _job_state(store, world_id) == ("failed", RESTORE_FALLBACK)
     assert RESTORE_FALLBACK.endswith("Die alte Welt wurde wiederhergestellt.")
-    # Eingespielt wurde der Stand von vor dem Wiederherstellen, nicht die gewählte Sicherung.
+    # The state from before the restore was applied, not the chosen backup.
     assert _restored_env(fake.put_archives[0][1]) == b"neu"
     assert fake.calls[-1] == f"start:{world_id}"
     row = store.get_world(world_id)
@@ -763,7 +763,7 @@ async def test_interrupted_world_can_be_restored_again(
     assert _op_state(store, world_id) == "ready"
 
 
-# Temp-Dateien
+# Temp files
 
 
 @pytest.mark.parametrize("outcome", ["ok", "manipuliert", "rueckfall"])

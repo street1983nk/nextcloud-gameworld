@@ -1,4 +1,4 @@
-"""Drosselung der Fremdversuche (D-08, D-29) und Ansprüche im Store (04.1-04)."""
+"""Throttling of foreign attempts (D-08, D-29) and claims in the store (04.1-04)."""
 
 import pathlib
 from datetime import date
@@ -49,7 +49,7 @@ def test_claim_attempt_one_per_name_world_day(store: WorldStore) -> None:
     assert len(rows) == 1
     row = rows[0]
     assert (row.world_id, row.player_name, row.first_at, row.count) == (WORLD, "Fremder", 1000, 2)
-    # Andere Welt oder anderer Tag zählen neu.
+    # Another world or another day counts anew.
     assert store.claim_attempt(DAY, "000000000001", "Fremder", 1200) == "single"
     assert store.claim_attempt(date(2026, 10, 22), WORLD, "Fremder", 90000) == "single"
 
@@ -57,7 +57,7 @@ def test_claim_attempt_one_per_name_world_day(store: WorldStore) -> None:
 def test_claim_attempt_five_singles_then_one_summary(store: WorldStore) -> None:
     results = [store.claim_attempt(DAY, WORLD, f"Name{index}", 1000 + index) for index in range(7)]
     assert results == ["single"] * 5 + ["summary", "none"]
-    # Ein schon bekannter Name ändert nach der Sammelnachricht nichts.
+    # An already known name changes nothing after the collective message.
     assert store.claim_attempt(DAY, WORLD, "Name0", 2000) == "none"
     assert len(store.attempts(DAY)) == 7
     assert store.claim_attempt(date(2026, 10, 22), WORLD, "Name9", 90000) == "single"
@@ -88,18 +88,18 @@ def test_review_pref_default_and_save(store: WorldStore) -> None:
 
 
 def test_claim_without_recipients_records_but_consumes_nothing(store: WorldStore) -> None:
-    """IN-05: Ohne Empfänger oder Link-Adresse werden die 5 Tageshinweise nicht still verbraucht."""
+    """IN-05: without recipients or link address the 5 daily notices are not silently used up."""
     for index in range(7):
         assert store.claim_attempt(DAY, WORLD, f"Name{index}", 1000 + index, notify=False) == "none"
     assert len(store.attempts(DAY)) == 7
-    # Sobald Empfänger da sind: der nächste Versuch eines schon gemerkten Namens meldet noch.
+    # As soon as recipients exist: the next attempt of an already remembered name still reports.
     assert store.claim_attempt(DAY, WORLD, "Name0", 2000) == "single"
     assert store.claim_attempt(DAY, WORLD, "Name0", 2001) == "none"
     assert [row.count for row in store.attempts(DAY) if row.player_name == "Name0"] == [3]
 
 
 def test_deleting_world_attempts_does_not_lower_day_count(store: WorldStore) -> None:
-    """IN-05: Löscht eine Welt ihre join_attempts, gibt es danach trotzdem keine neuen Einzelhinweise."""
+    """IN-05: if a world deletes its join_attempts, there are still no new individual notices afterwards."""
     for index in range(5):
         assert store.claim_attempt(DAY, WORLD, f"Name{index}", 1000 + index) == "single"
     store.delete_notify_data(WORLD)
@@ -109,7 +109,7 @@ def test_deleting_world_attempts_does_not_lower_day_count(store: WorldStore) -> 
 
 
 def test_day_counter_ignores_other_flags(store: WorldStore) -> None:
-    """Gegenprobe: Andere Tages-Merker (warn10, Sammelnachricht anderer Tage) zählen nicht als Hinweis."""
+    """Counter-check: other daily markers (warn10, collective message of other days) do not count as a notice."""
     for index in range(5):
         assert store.claim_daily_flag(DAY, f"warn10:{WORLD}:kind{index}")
     assert store.claim_attempt(DAY, WORLD, "Fremder", 1000) == "single"

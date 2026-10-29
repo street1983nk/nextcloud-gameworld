@@ -1,9 +1,9 @@
-"""Reste fremder Installationen (06-08, T-06-35, T-06-37, T-06-38): Liste und gezieltes Entfernen.
+"""Leftovers of foreign installations (06-08, T-06-35, T-06-37, T-06-38): list and targeted removal.
 
-Ohne Docker: Eine eigene Docker-Attrappe ignoriert bewusst alle Filter (wie ein
-Proxy, der Filter verschluckt) und protokolliert jedes Entfernen. So prüfen die
-Negativtests die zweite Prüfung am Ergebnis und dass eigene Welten, Container
-ohne Label und Compose-Volumes nie angefasst werden.
+Without Docker: an own Docker dummy deliberately ignores all filters (like a
+proxy that swallows filters) and records every removal. This way the negative
+tests check the second check on the result and that own worlds, containers
+without a label and compose volumes are never touched.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _api_error(status: int) -> docker.errors.APIError:
 
 
 class Box:
-    """Container der Attrappe: id, name, labels, status, attrs."""
+    """Container of the dummy: id, name, labels, status, attrs."""
 
     def __init__(self, cid: str, name: str, labels: dict[str, str], status: str = "running") -> None:
         self.id = cid
@@ -82,7 +82,7 @@ def _labels(instance: str, world_id: str) -> dict[str, str]:
 
 
 class FakeDocker:
-    """Ignoriert alle Filter und gibt alles zurück; protokolliert Entfernen in ``log``."""
+    """Ignores all filters and returns everything; records removals in ``log``."""
 
     def __init__(self) -> None:
         self.log: list[str] = []
@@ -136,9 +136,9 @@ def dock() -> FakeDocker:
     fake = FakeDocker()
     fake.add_box(Box(OWN_BOX, resource_name(OWN, OWN_WORLD), _labels(OWN, OWN_WORLD)))
     fake.add_box(Box(FOREIGN_BOX, resource_name(FOREIGN, FOREIGN_WORLD), _labels(FOREIGN, FOREIGN_WORLD), "exited"))
-    # Name wie Gameworld, aber ohne Label: etwa der Dev-Stack oder ein fremdes Projekt.
+    # Name like Gameworld, but without a label: for example the dev stack or a foreign project.
     fake.add_box(Box(UNLABELED_BOX, "gameworld-dev-app-1", {"com.docker.compose.project": "gameworld-dev"}))
-    # Label managed=false zählt nicht als Gameworld-Welt.
+    # Label managed=false does not count as a Gameworld world.
     fake.add_box(Box("d" * 64, "gameworld-x-y", {"gameworld.managed": "false", "gameworld.instance": FOREIGN}))
     for name in (
         OWN_VOLUME,
@@ -171,7 +171,7 @@ def test_list_shows_only_foreign_containers_and_unowned_gameworld_volumes(prov: 
 
 
 def test_container_without_managed_label_never_appears(prov: DockerProvisioner) -> None:
-    """Container ohne managed-Label erscheint nie, auch mit Namen gameworld-..."""
+    """Container without a managed label never appears, even with the name gameworld-..."""
     names = {item.name for item in prov.list_orphans(set()).containers}
     assert "gameworld-dev-app-1" not in names
     assert "gameworld-x-y" not in names
@@ -199,7 +199,7 @@ def test_remove_foreign_container_keeps_its_volume(prov: DockerProvisioner, dock
 
 
 def test_own_container_is_refused(prov: DockerProvisioner, dock: FakeDocker) -> None:
-    """Eigener Container wird abgelehnt."""
+    """Own container is rejected."""
     with pytest.raises(OrphanRefusedError):
         prov.remove_orphan_container(OWN_BOX)
     assert dock.log == []
@@ -214,7 +214,7 @@ def test_container_without_managed_label_is_refused(prov: DockerProvisioner, doc
 
 @pytest.mark.parametrize("cid", ["gameworld-dev-app-1", "BBBBBBBBBBBB", "bbbb", "b" * 65])
 def test_container_id_must_be_hex(prov: DockerProvisioner, dock: FakeDocker, cid: str) -> None:
-    """Nie über einen Namen auflösen: Ein Name wäre eine ungeprüfte Auswahl."""
+    """Never resolve via a name: a name would be an unchecked selection."""
     with pytest.raises(OrphanRefusedError):
         prov.remove_orphan_container(cid)
     assert dock.log == []
@@ -231,7 +231,7 @@ def test_remove_unowned_volume(prov: DockerProvisioner, dock: FakeDocker) -> Non
 
 
 def test_volume_of_own_world_is_refused(prov: DockerProvisioner, dock: FakeDocker) -> None:
-    """Volume einer eigenen Welt wird abgelehnt, noch bevor Docker gefragt wird."""
+    """Volume of an own world is rejected before Docker is even asked."""
     with pytest.raises(OrphanRefusedError):
         prov.remove_orphan_volume(OWN_VOLUME, {OWN_VOLUME})
     assert dock.log == []
@@ -262,12 +262,12 @@ def test_proxy_down_gives_unavailable(prov: DockerProvisioner, dock: FakeDocker)
         prov.list_orphans(set())
 
 
-# Admin-API
+# Admin API
 
 
 @pytest.fixture
 def orphan_api(app_env: Path, dock: FakeDocker, monkeypatch: pytest.MonkeyPatch) -> WorldStore:
-    """Echter Dienst mit echtem Provisioner über der Docker-Attrappe; eine eigene Welt."""
+    """Real service with a real provisioner on top of the Docker dummy; one own world."""
     from gameworld.main import APP
 
     store = WorldStore(app_env / "gameworld.sqlite3")
@@ -284,7 +284,7 @@ def orphan_api(app_env: Path, dock: FakeDocker, monkeypatch: pytest.MonkeyPatch)
     async def teachers() -> frozenset[str]:
         return frozenset({ADMIN_GROUP, "lehrkraefte"})
 
-    # Der Lehrer ist Verwalter (sonst bewiese das 403 nichts), aber kein NC-Admin.
+    # The teacher is a manager (otherwise the 403 would prove nothing), but not an NC admin.
     monkeypatch.setattr(roles, "_role_service", RoleService(fake_lookup, teachers))
     return store
 
@@ -300,7 +300,7 @@ async def test_api_lists_orphans(client: httpx.AsyncClient) -> None:
     body = response.json()
     assert [item["id"] for item in body["containers"]] == [FOREIGN_BOX]
     assert set(body["containers"][0]) == {"id", "name", "instance", "state", "created"}
-    # Volume der eigenen Welt fehlt, das alte eigene ohne Weltzeile erscheint.
+    # Volume of the own world is missing, the old own one without a world row appears.
     assert [item["name"] for item in body["volumes"]] == sorted([FOREIGN_VOLUME, STALE_OWN_VOLUME])
     assert set(body["volumes"][0]) == {"name", "created"}
 
@@ -389,7 +389,7 @@ async def test_api_invalid_input_is_422(client: httpx.AsyncClient, dock: FakeDoc
 @pytest.mark.usefixtures("orphan_api")
 @pytest.mark.parametrize("user", ["gw-lehrer", "gw-kind"])
 async def test_api_teacher_and_child_get_403(client: httpx.AsyncClient, dock: FakeDocker, user: str) -> None:
-    # Vorbedingung: Der Lehrer ist Verwalter, das Kind nicht (sonst bewiese das 403 beim Lehrer nichts).
+    # Precondition: the teacher is a manager, the child is not (otherwise the 403 for the teacher would prove nothing).
     me = (await client.get("/api/me", headers=appapi_headers(user))).json()
     assert me["role"] == (ROLE_VERWALTER if user == "gw-lehrer" else ROLE_SPIELER)
     assert (await client.get("/api/admin/orphans", headers=appapi_headers(user))).status_code == 403
