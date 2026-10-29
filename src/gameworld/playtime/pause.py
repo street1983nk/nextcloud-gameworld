@@ -1,27 +1,27 @@
-"""Pause für alle Welten des Haushalts (ELTERN-01): Zeitfenster, Morgen-Minuten, Zustand.
+"""Pause for all worlds of the household (ELTERN-01): time window, tomorrow minutes, state.
 
-Regeln (04.1-CONTEXT):
+Rules (04.1-CONTEXT):
 
-- D-01: Eine Pause gilt für alle Welten des Haushalts, nie für eine einzelne Welt.
-- D-02: Dauer 15, 30 oder 60 Minuten, danach endet sie von selbst. "Weiter" beendet
-  sofort, "Für heute Schluss" sperrt bis zum Beginn des nächsten lokalen Tages.
-  Das Tageskontingent (``time_usage``) bleibt in beiden Fällen unverändert.
-- D-03/D-04: Der Welt-Mod warnt 30 s vorher im Chat und trennt dann mit dem
-  Pausentext; darum liegt ``ab`` immer 30 s nach dem Auslösen.
-- D-05: Die Pause wirkt serverseitig über die Zeile ``@pause`` der Regeldatei.
-  Getrennte Kinder verbrauchen nichts; Verwalter (``frei``) sind ausgenommen.
-- D-06: Erneutes Auslösen während einer Pause behält ``ab`` und verlängert ``bis``
-  höchstens, nie kürzer (WR-01); ein laufendes "Für heute Schluss" bleibt.
-- D-25: Welten mit altem Welt-Mod (ohne Ereignisdatei) werden beim Auslösen neu
-  gestartet, damit die Pause sicher greift (``WorldService.apply_pause_sync``).
-- D-29: Zeitfenster laufen während der Pause weiter, nichts wird verlängert.
+- D-01: A pause applies to all worlds of the household, never to a single world.
+- D-02: Duration 15, 30 or 60 minutes, then it ends by itself. "Weiter" ends it
+  immediately, "Für heute Schluss" blocks until the start of the next local day.
+  The daily quota (``time_usage``) stays unchanged in both cases.
+- D-03/D-04: The world mod warns 30 s ahead in chat and then disconnects with the
+  pause text; therefore ``ab`` is always 30 s after the trigger.
+- D-05: The pause takes effect server-side via the line ``@pause`` of the rule file.
+  Disconnected children use up nothing; managers (``frei``) are exempt.
+- D-06: Triggering again during a pause keeps ``ab`` and extends ``bis`` at
+  most, never shortens it (WR-01); a running "Für heute Schluss" stays.
+- D-25: Worlds with an old world mod (without an event file) are restarted
+  on trigger so that the pause reliably takes effect (``WorldService.apply_pause_sync``).
+- D-29: Time windows keep running during the pause, nothing is extended.
 
-Der Zustand liegt in SQLite (``pause_state``, genau eine Zeile) und übersteht
-einen Neustart der ExApp; ``TimeEngine.render`` liest ihn bei jedem Rendern und
-räumt eine abgelaufene Pause weg.
+The state lives in SQLite (``pause_state``, exactly one row) and survives
+a restart of the ExApp; ``TimeEngine.render`` reads it on every render and
+clears an expired pause.
 
-Sperr-Regel (wie playtime/service.py): ``PauseService`` ruft kein Nextcloud auf;
-alles Schreiben läuft in einem Worker-Thread unter ``worlds.mutation()``.
+Lock rule (as in playtime/service.py): ``PauseService`` calls no Nextcloud;
+all writing runs in a worker thread under ``worlds.mutation()``.
 """
 
 from __future__ import annotations
@@ -39,15 +39,15 @@ from gameworld.playtime.plan import Holiday, WeekPlan, day_starts, local_day, pl
 if TYPE_CHECKING:
     from gameworld.worlds.service import WorldService
 
-# Vorlauf zwischen Auslösen und Trennen: so lange gilt die Chat-Vorwarnung (D-04).
+# Lead time between trigger and disconnect: this long the chat warning applies (D-04).
 PAUSE_LEAD_SECONDS = 30
-# Erlaubte Dauern in Minuten (D-02).
+# Allowed durations in minutes (D-02).
 PAUSE_MINUTES = (15, 30, 60)
 ART_PAUSE = "pause"
 ART_SCHLUSS = "schluss"
-# Morgen laut Plan kein Spieltag (wie time_mod.NO_TOMORROW).
+# Tomorrow is not a play day according to the plan (like time_mod.NO_TOMORROW).
 _NO_TOMORROW = -1
-# Arten der Outbox-Zeilen je Welt (versendet vom Bot in 04.1-06).
+# Kinds of the outbox rows per world (sent by the bot in 04.1-06).
 OUTBOX_PAUSE_START = "pause_start"
 OUTBOX_PAUSE_SCHLUSS = "pause_schluss"
 OUTBOX_PAUSE_END = "pause_end"
@@ -56,9 +56,9 @@ MSG_BAD_MINUTES = "Eine Pause dauert 15, 30 oder 60 Minuten."
 
 @dataclass(frozen=True)
 class PauseState:
-    """Pause des Haushalts: wer sie ausgelöst hat, Trennen (``ab``), Ende (``bis``), Art.
+    """Pause of the household: who triggered it, disconnect (``ab``), end (``bis``), kind.
 
-    ``started_by`` dient nur der Nachvollziehbarkeit (T-04.1-15) und geht nie an Kinder.
+    ``started_by`` serves traceability only (T-04.1-15) and never goes to children.
     """
 
     started_by: str
@@ -68,18 +68,18 @@ class PauseState:
 
 
 def is_active(state: PauseState | None, now: int) -> bool:
-    """Gilt die Pause noch? Auch während der 30-s-Vorlaufzeit; ab ``bis`` nicht mehr."""
+    """Is the pause still in effect? Also during the 30 s lead time; no longer from ``bis``."""
     return state is not None and now < state.bis
 
 
 def start_window(now: int, minutes: int, current: PauseState | None) -> tuple[int, int]:
-    """(ab, bis) einer Pause: ab = jetzt + 30 s, bis = ab + Dauer (D-02, D-04).
+    """(ab, bis) of a pause: ab = now + 30 s, bis = ab + duration (D-02, D-04).
 
-    Läuft schon eine Pause (``current`` aktiv), bleibt deren ``ab`` (kein neuer
-    Vorlauf) und ``bis`` wird nie verkürzt (WR-01): Ein zweiter Elternteil, dessen
-    Seite die laufende Pause noch nicht zeigt, kann sie so weder beenden noch in
-    die Vergangenheit legen. Das neue Ende ist das spätere von altem Ende und
-    jetzt plus Dauer.
+    If a pause is already running (``current`` active), its ``ab`` stays (no new
+    lead time) and ``bis`` is never shortened (WR-01): a second parent whose
+    page does not yet show the running pause can thus neither end it nor move it
+    into the past. The new end is the later of the old end and
+    now plus duration.
     """
     if minutes not in PAUSE_MINUTES:
         raise ValueError(MSG_BAD_MINUTES)
@@ -90,10 +90,10 @@ def start_window(now: int, minutes: int, current: PauseState | None) -> tuple[in
 
 
 def schluss_window(now: int, tz: ZoneInfo, current: PauseState | None) -> tuple[int, int]:
-    """(ab, bis) für "Für heute Schluss": bis = Beginn des nächsten lokalen Tages.
+    """(ab, bis) for "Für heute Schluss": bis = start of the next local day.
 
-    Ohne laufende Pause ab = jetzt + 30 s, sonst bleibt ``ab`` der laufenden Pause.
-    Kurz vor Mitternacht bleibt ``ab`` vor ``bis``, damit die Zeile gültig bleibt.
+    Without a running pause ab = now + 30 s, otherwise ``ab`` of the running pause stays.
+    Shortly before midnight ``ab`` stays before ``bis`` so that the line remains valid.
     """
     bis = day_starts(now, tz)[1]
     ab = current.ab if current is not None and is_active(current, now) else now + PAUSE_LEAD_SECONDS
@@ -107,11 +107,11 @@ def morgen_minutes(
     holidays: list[Holiday],
     names_by_user: Mapping[str, str],
 ) -> dict[str, int]:
-    """Spielername auf die Startminute des nächsten lokalen Tages (Zeile ``@morgen``).
+    """Player name to the start minute of the next local day (line ``@morgen``).
 
-    -1: morgen laut Plan kein Spieltag; 0: ganzer Tag ohne Startzeit; sonst der
-    Fensteranfang. Ferien morgen nehmen den Ferienplan. Konten ohne Plan fehlen
-    (der Mod nimmt dann den Grundtext).
+    -1: tomorrow is not a play day according to the plan; 0: whole day without a start time;
+    otherwise the window start. Holidays tomorrow use the holiday plan. Accounts without a plan are
+    missing (the mod then takes the base text).
     """
     tomorrow = local_day(now, tz) + timedelta(days=1)
     result: dict[str, int] = {}
@@ -128,14 +128,14 @@ def morgen_minutes(
 
 
 def clock_text(epoch: int, tz: ZoneInfo) -> str:
-    """Uhrzeit H:MM in der Haushalts-Zeitzone (für Seite und Bot, nie für Kindertexte)."""
+    """Time H:MM in the household time zone (for page and bot, never for child texts)."""
     local = datetime.fromtimestamp(epoch, tz)
     return f"{local.hour}:{local.minute:02d}"
 
 
 @dataclass(frozen=True)
 class PauseWorldResult:
-    """Ergebnis je Welt: Regeldatei angekommen (``applied``) und ob neu gestartet wurde (D-25)."""
+    """Result per world: rule file arrived (``applied``) and whether it was restarted (D-25)."""
 
     world_id: str
     name: str
@@ -145,38 +145,38 @@ class PauseWorldResult:
 
 @dataclass(frozen=True)
 class PauseResult:
-    """Neuer Zustand (None = keine Pause) und das Ergebnis je Welt."""
+    """New state (None = no pause) and the result per world."""
 
     state: PauseState | None
     worlds: list[PauseWorldResult]
 
 
-# Entscheidet unter der Sperre aus (laufender Pause oder None, jetzt) den neuen Zustand.
+# Decides the new state under the lock from (running pause or None, now).
 PauseDecision = Callable[[PauseState | None, int], PauseState | None]
 
 
 class PauseService:
-    """Pause starten, beenden, für heute Schluss und lesen (Verwalter-API)."""
+    """Start, end, end for today and read the pause (manager API)."""
 
     def __init__(self, worlds: WorldService) -> None:
         self._worlds = worlds
 
     def zone(self) -> ZoneInfo:
-        """Haushalts-Zeitzone für die Uhrzeit des Endes (Seite und Bot)."""
+        """Household time zone for the time of the end (page and bot)."""
         return self._worlds.time.zone()
 
     async def get(self) -> PauseResult:
-        """Aktuelle Pause oder None; eine abgelaufene Pause zählt nicht mehr."""
+        """Current pause or None; an expired pause no longer counts."""
         return await anyio.to_thread.run_sync(self._get_sync)
 
     async def start(self, acting_uid: str, minutes: int) -> PauseResult:
-        """Pause starten oder verlängern; ein laufendes "Für heute Schluss" bleibt unverändert (WR-01)."""
+        """Start or extend a pause; a running "Für heute Schluss" stays unchanged (WR-01)."""
         if minutes not in PAUSE_MINUTES:
             raise ValueError(MSG_BAD_MINUTES)
 
         def decide(current: PauseState | None, now: int) -> PauseState:
             if current is not None and current.art == ART_SCHLUSS:
-                # Nie herabstufen: Die Elternentscheidung "Schluss" gilt bis morgen.
+                # Never downgrade: the parents' decision "Schluss" applies until tomorrow.
                 return current
             ab, bis = start_window(now, minutes, current)
             return PauseState(started_by=acting_uid, ab=ab, bis=bis, art=ART_PAUSE)
@@ -193,8 +193,8 @@ class PauseService:
         return await anyio.to_thread.run_sync(self._worlds.apply_pause_sync, decide, OUTBOX_PAUSE_SCHLUSS)
 
     async def end(self, acting_uid: str) -> PauseResult:
-        """Beendet die Pause sofort; ohne laufende Pause ändert sich nichts (idempotent)."""
-        del acting_uid  # Wer beendet, wird nicht gespeichert (es gibt danach keinen Zustand).
+        """End the pause immediately; without a running pause nothing changes (idempotent)."""
+        del acting_uid  # Who ends it is not stored (there is no state afterwards).
 
         def decide(current: PauseState | None, now: int) -> None:
             del current, now

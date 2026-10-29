@@ -1,22 +1,22 @@
-"""Verbuchung des Zählbuchs (rein), 04-RESEARCH.md Pattern 5 und Code Example.
+"""Booking of the counter ledger (pure), 04-RESEARCH.md pattern 5 and code example.
 
-Jede Welt schreibt ein eigenes, monotones Zählbuch (Sekunden je Spielername).
-``increments`` vergleicht den aktuellen Stand mit dem zuletzt gesehenen und gibt
-nur den echten Zuwachs je Name zurück, dazu den neuen gesehenen Stand.
+Each world writes its own monotonic counter ledger (seconds per player name).
+``increments`` compares the current state with the last one seen and returns
+only the real increase per name, plus the new state seen.
 
-Zwei Fälle verankern nur neu, ohne Zuwachs (Schutz gegen Doppel- oder
-Minuszählung, Pitfall 7 und T-04-10):
+Two cases only re-anchor, without an increase (protection against double or
+negative counting, pitfall 7 and T-04-10):
 
-- Erstkontakt: Ein Name, der zum ersten Mal auftaucht, wurde womöglich schon vor
-  dem ersten ExApp-Blick gespielt. Nur verankern ist die sichere Wahl gegen
-  Doppelzählung; höchstens die Zeit vor dem ersten Blick geht verloren.
-- Rücksprung: Ein Restore oder ein neues Volume bringt ein kleineres Zählbuch.
-  Es wird neu verankert, nie negativ verbucht.
+- First contact: a name that appears for the first time may already have been
+  played before the first ExApp look. Anchoring only is the safe choice against
+  double counting; at most the time before the first look is lost.
+- Rollback: a restore or a new volume brings a smaller ledger. It is
+  re-anchored, never booked as negative.
 
-Namen werden ohne Rücksicht auf Groß-/Kleinschreibung zugeordnet wie
-``players.player_name`` (COLLATE NOCASE); der Zuwachs trägt den Namen aus dem
-aktuellen Zählbuch. ``attribution_day`` ordnet einen Zuwachs dem lokalen Tag des
-Zählbuch-Kopfs zu (Schreibzeitpunkt), nicht dem Lesezeitpunkt.
+Names are matched case-insensitively like ``players.player_name``
+(COLLATE NOCASE); the increase carries the name from the current ledger.
+``attribution_day`` assigns an increase to the local day of the ledger head
+(time of writing), not of reading.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from gameworld.playtime.plan import local_day
 
 
 def increments(seen: dict[str, int], current: dict[str, int]) -> tuple[dict[str, int], dict[str, int]]:
-    """(Zuwachs je Name, neuer gesehener Stand). Rücksprung und Erstkontakt nur verankern."""
+    """(Increase per name, new state seen). Rollback and first contact only anchor."""
     seen_by_fold = {name.casefold(): value for name, value in seen.items()}
     delta: dict[str, int] = {}
     for name, value in current.items():
@@ -39,5 +39,5 @@ def increments(seen: dict[str, int], current: dict[str, int]) -> tuple[dict[str,
 
 
 def attribution_day(written_at: int, tz: ZoneInfo) -> date:
-    """Lokaler Kalendertag des Zählbuch-Kopfs (Schreibzeitpunkt, nicht Lesezeitpunkt)."""
+    """Local calendar day of the ledger head (time of writing, not of reading)."""
     return local_day(written_at, tz)

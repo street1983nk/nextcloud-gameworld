@@ -1,34 +1,34 @@
-"""Spielzeit-Regeln je Kind, Ferien und Zeitzone pflegen (ZEIT-01, ZEIT-03, ZEIT-04, Verwalter).
+"""Maintain playtime rules per child, holidays and time zone (ZEIT-01, ZEIT-03, ZEIT-04, manager).
 
-Nur die ExApp kann ein Kontingent über alle Welten rechnen (O-03): Dieser Dienst
-schreibt den Wochenplan (und den Ferienplan) eines Kindes in die Datenbank und
-schiebt die Regeldatei sofort in jede Welt des Kindes (``WorldService.push_time``),
-ohne Welt-Neustart. Ferienzeiträume und Zeitzone gelten für den ganzen Haushalt
-(O-08, O-02): Jede Änderung schreibt die Regeldatei aller Welten, damit keine
-Welt mit dem alten Plan oder alten Tagesgrenzen weiterläuft.
+Only the ExApp can compute a quota across all worlds (O-03): this service
+writes the weekly plan (and the holiday plan) of a child into the database and
+pushes the rule file immediately into every world of the child (``WorldService.push_time``),
+without a world restart. Holiday periods and time zone apply to the whole household
+(O-08, O-02): every change rewrites the rule file of all worlds, so that no
+world keeps running with the old plan or old day boundaries.
 
-Welt-Zeitfenster (ZEIT-05) setzt nur die Welt-Zeile der Regeldatei: Kinder kommen
-außerhalb nicht hinein und werden am Fensterende getrennt, die Welt selbst läuft
-weiter (O-05, kein Stopp, kein Eingriff ins Eltern-Soll).
+A world time window (ZEIT-05) only sets the world line of the rule file: children cannot
+get in outside it and are disconnected at the window end, the world itself keeps
+running (O-05, no stop, no intervention in the parents' desired state).
 
-Verwalter-Schnappschuss (O-11/A4, ROLLE-03): Der Zeittakt hat keinen handelnden
-Nutzer, Gruppen löst aber nur ein berechtigtes Konto auf. Darum holt
-``refresh_admins`` im Kontext eines geprüften Verwalters die Mitglieder jeder
-Verwalter-Gruppe (gedrosselt) und führt den Stand JE GRUPPE (Tabelle
-verwalter_snapshot). Darf das Konto eine Gruppe nicht lesen (403, etwa ein Lehrer
-die Gruppe admin) oder stört Nextcloud, bleibt genau der Stand dieser Gruppe
-(P-03). Die Vereinigung aller Gruppenstände steht als meta ``time_admins`` (JSON,
-sortiert, der handelnde Verwalter immer darin); alle bisherigen Leser sehen sie
-unverändert. Getrennt davon führt meta ``nc_admins`` die bestätigten Mitglieder der
-Gruppe admin: Nur sie dürfen den Kontenabgleich auslösen (404-Falle, F-04). Ohne
-jeden Stand gibt es keine Freistellung (fail closed).
+Manager snapshot (O-11/A4, ROLLE-03): the time tick has no acting
+user, but only an authorized account resolves groups. Therefore
+``refresh_admins`` fetches, in the context of a verified manager, the members of each
+manager group (throttled) and keeps the state PER GROUP (table
+verwalter_snapshot). If the account may not read a group (403, e.g. a teacher
+on the group admin) or Nextcloud is disturbed, exactly the state of that group
+stays (P-03). The union of all group states stands as meta ``time_admins`` (JSON,
+sorted, the acting manager always in it); all existing readers see it
+unchanged. Separately, meta ``nc_admins`` keeps the confirmed members of the
+group admin: only they may trigger the account reconciliation (404 trap, F-04). Without
+any state there is no exemption (fail closed).
 
-Sperr-Regel (wie access/service.py, _LOCK ist nicht reentrant): Nextcloud-Aufrufe
-(Anzeigename, Gruppe admin) laufen immer außerhalb von ``worlds.mutation()`` und
-immer VOR dem Betreten; unter der Sperre nur Store und das Schreiben der
-Regeldatei. Dashboard-Pfade nehmen die Sperre nur per ``try_mutation()``. Der
-Anzeigename ist Beiwerk: Fällt Nextcloud aus, steht der Konto-Name statt des
-Anzeigenamens, die Regel selbst hängt nicht daran.
+Lock rule (as in access/service.py, _LOCK is not reentrant): Nextcloud calls
+(display name, group admin) always run outside ``worlds.mutation()`` and
+always BEFORE entering; under the lock only the store and writing the
+rule file. Dashboard paths take the lock only via ``try_mutation()``. The
+display name is an extra: if Nextcloud fails, the account name stands instead of the
+display name, the rule itself does not depend on it.
 """
 
 from __future__ import annotations
@@ -67,27 +67,27 @@ from gameworld.worlds.store import WorldStore
 
 LOG = logging.getLogger(__name__)
 
-# Datensparsamkeit: höchstens so viele Ferienzeiträume (T-04-23).
+# Data minimization: at most this many holiday periods (T-04-23).
 MAX_HOLIDAYS = 50
 MSG_TOO_MANY_HOLIDAYS = f"Es sind höchstens {MAX_HOLIDAYS} Ferienzeiträume möglich."
 MSG_NO_HOLIDAY = "Diesen Ferienzeitraum gibt es nicht."
 MSG_ADMIN_NO_RULES = "Verwalter haben keine Spielzeitregeln."
 MSG_ADULT_IS_VERWALTER = "Dieses Konto verwaltet Gameworld und spielt ohnehin ohne Regeln."
 MSG_WINDOW_NEEDS_OPEN_DAY = "Eine Welt mit Zeitfenster braucht mindestens einen offenen Tag."
-# Verwalter-Schnappschuss höchstens so oft aus Nextcloud holen (wie SYNC_INTERVAL_SECONDS).
+# Fetch the manager snapshot from Nextcloud at most this often (like SYNC_INTERVAL_SECONDS).
 ADMINS_INTERVAL_SECONDS = 60
-# Bestätigte Mitglieder der Gruppe admin (JSON, sortiert); nur sie lösen den Kontenabgleich aus.
-# Bewusst hier und nicht in playtime/engine.py (der Erwachsen-Plan ändert engine.py).
+# Confirmed members of the group admin (JSON, sorted); only they trigger the account reconciliation.
+# Deliberately here and not in playtime/engine.py (the adult plan changes engine.py).
 META_NC_ADMINS = "nc_admins"
-# Kind-Ansicht: weniger Rest gilt als aufgebraucht, gleiche Schwelle wie MIN_LEFT im Welt-Mod (Pitfall 8).
+# Child view: less rest counts as used up, same threshold as MIN_LEFT in the world mod (pitfall 8).
 MIN_LEFT_SECONDS = 60
-# Lesefehler der Zeitregeln (Datenbank, Zeitzone, kaputte Zeilen) werden 503.
+# Read errors of the time rules (database, time zone, broken rows) become 503.
 _READ_ERRORS = (sqlite3.Error, ValueError, KeyError)
 
 
 @dataclass
 class AdminsState:
-    """Zeitpunkt (monotonic) der letzten Abfrage der Verwalter-Gruppen."""
+    """Time (monotonic) of the last query of the manager groups."""
 
     last: float | None = None
 
@@ -96,16 +96,16 @@ ADMINS_STATE = AdminsState()
 
 
 class HolidayNotFoundError(LookupError):
-    """Unbekannte Ferien-id (404)."""
+    """Unknown holiday id (404)."""
 
 
 @dataclass
 class _GroupRead:
-    """Ergebnis der Abfragen einer Verwalter-Gruppe in einem Lauf.
+    """Result of the queries of one manager group in a run.
 
-    ``answer``: letzte erfolgreiche Mitgliederliste (Nextclouds Antwort), None ohne
-    Erfolg. ``confirmed``: Konten, die die Gruppe selbst lesen konnten UND darin
-    stehen (CR-01). ``rejected``: Konten, denen Nextcloud die Gruppe verweigert hat.
+    ``answer``: last successful member list (Nextcloud's answer), None without
+    success. ``confirmed``: accounts that could read the group themselves AND are
+    in it (CR-01). ``rejected``: accounts to which Nextcloud denied the group.
     """
 
     answer: frozenset[str] | None = None
@@ -116,7 +116,7 @@ class _GroupRead:
 
 @dataclass(frozen=True)
 class _AdminsUpdate:
-    """Neuer Verwalter-Stand: je Gruppe, Vereinigung (JSON), NC-Admins (JSON, None = unverändert)."""
+    """New manager state: per group, union (JSON), NC admins (JSON, None = unchanged)."""
 
     stands: dict[str, frozenset[str]]
     union: str
@@ -127,11 +127,11 @@ class _AdminsUpdate:
 def _next_stands(
     groups: list[str], previous: dict[str, set[str]], reads: dict[str, _GroupRead]
 ) -> dict[str, frozenset[str]]:
-    """Stand je Gruppe: Nextclouds Antwort, sonst der letzte Stand ohne die abgelehnten Konten.
+    """State per group: Nextcloud's answer, otherwise the last state without the rejected accounts.
 
-    Ein Konto, das im Stand einer Gruppe steht und sie trotzdem nicht lesen darf,
-    gehört ihr nicht mehr an (Mitglieder lesen die eigene Gruppe). Wer nur keine
-    Rechte auf die Gruppe hat und nicht darin steht, ändert nichts (P-03).
+    An account that is in the state of a group and still may not read it
+    no longer belongs to it (members read their own group). Whoever merely has
+    no rights on the group and is not in it changes nothing (P-03).
     """
     stands: dict[str, frozenset[str]] = {}
     for gid in groups:
@@ -156,7 +156,7 @@ def _union(groups: Iterable[Iterable[str]]) -> set[str]:
 
 @dataclass(frozen=True)
 class ChildView:
-    """Spielzeit-Sicht auf ein Kind: Regeln, heutiger Verbrauch und aktuelle Auswertung."""
+    """Playtime view of a child: rules, today's usage and current evaluation."""
 
     nc_user: str
     display_name: str
@@ -166,13 +166,13 @@ class ChildView:
     holiday: WeekPlan | None
     used_today_s: int
     state: ChildState | None
-    # Erwachsen-Schalter (ROLLE-04): Plan ruht, das Konto spielt ohne Regeln.
+    # Adult switch (ROLLE-04): plan dormant, the account plays without rules.
     adult: bool = False
 
 
 @dataclass(frozen=True)
 class HolidayView:
-    """Ferienzeitraum mit id; active heißt: das heutige lokale Datum liegt darin."""
+    """Holiday period with id; active means: today's local date lies in it."""
 
     id: int
     label: str
@@ -183,7 +183,7 @@ class HolidayView:
 
 @dataclass(frozen=True)
 class PlaytimeView:
-    """Alle Kinder (Konten mit Spielerzeile), Ferienzeiträume und Zeitzone des Haushalts."""
+    """All children (accounts with a player row), holiday periods and time zone of the household."""
 
     time_zone: str
     holidays: list[HolidayView]
@@ -192,7 +192,7 @@ class PlaytimeView:
 
 @dataclass(frozen=True)
 class ChildResult:
-    """Ergebnis von set_child/clear_child: die neue Sicht und ob die Welten sie schon tragen."""
+    """Result of set_child/clear_child: the new view and whether the worlds carry it yet."""
 
     child: ChildView
     applied: bool
@@ -200,7 +200,7 @@ class ChildResult:
 
 @dataclass(frozen=True)
 class HolidayResult:
-    """Ergebnis von add_holiday/remove_holiday: der Zeitraum und ob alle Welten ihn tragen."""
+    """Result of add_holiday/remove_holiday: the period and whether all worlds carry it."""
 
     holiday: HolidayView
     applied: bool
@@ -208,7 +208,7 @@ class HolidayResult:
 
 @dataclass(frozen=True)
 class WorldWindowResult:
-    """Ergebnis von set_world_window/clear_world_window: Fenster (None = immer offen) und applied."""
+    """Result of set_world_window/clear_world_window: window (None = always open) and applied."""
 
     world_id: str
     time_window: list[WindowDay] | None
@@ -217,10 +217,10 @@ class WorldWindowResult:
 
 @dataclass(frozen=True)
 class NextTime:
-    """Nächster Start für die Kind-Ansicht: ISO-Wochentag 1..7, lokale Minute 0..1439, Tage ab heute.
+    """Next start for the child view: ISO weekday 1..7, local minute 0..1439, days from today.
 
-    ``days_ahead`` 0 heißt heute, 7 heißt derselbe Wochentag in einer Woche: Nur so
-    kann die Anzeige "heute" sagen, ohne die Zeitzone des Haushalts zu kennen.
+    ``days_ahead`` 0 means today, 7 means the same weekday in a week: only this way
+    can the display say "today" without knowing the household's time zone.
     """
 
     weekday: int
@@ -230,11 +230,11 @@ class NextTime:
 
 @dataclass(frozen=True)
 class MyPlaytime:
-    """Eigene Restzeit eines Kindes (Kind-Ansicht, 04-07); bewusst ohne Pläne und Verbrauch.
+    """A child's own remaining time (child view, 04-07); deliberately without plans and usage.
 
-    ``state``: ok | aufgebraucht | fenster | tag (None ohne Regeln). ``remaining_minutes``
-    abgerundet und nie über das Fensterende hinaus, None ohne Limit. ``until_minute``
-    lokal ab 00:00, None heißt Tagesende. ``next`` nur, wenn gerade nicht gespielt werden darf.
+    ``state``: ok | aufgebraucht | fenster | tag (None without rules). ``remaining_minutes``
+    rounded down and never beyond the window end, None without a limit. ``until_minute``
+    local from 00:00, None means end of day. ``next`` only when playing is currently not allowed.
     """
 
     limited: bool
@@ -249,10 +249,10 @@ UNLIMITED = MyPlaytime(limited=False, state=None, remaining_minutes=None, until_
 
 @dataclass(frozen=True)
 class WindowSlot:
-    """Ein Öffnungsfenster einer Welt: Wochentag, Minuten (Ende 1440 = Tagesende) und Tage ab heute.
+    """An opening window of a world: weekday, minutes (end 1440 = end of day) and days from today.
 
-    ``days_ahead`` 0 heißt heute (auch beim offenen Fenster), 7 derselbe Wochentag
-    in einer Woche; damit sagt die Kind-Ansicht "Heute", "Morgen" oder "Am Samstag".
+    ``days_ahead`` 0 means today (also for the open window), 7 the same weekday
+    in a week; with it the child view says "Heute", "Morgen" or "Am Samstag".
     """
 
     weekday: int
@@ -263,7 +263,7 @@ class WindowSlot:
 
 @dataclass(frozen=True)
 class MyWorldWindow:
-    """Fensterstatus einer Welt für die Kind-Ansicht: offen (None = kein Fenster) und das aktuelle oder nächste."""
+    """Window status of a world for the child view: open (None = no window) and the current or next one."""
 
     open: bool | None
     next: WindowSlot | None
@@ -273,15 +273,15 @@ NO_WINDOW = MyWorldWindow(open=None, next=None)
 
 
 class PlaytimeUnavailableError(RuntimeError):
-    """Die Zeitregeln ließen sich nicht lesen (503, nie Daten anderer)."""
+    """The time rules could not be read (503, never data of others)."""
 
 
 def next_time(start: NextStart | None, now: int, tz: ZoneInfo) -> NextTime | None:
-    """Nächster Start (plan.NextStart) in Wochentag, Minute und Tage ab heute; None ergibt None.
+    """Next start (plan.NextStart) as weekday, minute and days from today; None yields None.
 
-    Die Tage kommen aus dem absoluten Epoch des Starts, nicht aus dem Token
-    ``Sa-10:00``: Liegt der Start eine Woche später am selben Wochentag, aber zu
-    einer späteren Uhrzeit als jetzt, heißt das 7 und nicht "heute" (WR-01).
+    The days come from the absolute epoch of the start, not from the token
+    ``Sa-10:00``: if the start is a week later on the same weekday, but at
+    a later time than now, that means 7 and not "today" (WR-01).
     """
     if start is None:
         return None
@@ -290,7 +290,7 @@ def next_time(start: NextStart | None, now: int, tz: ZoneInfo) -> NextTime | Non
 
 
 def _until_minute(until: int, day: date, tz: ZoneInfo) -> int | None:
-    """Lokale Minute des Fensterendes; None, wenn es das Tagesende (Folgetag 00:00) ist."""
+    """Local minute of the window end; None if it is the end of day (next day 00:00)."""
     local = datetime.fromtimestamp(until, tz)
     if local.date() != day:
         return None
@@ -298,11 +298,11 @@ def _until_minute(until: int, day: date, tz: ZoneInfo) -> int | None:
 
 
 def kid_playtime(state: ChildState, now: int, tz: ZoneInfo) -> MyPlaytime:
-    """Auswertung eines Kindes in die Struktur der Kind-Ansicht (rein).
+    """Evaluation of a child into the structure of the child view (pure).
 
-    Unter MIN_LEFT_SECONDS Rest gilt die Zeit als aufgebraucht bzw. das Fenster
-    als zu (Pitfall 8, dieselbe Schwelle wie MIN_LEFT im Welt-Mod). Die Minuten
-    reichen nie über das Fensterende hinaus.
+    Below MIN_LEFT_SECONDS of rest the time counts as used up or the window
+    as closed (pitfall 8, the same threshold as MIN_LEFT in the world mod). The minutes
+    never reach beyond the window end.
     """
     if state.reason == "tag":
         blocked: str | None = "tag"
@@ -328,7 +328,7 @@ def kid_playtime(state: ChildState, now: int, tz: ZoneInfo) -> MyPlaytime:
 
 
 def world_window_status(now: int, tz: ZoneInfo, windows: dict[int, tuple[int, int]] | None) -> MyWorldWindow:
-    """Welt-Fenster für die Kind-Ansicht: offen jetzt plus heutiges, sonst nächstes Fenster (kein Wochenplan)."""
+    """World window for the child view: open now plus today's, otherwise the next window (no weekly plan)."""
     state = evaluate_world(now, tz, windows)
     if state is None or windows is None:
         return NO_WINDOW
@@ -360,16 +360,16 @@ class TimeService:
         self._directory = directory
 
     async def refresh_admins(self, acting_uid: str, *, force: bool = False, blocking: bool = True) -> bool:
-        """Verwalter-Schnappschuss je Verwalter-Gruppe auffrischen; True, wenn sich time_admins änderte.
+        """Refresh the manager snapshot per manager group; True if time_admins changed.
 
-        Nur im Kontext eines geprüften Verwalters aufrufen und nie unter
-        ``mutation()`` (die Gruppenabfragen laufen vorher, außerhalb der Sperre).
-        Gedrosselt auf ADMINS_INTERVAL_SECONDS, außer mit ``force``. Jede Gruppe
-        einzeln: Ablehnung (403, etwa ein Lehrer auf der Gruppe admin) oder Störung
-        lassen genau den Stand dieser Gruppe stehen (P-03). Ändert sich die
-        Vereinigung, bekommen alle Welten die neue Regeldatei: ``blocking`` unter
-        ``mutation()``, sonst (Dashboard) per ``try_mutation()``; bei belegter Sperre
-        holt der nächste Aufruf nach.
+        Call only in the context of a verified manager and never under
+        ``mutation()`` (the group queries run beforehand, outside the lock).
+        Throttled to ADMINS_INTERVAL_SECONDS, except with ``force``. Each group
+        individually: rejection (403, e.g. a teacher on the group admin) or a disturbance
+        leaves exactly the state of that group in place (P-03). If the
+        union changes, all worlds get the new rule file: ``blocking`` under
+        ``mutation()``, otherwise (dashboard) via ``try_mutation()``; if the lock is busy,
+        the next call catches up.
         """
         now = monotonic()
         if not force and ADMINS_STATE.last is not None and now - ADMINS_STATE.last < ADMINS_INTERVAL_SECONDS:
@@ -378,10 +378,10 @@ class TimeService:
         groups = await self._verwalter_groups()
         reads = await self._read_groups(groups, [acting_uid])
         if any(read.outage for read in reads.values()):
-            LOG.warning("Eine Verwalter-Gruppe ist nicht abrufbar, ihr letzter Stand bleibt")
+            LOG.warning("A manager group is not retrievable, its last state stays")
             ADMINS_STATE.last = None
         if all(read.answer is None and not read.rejected for read in reads.values()):
-            # Reine Störung: Nichts Neues zu wissen, der letzte Stand bleibt unverändert.
+            # Mere disturbance: nothing new to know, the last state stays unchanged.
             return False
         update = await anyio.to_thread.run_sync(self._plan_refresh, groups, reads, acting_uid)
         if update is None:
@@ -391,30 +391,30 @@ class TimeService:
         return await anyio.to_thread.run_sync(self._try_store_admins_sync, update)
 
     async def verify_admins(self, candidates: Iterable[str]) -> str | None:
-        """Hintergrund-Prüfung des Schnappschusses ohne geprüften Verwalter (CR-01); bestätigtes Konto oder None.
+        """Background check of the snapshot without a verified manager (CR-01); confirmed account or None.
 
-        Fragt jede Verwalter-Gruppe der Reihe nach als die Konten aus ``candidates``.
-        Bestätigt ist ein Konto nur, wenn es eine Gruppe selbst lesen kann UND darin
-        steht; ungeprüft wird nie ein Konto eingefügt. Eine erfolgreiche Antwort
-        ersetzt den Stand dieser Gruppe. Ohne Antwort bleibt er (ein Lehrer ohne
-        Recht auf die Gruppe admin leert sie nie, P-03); nur Konten, die darin
-        standen und abgelehnt wurden, fallen heraus. Lehnt Nextcloud jedes Konto
-        ausdrücklich ab (401/403), wird der Schnappschuss leer (fail closed, keine
-        Empfänger, keine Freistellung). meta ``nc_admins`` bekommt die eben
-        gelesenen Mitglieder der Gruppe admin; ohne Antwort auf admin ist sie leer,
-        dann läuft kein Kontenabgleich (F-04). Vorher muss Nextcloud die ExApp selbst
-        annehmen (Directory.app_accepted), sonst fragt die Prüfung gar nicht erst
-        und der Stand bleibt. Bei einer reinen Störung bleibt der letzte Stand, es
-        gilt aber kein Konto als bestätigt. Belegte Sperre: None, der nächste Lauf
-        versucht es erneut.
+        Asks each manager group in turn as the accounts from ``candidates``.
+        An account is confirmed only if it can read a group itself AND is in
+        it; an account is never inserted unchecked. A successful answer
+        replaces the state of that group. Without an answer it stays (a teacher without
+        rights on the group admin never empties it, P-03); only accounts that were in it
+        and were rejected drop out. If Nextcloud explicitly rejects every account
+        (401/403), the snapshot becomes empty (fail closed, no
+        recipients, no exemption). meta ``nc_admins`` gets the members of the group
+        admin just read; without an answer on admin it is empty,
+        then no account reconciliation runs (F-04). Beforehand Nextcloud must accept the ExApp
+        itself (Directory.app_accepted), otherwise the check does not even ask
+        and the state stays. On a mere disturbance the last state stays, but
+        no account counts as confirmed. Lock busy: None, the next run
+        tries again.
         """
-        # Gegenprobe zuerst: Solange Nextcloud die ExApp selbst ablehnt (Start,
-        # Neuregistrierung), bekommt jedes Konto 401. Das ist eine Störung, keine
-        # Ablehnung der Konten; ohne Gegenprobe leerte jeder Neustart den
-        # Schnappschuss. Danach, nicht davor: eine spätere Probe könnte schon gelingen,
-        # während die Abfragen noch abgelehnt wurden (am Dev-Stack beobachtet).
+        # Control probe first: as long as Nextcloud rejects the ExApp itself (startup,
+        # re-registration), every account gets 401. That is a disturbance, not a
+        # rejection of the accounts; without the probe every restart would empty the
+        # snapshot. After, not before: a later probe might already succeed
+        # while the queries were still rejected (observed on the dev stack).
         if not await self._directory.app_accepted():
-            LOG.warning("Verwalter-Schnappschuss nicht bestätigt, Nextcloud nimmt Gameworld gerade nicht an")
+            LOG.warning("Manager snapshot not confirmed, Nextcloud is currently not accepting Gameworld")
             return None
         order = list(dict.fromkeys(candidates))
         if not order:
@@ -422,7 +422,7 @@ class TimeService:
         groups = await self._verwalter_groups()
         reads = await self._read_groups(groups, order)
         if all(read.answer is None and not read.rejected for read in reads.values()):
-            LOG.warning("Verwalter-Schnappschuss nicht bestätigt, der letzte Stand bleibt")
+            LOG.warning("Manager snapshot not confirmed, the last state stays")
             return None
         confirmed = _union(read.confirmed for read in reads.values())
         acting = next((uid for uid in order if uid in confirmed), None)
@@ -431,20 +431,20 @@ class TimeService:
         if not await anyio.to_thread.run_sync(self._store_admins_background_sync, update):
             return None
         if acting is None:
-            LOG.warning("Kein Konto des Verwalter-Schnappschusses ist bestätigt, der Stand folgt den Antworten")
+            LOG.warning("No account of the manager snapshot is confirmed, the state follows the answers")
             return None
         ADMINS_STATE.last = monotonic()
         return acting
 
     async def _verwalter_groups(self) -> list[str]:
-        """Konfigurierte Verwalter-Gruppen, admin zuerst; kaputte Konfiguration heißt nur admin (fail closed)."""
+        """Configured manager groups, admin first; a broken configuration means admin only (fail closed)."""
         raw = await anyio.to_thread.run_sync(self._store.get_meta, META_VERWALTER_GROUPS)
         return sorted(parse_verwalter_groups(raw), key=lambda gid: (gid != ADMIN_GROUP, gid))
 
     async def _read_groups(self, groups: list[str], candidates: list[str]) -> dict[str, _GroupRead]:
-        """Jede Gruppe als die Kandidaten der Reihe nach, bis einer sie liest und darin steht.
+        """Each group as the candidates in turn, until one reads it and is in it.
 
-        Außerhalb jeder Sperre (Sperr-Regel); ein Fehler betrifft nur die eine Gruppe.
+        Outside any lock (lock rule); an error affects only that one group.
         """
         reads: dict[str, _GroupRead] = {}
         for gid in groups:
@@ -466,7 +466,7 @@ class TimeService:
         return reads
 
     async def list_children(self, acting_uid: str) -> PlaytimeView:
-        """Alle Konten mit Spielerzeile (ohne Verwalter), je mit Regeln, Verbrauch und Auswertung."""
+        """All accounts with a player row (without managers), each with rules, usage and evaluation."""
         await self.refresh_admins(acting_uid)
         snapshot = await anyio.to_thread.run_sync(self._snapshot)
         children: list[ChildView] = []
@@ -478,10 +478,10 @@ class TimeService:
     async def set_child(
         self, acting_uid: str, nc_user: str, normal: WeekPlan, holiday: WeekPlan | None = None
     ) -> ChildResult:
-        """Setzt Wochen- und Ferienplan eines Kindes und schreibt die Regeldatei in alle seine Welten.
+        """Set the weekly and holiday plan of a child and write the rule file into all its worlds.
 
-        ``holiday`` None heißt: In den Ferien gilt der Normalplan. Verwalter-Konten
-        lehnt er ab (ValueError, 422): Sie sind freigestellt (A4).
+        ``holiday`` None means: during holidays the normal plan applies. It rejects
+        manager accounts (ValueError, 422): they are exempt (A4).
         """
         await self._require_player(nc_user)
         await self.refresh_admins(acting_uid, force=True)
@@ -489,43 +489,43 @@ class TimeService:
         return await self._result(acting_uid, nc_user, applied)
 
     async def clear_child(self, acting_uid: str, nc_user: str) -> ChildResult:
-        """Entfernt die Regeln eines Kindes (zurück auf keine Begrenzung, O-10); der heutige Verbrauch bleibt."""
+        """Remove the rules of a child (back to no limit, O-10); today's usage stays."""
         await self._require_player(nc_user)
         await self.refresh_admins(acting_uid, force=True)
         applied = await anyio.to_thread.run_sync(self._clear_sync, nc_user)
         return await self._result(acting_uid, nc_user, applied)
 
     async def set_adult(self, acting_uid: str, nc_user: str, *, adult: bool) -> bool:
-        """Erwachsen-Schalter eines eingeladenen Kontos (ROLLE-04, D-05/D-08); True, wenn alle Welten ihn tragen.
+        """Adult switch of an invited account (ROLLE-04, D-05/D-08); True if all worlds carry it.
 
-        Nur aus dem Verwalter-Router aufrufen (D-06). Wirkt ausschließlich auf die
-        Zeitregeln (frei-Zeile, keine Verbuchung), nie auf Verwaltungs- oder
-        Luanti-Rechte. Unbekanntes Konto: PlayerNotFoundError; ein Verwalter-Konto
-        lässt sich nicht als erwachsen markieren (ValueError MSG_ADULT_IS_VERWALTER).
+        Call only from the manager router (D-06). Acts exclusively on the
+        time rules (frei line, no booking), never on administration or
+        Luanti rights. Unknown account: PlayerNotFoundError; a manager account
+        cannot be marked as an adult (ValueError MSG_ADULT_IS_VERWALTER).
         """
-        # Nextcloud-Abfrage außerhalb der Sperre (Sperr-Regel), danach frischer Verwalter-Stand.
+        # Nextcloud query outside the lock (lock rule), then a fresh manager state.
         await self.refresh_admins(acting_uid, force=True)
         return await anyio.to_thread.run_sync(self._adult_sync, nc_user, adult, acting_uid)
 
     async def add_holiday(self, holiday: Holiday) -> HolidayResult:
-        """Legt einen Ferienzeitraum für den Haushalt an und schreibt alle Welten neu (O-08)."""
+        """Create a holiday period for the household and rewrite all worlds (O-08)."""
         return await anyio.to_thread.run_sync(self._add_holiday_sync, holiday)
 
     async def remove_holiday(self, holiday_id: int) -> HolidayResult:
-        """Entfernt einen Ferienzeitraum; ab sofort gilt wieder der Normalplan, wo er griff."""
+        """Remove a holiday period; from now on the normal plan applies again where it took effect."""
         return await anyio.to_thread.run_sync(self._remove_holiday_sync, holiday_id)
 
     async def set_time_zone(self, time_zone: str) -> bool:
-        """Setzt die Zeitzone (der Aufrufer prüft gegen ``available_timezones``) und schreibt alle Welten neu."""
+        """Set the time zone (the caller checks against ``available_timezones``) and rewrite all worlds."""
         return await anyio.to_thread.run_sync(self._set_time_zone_sync, time_zone)
 
     async def set_world_window(
         self, acting_uid: str, world_id: str, windows: dict[int, tuple[int, int]]
     ) -> WorldWindowResult:
-        """Setzt das Wochen-Zeitfenster einer Welt (fehlender Wochentag = geschlossen) und schreibt die Regeldatei.
+        """Set the weekly time window of a world (missing weekday = closed) and write the rule file.
 
-        Die Welt läuft weiter (O-05); außerhalb des Fensters sperrt der Mod Kinder
-        beim Beitritt und trennt verbundene am Fensterende.
+        The world keeps running (O-05); outside the window the mod blocks children
+        on joining and disconnects connected ones at the window end.
         """
         if not windows:
             raise ValueError(MSG_WINDOW_NEEDS_OPEN_DAY)
@@ -534,29 +534,29 @@ class TimeService:
         return await anyio.to_thread.run_sync(self._window_sync, world_id, windows)
 
     async def clear_world_window(self, acting_uid: str, world_id: str) -> WorldWindowResult:
-        """Entfernt das Zeitfenster: Die Welt ist ab sofort immer offen, ohne Neustart."""
+        """Remove the time window: the world is always open from now on, without a restart."""
         await self._require_world(world_id)
         await self.refresh_admins(acting_uid, force=True)
         return await anyio.to_thread.run_sync(self._window_sync, world_id, None)
 
     async def my_playtime(self, nc_user: str, *, exempt: bool) -> MyPlaytime:
-        """Eigene Restzeit für die Kind-Ansicht; ``nc_user`` kommt aus der signierten Anfrage.
+        """A child's own remaining time for the child view; ``nc_user`` comes from the signed request.
 
-        ``exempt`` (Verwalter laut Selbstauskunft) und Konten im Verwalter-Schnappschuss
-        sind frei wie im Welt-Mod (A4); ohne Regeln keine Begrenzung (O-10). Liest
-        nur, ohne Sperre. Lesefehler: PlaytimeUnavailableError.
+        ``exempt`` (manager by self-declaration) and accounts in the manager snapshot
+        are free as in the world mod (A4); without rules no limit (O-10). Only
+        reads, without a lock. Read error: PlaytimeUnavailableError.
         """
         if exempt:
             return UNLIMITED
         return await anyio.to_thread.run_sync(self._my_playtime_sync, nc_user)
 
     async def my_world_windows(self, world_ids: list[str]) -> dict[str, MyWorldWindow]:
-        """Fensterstatus je eigener Welt (offen jetzt, aktuelles oder nächstes Fenster); Lesefehler: 503."""
+        """Window status per own world (open now, current or next window); read error: 503."""
         return await anyio.to_thread.run_sync(self._my_world_windows_sync, world_ids)
 
     def _my_playtime_sync(self, nc_user: str) -> MyPlaytime:
         try:
-            # Frei-Menge wie im Welt-Mod: Verwalter und Erwachsene (ROLLE-04).
+            # Free set as in the world mod: managers and adults (ROLLE-04).
             if nc_user in self._admins() or nc_user in self._store.adults():
                 return UNLIMITED
             engine = self._worlds.time
@@ -565,7 +565,7 @@ class TimeService:
                 return UNLIMITED
             return kid_playtime(state, engine.now(), self._zone())
         except _READ_ERRORS as exc:
-            LOG.warning("Spielzeit für die Kind-Ansicht nicht lesbar: %s", type(exc).__name__)
+            LOG.warning("Playtime for the child view not readable: %s", type(exc).__name__)
             raise PlaytimeUnavailableError from exc
 
     def _my_world_windows_sync(self, world_ids: list[str]) -> dict[str, MyWorldWindow]:
@@ -576,16 +576,16 @@ class TimeService:
                 world_id: world_window_status(now, tz, self._store.world_window(world_id)) for world_id in world_ids
             }
         except _READ_ERRORS as exc:
-            LOG.warning("Welt-Zeitfenster für die Kind-Ansicht nicht lesbar: %s", type(exc).__name__)
+            LOG.warning("World time window for the child view not readable: %s", type(exc).__name__)
             raise PlaytimeUnavailableError from exc
 
     def _zone(self) -> ZoneInfo:
         return load_zone(self._store.get_meta("time_zone") or "")
 
-    # Unter der Sperre (Worker-Thread)
+    # Under the lock (worker thread)
 
     def _previous_stands(self) -> dict[str, set[str]]:
-        """Letzter Stand je Gruppe; vor dem ersten Lauf mit Schema 8 gilt der alte Schnappschuss als Gruppe admin."""
+        """Last state per group; before the first run with schema 8 the old snapshot counts as group admin."""
         stands = self._store.group_snapshot()
         if not stands:
             legacy = self._admins()
@@ -594,7 +594,7 @@ class TimeService:
         return stands
 
     def _plan_refresh(self, groups: list[str], reads: dict[str, _GroupRead], acting_uid: str) -> _AdminsUpdate | None:
-        """Neuer Stand nach einem Verwalter-Besuch; None, wenn sich nichts ändert (dann keine Sperre)."""
+        """New state after a manager visit; None if nothing changes (then no lock)."""
         stands = _next_stands(groups, self._previous_stands(), reads)
         union = _json_list(_union(stands.values()) | {acting_uid})
         admin_read = reads[ADMIN_GROUP]
@@ -609,12 +609,12 @@ class TimeService:
         return update if self._differs(update) else None
 
     def _plan_verify(self, groups: list[str], reads: dict[str, _GroupRead], seen_at: str) -> _AdminsUpdate:
-        """Neuer Stand nach der Hintergrund-Prüfung; nc_admins nur aus einer frischen Antwort der Gruppe admin."""
+        """New state after the background check; nc_admins only from a fresh answer of the group admin."""
         stands = _next_stands(groups, self._previous_stands(), reads)
         answered = any(read.answer is not None for read in reads.values())
         outage = any(read.outage for read in reads.values())
         if not answered and not outage:
-            # Jede Abfrage jedes Kontos abgelehnt: Niemand ist mehr bestätigt (fail closed).
+            # Every query of every account rejected: nobody is confirmed anymore (fail closed).
             stands = {gid: frozenset[str]() for gid in groups}
         admin_answer = reads[ADMIN_GROUP].answer
         return _AdminsUpdate(
@@ -638,13 +638,13 @@ class TimeService:
     def _try_store_admins_sync(self, update: _AdminsUpdate) -> bool:
         with self._worlds.try_mutation() as acquired:
             if not acquired:
-                # Belegte Sperre: Der nächste Verwalter-Aufruf versucht es erneut.
+                # Lock busy: the next manager call tries again.
                 ADMINS_STATE.last = None
                 return False
             return self._apply_admins(update)
 
     def _store_admins_background_sync(self, update: _AdminsUpdate) -> bool:
-        """Hintergrund: Stand ohne Warten ablegen; True, wenn er jetzt gilt."""
+        """Background: store the state without waiting; True if it applies now."""
         with self._worlds.try_mutation() as acquired:
             if not acquired:
                 return False
@@ -652,9 +652,9 @@ class TimeService:
             return True
 
     def _apply_admins(self, update: _AdminsUpdate) -> bool:
-        """Nur unter der Sperre: Stand je Gruppe, NC-Admins, Dienstalter und Vereinigung ablegen.
+        """Only under the lock: store state per group, NC admins, service age and union.
 
-        True, wenn time_admins neu ist; dann bekommen alle Welten die neue Regeldatei.
+        True if time_admins is new; then all worlds get the new rule file.
         """
         for gid, uids in sorted(update.stands.items()):
             self._store.replace_group_snapshot(gid, set(uids))
@@ -702,21 +702,21 @@ class TimeService:
                     raise ValueError(MSG_ADULT_IS_VERWALTER)
                 self._store.set_adult(nc_user, acting_uid, set_at)
             else:
-                # Zurück auf Kind ist immer erlaubt, auch für ein inzwischen verwaltendes Konto.
+                # Back to child is always allowed, also for an account that has since become a manager.
                 self._store.clear_adult(nc_user)
             return all(self._worlds.push_time(world_id) for world_id in self._store.player_worlds(nc_user))
 
     def _clear_sync(self, nc_user: str) -> bool:
         with self._worlds.mutation():
-            # Heutigen Verbrauch behalten: erneutes Setzen gibt kein frisches Kontingent (WR-04).
+            # Keep today's usage: setting again gives no fresh quota (WR-04).
             today = local_day(self._worlds.time.now(), self._zone())
             self._store.clear_child(nc_user, keep_from=today)
             return all(self._worlds.push_time(world_id) for world_id in self._store.player_worlds(nc_user))
 
     def _add_holiday_sync(self, holiday: Holiday) -> HolidayResult:
         with self._worlds.mutation():
-            # Zählen und Anlegen unter derselben Sperre: zwei parallele Anfragen
-            # können die Obergrenze nicht gemeinsam überschreiten.
+            # Count and create under the same lock: two parallel requests
+            # cannot exceed the upper limit together.
             if len(self._store.holiday_rows()) >= MAX_HOLIDAYS:
                 raise ValueError(MSG_TOO_MANY_HOLIDAYS)
             holiday_id = self._store.add_holiday(holiday.start, holiday.end, holiday.label)
@@ -739,10 +739,10 @@ class TimeService:
             return self._refresh_all_worlds()
 
     def _refresh_all_worlds(self) -> bool:
-        """Regeldatei aller Welten der Datenbank neu schreiben; nur unter mutation().
+        """Rewrite the rule file of all worlds in the database; only under mutation().
 
-        Ohne Container schreibt der nächste Start (push_time liefert dann False).
-        Ergebnis: Tragen alle Welten den neuen Stand schon?
+        Without a container the next start writes it (push_time then returns False).
+        Result: do all worlds already carry the new state?
         """
         results = [self._worlds.push_time(row.id) for row in self._store.list_worlds()]
         return all(results)
@@ -765,7 +765,7 @@ class TimeService:
         today = local_day(int(time.time()), load_zone(tz_name))
         plans = self._store.child_plans()
         holidays = [self._holiday_view(hid, item, today) for hid, item in self._store.holiday_rows()]
-        # Verwalter erscheinen nicht in der Kinderliste (A4); die Einzelsicht nach clear_child zeigt sie.
+        # Managers do not appear in the child list (A4); the single view after clear_child shows them.
         admins = self._admins() if without_admins else frozenset[str]()
         adults = self._store.adults()
         rows: list[ChildView] = []

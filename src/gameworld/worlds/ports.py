@@ -1,4 +1,4 @@
-"""Vergabe der UDP-Host-Ports."""
+"""Allocation of the UDP host ports."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ TEXT_PORTS_TAKEN = "Alle UDP-Ports im Bereich {low}-{high} sind belegt."
 
 
 class NoFreePortError(ProvisionerError):
-    """Alle Ports im konfigurierten Bereich sind vergeben."""
+    """All ports in the configured range are taken."""
 
 
 def allocate_port(port_range: tuple[int, int], used: set[int]) -> int:
-    """Kleinster freier Port im Bereich, sonst NoFreePortError."""
+    """Lowest free port in the range, otherwise NoFreePortError."""
     low, high = port_range
     for port in range(low, high + 1):
         if port not in used:

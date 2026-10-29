@@ -1,34 +1,35 @@
-"""Die Spielzeit-Rechnung der ExApp: verbuchen, rendern, Verbrauch pflegen.
+"""The ExApp's playtime calculation: book, render, maintain usage.
 
-Nur diese Schicht verbindet die reinen Module (``playtime.plan``,
-``playtime.ledger``, ``provisioner.time_mod``) mit der Datenbank (Schema 4). Sie
-ist synchron und kennt kein Docker: Sie liest und schreibt ausschließlich den
-Store und reine Funktionen. Der Aufrufer (``WorldService``) liest das Zählbuch
-aus der Welt und schreibt die Regeldatei; der 15-s-Takt und der Einladungspfad
-rufen diese Methoden unter der Welt-Sperre bzw. ``try_mutation`` auf.
+Only this layer connects the pure modules (``playtime.plan``,
+``playtime.ledger``, ``provisioner.time_mod``) with the database (schema 4). It
+is synchronous and knows no Docker: it only reads and writes the store and
+pure functions. The caller (``WorldService``) reads the counter ledger from the
+world and writes the rule file; the 15 s tick and the invitation path call
+these methods under the world lock or ``try_mutation`` respectively.
 
-``book`` verbucht die Zählbuch-Zuwächse einer Welt auf den lokalen Tag jedes
-Kindes mit Regeln (ein Kontingent über alle Welten, O-03) und verankert den
-gesehenen Stand neu. ``render`` rechnet je Welt die Regeldatei aus der Datenbank:
-für jedes eingeladene Kind mit Regeln eine Zeile mit absolutem Fenster und
-Deckel im Zählbuch-Maß (gesehener Stand plus Restsekunden), für jedes eingeladene
-Verwalter-Konto aus dem Schnappschuss ``time_admins`` und für jedes als erwachsen
-markierte Konto (Tabelle ``adults``, ROLLE-04) die Zeile ``frei`` (O-11/A4),
-dazu die Welt-Zeile aus dem Welt-Fenster. Der Regelteil wird je Welt zwischengespeichert; nur bei
-einer Änderung zählt die Generation hoch und der Kopf bekommt einen neuen
-Zeitpunkt, damit die Bytes nicht in jedem Takt wechseln (Pitfall 6).
+``book`` books the ledger increases of a world to the local day of each child
+with rules (one quota across all worlds, O-03) and re-anchors the state seen.
+``render`` computes the rule file per world from the database: for every
+invited child with rules a line with an absolute window and cap in ledger units
+(state seen plus remaining seconds), for every invited manager account from the
+``time_admins`` snapshot and for every account marked as an adult (table
+``adults``, ROLLE-04) the line ``frei`` (O-11/A4), plus the world line from the
+world window. The rule part is cached per world; only on a change does the
+generation count up and the head get a new timestamp, so the bytes do not
+change on every tick (pitfall 6).
 
-Für den Kindertext schreibt ``render`` keinen fertigen Tagesbezug ("morgen"),
-sondern absolute Epochs (Quick 261021-481): je Zeile den nächsten Start
-(``@start``) und einmal die Tagesanfänge heute bis heute+8 (``@tage``). Der Mod
-rechnet "Heute", "Morgen" oder "Am Samstag" gegen die eigene Uhr; so bleibt der
-Text auch nach Mitternacht richtig, wenn die Regeldatei noch nicht neu ist. Die
-Epochs ändern sich nicht mit der Uhr, ``@tage`` nur einmal je Tag.
+For the child text, ``render`` writes no finished relative day ("tomorrow")
+but absolute epochs (quick 261021-481): per line the next start (``@start``)
+and once the day starts from today to today+8 (``@tage``). The mod computes
+"Heute", "Morgen" or "Am Samstag" against its own clock; the text thus stays
+correct after midnight even if the rule file is not yet new. The epochs do not
+change with the clock, ``@tage`` only once per day.
 
-Eine laufende Pause des Haushalts (``pause_state``, ELTERN-01) schreibt ``render``
-als ``@pause`` in jede Welt, bei "Für heute Schluss" dazu ``@morgen`` je Kind der
-Welt mit Plan. Pause und Morgen-Minuten stehen im Cache-Schlüssel; nach Ablauf
-fällt die Pause heraus (neue Generation) und die Zeile in ``pause_state`` wird gelöscht.
+A running household pause (``pause_state``, ELTERN-01) is written by ``render``
+as ``@pause`` into every world, for "Für heute Schluss" plus ``@morgen`` per
+child of the world with a plan. Pause and tomorrow minutes are part of the
+cache key; after expiry the pause drops out (new generation) and the row in
+``pause_state`` is deleted.
 """
 
 from __future__ import annotations
@@ -55,27 +56,27 @@ from gameworld.playtime.plan import (
 from gameworld.provisioner.time_mod import DayGrid, Ledger, PauseLine, TimeLine, render_time_file
 from gameworld.worlds.store import WorldStore
 
-# Verbrauch höchstens einmal pro Stunde aufräumen (A8/Pitfall 9).
+# Prune usage at most once per hour (A8/pitfall 9).
 _PRUNE_INTERVAL_SECONDS = 3600
-# Aufbewahrung: heute und 7 Tage zurück.
+# Retention: today and 7 days back.
 _RETENTION_DAYS = 7
-# meta-Schlüssel des Verwalter-Schnappschusses (JSON-Liste, sortiert; playtime/service.py).
+# meta key of the manager snapshot (JSON list, sorted; playtime/service.py).
 META_TIME_ADMINS = "time_admins"
-# Verwalter sind freigestellt (O-11/A4): Welt-Fenster und eigene Grenzen gelten nicht.
+# Managers are exempt (O-11/A4): world window and own limits do not apply.
 _FREI = TimeLine(cap=-1, start=-1, until=-1, reason="frei", next_hint="-")
 
 
 def _next_fields(start: NextStart | None) -> tuple[int, int]:
-    """Felder next_at und next_minute einer TimeLine; -1 -1 heißt: kein nächster Start."""
+    """Fields next_at and next_minute of a TimeLine; -1 -1 means: no next start."""
     return (-1, -1) if start is None else (start.at, start.minute)
 
 
 def _anchor(previous: tuple[int, int] | None, cap: int, seen: int) -> int:
-    """Zählbuch-Anker @base zum Deckel (WR-06); -1 ohne Deckel.
+    """Ledger anchor @base for the cap (WR-06); -1 without a cap.
 
-    Bleibt der Deckel gleich, bleibt auch der alte Anker: Sonst wechselten die
-    Bytes in jedem Takt, in dem das Kind hier spielt (Pitfall 6). Der alte Anker
-    liegt nie über dem Stand des Mods, der Deckel gilt also unverändert.
+    If the cap stays the same, the old anchor stays too: otherwise the bytes
+    would change on every tick in which the child plays here (pitfall 6). The
+    old anchor is never above the mod's state, so the cap still applies unchanged.
     """
     if cap < 0:
         return -1
@@ -85,7 +86,7 @@ def _anchor(previous: tuple[int, int] | None, cap: int, seen: int) -> int:
 
 
 def parse_admins(raw: str | None) -> frozenset[str]:
-    """Verwalter-Schnappschuss aus meta; fehlt er oder ist er kaputt, gibt es keine Freistellung (fail closed)."""
+    """Manager snapshot from meta; if missing or broken, there is no exemption (fail closed)."""
     if not raw:
         return frozenset()
     try:
@@ -99,28 +100,28 @@ def parse_admins(raw: str | None) -> frozenset[str]:
 
 @dataclass(frozen=True)
 class _Rendered:
-    """Zwischenspeicher je Welt: Regelteil, Generation, Zeitpunkt und fertige Bytes."""
+    """Per-world cache: rule part, generation, timestamp and finished bytes."""
 
     key: tuple[object, ...]
     generation: int
     issued_at: int
     data: bytes
-    # Je Spielername (Deckel, Anker): Der Anker @base bleibt, solange der Deckel gleich ist (WR-06).
+    # Per player name (cap, anchor): the anchor @base stays as long as the cap is the same (WR-06).
     bases: dict[str, tuple[int, int]] = field(default_factory=dict[str, tuple[int, int]])
 
 
 class TimeEngine:
-    """Rechnet Regeldateien aus Schema 4 und verbucht Zählbuch-Zuwächse (rein bis auf den Store)."""
+    """Computes rule files from schema 4 and books ledger increases (pure except for the store)."""
 
     def __init__(self, store: WorldStore, clock: Callable[[], float] = time.time) -> None:
         self._store = store
         self._clock = clock
-        # Zuletzt gerenderter Stand je Welt (Speicher): verhindert, dass sich die
-        # Bytes in jedem Takt ändern (nur bei echter Änderung neue Generation).
+        # Last rendered state per world (memory): prevents the bytes from
+        # changing on every tick (new generation only on a real change).
         self._cache: dict[str, _Rendered] = {}
-        # Halt-Zeitpunkt je Welt vor dem Cold-Backup (D-09): nur im Speicher, nie in
-        # SQLite. Nach einem Prozessneustart rendert der Start die Datei ohne Halt
-        # (T-05-14). Aufrufer halten die Welt-Sperre beim push_time.
+        # Halt time per world before the cold backup (D-09): in memory only, never in
+        # SQLite. After a process restart, startup renders the file without a halt
+        # (T-05-14). Callers hold the world lock during push_time.
         self._halts: dict[str, int] = {}
         self._last_prune: int | None = None
 
@@ -128,25 +129,25 @@ class TimeEngine:
         return int(self._clock())
 
     def now(self) -> int:
-        """Jetzt (Epoch) nach der Uhr dieser Rechnung; die Kind-Ansicht rechnet mit derselben Uhr."""
+        """Now (epoch) by this calculation's clock; the child view computes with the same clock."""
         return self._now()
 
     def _zone(self) -> ZoneInfo:
         return load_zone(self._store.get_meta("time_zone") or "")
 
     def zone(self) -> ZoneInfo:
-        """Haushalts-Zeitzone (meta time_zone, Vorgabe Europe/Berlin), etwa für "Für heute Schluss"."""
+        """Household time zone (meta time_zone, default Europe/Berlin), e.g. for "Für heute Schluss"."""
         return self._zone()
 
     def _active_pause(self, now: int) -> PauseLine | None:
-        """Laufende Pause als Zeile ``@pause``; eine abgelaufene wird aus pause_state gelöscht."""
+        """Running pause as the line ``@pause``; an expired one is deleted from pause_state."""
         state = self._store.get_pause()
         if state is None:
             return None
         if now >= state.bis:
-            # Nur löschen, was bis jetzt abgelaufen ist: eine eben neu gesetzte Pause bleibt.
-            # Läuft eine kurze Pause von selbst ab, meldet der Bot es still in jeder Welt
-            # wie bei "Weiter" (IN-09); "Für heute Schluss" endet still um Mitternacht.
+            # Delete only what has expired by now: a pause that was just set stays.
+            # If a short pause expires by itself, the bot reports it quietly in every world
+            # as with "Weiter" (IN-09); "Für heute Schluss" ends quietly at midnight.
             self._store.expire_pause(now, OUTBOX_PAUSE_END)
             return None
         return PauseLine(ab=state.ab, bis=state.bis, art=state.art)
@@ -155,22 +156,21 @@ class TimeEngine:
         return parse_admins(self._store.get_meta(META_TIME_ADMINS))
 
     def _frei(self, admins: frozenset[str]) -> frozenset[str]:
-        """Frei-Menge: Verwalter-Vereinigung plus Erwachsene (ROLLE-04, nur Zeit-Regeln, nie Rechte)."""
+        """Free set: manager union plus adults (ROLLE-04, time rules only, never rights)."""
         return admins | frozenset(self._store.adults())
 
     def book(self, world_id: str, ledger: Ledger | None) -> None:
-        """Verbucht die Zuwächse des Zählbuchs; verankert den gesehenen Stand neu.
+        """Book the ledger increases; re-anchor the state seen.
 
-        Nur Kinder mit Regeln werden auf ihr Kontingent verbucht (Opt-in, O-10);
-        für alle anderen Namen wird der Stand nur verankert (Schutz gegen
-        Doppelzählung). Auch die Tagesspielzeit je Welt (``play_daily``, Rückblick)
-        zählt nur Kinder mit Regeln dieses Haushalts und nie Verwalter aus dem
-        Schnappschuss (IN-03, Owner-Entscheid 22.10.2026 "Nur Kinder mit Regeln"):
-        Eingeladene Kinder anderer Familien ohne Regeln erscheinen nirgends mit
-        Minuten. Erwachsene (ROLLE-04) werden weder auf Verbrauch noch auf die
-        Tagesspielzeit verbucht: Was als Erwachsener gespielt wurde, zählt nicht,
-        auch wenn ein ruhender Plan in der Datenbank steht. Ein fehlendes Zählbuch
-        (None) ändert nichts.
+        Only children with rules are booked against their quota (opt-in, O-10);
+        for all other names the state is only anchored (protection against
+        double counting). The daily playtime per world (``play_daily``, review)
+        also counts only children with rules of this household and never managers
+        from the snapshot (IN-03, owner decision 22.10.2026 "Nur Kinder mit Regeln"):
+        invited children of other families without rules appear nowhere with
+        minutes. Adults (ROLLE-04) are booked neither to usage nor to the daily
+        playtime: what was played as an adult does not count, even if a dormant
+        plan exists in the database. A missing ledger (None) changes nothing.
         """
         if ledger is None:
             return
@@ -195,15 +195,15 @@ class TimeEngine:
                 usage[nc_user] = usage.get(nc_user, 0) + seconds
                 if nc_user not in admins:
                     play[nc_user] = play.get(nc_user, 0) + seconds
-        # Verbrauch, Tagesspielzeit und neuer Stand in einer Transaktion: nie doppelt verbucht (WR-05).
+        # Usage, daily playtime and new state in one transaction: never booked twice (WR-05).
         self._store.book_usage(world_id, day, usage, new_seen, play=play)
 
     def render(self, world_id: str) -> tuple[bytes, bool]:
-        """Regeldatei der Welt aus der Datenbank; (Bytes, geändert).
+        """Rule file of the world from the database; (bytes, changed).
 
-        ``geändert`` False heißt: Der Regelteil ist gleich geblieben, die Bytes
-        und die Generation sind unverändert (Anti-Pattern "Regeldatei in jedem
-        Takt neu schreiben").
+        ``changed`` False means: the rule part stayed the same, the bytes
+        and the generation are unchanged (anti-pattern "rewrite the rule file
+        on every tick").
         """
         tz = self._zone()
         now = self._now()
@@ -215,14 +215,14 @@ class TimeEngine:
         cached = self._cache.get(world_id)
         previous = {} if cached is None else cached.bases
         players: dict[str, TimeLine] = {}
-        # Kinder dieser Welt mit Plan (Konto auf Spielername) für die Zeilen @morgen.
+        # Children of this world with a plan (account to player name) for the @morgen lines.
         names_by_user: dict[str, str] = {}
         for name in self._store.access_entries(world_id):
             nc_user = self._store.player_name_owner(name)
             if nc_user is None:
                 continue
             if nc_user in frei:
-                # Eingeladene Verwalter und Erwachsene: Zeile frei, auch ohne Welt-Fenster (A4, ROLLE-04).
+                # Invited managers and adults: line frei, even without a world window (A4, ROLLE-04).
                 players[name] = _FREI
                 continue
             if nc_user not in plans:
@@ -231,7 +231,7 @@ class TimeEngine:
             normal, holiday = plans[nc_user]
             used = self._store.usage(nc_user, today)
             state = evaluate_child(now, tz, normal, holiday, holidays, used)
-            # cap_rest_s statt rest_s: Vor dem Fenster öffnet der Mod ab "from" selbst (WR-02).
+            # cap_rest_s instead of rest_s: before the window the mod opens from "from" by itself (WR-02).
             cap = -1 if state.cap_rest_s is None else seen.get(name, 0) + state.cap_rest_s
             next_at, next_minute = _next_fields(state.next_start)
             players[name] = TimeLine(
@@ -248,7 +248,7 @@ class TimeEngine:
         lines = [*players.values(), *([] if world_line is None else [world_line])]
         days = None
         if any(line.next_at >= 0 for line in lines):
-            # Tagesgrenzen nur, wenn eine Zeile einen nächsten Start trägt (sonst Bytes wie bisher).
+            # Day boundaries only if a line carries a next start (otherwise bytes as before).
             days = DayGrid(weekday=today.isoweekday(), starts=day_starts(now, tz))
         pause = self._active_pause(now)
         morgen = None
@@ -261,29 +261,29 @@ class TimeEngine:
         return rendered
 
     def set_halt(self, world_id: str, ab: int) -> None:
-        """Merkt den Halt der Welt (Epoch ``ab``); der nächste ``render`` schreibt ``@halt``.
+        """Remember the halt of the world (epoch ``ab``); the next ``render`` writes ``@halt``.
 
-        Der Zeit-Mod kündigt den Halt im Chat an, sperrt Beitritte und trennt ab
-        ``ab`` alle Spieler (05-RESEARCH.md Pattern 6). Der Halt ist Ablaufzustand,
-        kein Cache: ``forget`` lässt ihn stehen, nur ``clear_halt`` nimmt ihn weg.
+        The time mod announces the halt in chat, blocks joins and disconnects all
+        players from ``ab`` (05-RESEARCH.md pattern 6). The halt is process state,
+        not a cache: ``forget`` leaves it in place, only ``clear_halt`` removes it.
         """
         self._halts[world_id] = ab
 
     def clear_halt(self, world_id: str) -> None:
-        """Nimmt den Halt der Welt weg; der nächste ``render`` schreibt die Datei ohne ``@halt``."""
+        """Remove the halt of the world; the next ``render`` writes the file without ``@halt``."""
         self._halts.pop(world_id, None)
 
     def forget(self, world_id: str) -> None:
-        """Verwirft den gerenderten Stand der Welt (CR-01).
+        """Discard the rendered state of the world (CR-01).
 
-        Nach einem gescheiterten Schreiben der Regeldatei: Der nächste ``render``
-        liefert ``geändert`` True (mit neuer Generation), damit der Takt die Datei
-        erneut schreibt, statt den nie angekommenen Stand für geschrieben zu halten.
+        After a failed write of the rule file: the next ``render``
+        returns ``changed`` True (with a new generation), so the tick writes the
+        file again instead of treating the state that never arrived as written.
         """
         self._cache.pop(world_id, None)
 
     def child_state(self, nc_user: str) -> ChildState | None:
-        """Auswertung für ein Kind (API und Kind-Ansicht); None heißt: keine Regeln (Opt-in)."""
+        """Evaluation for a child (API and child view); None means: no rules (opt-in)."""
         plans = self._store.child_plans()
         if nc_user not in plans:
             return None
@@ -322,10 +322,10 @@ class TimeEngine:
         halt: int | None = None,
         frei: frozenset[str] = frozenset(),
     ) -> tuple[bytes, bool]:
-        # Pause, Morgen-Minuten und Halt gehören in den Schlüssel, sonst schreibt der
-        # Takt sie nie (der Halt kommt beim nächsten push_time in die Regeldatei).
-        # Die Frei-Menge ebenso: Ein Umschalten des Erwachsen-Schalters muss neue Bytes
-        # ergeben (T-06-18), auch wenn die Zeilen zufällig gleich blieben.
+        # Pause, tomorrow minutes and halt belong in the key, otherwise the tick
+        # never writes them (the halt gets into the rule file at the next push_time).
+        # The free set likewise: toggling the adult switch must yield new bytes
+        # (T-06-18), even if the lines happen to stay the same.
         key = (
             *self._body_key(world_line, players, days),
             pause,
@@ -356,10 +356,10 @@ class TimeEngine:
         self._last_prune = now
         cut = local_day(now, tz) - timedelta(days=_RETENTION_DAYS)
         self._store.prune_usage(cut)
-        # Tagesdaten aus Schema 5 mit derselben Aufbewahrung (T-04.1-10).
+        # Daily data from schema 5 with the same retention (T-04.1-10).
         self._store.prune_play_daily(cut)
         self._store.prune_join_attempts(cut)
         self._store.prune_daily_flags(cut)
         self._store.prune_review_sent(cut)
-        # Bot-Drossel (Konto und Zeitpunkt je Welt) mit derselben Frist (IN-03).
+        # Bot throttle (account and time per world) with the same period (IN-03).
         self._store.prune_bot_presence(int(datetime.combine(cut, dt_time(0), tz).timestamp()))

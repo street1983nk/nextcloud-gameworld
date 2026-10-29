@@ -1,9 +1,9 @@
-"""Lebenszyklus der Welten: Erzeugen, Auflisten, Starten, Stoppen, Löschen.
+"""Lifecycle of the worlds: create, list, start, stop, delete.
 
-docker-py ist synchron; jeder Docker-Aufruf läuft deshalb über
-``anyio.to_thread.run_sync``. Alle verändernden Abläufe laufen unter einem
-Lock, damit Port-Vergabe und Neuerzeugung nie verschränkt laufen. Der
-Weltschlüssel wird nie protokolliert.
+docker-py is synchronous; every Docker call therefore runs via
+``anyio.to_thread.run_sync``. All mutating flows run under one
+lock, so that port allocation and re-creation never interleave. The
+world key is never logged.
 """
 
 from __future__ import annotations
@@ -77,70 +77,70 @@ from gameworld.worlds.store import BACKUP_JOB_RUNNING, BackupJobRow, WorldRow, W
 
 LOG = logging.getLogger(__name__)
 
-# Ein Lock pro Prozess: Port-Vergabe, Neuerzeugung und Löschen dürfen nicht verschränkt laufen.
+# One lock per process: port allocation, re-creation and deletion must not interleave.
 _LOCK = threading.Lock()
 
-# Höchstens so viele Startversuche bei belegtem Host-Port (T-01-20).
+# At most this many start attempts when the host port is taken (T-01-20).
 MAX_START_ATTEMPTS = 3
-# So lange gilt die Weltenliste als frisch: Mehrere offene Tabs (je ein Poll alle
-# 5 s) vervielfachen so die Docker-Abfragen nicht (T-02-25). Jede Mutation
-# verwirft den Cache, Änderungen von außen erscheinen höchstens 2 s später.
+# For this long the world list counts as fresh: several open tabs (one poll every
+# 5 s each) thus do not multiply the Docker queries (T-02-25). Every mutation
+# discards the cache, changes from outside appear at most 2 s later.
 LIST_CACHE_SECONDS = 2.0
 PORTS_EXHAUSTED = "Kein freier UDP-Port gefunden. Bitte den Portbereich GAMEWORLD_PORT_RANGE prüfen."
 NOT_FOUND = "Diese Welt gibt es nicht (mehr)."
-# Payload-Bau scheiterte am Dateisystem (VoxeLibre spoolt rund 110 MB nach /tmp) oder am Spiel-Zip (WR-01).
+# Building the payload failed on the file system (VoxeLibre spools about 110 MB to /tmp) or on the game zip (WR-01).
 PAYLOAD_FAILED = (
     "Die Weltdaten konnten nicht vorbereitet werden. Bitte freien Speicherplatz auf dem Server prüfen "
     "und es erneut versuchen."
 )
-# Unerwarteter Fehler beim Erzeugen; Details stehen nur im Log (WR-01).
+# Unexpected error while creating; details are only in the log (WR-01).
 CREATE_FAILED = "Die Welt konnte nicht erstellt werden. Bitte es später erneut versuchen."
-# Meldungen des Abgleichs (worlds/reconciler.py) an der Welt.
+# Messages of the reconciliation (worlds/reconciler.py) on the world.
 RECONCILE_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
 RECONCILE_DATA_MISSING = "Die Weltdaten fehlen. Die Welt kann nur gelöscht werden."
 RECONCILE_INTERRUPTED = "Das Erstellen wurde unterbrochen. Bitte die Welt löschen und neu erstellen."
-# Prozess starb mitten im Tausch der Weltdaten (op_state restoring_swap, RESEARCH Pitfall 2).
-# Bewusst NICHT in DELETE_ONLY_ERRORS: Wiederherstellen bleibt im Zustand failed erlaubt (D-15),
-# und die Sicherung vor dem Wiederherstellen liegt in Files.
+# Process died in the middle of swapping the world data (op_state restoring_swap, RESEARCH pitfall 2).
+# Deliberately NOT in DELETE_ONLY_ERRORS: restoring stays allowed in state failed (D-15),
+# and the backup before the restore lies in Files.
 RESTORE_INTERRUPTED = (
     "Das Wiederherstellen wurde unterbrochen. Bitte erneut wiederherstellen; "
     "die Sicherung vor dem Wiederherstellen liegt in Files."
 )
-# Elternaktion auf einer Welt, die gerade gesichert oder wiederhergestellt wird (HTTP 409).
+# Parent action on a world that is currently being backed up or restored (HTTP 409).
 WORLD_BUSY = "Die Welt wird gerade gesichert oder wiederhergestellt."
 # Only reachable from code paths outside the API (the route accepts de/en/fr only).
 MSG_WORLD_LANGUAGE_UNSUPPORTED = "Diese Sprache gibt es für die Spieltexte nicht."
 # Worlds started before schema 9 (launched_language NULL) run German mod texts.
 LEGACY_LAUNCH_LANGUAGE = "de"
-# Globaler Ein-Job-Schutz (RESEARCH Pattern 7): höchstens ein Auftrag im ganzen Haushalt.
+# Global one-job guard (RESEARCH pattern 7): at most one job in the whole household.
 JOB_RUNNING = "Es läuft schon eine Sicherung oder Wiederherstellung. Bitte kurz warten."
-# Unerwarteter Fehler beim Wiederanlaufen nach dem Offline-Abschnitt; Details nur im Log.
+# Unexpected error while restarting after the offline section; details only in the log.
 OFFLINE_RESTART_FAILED = "Die Welt konnte danach nicht wieder gestartet werden. Bitte die Welt starten."
-# So lange kündigt der Zeit-Mod den Halt im Chat an, bevor er alle trennt (D-09).
+# For this long the time mod announces the halt in chat before it disconnects everyone (D-09).
 HALT_LEAD_SECONDS = 15
-# Unerwarteter Fehler im Boot-Abgleich einer Welt; Details nur im Log (WR-02).
+# Unexpected error in the boot reconciliation of a world; details only in the log (WR-02).
 RECONCILE_FAILED = "Die Welt konnte nach dem Neustart des Servers nicht wiederhergestellt werden."
-# Zeile mit einer Spielart, die diese Version nicht kennt (Preset entfernt oder umbenannt, WR-02).
+# Row with a game type this version does not know (preset removed or renamed, WR-02).
 UNKNOWN_PRESET_TITLE = "Unbekannte Spielart"
 TEXT_UNKNOWN_PRESET = (
     "Die Spielart dieser Welt kennt Gameworld nicht. Bitte Gameworld aktualisieren oder die Welt löschen."
 )
-# In diesen Zuständen würde Starten eine leere Welt unter altem Namen erzeugen
-# (CR-01) oder ein nur teilweise eingespieltes Spiel starten und die
-# Abbruchmeldung löschen (WR-05); es bleibt nur Löschen.
+# In these states, starting would create an empty world under the old name
+# (CR-01) or start a game that was only partly installed and delete the
+# abort message (WR-05); only deleting remains.
 DELETE_ONLY_ERRORS = frozenset({RECONCILE_DATA_MISSING, RECONCILE_INTERRUPTED})
-# Fehler, die im Zeittakt nur die betroffene Welt treffen (WR-06): gesperrte oder kaputte
-# Datenbank, ungültige Zeile beim Rendern. Programmfehler anderer Art bleiben sichtbar.
+# Errors that hit only the affected world in the time tick (WR-06): locked or broken
+# database, invalid row while rendering. Programming errors of another kind stay visible.
 _TICK_ERRORS: tuple[type[Exception], ...] = (sqlite3.Error, ValueError, KeyError)
 
-# Aufräumen beim Deaktivieren (D-17 Option A, P-07): AppAPI wartet 60 s auf die
-# Antwort von /enabled. Stopp je Container kurz, alle parallel, Gesamtfrist mit
-# Puffer unter dem Zeitlimit des Handlers (50 s, lifecycle.py).
+# Cleanup on deactivation (D-17 option A, P-07): AppAPI waits 60 s for the
+# answer of /enabled. Stop per container is short, all in parallel, total deadline with a
+# buffer below the handler's time limit (50 s, lifecycle.py).
 TEARDOWN_STOP_TIMEOUT = 5
 TEARDOWN_LOCK_WAIT = 10.0
 TEARDOWN_DEADLINE = 45.0
 TEARDOWN_WORKERS = 8
-# In diesen Zuständen läuft kein Server-Prozess mehr, Stoppen ist dann unnötig.
+# In these states no server process runs anymore, stopping is then unnecessary.
 _STOPPED_STATES = frozenset({"created", "exited", "dead"})
 
 UNKNOWN = "unknown"
@@ -148,25 +148,25 @@ MISSING = "missing"
 
 
 class DeleteOnlyError(ProvisionerError):
-    """Die Welt lässt sich nicht mehr starten, nur noch löschen (HTTP 409)."""
+    """The world can no longer be started, only deleted (HTTP 409)."""
 
 
 class WorldBusyError(ProvisionerError):
-    """Die Welt wird gerade gesichert oder wiederhergestellt (HTTP 409)."""
+    """The world is currently being backed up or restored (HTTP 409)."""
 
 
 def delete_only(row: WorldRow) -> bool:
-    """Darf diese Welt nur noch gelöscht werden? Steht fest an der Zeile, nicht im Text der Oberfläche."""
+    """May this world only be deleted? Determined by the row, not by the UI text."""
     return row.op_state == "failed" and row.last_error in DELETE_ONLY_ERRORS
 
 
 @dataclass(frozen=True)
 class OfflineTicket:
-    """Ergebnis von begin_offline: was der Auftrag zum Wiederanlaufen oder Zurücksetzen braucht.
+    """Result of begin_offline: what the job needs to restart or reset.
 
-    previous_op_state und previous_error erlauben es, eine vor der Zerstörung
-    abgelehnte Wiederherstellung einer kaputten Welt in ihren alten Zustand
-    zurückzusetzen (Plan 06).
+    previous_op_state and previous_error make it possible to reset a restore
+    of a broken world that was rejected before the destruction to its old
+    state (plan 06).
     """
 
     world_id: str
@@ -179,7 +179,7 @@ class OfflineTicket:
 
 @dataclass(frozen=True)
 class BackupJobView:
-    """Letzter Sicherungs- oder Wiederherstellungsauftrag einer Welt (D-11), nur für Verwalter."""
+    """Last backup or restore job of a world (D-11), for managers only."""
 
     kind: str
     state: str
@@ -208,26 +208,26 @@ class WorldView:
     created_at: str
     preset: str
     preset_title: str
-    # Aus Docker abgeleitet (worlds/status.py); docker_status bleibt für Phase-1-Skripte.
+    # Derived from Docker (worlds/status.py); docker_status stays for phase 1 scripts.
     status: str
     status_text: str
-    # WELT-03: Spieler nur bei status running, RAM nur bei laufendem Container.
+    # WELT-03: players only for status running, RAM only for a running container.
     players: list[str]
     memory_used_bytes: int | None
     memory_limit_bytes: int | None
-    # Weltdaten fehlen oder Erstellen brach ab: Die Oberfläche bietet nur Löschen an, Starten gibt 409.
+    # World data missing or creating aborted: the UI offers only delete, starting gives 409.
     delete_only: bool
-    # Spielernamen aller Eingeladenen (aus der Datenbank, nie Passwörter oder Verifier).
+    # Player names of all invitees (from the database, never passwords or verifiers).
     invited_players: list[str]
-    # Läuft die Welt ohne geladenen Zugangsschutz (vor dem Update gestartet)? Nur bei status running.
+    # Does the world run without loaded access protection (started before the update)? Only for status running.
     access_restart_needed: bool
-    # Läuft die Welt ohne geladenen Zeit-Mod (kein Zählbuch)? Dann braucht sie einen Neustart.
+    # Does the world run without a loaded time mod (no ledger)? Then it needs a restart.
     time_restart_needed: bool
-    # Läuft die Welt mit altem Zugangs-Mod ohne Ereignisdatei? Dann kommen keine Hinweise, Neustart nötig.
+    # Does the world run with an old access mod without an event file? Then no notices arrive, restart needed.
     events_restart_needed: bool
-    # Welt-Zeitfenster (ZEIT-05): sieben Wochentage oder None (immer offen).
+    # World time window (ZEIT-05): seven weekdays or None (always open).
     time_window: list[WindowDay] | None = None
-    # Letzter Auftrag (D-11): Fehler bleiben nach Neuladen sichtbar. Nie an Kinder (AR-24).
+    # Last job (D-11): errors stay visible after reloading. Never to children (AR-24).
     backup_job: BackupJobView | None = None
     # World language of the mod texts (D-27) and whether the running server still speaks another one.
     language: str = "de"
@@ -265,9 +265,9 @@ def _view(
     backup_job: BackupJobView | None = None,
 ) -> WorldView:
     preset = PRESETS.get(row.preset)
-    # UNKNOWN (Docker nicht erreichbar) behält Vorrang vor dem Preset-Fehler.
+    # UNKNOWN (Docker not reachable) takes precedence over the preset error.
     if preset is None and status.code != UNKNOWN:
-        # Nur diese eine Welt zeigt den Fehler; die Liste aller Welten bleibt lesbar (WR-02).
+        # Only this one world shows the error; the list of all worlds stays readable (WR-02).
         status = WorldStatus(ERROR, TEXT_UNKNOWN_PRESET)
         players = None
         access_restart_needed = False
@@ -302,7 +302,7 @@ def _view(
 
 
 def _copy(view: WorldView) -> WorldView:
-    """Unabhängige Kopie, damit Aufrufer den Cache nie verändern."""
+    """Independent copy, so callers never change the cache."""
     return replace(
         view,
         players=list(view.players),
@@ -316,11 +316,11 @@ class WorldService:
         self._store = store
         self._provisioner = provisioner
         self._settings = settings
-        # Rechnet Regeldateien aus Schema 4 und verbucht das Zählbuch (synchron, nur Store).
+        # Computes rule files from schema 4 and books the ledger (synchronous, store only).
         self._time = TimeEngine(store)
-        # Cache der Weltenliste: (Zeitpunkt aus monotonic, Ansichten). Die
-        # Generation verhindert, dass eine vor einer Mutation begonnene Liste
-        # danach noch im Cache landet.
+        # Cache of the world list: (time from monotonic, views). The
+        # generation prevents a list begun before a mutation from
+        # still landing in the cache afterwards.
         self._cache_lock = threading.Lock()
         self._list_cache: tuple[float, list[WorldView]] | None = None
         self._cache_generation = 0
@@ -329,7 +329,7 @@ class WorldService:
         """``language``: world language of the mod texts (D-27), by default the creating admin's
         account language; an unsupported value gives German."""
         clean = normalize_world_name(name)
-        # Unbekannte Presets scheitern vor Lock, Port-Vergabe und Datenbank.
+        # Unknown presets fail before the lock, port allocation and database.
         get_preset(preset_id)
         chosen = language if language in SUPPORTED_LANGUAGES else "de"
         return await anyio.to_thread.run_sync(self._create_world_sync, clean, preset_id, chosen)
@@ -359,44 +359,44 @@ class WorldService:
     async def delete_world(self, world_id: str) -> None:
         await anyio.to_thread.run_sync(self._delete_world_sync, world_id)
 
-    # Abgleich (worlds/reconciler.py). abandon_on_cancel: Beim Herunterfahren
-    # wartet der Lifespan nicht auf einen hängenden Docker-Aufruf (bis 60 s);
-    # der Thread gibt _LOCK im finally trotzdem frei.
+    # Reconciliation (worlds/reconciler.py). abandon_on_cancel: on shutdown
+    # the lifespan does not wait for a hanging Docker call (up to 60 s);
+    # the thread releases _LOCK in its finally anyway.
 
     async def boot_reconcile(self) -> bool:
-        """Abgleich beim Prozessstart; False, wenn gerade eine Elternaktion läuft."""
+        """Reconciliation at process start; False if a parent action is currently running."""
         return await anyio.to_thread.run_sync(self._boot_reconcile_sync, abandon_on_cancel=True)
 
     async def periodic_reconcile(self) -> None:
-        """Zustandspflege ohne Start oder Neuerzeugung; übersprungen, wenn _LOCK belegt ist."""
+        """State upkeep without start or re-creation; skipped if _LOCK is taken."""
         await anyio.to_thread.run_sync(self._periodic_reconcile_sync, abandon_on_cancel=True)
 
     async def teardown(self) -> int:
-        """Alle eigenen Welt-Container entfernen (Deaktivieren); Anzahl Fehler, nie eine Ausnahme."""
+        """Remove all own world containers (deactivation); number of errors, never an exception."""
         return await anyio.to_thread.run_sync(self.teardown_all, abandon_on_cancel=True)
 
     def teardown_all(self) -> int:
-        """Stoppt und entfernt alle Welt-Container dieser Instanz; Volumes und Soll-Zustand bleiben.
+        """Stop and remove all world containers of this instance; volumes and desired state stay.
 
-        D-17 Option A: AppAPI ruft /enabled mit 0 vor Deaktivieren, Update und
-        Deinstallation gleich auf (RESEARCH F-02). Ohne Aufräumen liefen Welten
-        nach einer Deinstallation ohne Regeln weiter (T-06-33). Weltzeilen und
-        desired_state bleiben unverändert, damit der Boot-Abgleich beim nächsten
-        Start jede Soll-laufende Welt aus ihrem Volume neu baut (RECREATE).
+        D-17 option A: AppAPI calls /enabled with 0 right before deactivation, update and
+        uninstall (RESEARCH F-02). Without cleanup, worlds would keep running
+        after an uninstall without rules (T-06-33). World rows and
+        desired_state stay unchanged, so that the boot reconciliation at the next
+        start rebuilds every world that should be running from its volume (RECREATE).
 
-        Wartet höchstens TEARDOWN_LOCK_WAIT auf _LOCK und räumt danach auch ohne
-        ihn auf: AppAPI beendet den Prozess ohnehin, ein Abbruch hinterließe
-        unverwaltete Welten. Die Welten laufen parallel ab (P-07), eine Welt mit
-        Fehler hält die anderen nicht auf. Ins Log nur Welt-ID und Typname.
+        Waits at most TEARDOWN_LOCK_WAIT for _LOCK and cleans up afterwards even without
+        it: AppAPI ends the process anyway, an abort would leave
+        unmanaged worlds behind. The worlds proceed in parallel (P-07), one world with
+        an error does not hold the others up. Only world ID and type name go into the log.
         """
         held = _LOCK.acquire(timeout=TEARDOWN_LOCK_WAIT)
         if not held:
-            LOG.warning("Aufräumen beim Deaktivieren ohne Sperre: Eine Elternaktion läuft noch")
+            LOG.warning("Cleanup on deactivation without lock: a parent action is still running")
         try:
             try:
                 managed = self._provisioner.list_managed()
             except Exception as exc:
-                LOG.warning("Aufräumen beim Deaktivieren: Welt-Container nicht abrufbar (%s)", type(exc).__name__)
+                LOG.warning("Cleanup on deactivation: world containers not retrievable (%s)", type(exc).__name__)
                 return 1
             if not managed:
                 return 0
@@ -413,82 +413,82 @@ class WorldService:
             done, pending = wait(futures, timeout=TEARDOWN_DEADLINE)
             errors = len(pending) + sum(1 for future in done if not future.result())
             for future in pending:
-                LOG.warning("Aufräumen Welt %s: Frist überschritten", futures[future])
+                LOG.warning("Cleanup of world %s: deadline exceeded", futures[future])
         finally:
-            # Nicht auf hängende Docker-Aufrufe warten; die Frist zählt mehr als ein sauberes Ende.
+            # Do not wait for hanging Docker calls; the deadline counts more than a clean finish.
             pool.shutdown(wait=False, cancel_futures=True)
-        LOG.info("Aufräumen beim Deaktivieren: %d Welten, %d Fehler", len(managed), errors)
+        LOG.info("Cleanup on deactivation: %d worlds, %d errors", len(managed), errors)
         return errors
 
     def _teardown_one(self, info: ContainerInfo) -> bool:
-        """Eine Welt stoppen und ihren Container entfernen; True ohne jeden Fehler."""
+        """Stop one world and remove its container; True without any error."""
         ok = True
         if info.status not in _STOPPED_STATES:
             try:
                 self._provisioner.stop(info.world_id, timeout=TEARDOWN_STOP_TIMEOUT)
             except Exception as exc:
-                # Weiter zum Entfernen: force beendet den Prozess auch ohne Stopp.
-                LOG.warning("Aufräumen Welt %s: Stoppen gescheitert (%s)", info.world_id, type(exc).__name__)
+                # Continue to removal: force ends the process even without a stop.
+                LOG.warning("Cleanup of world %s: stop failed (%s)", info.world_id, type(exc).__name__)
                 ok = False
         try:
             self._provisioner.remove_world(info.world_id, keep_volume=True)
         except Exception as exc:
-            LOG.warning("Aufräumen Welt %s: Entfernen gescheitert (%s)", info.world_id, type(exc).__name__)
+            LOG.warning("Cleanup of world %s: removal failed (%s)", info.world_id, type(exc).__name__)
             ok = False
         return ok
 
-    # Hilfen
+    # Helpers
 
     @property
     def store(self) -> WorldStore:
-        """Gemeinsame Ablage für den Zugangsdienst (access/service.py)."""
+        """Shared store for the access service (access/service.py)."""
         return self._store
 
     @property
     def time(self) -> TimeEngine:
-        """Spielzeit-Rechnung für den Spielzeit-Dienst (playtime/service.py): nur lesend genutzt."""
+        """Playtime calculation for the playtime service (playtime/service.py): used read-only."""
         return self._time
 
     @property
     def provisioner(self) -> DockerProvisioner:
-        """Docker-Zugang für den Sicherungsdienst (backup/service.py): nur snapshot_to, ohne Sperre.
+        """Docker access for the backup service (backup/service.py): only snapshot_to, without the lock.
 
-        Der Snapshot liest einen gestoppten Container (snapshot_to prüft das selbst);
-        Stopp und Neustart laufen über stop_for_snapshot und end_offline.
+        The snapshot reads a stopped container (snapshot_to checks that itself);
+        stop and restart run via stop_for_snapshot and end_offline.
         """
         return self._provisioner
 
     def _access_file(self, row: WorldRow) -> bytes:
-        """Zugangsdatei der Welt, frisch aus Schema 3 (Generation und Verifier je Spielername).
+        """Access file of the world, fresh from schema 3 (generation and verifier per player name).
 
-        Gleicher Soll-Zustand ergibt dieselben Bytes: Die Verifier liegen mit
-        ihrem Salz in der Datenbank und werden nicht bei jedem Rendern neu gesalzen.
+        The same desired state yields the same bytes: the verifiers are stored with
+        their salt in the database and are not re-salted on every render.
         """
         fresh = self._store.get_world(row.id)
         generation = row.access_generation if fresh is None else fresh.access_generation
         return render_access_file(generation, self._store.access_entries(row.id))
 
     def _time_file(self, row: WorldRow) -> bytes:
-        """Regeldatei des Zeit-Mods für diese Welt, frisch aus Schema 4.
+        """Rule file of the time mod for this world, fresh from schema 4.
 
-        Vor dem Rendern wird das Zählbuch der Welt gelesen und verbucht (Pitfall
-        7: auch bei gestopptem Container, bevor der neue Start das Volume anfasst).
-        Ohne Regeln bleibt es bei Kopf und Schlusszeile (Opt-in, O-10).
+        Before rendering, the ledger of the world is read and booked (pitfall
+        7: also with a stopped container, before the new start touches the volume).
+        Without rules it stays with head and closing line (opt-in, O-10).
         """
         try:
             self._book_ledger(row.id)
         except ProvisionerError as exc:
-            # Ein unlesbares Zählbuch darf den Start nicht verhindern; der Rest kommt aus der DB.
-            LOG.warning("Welt %s: Zählbuch vor dem Rendern nicht lesbar: %s", row.id, exc)
+            # An unreadable ledger must not prevent the start; the rest comes from the DB.
+            LOG.warning("World %s: ledger not readable before rendering: %s", row.id, exc)
         data, _changed = self._time.render(row.id)
         return data
 
     def _book_ledger(self, world_id: str) -> None:
-        """Liest das Zählbuch der Welt und verbucht die Zuwächse; fehlt es, passiert nichts.
+        """Read the ledger of the world and book the increases; if missing, nothing happens.
 
-        Ein fehlender Container (WorldNotFoundError) heißt: nichts verbuchen.
-        Andere Lesefehler (ProvisionerError) reicht der Aufrufer weiter und
-        isoliert sie pro Welt (tick_time); der Dateiinhalt wird nie protokolliert.
+        A missing container (WorldNotFoundError) means: book nothing.
+        Other read errors (ProvisionerError) are passed on by the caller and
+        isolated per world (tick_time); the file content is never logged.
         """
         try:
             status_file = self._provisioner.read_time_ledger(world_id)
@@ -498,28 +498,28 @@ class WorldService:
             return
         ledger = parse_ledger(status_file.content)
         if ledger is None and status_file.content:
-            # Vorhanden, aber ohne Kopf oder Schlusszeile: nie still übergehen (WR-03).
-            # Meist halb geschrieben (der nächste Takt heilt es), dauerhaft heißt: zu groß oder kaputt.
+            # Present, but without head or closing line: never skip silently (WR-03).
+            # Usually half written (the next tick heals it), permanently it means: too large or broken.
             LOG.warning(
-                "Welt %s: Zählbuch unvollständig (%d Bytes), in diesem Takt nicht verbucht",
+                "World %s: ledger incomplete (%d bytes), not booked in this tick",
                 world_id,
                 len(status_file.content),
             )
         self._time.book(world_id, ledger)
 
     def mutation(self) -> contextlib.AbstractContextManager[None]:
-        """Dieselbe Sperre wie Welt-Mutationen, mit Cache-Verwurf (für den Zugangsdienst).
+        """Same lock as world mutations, with cache discard (for the access service).
 
-        Nur aus einem Worker-Thread betreten (anyio.to_thread), nie im Event-Loop.
+        Enter only from a worker thread (anyio.to_thread), never in the event loop.
         """
         return self._mutating()
 
     @contextlib.contextmanager
     def try_mutation(self) -> Iterator[bool]:
-        """Wie mutation(), aber ohne Warten: liefert False, wenn gerade eine Aktion läuft.
+        """Like mutation(), but without waiting: returns False if an action is currently running.
 
-        Für Abgleiche beim Auflisten: Statuslesen darf nie hinter einem Erzeugen
-        warten (Pitfall 6 aus Phase 2). Nur aus einem Worker-Thread betreten.
+        For reconciliations when listing: reading status must never wait behind a
+        create (pitfall 6 from phase 2). Enter only from a worker thread.
         """
         if not _LOCK.acquire(blocking=False):
             yield False
@@ -532,49 +532,49 @@ class WorldService:
             self._invalidate_cache()
 
     def push_access(self, world_id: str) -> bool:
-        """Schreibt die aktuelle Zugangs- und Regeldatei in die laufende oder gestoppte Welt.
+        """Write the current access and rule file into the running or stopped world.
 
-        Nur innerhalb von mutation() aufrufen. False heißt: Die Dateien liegen noch
-        nicht in der Welt; die Datenbank bleibt maßgeblich, und der nächste Start
-        schreibt sie (_launch). Im selben Sperrblock folgt push_time: Ein frisch
-        eingeladenes Kind mit Regeln steht sofort in der Regeldatei, nicht erst nach
-        dem nächsten Takt. Inhalte der Dateien werden nie protokolliert.
+        Call only inside mutation(). False means: the files are not yet in
+        the world; the database stays authoritative, and the next start
+        writes them (_launch). push_time follows in the same lock block: a freshly
+        invited child with rules is in the rule file immediately, not only after
+        the next tick. File contents are never logged.
         """
         access_file = self._access_file(self._row(world_id))
         try:
             self._provisioner.write_world_files(world_id, build_access_tar(access_file))
         except WorldNotFoundError:
-            LOG.info("Welt %s: kein Container, die Zugangsdatei kommt beim nächsten Start", world_id)
+            LOG.info("World %s: no container, the access file comes at the next start", world_id)
             return False
         except ProvisionerError as exc:
-            LOG.warning("Welt %s: Zugangsdatei nicht geschrieben, sie kommt beim nächsten Start: %s", world_id, exc)
+            LOG.warning("World %s: access file not written, it comes at the next start: %s", world_id, exc)
             return False
         return self.push_time(world_id)
 
     def push_time(self, world_id: str) -> bool:
-        """Schreibt die aktuelle Regeldatei in die laufende oder gestoppte Welt.
+        """Write the current rule file into the running or stopped world.
 
-        Nur innerhalb von mutation() (oder try_mutation) aufrufen. Rendert immer
-        frisch aus der Datenbank (bei einer Änderung zählt die Generation hoch) und
-        schreibt sie. False heißt: kein Container oder Docker weg, der nächste Start
-        schreibt sie. Inhalte der Datei werden nie protokolliert.
+        Call only inside mutation() (or try_mutation). Always renders
+        fresh from the database (on a change the generation counts up) and
+        writes it. False means: no container or Docker gone, the next start
+        writes it. File contents are never logged.
         """
         data, _changed = self._time.render(world_id)
         try:
             self._write_time(world_id, data)
         except WorldNotFoundError:
-            LOG.info("Welt %s: kein Container, die Regeldatei kommt beim nächsten Start", world_id)
+            LOG.info("World %s: no container, the rule file comes at the next start", world_id)
             return False
         except ProvisionerError as exc:
-            LOG.warning("Welt %s: Regeldatei nicht geschrieben, sie kommt beim nächsten Start: %s", world_id, exc)
+            LOG.warning("World %s: rule file not written, it comes at the next start: %s", world_id, exc)
             return False
         return True
 
     def _write_time(self, world_id: str, data: bytes) -> None:
-        """Schreibt die Regeldatei; scheitert es, wird der gerenderte Stand verworfen (CR-01).
+        """Write the rule file; if that fails, the rendered state is discarded (CR-01).
 
-        Ohne den Verwurf hielte der Render-Cache den nie angekommenen Stand für
-        geschrieben, und der 15-s-Takt (nur bei ``geändert``) holte ihn nie nach.
+        Without the discard the render cache would treat the state that never arrived as
+        written, and the 15 s tick (only on ``changed``) would never catch it up.
         """
         try:
             self._provisioner.write_world_files(world_id, build_time_tar(data))
@@ -583,12 +583,12 @@ class WorldService:
             raise
 
     def _collect_events(self, world_id: str, now: int) -> None:
-        """Neue Zeilen der Ereignisdatei in die SQLite-Outbox legen (kein Netzaufruf).
+        """Put new lines of the event file into the SQLite outbox (no network call).
 
-        Cursor und Outbox-Zeilen landen in einer Transaktion (store.take_events);
-        Erstkontakt mit alter Datei und Rücksprung verankern nur (new_events).
-        Fehlt die Datei (alter Mod) oder der Container, passiert nichts. Eine
-        unvollständige Datei wird mit Größe gemeldet, nie mit Inhalt.
+        Cursor and outbox rows land in one transaction (store.take_events);
+        first contact with an old file and rollback only anchor (new_events).
+        If the file (old mod) or the container is missing, nothing happens. An
+        incomplete file is reported with its size, never with its content.
         """
         try:
             events_file = self._provisioner.read_events(world_id)
@@ -600,7 +600,7 @@ class WorldService:
         if parsed is None:
             if events_file.content:
                 LOG.warning(
-                    "Welt %s: Ereignisdatei unvollständig (%d Bytes), in diesem Takt übergangen",
+                    "World %s: event file incomplete (%d bytes), skipped in this tick",
                     world_id,
                     len(events_file.content),
                 )
@@ -610,19 +610,19 @@ class WorldService:
         fresh, new_cursor = new_events(cursor, last_seq, events, now=now)
         if not fresh and new_cursor == cursor:
             return
-        # Unglaubhafte Zeitpunkte fallen weg, der Cursor rückt trotzdem vor (IN-10).
+        # Implausible timestamps are dropped, the cursor advances anyway (IN-10).
         kept = plausible(fresh, now=now)
         self._store.take_events(world_id, new_cursor, [(event.kind, event.name, event.at, "") for event in kept])
 
     def _track_run_state(self, rows: list[WorldRow], managed: dict[str, ContainerInfo], now: int) -> None:
-        """Start und Stopp aus dem beobachteten Docker-Zustand (Pitfall 10), nie aus Requests.
+        """Start and stop from the observed Docker state (pitfall 10), never from requests.
 
-        Erste Beobachtung einer Welt verankert nur. Ein Neustart zwischen zwei
-        Takten erscheint nicht (gewollt ruhig). Welten im Löschen zählen nicht.
+        The first observation of a world only anchors. A restart between two
+        ticks does not appear (deliberately quiet). Worlds being deleted do not count.
         """
         for row in rows:
-            # Busy Welten stoppen gewollt (Sicherung, Wiederherstellung): kein "Welt aus/an" an Talk
-            # (Pitfall 9). Der Laufzustand bleibt stehen; danach meldet nur eine echte Änderung.
+            # Busy worlds stop on purpose (backup, restore): no "world off/on" to Talk
+            # (pitfall 9). The run state stays; afterwards only a real change reports.
             if row.desired_state == "deleted" or row.op_state in BUSY_OP_STATES:
                 continue
             info = managed.get(row.id)
@@ -635,14 +635,14 @@ class WorldService:
             self._store.set_run_state(row.id, running=running)
 
     def tick_time(self) -> None:
-        """15-s-Zeittakt: Zählbuch aller laufenden Welten verbuchen, geänderte Regeldateien schreiben.
+        """15 s time tick: book the ledger of all running worlds, write changed rule files.
 
-        Nimmt nur try_mutation() (nie blockierend, Pitfall 6): Läuft gerade eine
-        Elternaktion, wird der Takt übersprungen. Erst werden alle Welten verbucht,
-        dann gerendert: So sieht Welt B den Verbrauch aus Welt A (ein Kontingent über
-        alle Welten, O-03). Ein Fehler einer Welt betrifft nur diese Welt. Daneben
-        landen Start/Stopp-Übergänge und neue Ereignisse in der SQLite-Outbox;
-        versendet wird erst im Event-Loop (Phase 4.1), der Takt ruft kein Netz.
+        Takes only try_mutation() (never blocking, pitfall 6): if a
+        parent action is running, the tick is skipped. First all worlds are booked,
+        then rendered: so world B sees the usage from world A (one quota across
+        all worlds, O-03). An error of one world affects only that world. In addition,
+        start/stop transitions and new events land in the SQLite outbox;
+        sending happens only in the event loop (phase 4.1), the tick makes no network call.
         """
         with self.try_mutation() as acquired:
             if not acquired:
@@ -654,45 +654,45 @@ class WorldService:
             try:
                 self._track_run_state(rows, managed, now)
             except _TICK_ERRORS as exc:
-                # Start/Stopp-Meldungen holt der nächste Takt nach; die Regeldateien gehen vor.
-                LOG.warning("Laufzustand im Takt nicht festgehalten (%s)", type(exc).__name__)
+                # The next tick catches up start/stop reports; the rule files take precedence.
+                LOG.warning("Run state not recorded in the tick (%s)", type(exc).__name__)
             for row in running:
                 try:
                     self._book_ledger(row.id)
                 except ProvisionerError as exc:
-                    LOG.warning("Welt %s: Zählbuch im Takt nicht verbucht: %s", row.id, exc)
+                    LOG.warning("World %s: ledger not booked in the tick: %s", row.id, exc)
                 except _TICK_ERRORS as exc:
-                    # WR-06: Datenbank gesperrt oder kaputte Zeile trifft nur diese Welt.
-                    LOG.warning("Welt %s: Zählbuch im Takt nicht verbucht (%s)", row.id, type(exc).__name__)
+                    # WR-06: locked database or broken row hits only this world.
+                    LOG.warning("World %s: ledger not booked in the tick (%s)", row.id, type(exc).__name__)
                 try:
                     self._collect_events(row.id, now)
                 except (ProvisionerError, *_TICK_ERRORS) as exc:
-                    # Nur Welt-ID und Fehlertyp, nie Dateiinhalt oder Spielernamen (T-04.1-08).
-                    LOG.warning("Welt %s: Ereignisse im Takt nicht gelesen (%s)", row.id, type(exc).__name__)
+                    # Only world ID and error type, never file content or player names (T-04.1-08).
+                    LOG.warning("World %s: events not read in the tick (%s)", row.id, type(exc).__name__)
             for row in running:
                 try:
                     data, changed = self._time.render(row.id)
                     if changed:
                         self._write_time(row.id, data)
                 except ProvisionerError as exc:
-                    LOG.warning("Welt %s: Regeldatei im Takt nicht geschrieben: %s", row.id, exc)
+                    LOG.warning("World %s: rule file not written in the tick: %s", row.id, exc)
                 except _TICK_ERRORS as exc:
-                    # WR-06: Der nächste Takt rendert neu; die übrigen Welten bekommen ihre Datei trotzdem.
+                    # WR-06: the next tick renders again; the remaining worlds get their file anyway.
                     self._time.forget(row.id)
-                    LOG.warning("Welt %s: Regeldatei im Takt nicht geschrieben (%s)", row.id, type(exc).__name__)
+                    LOG.warning("World %s: rule file not written in the tick (%s)", row.id, type(exc).__name__)
 
     def apply_pause_sync(self, decide: PauseDecision, outbox_kind: str) -> PauseResult:
-        """Pause setzen oder beenden und sofort an alle Welten ausrollen (ELTERN-01, D-01, D-25).
+        """Set or end a pause and roll it out to all worlds immediately (ELTERN-01, D-01, D-25).
 
-        Alles unter mutation() in einem Worker-Thread (nie im Event-Loop):
-        ``decide`` bekommt die laufende Pause (oder None) und jetzt und liefert den
-        neuen Zustand (None = keine Pause). Danach bekommt jede Welt die Regeldatei
-        (push_time, Ergebnis ``applied``). Läuft eine Welt beim Setzen noch mit
-        altem Mod (keine Ereignisdatei aus diesem Lauf), wird sie ohne Vorwarnung
-        neu gestartet (stop plus _launch, nie _restart_world_sync: _LOCK ist nicht
-        reentrant). Je Welt entsteht eine Outbox-Zeile für den Bot (04.1-06), bei
-        ``pause_start`` mit dem Ende als Zusatz. Beenden ohne laufende Pause
-        ändert nichts und legt keine Zeile an. Fehler bleiben je Welt isoliert.
+        Everything under mutation() in a worker thread (never in the event loop):
+        ``decide`` gets the running pause (or None) and now and returns the
+        new state (None = no pause). Afterwards every world gets the rule file
+        (push_time, result ``applied``). If a world is still running with an
+        old mod when the pause is set (no event file from this run), it is restarted
+        without warning (stop plus _launch, never _restart_world_sync: _LOCK is not
+        reentrant). Each world gets an outbox row for the bot (04.1-06), for
+        ``pause_start`` with the end as extra. Ending without a running pause
+        changes nothing and creates no row. Errors stay isolated per world.
         """
         with self._mutating():
             now = self._time.now()
@@ -707,12 +707,12 @@ class WorldService:
             try:
                 managed = self._provisioner.list_managed()
             except ProvisionerError as exc:
-                # Ohne Docker-Liste kein Neustart; push_time meldet je Welt selbst.
-                LOG.warning("Pause: Docker-Liste nicht abrufbar (%s)", type(exc).__name__)
+                # Without the Docker list no restart; push_time reports per world itself.
+                LOG.warning("Pause: Docker list not retrievable (%s)", type(exc).__name__)
                 managed = {}
             detail = str(state.bis) if state is not None and outbox_kind == OUTBOX_PAUSE_START else ""
-            # Nur eine echte Änderung meldet der Bot (WR-01): Ein Pause-Knopf während
-            # "Für heute Schluss" oder ohne späteres Ende ändert nichts und meldet nichts.
+            # The bot reports only a real change (WR-01): a pause button during
+            # "Für heute Schluss" or without a later end changes nothing and reports nothing.
             announce = (state is not None or current is not None) and state != current
             results: list[PauseWorldResult] = []
             for row in self._store.list_worlds():
@@ -724,10 +724,10 @@ class WorldService:
             return PauseResult(state=state, worlds=results)
 
     def _pause_world(self, row: WorldRow, container: ContainerInfo | None, *, restart: bool) -> PauseWorldResult:
-        """Regeldatei mit dem neuen Pause-Stand in eine Welt; alte Mods laufender Welten neu starten (D-25).
+        """Rule file with the new pause state into a world; restart old mods of running worlds (D-25).
 
-        Busy Welten (Sicherung, Wiederherstellung) bekommen nur die Regeldatei: Den
-        Container besitzt gerade der Auftrag, er startet die Welt danach selbst.
+        Busy worlds (backup, restore) get only the rule file: the container
+        currently belongs to the job, which starts the world itself afterwards.
         """
         if (
             restart
@@ -735,40 +735,40 @@ class WorldService:
             and not delete_only(row)
             and container is not None
             and container.status == RUNNING
-            # Fail-closed (AR-41-09): Ist der Mod-Stand unklar, startet die Welt neu.
-            # Die Pause trennt ohnehin alle, nur so ist @pause sicher wirksam.
+            # Fail closed (AR-41-09): if the mod state is unclear, the world restarts.
+            # The pause disconnects everyone anyway, only this makes @pause reliably effective.
             and self._events_restart_needed(row, container, WorldStatus(RUNNING, ""), unknown=True)
         ):
             try:
                 try:
                     self._provisioner.stop(row.id)
                 except WorldNotFoundError:
-                    LOG.info("Welt %s: Container fehlt, der Neustart für die Pause erzeugt ihn neu", row.id)
+                    LOG.info("World %s: container missing, the restart for the pause recreates it", row.id)
                 self._launch(row)
             except ProvisionerError as exc:
-                # Nur Welt-ID und Fehlertyp (T-04.1-08); die Welt zeigt den Fehler wie beim Neustart.
-                LOG.warning("Welt %s: Neustart für die Pause gescheitert (%s)", row.id, type(exc).__name__)
+                # Only world ID and error type (T-04.1-08); the world shows the error as on restart.
+                LOG.warning("World %s: restart for the pause failed (%s)", row.id, type(exc).__name__)
                 self._fail(row.id, exc)
                 return PauseWorldResult(world_id=row.id, name=row.name, applied=False, restarted=False)
             self._store.update_world(row.id, op_state="ready", last_error=None)
             return PauseWorldResult(world_id=row.id, name=row.name, applied=True, restarted=True)
         return PauseWorldResult(world_id=row.id, name=row.name, applied=self.push_time(row.id), restarted=False)
 
-    # Offline-Abschnitte für Sicherung und Wiederherstellung (Plan 05/06).
+    # Offline sections for backup and restore (plan 05/06).
     #
-    # Synchron, aus Worker-Threads per anyio.to_thread aufgerufen und nie
-    # verschachtelt (_LOCK ist nicht reentrant). Jeder Abschnitt hält _LOCK nur
-    # für seine eigene Dauer: Zwischen zwei Abschnitten (Snapshot, Upload,
-    # Wartezeit des Chat-Hinweises) laufen Pause, Einladungen und Zeittakt
-    # weiter (RESEARCH Pitfall 3). Den Busy-Zustand trägt die Datenbank.
+    # Synchronous, called from worker threads via anyio.to_thread and never
+    # nested (_LOCK is not reentrant). Each section holds _LOCK only
+    # for its own duration: between two sections (snapshot, upload,
+    # waiting time of the chat notice) pause, invitations and time tick
+    # keep running (RESEARCH pitfall 3). The busy state is carried by the database.
 
     def begin_offline(self, world_id: str, op_state: str, *, allow_failed: bool = False) -> OfflineTicket:
-        """Setzt die Welt in einen Busy-Zustand und liefert das Ticket für den Auftrag.
+        """Put the world into a busy state and return the ticket for the job.
 
-        Wirft WorldBusyError, wenn diese Welt schon busy ist (WORLD_BUSY) oder
-        irgendwo ein anderer Auftrag läuft (JOB_RUNNING, auch in der Upload-Phase).
-        Eine Welt, die nur noch gelöscht werden kann, lässt sich nicht sichern
-        (DeleteOnlyError); allow_failed=True (Wiederherstellen, D-15) erlaubt sie.
+        Raises WorldBusyError if this world is already busy (WORLD_BUSY) or
+        another job is running anywhere (JOB_RUNNING, also in the upload phase).
+        A world that can only be deleted cannot be backed up
+        (DeleteOnlyError); allow_failed=True (restore, D-15) allows it.
         """
         if op_state not in BUSY_OP_STATES:
             msg = f"Kein Busy-Zustand als op_state: {op_state}"
@@ -792,12 +792,12 @@ class WorldService:
             )
 
     def players_online(self, world_id: str) -> int:
-        """Spieler laut Status-Datei dieses Laufs, unabhängig von op_state (D-09, T-05-46).
+        """Players according to the status file of this run, independent of op_state (D-09, T-05-46).
 
-        Liest bewusst nicht über _status_file oder _view: Die liefern bei
-        Busy-Zuständen nichts, announce_halt läuft aber erst nach begin_offline.
-        Ohne _LOCK (nur Lesen). Gestoppter oder fehlender Container, Welt ohne
-        Status-Mod, Datei aus einem früheren Lauf und jeder Docker-Fehler ergeben 0.
+        Deliberately does not read via _status_file or _view: those return nothing
+        in busy states, but announce_halt runs only after begin_offline.
+        Without _LOCK (read only). A stopped or missing container, a world without a
+        status mod, a file from an earlier run and any Docker error yield 0.
         """
         try:
             container = self._provisioner.list_managed().get(world_id)
@@ -805,22 +805,22 @@ class WorldService:
                 return 0
             status_file = self._provisioner.read_status_file(world_id)
         except ProvisionerError as exc:
-            LOG.warning("Welt %s: Spieler vor dem Halt nicht zählbar (%s)", world_id, type(exc).__name__)
+            LOG.warning("World %s: players not countable before the halt (%s)", world_id, type(exc).__name__)
             return 0
         if status_file is None:
             return 0
         written = parse_docker_time(status_file.mtime)
         started = parse_docker_time(container.started_at)
-        # Namen aus einem früheren Lauf zählen nie (Pitfall 3 aus Phase 2).
+        # Names from an earlier run never count (pitfall 3 from phase 2).
         if written is None or started is None or written < started:
             return 0
         return len(parse_players(status_file.content))
 
     def announce_halt(self, world_id: str, now: int) -> int | None:
-        """Kündigt den Halt im Chat an, wenn jemand spielt; liefert den Zeitpunkt ``ab`` oder None.
+        """Announce the halt in chat if anyone is playing; returns the time ``ab`` or None.
 
-        Setzt den flüchtigen Halt in der Zeit-Rechnung und schreibt die Regeldatei
-        sofort (push_time); der Zeit-Mod warnt, sperrt Beitritte und trennt ab ``ab``.
+        Sets the volatile halt in the time calculation and writes the rule file
+        immediately (push_time); the time mod warns, blocks joins and disconnects from ``ab``.
         """
         if self.players_online(world_id) == 0:
             return None
@@ -828,39 +828,39 @@ class WorldService:
         with self._mutating():
             self._time.set_halt(world_id, ab)
             if not self.push_time(world_id):
-                LOG.warning("Welt %s: Halt-Hinweis nicht in die Welt geschrieben", world_id)
+                LOG.warning("World %s: halt notice not written into the world", world_id)
         return ab
 
     def stop_for_snapshot(self, world_id: str) -> None:
-        """Stoppt den Container für den Snapshot; verbucht nichts und ändert keinen Elternwunsch.
+        """Stop the container for the snapshot; books nothing and changes no parent wish.
 
-        Ein fehlender Container ist kein Fehler (der Snapshot meldet ihn dann selbst).
+        A missing container is no error (the snapshot then reports it itself).
         """
         with self._mutating():
             try:
                 self._provisioner.stop(world_id)
             except WorldNotFoundError:
-                LOG.info("Welt %s: Container fehlt, Stoppen vor dem Snapshot ist ein No-op", world_id)
+                LOG.info("World %s: container missing, stopping before the snapshot is a no-op", world_id)
 
     def end_offline(self, world_id: str, was_running: bool) -> ProvisionerError | None:
-        """Beendet den Offline-Abschnitt: Halt weg, bei was_running neu starten, Zustand zurück.
+        """End the offline section: halt gone, restart if was_running, state back.
 
-        Muster _restart_world_sync ohne Stopp. Der Zustand kehrt IMMER auf ready
-        oder failed zurück (D-11, Pitfall 7); ein Startfehler wird nicht geworfen,
-        sondern zurückgegeben, damit der Auftrag ihn als Job-Fehler meldet.
+        Pattern _restart_world_sync without the stop. The state ALWAYS returns to ready
+        or failed (D-11, pitfall 7); a start error is not raised
+        but returned, so the job reports it as a job error.
         """
         with self._mutating():
             self._time.clear_halt(world_id)
             return self._relaunch(world_id, was_running)
 
     def abort_offline(self, ticket: OfflineTicket) -> None:
-        """Bricht einen Auftrag vor dem Stopp ab: Zustand wie vorher, Halt weg, kein Docker-Aufruf.
+        """Abort a job before the stop: state as before, halt gone, no Docker call.
 
-        Setzt op_state und last_error auf previous_op_state und previous_error aus
-        dem Ticket zurück (eine vorher fehlgeschlagene Welt bleibt fehlgeschlagen).
-        Die Welt läuft noch: Die Regeldatei wird sofort ohne ``@halt`` geschrieben,
-        sonst trennte der Zeit-Mod die Kinder trotzdem. Fehlt die Welt inzwischen,
-        passiert nichts.
+        Resets op_state and last_error to previous_op_state and previous_error from
+        the ticket (a previously failed world stays failed).
+        The world is still running: the rule file is written immediately without ``@halt``,
+        otherwise the time mod would disconnect the children anyway. If the world is gone
+        meanwhile, nothing happens.
         """
         with self._mutating():
             self._time.clear_halt(ticket.world_id)
@@ -870,42 +870,42 @@ class WorldService:
                 ticket.world_id, op_state=ticket.previous_op_state, last_error=ticket.previous_error
             )
             if not self.push_time(ticket.world_id):
-                LOG.warning("Welt %s: Regeldatei ohne Halt nicht geschrieben, der Takt holt es nach", ticket.world_id)
+                LOG.warning("World %s: rule file without halt not written, the tick catches up", ticket.world_id)
 
     def book_ledger(self, world_id: str) -> None:
-        """Öffentlicher Einstieg für _book_ledger (Wiederherstellen, D-06), unter der Sperre."""
+        """Public entry for _book_ledger (restore, D-06), under the lock."""
         with self._mutating():
             self._book_ledger(world_id)
 
-    # Tausch der Weltdaten beim Wiederherstellen (Plan 06, RESEARCH Pattern 5).
+    # Swapping the world data on restore (plan 06, RESEARCH pattern 5).
 
     def mark_swap(self, world_id: str) -> None:
-        """Persistiert restoring_swap, bevor irgendetwas zerstört wird (T-05-33).
+        """Persist restoring_swap before anything is destroyed (T-05-33).
 
-        Stirbt der Prozess danach, macht der Boot-Abgleich daraus RESTORE_INTERRUPTED
-        (wiederholbar, nicht delete-only) statt die Welt mit halbem Volume zu starten.
+        If the process dies afterwards, the boot reconciliation turns it into RESTORE_INTERRUPTED
+        (repeatable, not delete-only) instead of starting the world with a half volume.
         """
         with self._mutating():
             self._row(world_id)
             self._store.update_world(world_id, op_state="restoring_swap")
 
     def restore_swap(self, world_id: str, restore_tar: BinaryIO, ledger: bytes | None) -> None:
-        """Baut die Welt über ein frisches Volume neu auf und spielt den Weltinhalt ein.
+        """Rebuild the world over a fresh volume and install the world content.
 
-        Der Phase-1-Erzeugungspfad (_payload) liefert Preset-world.mt, Mods und
-        frische Zugangs- und Regeldatei mit den Einladungen und Regeln von heute
-        (D-06); darüber kommt der gefilterte Weltinhalt, danach das bewahrte
-        Zählbuch. Das alte Volume samt heißem SQLite-Journal fällt weg (T-05-32).
-        Die Docker-Schritte laufen ohne _LOCK, den Busy-Zustand trägt die
-        Datenbank. Fehler gehen an den Aufrufer, der den Tausch wiederholt.
+        The phase 1 creation path (_payload) supplies preset world.mt, mods and
+        a fresh access and rule file with today's invitations and rules
+        (D-06); on top comes the filtered world content, then the preserved
+        ledger. The old volume with its hot SQLite journal is dropped (T-05-32).
+        The Docker steps run without _LOCK, the busy state is carried by the
+        database. Errors go to the caller, who repeats the swap.
         """
-        # Vor _payload: Sonst rendert die neue Regeldatei den Halt mit (T-05-50).
+        # Before _payload: otherwise the new rule file renders the halt too (T-05-50).
         self._time.clear_halt(world_id)
         row = self._row(world_id)
         try:
             self._provisioner.remove_world(world_id, keep_volume=False)
         except WorldNotFoundError:
-            LOG.info("Welt %s: kein Container vor dem Tausch", world_id)
+            LOG.info("World %s: no container before the swap", world_id)
         self._provisioner.ensure_image()
         with self._payload(row) as payload:
             self._provisioner.create_world_container(row.id, row.port, payload, reuse_volume=False)
@@ -913,23 +913,23 @@ class WorldService:
         self._provisioner.put_world_archive(world_id, restore_tar)
         if ledger is not None:
             self._provisioner.put_world_archive(world_id, io.BytesIO(ledger_tar(ledger)))
-        # Neue Ereignisdatei im frischen Volume: Erstkontakt verankert neu, keine Altmeldungen.
+        # New event file in the fresh volume: first contact re-anchors, no old reports.
         self._store.reset_event_cursor(world_id)
         self._time.forget(world_id)
         self._invalidate_cache()
 
     def finish_swap(self, world_id: str, was_running: bool) -> ProvisionerError | None:
-        """Schluss des Tauschs: Halt weg, bei was_running starten, Zustand ready (Muster end_offline).
+        """End of the swap: halt gone, start if was_running, state ready (pattern end_offline).
 
-        Der Elternwunsch (desired_state) bleibt unverändert. Ein Startfehler wird
-        zurückgegeben, nicht geworfen; die Welt steht dann auf failed.
+        The parent wish (desired_state) stays unchanged. A start error is
+        returned, not raised; the world is then in failed.
         """
         with self._mutating():
             self._time.clear_halt(world_id)
             return self._relaunch(world_id, was_running)
 
     def mark_restore_interrupted(self, world_id: str) -> None:
-        """Tausch endgültig gescheitert: failed mit RESTORE_INTERRUPTED, wiederholbar (D-15)."""
+        """Swap finally failed: failed with RESTORE_INTERRUPTED, repeatable (D-15)."""
         with self._mutating():
             self._time.clear_halt(world_id)
             self._time.forget(world_id)
@@ -938,18 +938,18 @@ class WorldService:
             self._store.update_world(world_id, op_state="failed", last_error=RESTORE_INTERRUPTED)
 
     def _relaunch(self, world_id: str, was_running: bool) -> ProvisionerError | None:
-        """Gemeinsamer Wiederanlauf; nur unter _mutating(), nachdem der Halt entfernt wurde."""
+        """Common restart; only under _mutating(), after the halt was removed."""
         self._time.forget(world_id)
         try:
             row = self._row(world_id)
             if was_running:
                 self._launch(row)
         except ProvisionerError as exc:
-            LOG.warning("Welt %s: Wiederanlauf nach dem Offline-Abschnitt gescheitert (%s)", world_id, exc)
+            LOG.warning("World %s: restart after the offline section failed (%s)", world_id, exc)
             self._fail(world_id, exc)
             return exc
         except Exception:
-            LOG.exception("Welt %s: Wiederanlauf nach dem Offline-Abschnitt scheiterte unerwartet", world_id)
+            LOG.exception("World %s: restart after the offline section failed unexpectedly", world_id)
             failure = ProvisionerError(OFFLINE_RESTART_FAILED)
             self._fail(world_id, failure)
             return failure
@@ -958,11 +958,11 @@ class WorldService:
 
     @contextlib.contextmanager
     def _payload(self, row: WorldRow) -> Iterator[WorldPayload]:
-        """Inhalt aus dem Preset der DB-Zeile, auch bei Neuerzeugung (Pitfall 2).
+        """Content from the preset of the DB row, also on re-creation (pitfall 2).
 
-        Schließt das Tar (temporäre Datei) nach dem Einspielen, auch im Fehlerfall.
-        Dateisystem- und Archivfehler (voller Datenträger, kaputtes Zip) kommen als
-        ProvisionerError an, damit jeder Aufrufer seinen Aufräumpfad nimmt (WR-01).
+        Closes the tar (temporary file) after installing, also on error.
+        File system and archive errors (full disk, broken zip) arrive as
+        ProvisionerError, so every caller takes its cleanup path (WR-01).
         """
         preset = get_preset(row.preset)
         try:
@@ -975,7 +975,7 @@ class WorldService:
                 language=world_language(row),
             )
         except (OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
-            LOG.warning("Weltdaten für Welt %s nicht vorbereitet: %r", row.id, exc)
+            LOG.warning("World data for world %s not prepared: %r", row.id, exc)
             raise ProvisionerError(PAYLOAD_FAILED) from exc
         try:
             yield payload
@@ -989,14 +989,14 @@ class WorldService:
         return row
 
     def _used_ports(self) -> set[int]:
-        """Ports aus der Datenbank und alle von Containern des Hosts gebundenen Ports."""
+        """Ports from the database and all ports bound by containers of the host."""
         low, high = self._settings.port_range
         used = self._store.used_ports()
         try:
             used |= self._provisioner.used_host_ports(low, high)
         except ProvisionerError as exc:
-            # Der nächste Docker-Aufruf scheitert dann ohnehin mit einer klaren Meldung.
-            LOG.warning("Gebundene Host-Ports nicht abrufbar, nur Datenbank-Ports: %s", exc)
+            # The next Docker call then fails anyway with a clear message.
+            LOG.warning("Bound host ports not retrievable, database ports only: %s", exc)
         return used
 
     def _invalidate_cache(self) -> None:
@@ -1006,7 +1006,7 @@ class WorldService:
 
     @contextlib.contextmanager
     def _mutating(self) -> Iterator[None]:
-        """Mutation unter _LOCK; der Listen-Cache wird davor und danach verworfen, auch bei Fehlern."""
+        """Mutation under _LOCK; the list cache is discarded before and after, also on errors."""
         self._invalidate_cache()
         try:
             with _LOCK:
@@ -1018,16 +1018,16 @@ class WorldService:
         return self._collect(rows)[0]
 
     def _collect(self, rows: list[WorldRow]) -> tuple[list[WorldView], bool]:
-        """Ansichten mit Status aus Docker: einmal list_managed, Status-Datei nur wo nötig.
+        """Views with status from Docker: one list_managed, status file only where needed.
 
-        Einziger Codepfad für Liste und Einzelansicht. Die Datenbank liefert nur
-        creating/failed und den Elternwunsch, alles andere kommt aus Docker.
-        Der zweite Wert sagt, ob Docker erreichbar war (nur dann wird gecacht).
+        Single code path for list and single view. The database supplies only
+        creating/failed and the parent wish, everything else comes from Docker.
+        The second value says whether Docker was reachable (only then is it cached).
         """
         try:
             managed = self._provisioner.list_managed()
         except ProvisionerError as exc:
-            LOG.warning("Docker-Status nicht abrufbar, zeige unknown: %s", exc)
+            LOG.warning("Docker status not retrievable, showing unknown: %s", exc)
             unknown = [
                 _view(
                     row,
@@ -1050,13 +1050,13 @@ class WorldService:
         return [self._view_from_docker(row, managed.get(row.id)) for row in rows], True
 
     def _status_file(self, row: WorldRow, container: ContainerInfo | None) -> StatusFile | None:
-        """Status-Datei (mtime und Inhalt), nur für laufende Welten mit Status-Mod (Schema 2)."""
+        """Status file (mtime and content), only for running worlds with a status mod (schema 2)."""
         if (
             container is None
             or container.status != "running"
             or row.op_state in {"creating", "failed"}
-            # Busy: Status und Text kommen allein aus op_state (D-10); die Spielerzählung
-            # für den Chat-Hinweis liest direkt (players_online).
+            # Busy: status and text come from op_state alone (D-10); the player count
+            # for the chat notice reads directly (players_online).
             or row.op_state in BUSY_OP_STATES
             or schema_version(container.schema) < STATUS_MOD_SCHEMA
         ):
@@ -1064,62 +1064,62 @@ class WorldService:
         try:
             status_file = self._provisioner.read_status_file(row.id)
         except ProvisionerError as exc:
-            # Pro Welt isoliert: Die Welt zeigt dann "Startet gerade", die Liste bleibt.
-            LOG.warning("Status-Datei von Welt %s nicht lesbar: %s", row.id, exc)
+            # Isolated per world: the world then shows "Startet gerade", the list stays.
+            LOG.warning("Status file of world %s not readable: %s", row.id, exc)
             return None
         return status_file
 
     def _invited(self, row: WorldRow) -> list[str]:
-        """Spielernamen der Eingeladenen, sortiert; nur die Namen, nie die Verifier."""
+        """Player names of the invitees, sorted; only the names, never the verifiers."""
         return sorted(self._store.access_entries(row.id))
 
     def _time_window(self, row: WorldRow) -> list[WindowDay] | None:
-        """Welt-Zeitfenster aus der Datenbank (ZEIT-05); None heißt: immer offen."""
+        """World time window from the database (ZEIT-05); None means: always open."""
         return window_days(self._store.world_window(row.id))
 
     def _backup_job(self, row: WorldRow) -> BackupJobView | None:
-        """Letzter Auftrag der Welt aus der Datenbank (D-11), unabhängig von Docker."""
+        """Last job of the world from the database (D-11), independent of Docker."""
         return _job_view(self._store.get_backup_job(row.id))
 
     def _access_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
-        """Läuft die Welt noch ohne geladenen Zugangsschutz (03-RESEARCH.md Pitfall 4)?
+        """Does the world still run without loaded access protection (03-RESEARCH.md pitfall 4)?
 
-        Nur bei status running: Der Zugangs-Mod schreibt seine State-Datei, sobald
-        er eine Zugangsdatei geladen hat. Fehlt sie oder ist sie älter als der
-        Start des Containers, wurde die Welt vor dem Update gestartet und braucht
-        einen Neustart. Gleiche Regel wie die Bereitschaft (mtime >= StartedAt).
-        Ein Lesefehler betrifft nur diese Welt: False plus Warnung.
+        Only for status running: the access mod writes its state file as soon as
+        it has loaded an access file. If it is missing or older than the
+        start of the container, the world was started before the update and needs
+        a restart. Same rule as readiness (mtime >= StartedAt).
+        A read error affects only this world: False plus a warning.
         """
         if container is None or status.code != RUNNING:
             return False
         try:
             state = self._provisioner.read_access_state(row.id)
         except ProvisionerError as exc:
-            LOG.warning("Zugangsstand von Welt %s nicht lesbar: %s", row.id, exc)
+            LOG.warning("Access state of world %s not readable: %s", row.id, exc)
             return False
         if state is None:
             return True
         written = parse_docker_time(state.mtime)
         started = parse_docker_time(container.started_at)
         if started is None:
-            # Ohne lesbaren Startzeitpunkt zählt nur, dass die Datei da ist.
+            # Without a readable start time, only the presence of the file counts.
             return False
         return written is None or written < started
 
     def _time_restart_needed(self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus) -> bool:
-        """Läuft die Welt noch ohne geladenen Zeit-Mod (vor dem Update gestartet)?
+        """Does the world still run without a loaded time mod (started before the update)?
 
-        Nur bei status running: Der Zeit-Mod schreibt sein Zählbuch bei mods_loaded.
-        Fehlt es oder ist es älter als der Start des Containers, trägt die Welt den
-        Zeit-Mod noch nicht und braucht einen Neustart. Gleiche Regel und Isolierung
-        wie _access_restart_needed; ein Lesefehler betrifft nur diese Welt.
+        Only for status running: the time mod writes its ledger on mods_loaded.
+        If it is missing or older than the start of the container, the world does not carry
+        the time mod yet and needs a restart. Same rule and isolation
+        as _access_restart_needed; a read error affects only this world.
         """
         if container is None or status.code != RUNNING:
             return False
         try:
             ledger = self._provisioner.read_time_ledger(row.id)
         except ProvisionerError as exc:
-            LOG.warning("Spielzeitstand von Welt %s nicht lesbar: %s", row.id, exc)
+            LOG.warning("Playtime state of world %s not readable: %s", row.id, exc)
             return False
         if ledger is None:
             return True
@@ -1132,20 +1132,20 @@ class WorldService:
     def _events_restart_needed(
         self, row: WorldRow, container: ContainerInfo | None, status: WorldStatus, *, unknown: bool = False
     ) -> bool:
-        """Läuft die Welt noch mit altem Zugangs-Mod ohne Ereignisdatei (Pattern 3)?
+        """Does the world still run with an old access mod without an event file (pattern 3)?
 
-        Nur bei status running: Der neue Mod schreibt die Ereignisdatei bei
-        mods_loaded. Fehlt sie oder ist sie älter als der Start des Containers,
-        kommen aus dieser Welt keine Hinweise, bis sie neu startet. Gleiche Regel
-        und Isolierung wie _time_restart_needed; ein Lesefehler oder ein fehlendes
-        StartedAt ergibt ``unknown`` (Anzeige: False, Pause: True).
+        Only for status running: the new mod writes the event file on
+        mods_loaded. If it is missing or older than the start of the container,
+        no notices arrive from this world until it restarts. Same rule
+        and isolation as _time_restart_needed; a read error or a missing
+        StartedAt yields ``unknown`` (display: False, pause: True).
         """
         if container is None or status.code != RUNNING:
             return False
         try:
             events_file = self._provisioner.read_events(row.id)
         except ProvisionerError as exc:
-            LOG.warning("Ereignisdatei von Welt %s nicht lesbar: %s", row.id, exc)
+            LOG.warning("Event file of world %s not readable: %s", row.id, exc)
             return unknown
         if events_file is None:
             return True
@@ -1156,13 +1156,13 @@ class WorldService:
         return written is None or written < started
 
     def _memory(self, row: WorldRow, container: ContainerInfo | None) -> MemoryUsage | None:
-        """RAM nur für laufende Container; ein Fehler betrifft nur diese Welt."""
+        """RAM only for running containers; an error affects only this world."""
         if container is None or container.status != "running":
             return None
         try:
             return self._provisioner.memory_bytes(row.id)
         except ProvisionerError as exc:
-            LOG.warning("Arbeitsspeicher von Welt %s nicht abrufbar: %s", row.id, exc)
+            LOG.warning("Memory of world %s not retrievable: %s", row.id, exc)
             return None
 
     def _view_from_docker(self, row: WorldRow, container: ContainerInfo | None) -> WorldView:
@@ -1175,7 +1175,7 @@ class WorldService:
             reachable=True,
             status_mtime=None if status_file is None else status_file.mtime,
         )
-        # Spieler nur aus einer Datei dieses Laufs: running setzt mtime >= StartedAt voraus (Pitfall 3).
+        # Players only from a file of this run: running presupposes mtime >= StartedAt (pitfall 3).
         players = parse_players(status_file.content) if status.code == RUNNING and status_file is not None else []
         docker_status = MISSING if container is None else container.status
         return _view(
@@ -1193,33 +1193,33 @@ class WorldService:
         )
 
     def _launch(self, row: WorldRow) -> None:
-        """Startet den Container; bei belegtem Port Neuerzeugung mit dem nächsten freien Port.
+        """Start the container; if the port is taken, re-create with the next free port.
 
-        Vor jedem Startversuch schreibt er alle drei Welt-Mods, die aktuelle
-        Zugangsdatei und die Regeldatei des Zeit-Mods in den Weltordner
-        (put_archive, kein exec): So bekommen auch ältere Welten Zugangs- und
-        Zeit-Mod, und der Mod-Code folgt App-Updates. Das Zählbuch im Volume
-        bleibt unberührt.
-        Das Volume mit den Weltdaten bleibt dabei erhalten; nur minetest.conf,
-        world.mt und das Spiel werden neu eingespielt (deterministischer Inhalt).
-        Fehlt der Container ganz (Fehlerpfad der Port-Saga oder docker rm von
-        außen), wird er aus dem vorhandenen Volume neu erzeugt statt die Welt
-        als verschwunden zu melden. Fehlt auch das Volume, endet der Start mit
-        DeleteOnlyError statt einer leeren Welt. Höchstens MAX_START_ATTEMPTS
-        Startversuche bei belegtem Port, danach NoFreePortError.
+        Before every start attempt it writes all three world mods, the current
+        access file and the rule file of the time mod into the world folder
+        (put_archive, no exec): so older worlds also get the access and
+        time mod, and the mod code follows app updates. The ledger in the volume
+        stays untouched.
+        The volume with the world data is preserved; only minetest.conf,
+        world.mt and the game are installed again (deterministic content).
+        If the container is missing entirely (error path of the port saga or docker rm from
+        outside), it is re-created from the existing volume instead of reporting the world
+        as vanished. If the volume is missing too, the start ends with
+        DeleteOnlyError instead of an empty world. At most MAX_START_ATTEMPTS
+        start attempts when the port is taken, then NoFreePortError.
         """
         tried = {row.port}
         recreated = False
         attempt = 0
         while True:
             try:
-                # Im selben try: Fehlt der Container schon beim Schreiben, greift die Neuerzeugung.
+                # In the same try: if the container is already missing while writing, the re-creation applies.
                 language = world_language(row)
                 world_files = build_world_files(self._access_file(row), self._time_file(row), language=language)
                 try:
                     self._provisioner.write_world_files(row.id, world_files)
                 except BaseException:
-                    # Regeldatei nicht angekommen: Der nächste Takt schreibt sie erneut (CR-01).
+                    # Rule file did not arrive: the next tick writes it again (CR-01).
                     self._time.forget(row.id)
                     raise
                 self._provisioner.start_world(row.id)
@@ -1229,24 +1229,24 @@ class WorldService:
                     row.launched_language = language
                 return
             except WorldNotFoundError:
-                # Volume vorhanden, Container weg: aus dem Volume neu erzeugen.
-                # Höchstens einmal pro Start; die Neuerzeugung durchläuft beim
-                # nächsten Schleifendurchlauf weiter die Port-Saga.
+                # Volume present, container gone: re-create from the volume.
+                # At most once per start; the re-creation continues through the
+                # port saga on the next loop pass.
                 if recreated:
                     raise
                 if not self._provisioner.volume_exists(row.id):
-                    # Nie eine leere Welt unter altem Namen anlegen: Docker
-                    # legte ein fehlendes Volume beim Mount still leer an (CR-01).
+                    # Never create an empty world under the old name: Docker
+                    # silently created a missing volume empty on mount (CR-01).
                     raise DeleteOnlyError(RECONCILE_DATA_MISSING) from None
                 recreated = True
-                LOG.warning("Welt %s: Container fehlt, erzeuge ihn aus dem Volume neu", row.id)
+                LOG.warning("World %s: container missing, re-creating it from the volume", row.id)
                 self._provisioner.ensure_image()
                 with self._payload(row) as payload:
                     self._provisioner.create_world_container(row.id, row.port, payload, reuse_volume=True)
                 continue
             except PortInUseError as exc:
                 attempt += 1
-                LOG.warning("Welt %s: Startversuch %d gescheitert: %s", row.id, attempt, exc)
+                LOG.warning("World %s: start attempt %d failed: %s", row.id, attempt, exc)
                 if attempt == MAX_START_ATTEMPTS:
                     break
             self._provisioner.remove_world(row.id, keep_volume=True)
@@ -1266,19 +1266,19 @@ class WorldService:
         self._store.update_world(world_id, op_state="failed", last_error=str(exc))
 
     def _discard_failed_create(self, world_id: str, exc: ProvisionerError, *, touched_docker: bool) -> None:
-        """Räumt nach gescheitertem Erzeugen auf, damit keine failed-Zeile einen UDP-Port belegt.
+        """Clean up after a failed create, so that no failed row occupies a UDP port.
 
-        Ist nachweislich nichts in Docker entstanden (Fehler schon bei
-        ensure_image), wird die Zeile ohne Docker-Aufruf gelöscht. Sonst wird
-        aufgeräumt; gelingt das, verschwindet die Zeile ebenfalls. Nur wenn das
-        Aufräumen scheitert, bleibt die Zeile als failed mit der ursprünglichen
-        Meldung stehen, damit Löschen später Container und Volume entfernt.
+        If demonstrably nothing was created in Docker (error already at
+        ensure_image), the row is deleted without a Docker call. Otherwise it is
+        cleaned up; if that succeeds, the row disappears too. Only if the
+        cleanup fails does the row stay as failed with the original
+        message, so that a later delete removes container and volume.
         """
         if touched_docker:
             try:
                 self._provisioner.remove_world(world_id, keep_volume=False)
             except ProvisionerError as cleanup:
-                LOG.warning("Aufräumen nach fehlgeschlagenem Erzeugen von Welt %s scheiterte: %s", world_id, cleanup)
+                LOG.warning("Cleanup after failed creation of world %s failed: %s", world_id, cleanup)
                 self._fail(world_id, exc)
                 return
         self._store.delete_world(world_id)
@@ -1288,28 +1288,28 @@ class WorldService:
 
     @staticmethod
     def _refuse_delete_only(row: WorldRow) -> None:
-        """Start und Neustart einer Welt, die nur noch gelöscht werden kann, ändern nichts."""
+        """Start and restart of a world that can only be deleted change nothing."""
         if delete_only(row):
             raise DeleteOnlyError(row.last_error or RECONCILE_DATA_MISSING)
 
     @staticmethod
     def _refuse_busy(row: WorldRow) -> None:
-        """Während Sicherung oder Wiederherstellung gehört der Container dem Auftrag (T-05-15)."""
+        """During backup or restore the container belongs to the job (T-05-15)."""
         if row.op_state in BUSY_OP_STATES:
             raise WorldBusyError(WORLD_BUSY)
 
     def _refuse_job_running(self, world_id: str) -> None:
-        """Löschen während der Upload-Phase sperren (T-05-45).
+        """Block deleting during the upload phase (T-05-45).
 
-        Nach end_offline steht op_state wieder auf ready, der Auftrag läuft aber
-        noch. Ohne diese Sperre entfernte das Löschen die Auftragszeile, der
-        Ein-Job-Schutz fiele weg und der Abschluss schriebe eine verwaiste Zeile.
+        After end_offline, op_state is back at ready, but the job is still
+        running. Without this block, deleting would remove the job row, the
+        one-job guard would fall away and the completion would write an orphaned row.
         """
         job = self._store.get_backup_job(world_id)
         if job is not None and job.state == BACKUP_JOB_RUNNING:
             raise WorldBusyError(WORLD_BUSY)
 
-    # Abläufe
+    # Flows
 
     def _create_world_sync(self, name: str, preset_id: str, language: str) -> WorldView:
         with self._mutating():
@@ -1335,7 +1335,7 @@ class WorldService:
             )
             self._store.insert_world(row)
 
-            # Ab create_world_container kann ein Volume oder Container entstanden sein.
+            # From create_world_container on, a volume or container may have been created.
             touched_docker = False
             try:
                 self._provisioner.ensure_image()
@@ -1347,16 +1347,16 @@ class WorldService:
                 self._discard_failed_create(world_id, exc, touched_docker=touched_docker)
                 raise
             except Exception as exc:
-                # Jeder andere Fehler nimmt denselben Aufräumpfad: Sonst bliebe die
-                # Zeile bis zum Prozessneustart auf creating und belegte ihren Port (WR-01).
-                LOG.exception("Erzeugen von Welt %s scheiterte unerwartet", world_id)
+                # Every other error takes the same cleanup path: otherwise the
+                # row would stay on creating until the process restarts and occupy its port (WR-01).
+                LOG.exception("Creating world %s failed unexpectedly", world_id)
                 failure = ProvisionerError(CREATE_FAILED)
                 self._discard_failed_create(world_id, failure, touched_docker=touched_docker)
                 raise failure from exc
 
             self._store.update_world(world_id, op_state="ready")
-            # Der Weltschlüssel wird seit 03-05 nicht mehr angezeigt; Zugang über
-            # provisionierte Konten. Er bleibt als default_password in der conf.
+            # Since 03-05 the world key is no longer displayed; access goes through
+            # provisioned accounts. It stays as default_password in the conf.
             return self._current(world_id)
 
     def _set_world_language_sync(self, world_id: str, language: str) -> WorldView:
@@ -1366,7 +1366,7 @@ class WorldService:
             return self._current(world_id)
 
     def _list_worlds_sync(self) -> list[WorldView]:
-        # Ohne _LOCK (Pitfall 6): Statuslesen darf nie hinter einem Erzeugen warten.
+        # Without _LOCK (pitfall 6): reading status must never wait behind a create.
         with self._cache_lock:
             cached = self._list_cache
             generation = self._cache_generation
@@ -1374,7 +1374,7 @@ class WorldService:
             return [_copy(view) for view in cached[1]]
         taken = monotonic()
         views, reachable = self._collect(self._store.list_worlds())
-        # "Docker nicht erreichbar" wird nie gecacht: Die nächste Abfrage prüft neu.
+        # "Docker not reachable" is never cached: the next query checks again.
         if reachable:
             with self._cache_lock:
                 if self._cache_generation == generation:
@@ -1403,9 +1403,9 @@ class WorldService:
             try:
                 self._provisioner.stop(world_id)
             except WorldNotFoundError:
-                # Die DB-Zeile existiert (oben geprüft): Ein fehlender Container
-                # ist bereits gestoppt, Stoppen ist dann ein No-op.
-                LOG.info("Welt %s: Container fehlt, Stoppen ist ein No-op", world_id)
+                # The DB row exists (checked above): a missing container
+                # is already stopped, stopping is then a no-op.
+                LOG.info("World %s: container missing, stopping is a no-op", world_id)
             except ProvisionerError as exc:
                 self._fail(world_id, exc)
                 raise
@@ -1413,9 +1413,9 @@ class WorldService:
             return self._current(world_id)
 
     def _restart_world_sync(self, world_id: str) -> WorldView:
-        """Neustart als Stop plus _launch, nie container.restart (RESEARCH Pattern 3).
+        """Restart as stop plus _launch, never container.restart (RESEARCH pattern 3).
 
-        So greifen Port-Saga und Neuerzeugung aus dem Volume wie beim Start.
+        So the port saga and re-creation from the volume apply as on start.
         """
         with self._mutating():
             row = self._row(world_id)
@@ -1426,7 +1426,7 @@ class WorldService:
                 try:
                     self._provisioner.stop(world_id)
                 except WorldNotFoundError:
-                    LOG.info("Welt %s: Container fehlt, Neustart erzeugt ihn neu", world_id)
+                    LOG.info("World %s: container missing, the restart recreates it", world_id)
                 self._launch(row)
             except ProvisionerError as exc:
                 self._fail(world_id, exc)
@@ -1435,9 +1435,9 @@ class WorldService:
             return self._current(world_id)
 
     def _boot_reconcile_sync(self) -> bool:
-        # Nicht blockierend (Pitfall 6): Läuft eine Elternaktion, kommt der Abgleich später wieder.
+        # Not blocking (pitfall 6): if a parent action is running, the reconciliation comes back later.
         if not _LOCK.acquire(blocking=False):
-            LOG.info("Boot-Abgleich verschoben: Eine Elternaktion läuft")
+            LOG.info("Boot reconciliation postponed: a parent action is running")
             return False
         try:
             managed = self._provisioner.list_managed()
@@ -1445,8 +1445,8 @@ class WorldService:
             known = {row.id for row in rows}
             orphans = [world_id for world_id in managed if world_id not in known]
             if orphans:
-                # Nie anfassen: Ohne Zeile fehlen Weltschlüssel und Elternwunsch.
-                LOG.warning("verwaiste Welt-Container: %d (%s)", len(orphans), ", ".join(sorted(orphans)))
+                # Never touch: without a row, world key and parent wish are missing.
+                LOG.warning("orphaned world containers: %d (%s)", len(orphans), ", ".join(sorted(orphans)))
             for row in rows:
                 self._reconcile_row(row, managed.get(row.id))
             return True
@@ -1455,40 +1455,40 @@ class WorldService:
             self._invalidate_cache()
 
     def _reconcile_row(self, row: WorldRow, container: ContainerInfo | None) -> None:
-        """Eine Welt abgleichen; Fehler bleiben an dieser Welt, außer Docker ist ganz weg."""
+        """Reconcile one world; errors stay with this world, unless Docker is gone entirely."""
         action = ReconcileAction.NONE
         try:
             volume = needs_volume_check(row, container) and self._provisioner.volume_exists(row.id)
             action = decide_boot(row, container, volume)
             if action is ReconcileAction.CLEAR_BUSY:
-                # Abgebrochene Sicherung oder Wiederherstellung vor dem Tausch: Die Weltdaten
-                # sind unverändert. Zurück auf ready, dann die frische Zeile wie jede andere
-                # behandeln (D-11: Die Welt startet wieder, wenn sie laufen soll).
-                LOG.info("Abgleich Welt %s: %s", row.id, action.value)
+                # Aborted backup or restore before the swap: the world data
+                # is unchanged. Back to ready, then treat the fresh row like any other
+                # (D-11: the world starts again if it should be running).
+                LOG.info("Reconciliation of world %s: %s", row.id, action.value)
                 self._apply(row, action)
                 row = self._row(row.id)
                 volume = needs_volume_check(row, container) and self._provisioner.volume_exists(row.id)
                 action = decide_boot(row, container, volume)
             if action is ReconcileAction.NONE:
                 return
-            LOG.info("Abgleich Welt %s: %s", row.id, action.value)
+            LOG.info("Reconciliation of world %s: %s", row.id, action.value)
             self._apply(row, action)
         except DockerUnavailableError:
-            # Proxy weg: keine Welt als kaputt markieren, der ganze Abgleich wiederholt sich.
+            # Proxy gone: mark no world as broken, the whole reconciliation repeats.
             raise
         except ProvisionerError as exc:
-            LOG.warning("Abgleich Welt %s (%s) gescheitert: %s", row.id, action.value, exc)
+            LOG.warning("Reconciliation of world %s (%s) failed: %s", row.id, action.value, exc)
             self._fail(row.id, exc)
         except Exception:
-            # Etwa ValueError aus get_preset (unbekannte Spielart): Sonst bräche der
-            # ganze Boot-Abgleich ab, alle 5 s erneut, und keine Welt dahinter startete (WR-02).
-            LOG.exception("Abgleich Welt %s (%s) scheiterte unerwartet", row.id, action.value)
+            # E.g. ValueError from get_preset (unknown game type): otherwise the
+            # whole boot reconciliation would abort, repeat every 5 s, and no world behind it would start (WR-02).
+            LOG.exception("Reconciliation of world %s (%s) failed unexpectedly", row.id, action.value)
             self._fail(row.id, ProvisionerError(RECONCILE_FAILED))
 
     def _apply(self, row: WorldRow, action: ReconcileAction) -> None:
         match action:
             case ReconcileAction.START | ReconcileAction.RECREATE:
-                # RECREATE läuft über den Neuerzeugungspfad in _launch (Volume, row.preset).
+                # RECREATE runs via the re-creation path in _launch (volume, row.preset).
                 self._launch(row)
                 self._store.update_world(row.id, op_state="ready", last_error=None)
             case ReconcileAction.MARK_OOM:
@@ -1505,7 +1505,7 @@ class WorldService:
                 self._store.delete_notify_data(row.id)
                 self._store.delete_backup_job(row.id)
             case ReconcileAction.CLEAR_BUSY:
-                # Danach wertet _reconcile_row die frische Zeile nach den normalen Regeln aus.
+                # Afterwards _reconcile_row evaluates the fresh row by the normal rules.
                 self._store.update_world(row.id, op_state="ready")
             case ReconcileAction.MARK_RESTORE_INTERRUPTED:
                 self._store.update_world(row.id, op_state="failed", last_error=RESTORE_INTERRUPTED)
@@ -1522,7 +1522,7 @@ class WorldService:
             managed = self._provisioner.list_managed()
             for row in self._store.list_worlds():
                 if decide_periodic(row, managed.get(row.id)) is ReconcileAction.ADOPT_RUNNING:
-                    LOG.info("Abgleich Welt %s: von Hand gestartet, Soll-Zustand jetzt running", row.id)
+                    LOG.info("Reconciliation of world %s: started by hand, desired state now running", row.id)
                     self._store.update_world(row.id, desired_state="running")
                     changed = True
         finally:
@@ -1541,15 +1541,15 @@ class WorldService:
             except ProvisionerError as exc:
                 self._fail(world_id, exc)
                 raise
-            # Erst nach erfolgreichem Aufräumen: kein Volume ohne Eintrag (T-01-21).
+            # Only after successful cleanup: no volume without an entry (T-01-21).
             self._store.delete_world(world_id)
-            # Kein PRAGMA foreign_keys: Einladungen, Zugang, Welt-Fenster und
-            # gesehene Zählbuchstände der Welt explizit löschen, dazu Cursor,
-            # Outbox, Laufzustand, Fremdversuche und Bot-Drossel (Schema 5). Die
-            # Tagesspielzeit (play_daily) bleibt bis zur normalen Frist, damit der
-            # Rückblick am Abend auch eine heute gelöschte Welt zählt.
+            # No PRAGMA foreign_keys: explicitly delete invitations, access, world windows and
+            # seen ledger states of the world, plus cursor,
+            # outbox, run state, foreign attempts and bot throttle (schema 5). The
+            # daily playtime (play_daily) stays until the normal period, so that the
+            # review in the evening also counts a world deleted today.
             self._store.delete_access_data(world_id)
             self._store.delete_time_data(world_id)
             self._store.delete_notify_data(world_id)
-            # Nur der Auftragszustand; die Sicherungsnachweise (backups) bleiben (D-08, Plan 02).
+            # Only the job state; the backup proofs (backups) stay (D-08, plan 02).
             self._store.delete_backup_job(world_id)

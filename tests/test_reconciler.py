@@ -1,4 +1,4 @@
-"""Reconciler ohne Docker: Entscheidungstabelle, Abgleich im Dienst, Schleife und Lifespan (PLATT-02)."""
+"""Reconciler without Docker: decision table, reconciliation in the service, loop and lifespan (PLATT-02)."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def _container(status: str, *, exit_code: int = 0, oom: bool = False) -> Contain
     return ContainerInfo("cid", "gameworld-x-w1", "w1", status, 30015, exit_code=exit_code, oom_killed=oom)
 
 
-# Entscheidungstabelle (RESEARCH Pattern 4)
+# Decision table (RESEARCH pattern 4)
 
 BOOT_TABLE = [
     pytest.param(_row(), _container("exited", exit_code=0), True, A.START, id="running-exited-0"),
@@ -90,7 +90,7 @@ BOOT_TABLE = [
     pytest.param(_row(), _container("created"), True, A.START, id="running-created"),
     pytest.param(_row(op_state="failed"), _container("exited", exit_code=1), True, A.NONE, id="failed-exited"),
     pytest.param(_row(op_state="failed"), None, True, A.NONE, id="failed-missing"),
-    # Busy-Zustände aus Phase 5 (RESEARCH Pattern 7, Pitfall 2)
+    # Busy states from phase 5 (RESEARCH pattern 7, pitfall 2)
     pytest.param(
         _row(op_state="restoring_swap"), None, False, A.MARK_RESTORE_INTERRUPTED, id="swap-no-container-no-volume"
     ),
@@ -166,12 +166,12 @@ def test_decide_periodic_leaves_dead_worlds_alone(container: ContainerInfo | Non
     assert decide_periodic(_row(), container) is A.NONE
 
 
-# Abgleich im Dienst
+# Reconciliation in the service
 
 
 @dataclass
 class ReconcileFake(FakeProvisioner):
-    """FakeProvisioner mit Volumes und Startfehlern pro Welt."""
+    """FakeProvisioner with volumes and start errors per world."""
 
     volumes: set[str] = field(default_factory=set)
     volume_checks: list[str] = field(default_factory=list)
@@ -237,7 +237,7 @@ async def test_boot_starts_exited_and_keeps_stopped(
     assert fake.containers["b"] == (30016, "exited")
     assert fake.created == []
     assert _get(store, "a").op_state == "ready"
-    # Volume nur bei fehlendem Container abfragen.
+    # Query the volume only when the container is missing.
     assert fake.volume_checks == []
 
 
@@ -249,7 +249,7 @@ async def test_boot_recreates_missing_container_from_volume(
 
     assert await service.boot_reconcile() is True
 
-    # Zweite Prüfung direkt vor der Neuerzeugung in _launch (CR-01 Phase 2).
+    # Second check right before the re-creation in _launch (CR-01 phase 2).
     assert fake.volume_checks == ["a", "a"]
     assert fake.created == [("a", 30015, True)]
     assert fake.containers["a"] == (30015, "running")
@@ -301,7 +301,7 @@ async def test_boot_marks_interrupted_restore_swap(
     containers: dict[str, tuple[int, str]],
     volumes: set[str],
 ) -> None:
-    """Pitfall 2: Ein unterbrochener Tausch wird nie gestartet und nie delete-only."""
+    """Pitfall 2: An interrupted swap is never started and never delete-only."""
     _insert(store, "a", op_state="restoring_swap", port=30015)
     fake.containers = dict(containers)
     fake.volumes = volumes
@@ -319,7 +319,7 @@ async def test_boot_marks_interrupted_restore_swap(
 async def test_boot_clears_backing_up_and_starts_world(
     service: WorldService, fake: ReconcileFake, store: WorldStore
 ) -> None:
-    """D-11: Nach Abbruch der Sicherung startet die Welt wieder, wenn sie laufen soll."""
+    """D-11: After an aborted backup the world starts again if it should be running."""
     _insert(store, "a", op_state="backing_up", port=30015)
     _insert(store, "b", desired="stopped", op_state="restoring", port=30016)
     fake.containers = {"a": (30015, "exited"), "b": (30016, "exited")}
@@ -346,7 +346,7 @@ async def test_periodic_never_touches_busy_world(service: WorldService, fake: Re
 async def test_restore_interrupted_world_stays_startable(
     service: WorldService, fake: ReconcileFake, store: WorldStore
 ) -> None:
-    """RESTORE_INTERRUPTED ist kein delete-only-Fehler (D-15): Starten bleibt erlaubt."""
+    """RESTORE_INTERRUPTED is not a delete-only error (D-15): starting stays allowed."""
     _insert(store, "a", op_state="restoring_swap", port=30015)
     fake.containers = {"a": (30015, "exited")}
     assert await service.boot_reconcile() is True
@@ -396,7 +396,7 @@ async def test_boot_error_of_one_world_is_isolated(
 async def test_boot_aborts_when_docker_disappears(
     service: WorldService, fake: ReconcileFake, store: WorldStore
 ) -> None:
-    """Ein unerreichbarer Proxy markiert keine Welt als kaputt; der nächste Versuch gleicht alles ab."""
+    """An unreachable proxy marks no world as broken; the next attempt reconciles everything."""
     _insert(store, "a", port=30015)
     fake.containers = {"a": (30015, "exited")}
     fake.failing_starts = {"a": DockerUnavailableError("Proxy weg")}
@@ -422,7 +422,7 @@ async def test_boot_leaves_orphans_alone(
     assert fake.stopped == []
     assert fake.removed == []
     assert fake.created == []
-    assert "verwaiste Welt-Container: 2" in caplog.text
+    assert "orphaned world containers: 2" in caplog.text
 
 
 async def test_boot_skips_while_parent_action_runs(
@@ -473,7 +473,7 @@ async def test_reconcile_invalidates_list_cache(service: WorldService, fake: Rec
 async def test_boot_skips_volume_check_for_stopped_or_deleted_rows(
     service: WorldService, fake: ReconcileFake, store: WorldStore
 ) -> None:
-    """Volume-Abfragen nur, wo eine Neuerzeugung überhaupt in Frage kommt."""
+    """Volume queries only where a re-creation is possible at all."""
     _insert(store, "a", desired="stopped", port=30015)
     _insert(store, "b", desired="deleted", port=30016)
     fake.remove_error = None
@@ -486,7 +486,7 @@ async def test_boot_skips_volume_check_for_stopped_or_deleted_rows(
 
 
 async def test_recreate_without_container_raises_not_found_in_fake(fake: ReconcileFake) -> None:
-    """Gegenprobe zum Fake: Ohne Container kennt start_world die Welt nicht."""
+    """Control for the fake: without a container start_world does not know the world."""
     with pytest.raises(WorldNotFoundError):
         fake.start_world("a")
 
@@ -494,7 +494,7 @@ async def test_recreate_without_container_raises_not_found_in_fake(fake: Reconci
 async def test_boot_recreate_stops_when_volume_vanishes(
     service: WorldService, fake: ReconcileFake, store: WorldStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verschwindet das Volume zwischen Abgleich und Neuerzeugung, entsteht keine leere Welt (CR-01)."""
+    """If the volume disappears between reconciliation and re-creation, no empty world is created (CR-01)."""
     _insert(store, "a", port=30015)
     answers = iter([True, False])
     monkeypatch.setattr(fake, "volume_exists", lambda world_id: next(answers))
@@ -510,7 +510,7 @@ async def test_boot_recreate_stops_when_volume_vanishes(
 async def test_interrupted_world_can_only_be_deleted(
     service: WorldService, fake: ReconcileFake, store: WorldStore, operation: str
 ) -> None:
-    """Unterbrochenes Erzeugen: Der halb befüllte Container wird nie gestartet (WR-05)."""
+    """Interrupted creating: the half-filled container is never started (WR-05)."""
     _insert(store, "a", op_state="creating", port=30015)
     fake.containers = {"a": (30015, "created")}
     assert await service.boot_reconcile() is True
@@ -530,13 +530,13 @@ async def test_interrupted_world_can_only_be_deleted(
     assert fake.removed == [("a", False)]
 
 
-# WR-02 (Phase-2-Review): Eine kaputte Welt bricht weder den Abgleich noch die Liste.
+# WR-02 (phase 2 review): a broken world breaks neither the reconciliation nor the list.
 
 
 async def test_boot_isolates_unexpected_error_of_one_world(
     service: WorldService, fake: ReconcileFake, store: WorldStore
 ) -> None:
-    """Unbekannte Spielart (ValueError beim Neuerzeugen): Welt b dahinter startet trotzdem."""
+    """Unknown game type (ValueError on re-creation): world b behind it starts anyway."""
     _insert(store, "a", port=30015)
     store.update_world("a", preset="entfernt")
     _insert(store, "b", port=30016)
@@ -555,7 +555,7 @@ async def test_boot_isolates_unexpected_error_of_one_world(
 async def test_boot_reconcile_completes_with_broken_world(
     service: WorldService, fake: ReconcileFake, store: WorldStore
 ) -> None:
-    """Der Fehler bleibt an der Welt: Ein zweiter Boot-Abgleich fasst sie nicht erneut an."""
+    """The error stays with the world: a second boot reconciliation does not touch it again."""
     _insert(store, "a", port=30015)
     store.update_world("a", preset="entfernt")
     fake.volumes = {"a"}
@@ -584,7 +584,7 @@ async def test_unknown_preset_is_error_of_one_world_only(
     assert (views["b"].status, views["b"].preset_title) == ("running", "Bauen (kreativ)")
 
 
-# Schleife
+# Loop
 
 
 @dataclass

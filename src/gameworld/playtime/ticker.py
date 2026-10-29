@@ -1,12 +1,12 @@
-"""Der 15-s-Zeittakt als Lifespan-Task (O-03, Pattern 5).
+"""The 15 s time tick as a lifespan task (O-03, pattern 5).
 
-Analog zu ``worlds.reconciler.reconcile_forever``: Der Takt verbucht das
-Zählbuch aller laufenden Welten und hält ihre Regeldateien aktuell
-(``WorldService.tick_time``). Jeder Fehler wird geloggt und der Zyklus
-wiederholt; nur CancelledError (Herunterfahren) beendet die Schleife.
+Analogous to ``worlds.reconciler.reconcile_forever``: the tick books the
+counter ledger of all running worlds and keeps their rule files current
+(``WorldService.tick_time``). Every error is logged and the cycle repeated;
+only CancelledError (shutdown) ends the loop.
 
-Das Intervall ist nie exakt 10 s: Der HAProxy im Docker-Proxy schließt
-Keep-Alive-Verbindungen nach 10 s (Phase-2-Pitfall 4).
+The interval is never exactly 10 s: the HAProxy in the Docker proxy closes
+keep-alive connections after 10 s (phase 2 pitfall 4).
 """
 
 from __future__ import annotations
@@ -25,14 +25,14 @@ TICK_SECONDS = 15.0
 
 
 async def time_forever(service: WorldService, *, interval_seconds: float = TICK_SECONDS) -> None:
-    """Verbucht und schreibt im Abstand interval_seconds; läuft bis CancelledError."""
+    """Book and write every interval_seconds; runs until CancelledError."""
     while True:
         try:
-            # abandon_on_cancel: Beim Herunterfahren nicht auf einen hängenden
-            # Docker-Aufruf warten; tick_time gibt _LOCK im finally trotzdem frei.
+            # abandon_on_cancel: on shutdown, do not wait for a hanging
+            # Docker call; tick_time releases _LOCK in its finally anyway.
             await anyio.to_thread.run_sync(service.tick_time, abandon_on_cancel=True)
         except ProvisionerError as exc:
-            LOG.warning("Zeittakt übersprungen: %s", exc)
+            LOG.warning("Time tick skipped: %s", exc)
         except Exception:
-            LOG.exception("Zeittakt fehlgeschlagen")
+            LOG.exception("Time tick failed")
         await asyncio.sleep(interval_seconds)

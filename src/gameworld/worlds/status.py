@@ -1,11 +1,11 @@
-"""Statusmodell einer Welt, abgeleitet aus Docker (RESEARCH Pattern 3).
+"""Status model of a world, derived from Docker (RESEARCH pattern 3).
 
-Rein und ohne Docker testbar. Die Datenbank liefert die
-Operationszustände ``creating`` und ``failed``, die Busy-Zustände
-``backing_up``, ``restoring`` und ``restoring_swap`` (Phase 5, D-10) sowie
-den Elternwunsch ``desired_state``; alles andere kommt aus ``docker inspect``
-(State, ExitCode, OOMKilled, StartedAt) und der mtime der Status-Datei des
-Welt-Mods. Die Elterntexte stehen hier als feste Konstanten.
+Pure and testable without Docker. The database supplies the operation
+states ``creating`` and ``failed``, the busy states ``backing_up``,
+``restoring`` and ``restoring_swap`` (phase 5, D-10) and the parent's wish
+``desired_state``; everything else comes from ``docker inspect``
+(State, ExitCode, OOMKilled, StartedAt) and the mtime of the status file of
+the world mod. The parent-facing texts are fixed constants here.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ TEXT_CREATING = "Wird erstellt"
 TEXT_BACKING_UP = "Wird gesichert ..."
 TEXT_RESTORING = "Wird wiederhergestellt ..."
 TEXT_UNKNOWN_ERROR = "Unbekannter Fehler"
-# Neutral: Ob das Volume noch da ist, prüft erst der Start (CR-01); fehlt es,
-# wird die Welt zu "Weltdaten fehlen, nur Löschen".
+# Neutral: whether the volume still exists is only checked by the start (CR-01); if it is missing,
+# the world becomes "world data missing, delete only".
 TEXT_MISSING = "Der Server der Welt fehlt. Starten stellt ihn wieder her, falls die Weltdaten noch da sind."
 TEXT_RESTARTING = "Startet immer wieder neu"
 TEXT_RUNNING = "Läuft"
@@ -41,7 +41,7 @@ TEXT_OOM = "Die Welt hatte zu wenig Arbeitsspeicher und wurde beendet."
 TEXT_CRASHED = "Die Welt wurde unerwartet beendet (Code {code})."
 TEXT_ODD_STATE = "Unerwarteter Zustand des Servers ({state})."
 
-# Ab diesem Label-Wert bringt die Welt den Welt-Mod gameworld_status mit (02-03).
+# From this label value on, the world ships the world mod gameworld_status (02-03).
 STATUS_MOD_SCHEMA = 2
 
 
@@ -52,11 +52,11 @@ class WorldStatus:
 
 
 def parse_docker_time(value: str) -> datetime | None:
-    """Docker-Zeitstempel (auch mit Nanosekunden) als aware datetime.
+    """Docker timestamp (also with nanoseconds) as an aware datetime.
 
-    Nie gestartete Container tragen "0001-01-01T00:00:00Z"; das und jeder
-    unlesbare Wert ergeben None ("noch nicht bereit"). Python kürzt die
-    Nachkommastellen auf Mikrosekunden; das erhält die Ordnung (>=).
+    Never-started containers carry "0001-01-01T00:00:00Z"; that and any
+    unreadable value yield None ("not ready yet"). Python truncates the
+    fractional digits to microseconds; that preserves the order (>=).
     """
     try:
         parsed = datetime.fromisoformat(value)
@@ -70,7 +70,7 @@ def parse_docker_time(value: str) -> datetime | None:
 
 
 def schema_version(label: str) -> int:
-    """Label gameworld.schema als Ganzzahl; fehlend oder unlesbar zählt als 1."""
+    """Label gameworld.schema as an integer; missing or unreadable counts as 1."""
     try:
         return int(label)
     except ValueError:
@@ -78,9 +78,9 @@ def schema_version(label: str) -> int:
 
 
 def _ready(container: ContainerInfo, status_mtime: str | None) -> bool:
-    """Lauscht der Server? Nur eine Status-Datei aus diesem Lauf zählt (Pitfall 3)."""
+    """Is the server listening? Only a status file from this run counts (pitfall 3)."""
     if schema_version(container.schema) < STATUS_MOD_SCHEMA:
-        # Ältere Welten ohne Status-Mod: running reicht.
+        # Older worlds without the status mod: running is enough.
         return True
     if status_mtime is None:
         return False
@@ -100,7 +100,7 @@ def derive_status(
 ) -> WorldStatus:
     if not reachable:
         return WorldStatus(UNKNOWN, TEXT_UNREACHABLE)
-    # Busy-Zustände vor dem Container: Der Container ist dabei absichtlich gestoppt.
+    # Busy states before the container: the container is intentionally stopped then.
     if op_state == "backing_up":
         return WorldStatus(BACKING_UP, TEXT_BACKING_UP)
     if op_state in {"restoring", "restoring_swap"}:
@@ -129,5 +129,5 @@ def derive_status(
         return WorldStatus(STOPPED, TEXT_STOPPED)
     if state == "created":
         return WorldStatus(STOPPED, TEXT_STOPPED)
-    # paused, dead, removing: kommen bei Gameworld-Welten regulär nicht vor.
+    # paused, dead, removing: do not occur regularly with Gameworld worlds.
     return WorldStatus(ERROR, TEXT_ODD_STATE.format(state=state))

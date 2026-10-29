@@ -1,14 +1,14 @@
-"""SQLite-Ablage des Soll-Zustands in ``$APP_PERSISTENT_STORAGE/gameworld.sqlite3``.
+"""SQLite storage of the desired state in ``$APP_PERSISTENT_STORAGE/gameworld.sqlite3``.
 
-Der Ist-Zustand (läuft, gestoppt) kommt immer aus Docker, nie aus dieser Datei.
-Jede Methode öffnet eine eigene Verbindung, weil Aufrufe über
-``anyio.to_thread`` aus wechselnden Threads kommen.
+The actual state (running, stopped) always comes from Docker, never from this file.
+Every method opens its own connection, because calls via
+``anyio.to_thread`` come from changing threads.
 
-Schema 3 (Phase 3) speichert zu jedem eingeladenen Nextcloud-Konto nur
-Spielername und Rotationszähler. Spielpasswörter stehen hier bewusst nicht:
-Sie werden aus einem Geheimnis in der Nextcloud-Konfiguration abgeleitet
-(access/accounts.py, access/secret.py). In ``world_access`` liegen nur die
-SRP-Verifier je Welt.
+Schema 3 (phase 3) stores for each invited Nextcloud account only the
+player name and a rotation counter. Play passwords are deliberately not stored here:
+they are derived from a secret in the Nextcloud configuration
+(access/accounts.py, access/secret.py). Only the SRP verifiers per world
+live in ``world_access``.
 """
 
 from __future__ import annotations
@@ -217,9 +217,9 @@ CREATE TABLE IF NOT EXISTS verwalter_snapshot (
 );
 """
 
-# Namen der sechs Spielzeit-Tabellen aus Schema 4 (Migrationstest, Selbstdokumentation).
+# Names of the six playtime tables from schema 4 (migration test, self-documentation).
 TIME_TABLES = frozenset({"time_children", "time_plans", "holidays", "world_windows", "time_usage", "time_ledger_seen"})
-# Namen der Tabellen aus Schema 5 (Phase 4.1: Benachrichtigung, Pause, Rückblick, Talk).
+# Names of the tables from schema 5 (phase 4.1: notification, pause, review, Talk).
 NOTIFY_TABLES = frozenset(
     {
         "pause_state",
@@ -235,34 +235,34 @@ NOTIFY_TABLES = frozenset(
         "talk_rooms",
     }
 )
-# Namen der Tabellen aus Schema 7 (Phase 5: Sicherungsnachweise und Sicherungs-Aufträge).
+# Names of the tables from schema 7 (phase 5: backup proofs and backup jobs).
 BACKUP_TABLES = frozenset({"backups", "backup_jobs"})
-# Namen der Tabellen aus Schema 8 (Phase 6: Erwachsen-Schalter, Dienstalter und Stand je Verwalter-Gruppe).
+# Names of the tables from schema 8 (phase 6: adult switch, service age and state per manager group).
 ROLE_TABLES = frozenset({"adults", "verwalter_seen", "verwalter_snapshot"})
-# Zustand eines laufenden Sicherungs- oder Wiederherstellungsauftrags (Boot-Abgleich, D-11).
+# State of a running backup or restore job (boot reconciliation, D-11).
 BACKUP_JOB_RUNNING = "running"
-# Höchstens so viele Zeilen in der Outbox; die ältesten fallen weg (T-04.1-07).
+# At most this many rows in the outbox; the oldest drop out (T-04.1-07).
 OUTBOX_MAX = 1000
-# Eine Outbox-Zeile vor dem Speichern: Art, Spielername (oder leer), Epoch, Zusatz.
+# An outbox row before storing: kind, player name (or empty), epoch, extra.
 OutboxEntry = tuple[str, str, int, str]
-# Tages-Merker der Sammelnachricht für Fremdversuche (D-08).
+# Daily marker of the summary message for foreign attempts (D-08).
 FLAG_ATTEMPTS_SUMMARY = "attempts_summary"
-# Tages-Merker je gemeldetem Einzelhinweis: attempt:<Welt>:<Name casefold> (IN-05).
+# Daily marker per reported single notice: attempt:<world>:<name casefold> (IN-05).
 FLAG_ATTEMPT_PREFIX = "attempt:"
-# Vorgabe des Rückblicks: 20:00 Uhr Haushalts-Zeitzone (D-12).
+# Default of the review: 20:00 household time zone (D-12).
 REVIEW_DEFAULT_MINUTE = 1200
 
-# Schema 1 auf 2: Phase-1-Welten spielen Minetest Game, also das Kreativ-Preset.
+# Schema 1 to 2: phase 1 worlds play Minetest Game, i.e. the creative preset.
 ADD_PRESET = "ALTER TABLE worlds ADD COLUMN preset TEXT NOT NULL DEFAULT 'mtg_kreativ'"
-# Schema 2 auf 3: Zähler der Zugangsdatei je Welt (Kopfzeile, Rückmeldung des Mods).
+# Schema 2 to 3: counter of the access file per world (header line, feedback from the mod).
 ADD_ACCESS_GENERATION = "ALTER TABLE worlds ADD COLUMN access_generation INTEGER NOT NULL DEFAULT 0"
-# Schema 3 auf 4: Zähler der Regeldatei je Welt (Zeit-Mod, wie access_generation).
+# Schema 3 to 4: counter of the rule file per world (time mod, like access_generation).
 ADD_TIME_GENERATION = "ALTER TABLE worlds ADD COLUMN time_generation INTEGER NOT NULL DEFAULT 0"
-# Schema 5 auf 6: Zusatz der Passwortableitung je Spielerzeile. Bestehende Zeilen
-# bekommen den leeren Wert und behalten damit exakt ihr bisheriges Passwort.
+# Schema 5 to 6: salt of the password derivation per player row. Existing rows
+# get the empty value and thus keep exactly their previous password.
 ADD_PLAYER_SALT = "ALTER TABLE players ADD COLUMN salt TEXT NOT NULL DEFAULT ''"
-# Schema 7 auf 8: Token eines alten Raums ohne handlungsfähigen Moderator (D-16) und
-# Ex-Verwalter, der in Talk noch Owner ist (D-19). Beide leer, solange nichts davon zutrifft.
+# Schema 7 to 8: token of an old room without a capable moderator (D-16) and
+# former manager who is still owner in Talk (D-19). Both empty as long as neither applies.
 ADD_TALK_ORPHANED = "ALTER TABLE talk_rooms ADD COLUMN orphaned_token TEXT"
 ADD_TALK_FORMER_OWNER = "ALTER TABLE talk_rooms ADD COLUMN former_owner TEXT"
 # Schema 8 to 9: world language of the mod texts (D-27). Existing worlds become 'de'
@@ -270,12 +270,12 @@ ADD_TALK_FORMER_OWNER = "ALTER TABLE talk_rooms ADD COLUMN former_owner TEXT"
 # worlds only. launched_language is the language the running server was started with.
 ADD_WORLD_LANGUAGE = "ALTER TABLE worlds ADD COLUMN language TEXT NOT NULL DEFAULT 'de'"
 ADD_WORLD_LAUNCHED_LANGUAGE = "ALTER TABLE worlds ADD COLUMN launched_language TEXT"
-# Tabellen, deren Zeilen einem Nextcloud-Konto gehören (Spalte nc_user), für forget_account.
-# adults gehört dazu (P-08): Sonst wäre eine neu angelegte gleiche Konto-ID sofort erwachsen.
-# Nicht dabei: talk_rooms.owner_uid (Raum gehört der Welt), invites.invited_by (wer eingeladen
-# hat), time_ledger_seen (Spielername je Welt, schützt vor doppelter Verbuchung),
-# backups.owner_uid (ein Verwalter, kein Kinderkonto, wie talk_rooms.owner_uid) sowie
-# verwalter_seen und verwalter_snapshot (Verwalter, gepflegt über den Gruppen-Schnappschuss).
+# Tables whose rows belong to a Nextcloud account (column nc_user), for forget_account.
+# adults belongs here (P-08): otherwise a newly created account with the same ID would be an adult at once.
+# Not included: talk_rooms.owner_uid (the room belongs to the world), invites.invited_by (who
+# invited), time_ledger_seen (player name per world, protects against double booking),
+# backups.owner_uid (a manager, not a child account, like talk_rooms.owner_uid) as well as
+# verwalter_seen and verwalter_snapshot (managers, maintained via the group snapshot).
 ACCOUNT_TABLES = (
     "players",
     "world_access",
@@ -313,9 +313,9 @@ class WorldRow:
 
 @dataclass(frozen=True)
 class PlayerRow:
-    """Spieler je Nextcloud-Konto; das Passwort folgt aus Geheimnis, Konto, Rotation und Zusatz.
+    """Player per Nextcloud account; the password follows from secret, account, rotation and salt.
 
-    ``salt`` leer: Zeile aus Schema 5 oder älter (bisherige Ableitung, accounts.derive_password).
+    ``salt`` empty: row from schema 5 or older (previous derivation, accounts.derive_password).
     """
 
     nc_user: str
@@ -335,7 +335,7 @@ class InviteRow:
 
 @dataclass(frozen=True)
 class OutboxRow:
-    """Ein noch nicht versendetes Ereignis (Takt legt ab, Event-Loop versendet)."""
+    """An event not yet sent (the tick files it, the event loop sends it)."""
 
     id: int
     world_id: str
@@ -347,7 +347,7 @@ class OutboxRow:
 
 @dataclass(frozen=True)
 class AttemptRow:
-    """Ein gemerkter Fremdversuch eines Tages (Seite versuch)."""
+    """A remembered foreign attempt of a day (page versuch)."""
 
     world_id: str
     player_name: str
@@ -357,10 +357,10 @@ class AttemptRow:
 
 @dataclass(frozen=True)
 class TalkRoomRow:
-    """Talk-Raum einer Welt; state ok oder delete_pending (Welt weg, Raum noch nicht).
+    """Talk room of a world; state ok or delete_pending (world gone, room not yet).
 
-    ``orphaned_token``: Token eines alten Raums, den kein Verwalter mehr moderieren kann
-    (D-16). ``former_owner``: Ex-Verwalter, der in Talk noch Owner ist (D-19).
+    ``orphaned_token``: token of an old room that no manager can moderate anymore
+    (D-16). ``former_owner``: former manager who is still owner in Talk (D-19).
     """
 
     world_id: str
@@ -375,12 +375,12 @@ class TalkRoomRow:
 
 @dataclass(frozen=True)
 class BackupRow:
-    """Integritätsnachweis einer Sicherung in Nextcloud Files (D-12).
+    """Integrity proof of a backup in Nextcloud Files (D-12).
 
-    Nur Dateien mit eigenem Eintrag dürfen zurückgespielt werden (BACKUP-02). Der
-    Eintrag gehört dem Verwalter, in dessen Files die Datei liegt (D-13). Zeilen
-    bleiben beim Löschen der Welt erhalten (D-08): Die Dateien liegen weiter in
-    Files, ein späterer Import (v2) braucht den Nachweis.
+    Only files with their own entry may be restored (BACKUP-02). The
+    entry belongs to the manager in whose Files the file lies (D-13). Rows
+    survive the deletion of the world (D-08): the files remain in
+    Files, a later import (v2) needs the proof.
     """
 
     file_id: int
@@ -397,9 +397,9 @@ class BackupRow:
 
 @dataclass(frozen=True)
 class BackupJobRow:
-    """Zustand des letzten Sicherungs- oder Wiederherstellungsauftrags einer Welt (D-11).
+    """State of the last backup or restore job of a world (D-11).
 
-    Genau eine Zeile je Welt; sie wird beim Löschen der Welt entfernt (Plan 04).
+    Exactly one row per world; it is removed when the world is deleted (plan 04).
     """
 
     world_id: str
@@ -418,7 +418,7 @@ TALK_STATES = frozenset({TALK_STATE_OK, TALK_STATE_DELETE_PENDING})
 COLUMNS = tuple(field.name for field in fields(WorldRow))
 UPDATABLE = frozenset(COLUMNS) - {"id"}
 
-# Eine Zeile aus time_plans: nc_user, plan, weekday, allowed, limit_minutes, window_start, window_end.
+# A row from time_plans: nc_user, plan, weekday, allowed, limit_minutes, window_start, window_end.
 _PlanRow = tuple[str, str, int, int, int | None, int | None, int | None]
 
 
@@ -436,11 +436,11 @@ class WorldStore:
             connection.close()
 
     def migrate(self) -> None:
-        """Legt das Schema an und hebt ältere Dateien an; mehrfach aufrufbar.
+        """Create the schema and upgrade older files; may be called repeatedly.
 
-        Die Migration richtet sich nach der tatsächlichen Spaltenliste, nicht
-        nach der Versionsnummer: so ist sie idempotent und übersteht auch eine
-        abgebrochene frühere Migration. Kein Drop, kein Neuanlegen der Tabelle.
+        The migration follows the actual column list, not
+        the version number: so it is idempotent and survives even an
+        aborted earlier migration. No drop, no recreating of the table.
         """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
@@ -471,7 +471,7 @@ class WorldStore:
             )
 
     def instance_id(self) -> str:
-        """Zufällige Instanz-ID, einmal erzeugt und danach stabil."""
+        """Random instance ID, generated once and stable afterwards."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO meta (key, value) VALUES ('instance_id', ?)",
@@ -531,7 +531,7 @@ class WorldStore:
         with self._connect() as connection:
             connection.execute("DELETE FROM worlds WHERE id = ?", (world_id,))
 
-    # Spieler, Einladungen und Zugang (Schema 3)
+    # Players, invitations and access (schema 3)
 
     def get_player(self, nc_user: str) -> PlayerRow | None:
         with self._connect() as connection:
@@ -541,7 +541,7 @@ class WorldStore:
         return None if row is None else PlayerRow(str(row[0]), str(row[1]), int(row[2]), str(row[3]))
 
     def player_names(self) -> set[str]:
-        """Alle vergebenen Spielernamen, kleingeschrieben (Vergleich wie COLLATE NOCASE)."""
+        """All assigned player names, lower-cased (comparison like COLLATE NOCASE)."""
         with self._connect() as connection:
             rows = connection.execute("SELECT player_name FROM players").fetchall()
         return {str(row[0]).lower() for row in rows}
@@ -554,7 +554,7 @@ class WorldStore:
             )
 
     def list_players(self) -> list[PlayerRow]:
-        """Alle Spieler je Nextcloud-Konto, sortiert nach Spielername (Verwalteransicht Spielzeit)."""
+        """All players per Nextcloud account, sorted by player name (manager view playtime)."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT nc_user, player_name, rotation, salt FROM players ORDER BY player_name"
@@ -562,10 +562,10 @@ class WorldStore:
         return [PlayerRow(str(row[0]), str(row[1]), int(row[2]), str(row[3])) for row in rows]
 
     def add_invite(self, world_id: str, kind: str, target: str, invited_by: str, created_at: str) -> None:
-        """Einladung anlegen; eine vorhandene bleibt unverändert (erster Einladender, erster Zeitpunkt)."""
+        """Create an invitation; an existing one stays unchanged (first inviter, first time)."""
         with self._connect() as connection:
             connection.execute(
-                # ON CONFLICT statt OR IGNORE: Ein ungültiges kind scheitert weiter am CHECK.
+                # ON CONFLICT instead of OR IGNORE: an invalid kind still fails on the CHECK.
                 "INSERT INTO invites (world_id, kind, target, invited_by, created_at) VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT (world_id, kind, target) DO NOTHING",
                 (world_id, kind, target, invited_by, created_at),
@@ -588,7 +588,7 @@ class WorldStore:
         return [InviteRow(*(str(value) for value in row)) for row in rows]
 
     def world_access(self, world_id: str) -> dict[str, str]:
-        """Effektive Spieler der Welt: Nextcloud-Konto auf Verifier."""
+        """Effective players of the world: Nextcloud account to verifier."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT nc_user, verifier FROM world_access WHERE world_id = ?", (world_id,)
@@ -596,9 +596,9 @@ class WorldStore:
         return {str(row[0]): str(row[1]) for row in rows}
 
     def apply_world_access(self, world_id: str, verifiers: dict[str, str]) -> int:
-        """Ersetzt den Zugang der Welt und zählt die Generation hoch, in einer Transaktion.
+        """Replace the access of the world and count the generation up, in one transaction.
 
-        Gibt die neue Generation zurück.
+        Returns the new generation.
         """
         with self._connect() as connection:
             connection.execute("DELETE FROM world_access WHERE world_id = ?", (world_id,))
@@ -611,7 +611,7 @@ class WorldStore:
         return 0 if row is None else int(row[0])
 
     def group_invited_worlds(self, gids: set[str]) -> list[str]:
-        """Welten mit einer Gruppen-Einladung für eine der Gruppen (lazy Provisionierung, 03-06)."""
+        """Worlds with a group invitation for one of the groups (lazy provisioning, 03-06)."""
         if not gids:
             return []
         placeholders = ", ".join("?" for _ in gids)
@@ -624,7 +624,7 @@ class WorldStore:
         return [str(row[0]) for row in rows]
 
     def access_entries(self, world_id: str) -> dict[str, str]:
-        """Inhalt der Zugangsdatei: Spielername auf Verifier."""
+        """Content of the access file: player name to verifier."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT players.player_name, world_access.verifier FROM world_access "
@@ -646,9 +646,9 @@ class WorldStore:
             )
 
     def compare_and_set_meta(self, key: str, expected: str | None, value: str) -> bool:
-        """Setzt ``value`` nur, wenn der Wert noch ``expected`` ist (None: noch keiner); True bei Erfolg.
+        """Set ``value`` only if the value is still ``expected`` (None: none yet); True on success.
 
-        Zwei gleichzeitige Meldungen überschreiben sich so nie gegenseitig (WR-04).
+        Two simultaneous reports thus never overwrite each other (WR-04).
         """
         with self._connect() as connection:
             if expected is None:
@@ -660,7 +660,7 @@ class WorldStore:
         return cursor.rowcount == 1
 
     def player_name_owner(self, player_name: str) -> str | None:
-        """Konto, dem der Spielername ohne Rücksicht auf Groß-/Kleinschreibung gehört."""
+        """Account that owns the player name, ignoring upper/lower case."""
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT nc_user FROM players WHERE player_name = ? COLLATE NOCASE", (player_name,)
@@ -668,7 +668,7 @@ class WorldStore:
         return None if row is None else str(row[0])
 
     def player_worlds(self, nc_user: str) -> list[str]:
-        """Welten, in denen das Konto gerade Zugang hat."""
+        """Worlds in which the account currently has access."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT world_id FROM world_access WHERE nc_user = ? ORDER BY world_id", (nc_user,)
@@ -676,10 +676,10 @@ class WorldStore:
         return [str(row[0]) for row in rows]
 
     def update_player_access(self, player: PlayerRow, verifiers: dict[str, str]) -> None:
-        """Name oder Rotation eines Spielers und seine Verifier je Welt, in einer Transaktion.
+        """Name or rotation of a player and its verifiers per world, in one transaction.
 
-        ``verifiers`` bildet Welt-ID auf den neuen Verifier ab; jede dieser
-        Welten bekommt eine neue Generation.
+        ``verifiers`` maps world ID to the new verifier; each of these
+        worlds gets a new generation.
         """
         with self._connect() as connection:
             connection.execute(
@@ -696,19 +696,19 @@ class WorldStore:
                 )
 
     def direct_invite_targets(self) -> set[str]:
-        """Alle direkt eingeladenen Konten über alle Welten (kind user)."""
+        """All directly invited accounts across all worlds (kind user)."""
         with self._connect() as connection:
             rows = connection.execute("SELECT DISTINCT target FROM invites WHERE kind = 'user'").fetchall()
         return {str(row[0]) for row in rows}
 
     def forget_account(self, nc_user: str) -> bool:
-        """Vergisst ein in Nextcloud gelöschtes Konto vollständig, in EINER Transaktion.
+        """Forget an account deleted in Nextcloud completely, in ONE transaction.
 
-        Löscht Spielerzeile (der Spielername wird frei), direkte Einladungen,
-        Zugang je Welt, Spielzeitregeln, Verbrauch, Rückblick-Daten und die
-        Bot-Drossel dieses Kontos. Welten, in denen es Zugang hatte, bekommen eine
-        neue Generation; die Zugangsdatei schreibt der Aufrufer unter derselben
-        Sperre neu. Nur unter worlds.mutation() aufrufen. True, wenn etwas gelöscht wurde.
+        Deletes player row (the player name becomes free), direct invitations,
+        access per world, playtime rules, usage, review data and the
+        bot throttle of this account. Worlds in which it had access get a
+        new generation; the caller rewrites the access file under the same
+        lock. Call only under worlds.mutation(). True if something was deleted.
         """
         with self._connect() as connection:
             worlds = [
@@ -729,10 +729,10 @@ class WorldStore:
             )
         return removed > 0
 
-    # Erwachsen-Schalter je Konto (Schema 8, ROLLE-04, D-05)
+    # Adult switch per account (schema 8, ROLLE-04, D-05)
 
     def set_adult(self, nc_user: str, set_by: str, set_at: str) -> None:
-        """Markiert ein Konto als erwachsen; wer und wann bleiben gespeichert (T-06-19)."""
+        """Mark an account as an adult; who and when stay stored (T-06-19)."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT OR REPLACE INTO adults (nc_user, set_by, set_at) VALUES (?, ?, ?)",
@@ -740,23 +740,23 @@ class WorldStore:
             )
 
     def clear_adult(self, nc_user: str) -> None:
-        """Nimmt die Markierung weg; ein nicht markiertes Konto ist kein Fehler."""
+        """Remove the mark; an unmarked account is not an error."""
         with self._connect() as connection:
             connection.execute("DELETE FROM adults WHERE nc_user = ?", (nc_user,))
 
     def adults(self) -> set[str]:
-        """Alle als erwachsen markierten Konten."""
+        """All accounts marked as adults."""
         with self._connect() as connection:
             rows = connection.execute("SELECT nc_user FROM adults").fetchall()
         return {str(row[0]) for row in rows}
 
     def delete_access_data(self, world_id: str) -> None:
-        """Einladungen und Zugang einer gelöschten Welt; Spieler bleiben (gelten für alle Welten)."""
+        """Invitations and access of a deleted world; players stay (they apply to all worlds)."""
         with self._connect() as connection:
             connection.execute("DELETE FROM invites WHERE world_id = ?", (world_id,))
             connection.execute("DELETE FROM world_access WHERE world_id = ?", (world_id,))
 
-    # Spielzeit: Regeln, Ferien, Welt-Fenster, Verbrauch und Zählbuchstände (Schema 4)
+    # Playtime: rules, holidays, world windows, usage and ledger states (schema 4)
 
     @staticmethod
     def _plan_rows(nc_user: str, plan: str, week: WeekPlan) -> list[_PlanRow]:
@@ -768,10 +768,10 @@ class WorldStore:
     def set_child_plan(
         self, nc_user: str, normal: WeekPlan, holiday: WeekPlan | None, updated_by: str, updated_at: str
     ) -> None:
-        """Wochenplan (und optional Ferienplan) eines Kindes, in einer Transaktion.
+        """Weekly plan (and optionally holiday plan) of a child, in one transaction.
 
-        Schreibt die Zeile in ``time_children`` (Kind hat Regeln, O-10) und 7 bzw.
-        14 Zeilen ``time_plans`` (normal, ferien). Ein früherer Plan wird ersetzt.
+        Writes the row in ``time_children`` (child has rules, O-10) and 7 or
+        14 rows ``time_plans`` (normal, ferien). An earlier plan is replaced.
         """
         with self._connect() as connection:
             connection.execute(
@@ -790,11 +790,11 @@ class WorldStore:
             )
 
     def clear_child(self, nc_user: str, keep_from: date) -> None:
-        """Entfernt Regeln eines Kindes (zurück auf keine Begrenzung, O-10) und alten Verbrauch.
+        """Remove rules of a child (back to no limit, O-10) and old usage.
 
-        Der Verbrauch ab ``keep_from`` (heute, lokal) bleibt stehen: Setzen Eltern
-        am selben Tag wieder Regeln, gibt es kein frisches Kontingent (WR-04,
-        Owner-Entscheid). Ältere Tage braucht niemand mehr (Datensparsamkeit).
+        Usage from ``keep_from`` (today, local) stays: if parents set
+        rules again the same day, there is no fresh quota (WR-04,
+        owner decision). Older days nobody needs anymore (data minimization).
         """
         with self._connect() as connection:
             connection.execute("DELETE FROM time_children WHERE nc_user = ?", (nc_user,))
@@ -802,7 +802,7 @@ class WorldStore:
             connection.execute("DELETE FROM time_usage WHERE nc_user = ? AND day < ?", (nc_user, keep_from.isoformat()))
 
     def child_plans(self) -> dict[str, tuple[WeekPlan, WeekPlan | None]]:
-        """Nur Kinder mit Zeile in ``time_children``: je Kind Normalplan und Ferienplan (oder None)."""
+        """Only children with a row in ``time_children``: per child normal plan and holiday plan (or None)."""
         with self._connect() as connection:
             children = [str(row[0]) for row in connection.execute("SELECT nc_user FROM time_children").fetchall()]
             rows = connection.execute(
@@ -822,7 +822,7 @@ class WorldStore:
         return result
 
     def add_usage(self, nc_user: str, day: date, seconds: int) -> None:
-        """Addiert verbrauchte Sekunden auf den lokalen Tag eines Kindes (nur Tagessummen, Pitfall 9)."""
+        """Add used seconds to the local day of a child (daily totals only, pitfall 9)."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO time_usage (nc_user, day, seconds) VALUES (?, ?, ?) "
@@ -831,7 +831,7 @@ class WorldStore:
             )
 
     def usage(self, nc_user: str, day: date) -> int:
-        """Verbrauchte Sekunden eines Kindes an einem lokalen Tag (0, wenn keine Zeile)."""
+        """Used seconds of a child on a local day (0 if no row)."""
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT seconds FROM time_usage WHERE nc_user = ? AND day = ?", (nc_user, day.isoformat())
@@ -839,12 +839,12 @@ class WorldStore:
         return 0 if row is None else int(row[0])
 
     def prune_usage(self, before_day: date) -> None:
-        """Löscht Verbrauchszeilen vor einem Tag (Aufbewahrung heute plus 7 Tage, A8/Pitfall 9)."""
+        """Delete usage rows before a day (retention today plus 7 days, A8/pitfall 9)."""
         with self._connect() as connection:
             connection.execute("DELETE FROM time_usage WHERE day < ?", (before_day.isoformat(),))
 
     def ledger_seen(self, world_id: str) -> dict[str, int]:
-        """Zuletzt gesehener Zählbuch-Stand einer Welt: Spielername auf Sekunden."""
+        """Last seen ledger state of a world: player name to seconds."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT player_name, seconds FROM time_ledger_seen WHERE world_id = ?", (world_id,)
@@ -860,13 +860,13 @@ class WorldStore:
         *,
         play: dict[str, int] | None = None,
     ) -> None:
-        """Verbucht Sekunden je Kind und verankert den gesehenen Zählbuch-Stand in EINER Transaktion.
+        """Book seconds per child and anchor the seen ledger state in ONE transaction.
 
-        Scheitert ein Schritt (Datenbank gesperrt, Prozessabbruch), bleibt beides
-        beim alten Stand: Der nächste Takt verbucht denselben Zuwachs genau einmal,
-        nie doppelt (WR-05). ``play`` (Konto auf Sekunden) landet in derselben
-        Transaktion in ``play_daily`` je Welt; welche Konten zählen, entscheidet der
-        Aufrufer (TimeEngine.book: nur Kinder mit Regeln, IN-03).
+        If a step fails (database locked, process abort), both stay
+        at the old state: the next tick books the same increase exactly once,
+        never twice (WR-05). ``play`` (account to seconds) lands in the same
+        transaction in ``play_daily`` per world; which accounts count is decided by the
+        caller (TimeEngine.book: only children with rules, IN-03).
         """
         with self._connect() as connection:
             connection.executemany(
@@ -886,7 +886,7 @@ class WorldStore:
             )
 
     def set_ledger_seen(self, world_id: str, seen: dict[str, int]) -> None:
-        """Ersetzt den gesehenen Zählbuch-Stand einer Welt atomar."""
+        """Replace the seen ledger state of a world atomically."""
         with self._connect() as connection:
             connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
             connection.executemany(
@@ -895,7 +895,7 @@ class WorldStore:
             )
 
     def add_holiday(self, start: date, end: date, label: str) -> int:
-        """Ferienzeitraum für den Haushalt anlegen; gibt die neue id zurück (O-08)."""
+        """Create a holiday period for the household; returns the new id (O-08)."""
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT INTO holidays (label, start_date, end_date) VALUES (?, ?, ?)",
@@ -913,7 +913,7 @@ class WorldStore:
         return [holiday for _holiday_id, holiday in self.holiday_rows()]
 
     def holiday_rows(self) -> list[tuple[int, Holiday]]:
-        """Ferienzeiträume mit id, sortiert nach Beginn (für die Verwalter-API)."""
+        """Holiday periods with id, sorted by start (for the manager API)."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT id, start_date, end_date, label FROM holidays ORDER BY start_date, id"
@@ -924,7 +924,7 @@ class WorldStore:
         ]
 
     def set_world_window(self, world_id: str, weekday: int, window_start: int, window_end: int) -> None:
-        """Zeitfenster einer Welt an einem Wochentag setzen (ZEIT-05)."""
+        """Set a time window of a world on a weekday (ZEIT-05)."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO world_windows (world_id, weekday, window_start, window_end) VALUES (?, ?, ?, ?) "
@@ -934,7 +934,7 @@ class WorldStore:
             )
 
     def replace_world_window(self, world_id: str, windows: dict[int, tuple[int, int]]) -> None:
-        """Alle Zeitfenster einer Welt in einer Transaktion ersetzen (fehlender Wochentag = geschlossen)."""
+        """Replace all time windows of a world in one transaction (missing weekday = closed)."""
         with self._connect() as connection:
             connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
             connection.executemany(
@@ -943,12 +943,12 @@ class WorldStore:
             )
 
     def clear_world_window(self, world_id: str) -> None:
-        """Alle Zeitfenster einer Welt entfernen (Welt ist dann immer offen)."""
+        """Remove all time windows of a world (the world is then always open)."""
         with self._connect() as connection:
             connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
 
     def world_window(self, world_id: str) -> dict[int, tuple[int, int]] | None:
-        """Welt-Fenster je Wochentag oder None (keine Zeilen = immer offen)."""
+        """World window per weekday or None (no rows = always open)."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT weekday, window_start, window_end FROM world_windows WHERE world_id = ?", (world_id,)
@@ -958,28 +958,28 @@ class WorldStore:
         return {int(row[0]): (int(row[1]), int(row[2])) for row in rows}
 
     def bump_time_generation(self, world_id: str) -> int:
-        """Zählt die Generation der Regeldatei einer Welt hoch und gibt den neuen Wert zurück."""
+        """Count up the generation of a world's rule file and return the new value."""
         with self._connect() as connection:
             connection.execute("UPDATE worlds SET time_generation = time_generation + 1 WHERE id = ?", (world_id,))
             row = connection.execute("SELECT time_generation FROM worlds WHERE id = ?", (world_id,)).fetchone()
         return 0 if row is None else int(row[0])
 
     def delete_time_data(self, world_id: str) -> None:
-        """Welt-Fenster und gesehene Zählbuchstände einer gelöschten Welt (kein PRAGMA foreign_keys)."""
+        """World window and seen ledger states of a deleted world (no PRAGMA foreign_keys)."""
         with self._connect() as connection:
             connection.execute("DELETE FROM world_windows WHERE world_id = ?", (world_id,))
             connection.execute("DELETE FROM time_ledger_seen WHERE world_id = ?", (world_id,))
 
-    # Pause des Haushalts (Schema 5, genau eine Zeile, ELTERN-01)
+    # Pause of the household (schema 5, exactly one row, ELTERN-01)
 
     def get_pause(self) -> PauseState | None:
-        """Gespeicherte Pause oder None; ob sie noch gilt, entscheidet der Aufrufer (pause.is_active)."""
+        """Stored pause or None; whether it still applies is decided by the caller (pause.is_active)."""
         with self._connect() as connection:
             row = connection.execute("SELECT started_by, ab, bis, art FROM pause_state WHERE id = 1").fetchone()
         return None if row is None else PauseState(str(row[0]), int(row[1]), int(row[2]), str(row[3]))
 
     def set_pause(self, state: PauseState) -> None:
-        """Pause setzen; eine vorhandene Zeile wird überschrieben."""
+        """Set the pause; an existing row is overwritten."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO pause_state (id, started_by, ab, bis, art) VALUES (1, ?, ?, ?, ?) "
@@ -989,10 +989,10 @@ class WorldStore:
             )
 
     def expire_pause(self, now: int, kind: str) -> bool:
-        """Abgelaufene Pause löschen und je Welt eine Outbox-Zeile ``kind`` anlegen, in EINER Transaktion (IN-09).
+        """Delete an expired pause and create one outbox row ``kind`` per world, in ONE transaction (IN-09).
 
-        Nur eine kurze Pause (Art ``pause``) wird gemeldet, "Für heute Schluss"
-        endet still um Mitternacht. True, wenn eine Pause abgelaufen war.
+        Only a short pause (kind ``pause``) is reported, "Für heute Schluss"
+        ends quietly at midnight. True if a pause had expired.
         """
         with self._connect() as connection:
             row = connection.execute("SELECT art FROM pause_state WHERE id = 1 AND bis <= ?", (now,)).fetchone()
@@ -1009,17 +1009,17 @@ class WorldStore:
         return True
 
     def clear_pause(self, *, ended_by: int | None = None) -> None:
-        """Pause löschen; mit ``ended_by`` nur, wenn sie bis dahin abgelaufen ist (bis <= ended_by)."""
+        """Delete the pause; with ``ended_by`` only if it has expired by then (bis <= ended_by)."""
         with self._connect() as connection:
             if ended_by is None:
                 connection.execute("DELETE FROM pause_state")
             else:
                 connection.execute("DELETE FROM pause_state WHERE bis <= ?", (ended_by,))
 
-    # Ereignisse, Laufzustand, Tagesspielzeit je Welt und Drosseln (Schema 5)
+    # Events, run state, daily playtime per world and throttles (schema 5)
 
     def event_cursor(self, world_id: str) -> int | None:
-        """Zuletzt verarbeitete Sequenz der Ereignisdatei oder None (Erstkontakt)."""
+        """Last processed sequence of the event file or None (first contact)."""
         with self._connect() as connection:
             row = connection.execute("SELECT seq FROM event_cursor WHERE world_id = ?", (world_id,)).fetchone()
         return None if row is None else int(row[0])
@@ -1032,9 +1032,9 @@ class WorldStore:
         )
 
     def take_events(self, world_id: str, cursor: int, rows: list[OutboxEntry]) -> None:
-        """Cursor setzen und neue Ereignisse in die Outbox legen, in EINER Transaktion.
+        """Set the cursor and put new events into the outbox, in ONE transaction.
 
-        Danach höchstens OUTBOX_MAX Zeilen, die ältesten fallen weg (T-04.1-07).
+        Afterwards at most OUTBOX_MAX rows, the oldest drop out (T-04.1-07).
         """
         with self._connect() as connection:
             connection.execute(
@@ -1049,7 +1049,7 @@ class WorldStore:
             self._cap_outbox(connection)
 
     def add_outbox(self, world_id: str, kind: str, name: str, at: int, detail: str = "") -> None:
-        """Einzelnes Ereignis ohne Ereignisdatei (Start, Stopp, Pause) in die Outbox legen."""
+        """Put a single event without an event file (start, stop, pause) into the outbox."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO event_outbox (world_id, kind, name, at, detail) VALUES (?, ?, ?, ?, ?)",
@@ -1058,7 +1058,7 @@ class WorldStore:
             self._cap_outbox(connection)
 
     def outbox_batch(self, limit: int = 100) -> list[OutboxRow]:
-        """Älteste Outbox-Zeilen zuerst, höchstens ``limit``."""
+        """Oldest outbox rows first, at most ``limit``."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT id, world_id, kind, name, at, detail FROM event_outbox ORDER BY id LIMIT ?", (limit,)
@@ -1066,18 +1066,18 @@ class WorldStore:
         return [OutboxRow(int(row[0]), str(row[1]), str(row[2]), str(row[3]), int(row[4]), str(row[5])) for row in rows]
 
     def delete_outbox(self, ids: list[int]) -> None:
-        """Versendete (oder verworfene) Outbox-Zeilen entfernen."""
+        """Remove sent (or discarded) outbox rows."""
         with self._connect() as connection:
             connection.executemany("DELETE FROM event_outbox WHERE id = ?", [(row_id,) for row_id in ids])
 
     def run_state(self, world_id: str) -> bool | None:
-        """Zuletzt im Takt beobachteter Laufzustand oder None (noch nie beobachtet)."""
+        """Run state last observed in the tick, or None (never observed)."""
         with self._connect() as connection:
             row = connection.execute("SELECT running FROM world_run_state WHERE world_id = ?", (world_id,)).fetchone()
         return None if row is None else bool(row[0])
 
     def set_run_state(self, world_id: str, *, running: bool) -> None:
-        """Beobachteten Laufzustand einer Welt festhalten (Pitfall 10)."""
+        """Record the observed run state of a world (pitfall 10)."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO world_run_state (world_id, running) VALUES (?, ?) "
@@ -1086,7 +1086,7 @@ class WorldStore:
             )
 
     def play_seconds(self, day: date) -> dict[tuple[str, str], int]:
-        """Gespielte Sekunden eines lokalen Tages je (Konto, Welt)."""
+        """Seconds played on a local day per (account, world)."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT nc_user, world_id, seconds FROM play_daily WHERE day = ?", (day.isoformat(),)
@@ -1098,39 +1098,39 @@ class WorldStore:
             connection.execute(f"DELETE FROM {table} WHERE day < ?", (before_day.isoformat(),))  # noqa: S608
 
     def prune_play_daily(self, before_day: date) -> None:
-        """Tagesspielzeit je Welt vor einem Tag löschen (7 Tage wie time_usage)."""
+        """Delete daily playtime per world before a day (7 days like time_usage)."""
         self._prune_days("play_daily", before_day)
 
     def prune_join_attempts(self, before_day: date) -> None:
-        """Gemerkte Fremdversuche vor einem Tag löschen."""
+        """Delete remembered foreign attempts before a day."""
         self._prune_days("join_attempts", before_day)
 
     def prune_daily_flags(self, before_day: date) -> None:
-        """Tages-Merker vor einem Tag löschen."""
+        """Delete daily markers before a day."""
         self._prune_days("daily_flags", before_day)
 
     def prune_review_sent(self, before_day: date) -> None:
-        """Versand-Merker des Rückblicks vor einem Tag löschen."""
+        """Delete send markers of the review before a day."""
         self._prune_days("review_sent", before_day)
 
-    # Fremdversuche und Tagesrückblick (Schema 5, 04.1-04)
+    # Foreign attempts and daily review (schema 5, 04.1-04)
 
     def claim_attempt(
         self, day: date, world_id: str, name: str, at: int, limit: int = ATTEMPT_LIMIT, *, notify: bool = True
     ) -> Decision:
-        """Fremdversuch merken und den Versand beanspruchen, in EINER Transaktion (D-08, Pattern 6).
+        """Remember a foreign attempt and claim the send, in ONE transaction (D-08, pattern 6).
 
-        Je (Tag, Welt, Name ohne Groß/Klein) eine Zeile; wiederholte Versuche
-        zählen nur ``count`` hoch. Ein Einzelhinweis je Name, Welt und Tag,
-        solange heute weniger als ``limit`` gemeldet sind, danach einmal am Tag die
-        Sammelnachricht (Merker ``attempts_summary``). Der Aufrufer sendet erst
-        danach: doppelt kommt nie etwas.
+        One row per (day, world, name case-insensitive); repeated attempts
+        only count ``count`` up. A single notice per name, world and day,
+        as long as fewer than ``limit`` are reported today, afterwards once a day the
+        summary message (marker ``attempts_summary``). The caller sends only
+        afterwards: nothing ever arrives twice.
 
-        IN-05: Ohne ``notify`` (keine Empfänger oder keine Link-Adresse) wird nur
-        gemerkt, nichts beansprucht; der nächste Versuch mit Empfängern kann den
-        Hinweis noch auslösen. Gezählt wird in ``daily_flags`` (Merker
-        ``attempt:<Welt>:<Name>``), nicht über ``join_attempts``: Löschen einer Welt
-        senkt den Tageszähler so nicht.
+        IN-05: without ``notify`` (no recipients or no link address) it is only
+        remembered, nothing is claimed; the next attempt with recipients can still
+        trigger the notice. Counting happens in ``daily_flags`` (marker
+        ``attempt:<world>:<name>``), not via ``join_attempts``: deleting a world
+        thus does not lower the daily counter.
         """
         day_text = day.isoformat()
         fold = name.casefold()
@@ -1164,7 +1164,7 @@ class WorldStore:
                 "SELECT notified FROM join_attempts WHERE day = ? AND world_id = ? AND name_fold = ?",
                 (day_text, world_id, fold),
             ).fetchone()
-            # Kandidat ist ein Name, für den heute noch kein Hinweis beansprucht ist.
+            # Candidate is a name for which no notice has been claimed today yet.
             is_candidate = claimed is None and (is_new or int(seen_before[0]) == 0)
             decision = decide(is_candidate, int(notified[0]), summary is not None, limit)
             if decision == "single":
@@ -1180,7 +1180,7 @@ class WorldStore:
         return decision
 
     def claim_daily_flag(self, day: date, flag: str) -> bool:
-        """Tages-Merker beanspruchen: True nur beim ersten Aufruf je (Tag, Merker), auch nach Neustart."""
+        """Claim a daily marker: True only on the first call per (day, marker), also after a restart."""
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO daily_flags (day, flag) VALUES (?, ?)", (day.isoformat(), flag)
@@ -1188,7 +1188,7 @@ class WorldStore:
         return cursor.rowcount == 1
 
     def attempts(self, day: date, world_id: str | None = None) -> list[AttemptRow]:
-        """Fremdversuche eines lokalen Tages (optional nur einer Welt), früheste zuerst."""
+        """Foreign attempts of a local day (optionally only one world), earliest first."""
         query = "SELECT world_id, player_name, first_at, count FROM join_attempts WHERE day = ?"
         args: tuple[str, ...] = (day.isoformat(),)
         if world_id is not None:
@@ -1199,7 +1199,7 @@ class WorldStore:
         return [AttemptRow(str(row[0]), str(row[1]), int(row[2]), int(row[3])) for row in rows]
 
     def claim_review(self, nc_user: str, day: date) -> bool:
-        """Rückblick beanspruchen: True nur beim ersten Aufruf je Verwalter und Tag (D-15, Pattern 5)."""
+        """Claim the review: True only on the first call per manager and day (D-15, pattern 5)."""
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO review_sent (nc_user, day) VALUES (?, ?)", (nc_user, day.isoformat())
@@ -1207,7 +1207,7 @@ class WorldStore:
         return cursor.rowcount == 1
 
     def review_was_sent(self, nc_user: str, day: date) -> bool:
-        """Schon beansprucht? Spart dem Loop nach dem Versand das Neuberechnen des Inhalts."""
+        """Already claimed? Saves the loop recomputing the content after sending."""
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT 1 FROM review_sent WHERE nc_user = ? AND day = ?", (nc_user, day.isoformat())
@@ -1215,7 +1215,7 @@ class WorldStore:
         return row is not None
 
     def review_pref(self, nc_user: str) -> tuple[bool, int]:
-        """(eingeschaltet, Minute) eines Verwalters; ohne Zeile Vorgabe an, 20:00 (D-12, D-15)."""
+        """(enabled, minute) of a manager; without a row the default is on, 20:00 (D-12, D-15)."""
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT enabled, minute FROM review_prefs WHERE nc_user = ?", (nc_user,)
@@ -1223,7 +1223,7 @@ class WorldStore:
         return (True, REVIEW_DEFAULT_MINUTE) if row is None else (bool(row[0]), int(row[1]))
 
     def set_review_pref(self, nc_user: str, *, enabled: bool, minute: int) -> None:
-        """Rückblick-Einstellung eines Verwalters speichern."""
+        """Store the review setting of a manager."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO review_prefs (nc_user, enabled, minute) VALUES (?, ?, ?) "
@@ -1232,10 +1232,10 @@ class WorldStore:
             )
 
     def delete_notify_data(self, world_id: str) -> None:
-        """Ereignisdaten einer gelöschten Welt; der Talk-Raum bleibt (eigener Abgleich).
+        """Event data of a deleted world; the Talk room stays (own reconciliation).
 
-        ``play_daily`` bleibt bis zur normalen Aufbewahrungsfrist: Der Rückblick am
-        Abend zählt auch Spielzeit in einer heute gelöschten Welt.
+        ``play_daily`` stays until the normal retention period: the review in the
+        evening also counts playtime in a world deleted today.
         """
         with self._connect() as connection:
             for table in (
@@ -1247,10 +1247,10 @@ class WorldStore:
             ):
                 connection.execute(f"DELETE FROM {table} WHERE world_id = ?", (world_id,))  # noqa: S608
 
-    # Drossel der Bot-Meldungen Beitritt/Verlassen (D-22, TALK-02)
+    # Throttle of the bot messages join/leave (D-22, TALK-02)
 
     def bot_presence_at(self, world_id: str, person: str) -> int | None:
-        """Zeitpunkt der letzten Bot-Meldung zu dieser Person in dieser Welt oder None."""
+        """Time of the last bot message about this person in this world, or None."""
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT last_at FROM bot_presence WHERE world_id = ? AND nc_user = ?", (world_id, person)
@@ -1258,7 +1258,7 @@ class WorldStore:
         return None if row is None else int(row[0])
 
     def set_bot_presence(self, world_id: str, person: str, kind: str, at: int) -> None:
-        """Merkt die gesendete Meldung (nur nach erfolgreichem Senden aufrufen)."""
+        """Remember the sent message (call only after successful sending)."""
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO bot_presence (world_id, nc_user, last_kind, last_at) VALUES (?, ?, ?, ?) "
@@ -1268,14 +1268,14 @@ class WorldStore:
             )
 
     def prune_bot_presence(self, before_at: int) -> None:
-        """Bot-Drossel älter als ``before_at`` (Epoch) löschen, Frist wie die Tagesdaten (IN-03)."""
+        """Delete bot throttle older than ``before_at`` (epoch), period like the daily data (IN-03)."""
         with self._connect() as connection:
             connection.execute("DELETE FROM bot_presence WHERE last_at < ?", (before_at,))
 
     def prune_review_prefs(self, keep: set[str]) -> int:
-        """Rückblick-Einstellungen von Konten außerhalb ``keep`` (bestätigte Verwalter) löschen (IN-03).
+        """Delete review settings of accounts outside ``keep`` (confirmed managers) (IN-03).
 
-        Leeres ``keep`` löscht nichts: Ohne bestätigten Stand bleibt alles, wie es ist.
+        Empty ``keep`` deletes nothing: without a confirmed state everything stays as it is.
         """
         if not keep:
             return 0
@@ -1287,7 +1287,7 @@ class WorldStore:
             )
         return cursor.rowcount
 
-    # Talk-Räume (Phase 4.1, TALK-01)
+    # Talk rooms (phase 4.1, TALK-01)
 
     def talk_room(self, world_id: str) -> TalkRoomRow | None:
         with self._connect() as connection:
@@ -1305,7 +1305,7 @@ class WorldStore:
         return [_talk_row(row) for row in rows]
 
     def insert_talk_room(self, world_id: str, token: str, owner_uid: str, created_at: str) -> bool:
-        """Merkt einen neuen Raum; False, wenn die Welt schon einen hat (kein zweiter Raum)."""
+        """Remember a new room; False if the world already has one (no second room)."""
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO talk_rooms (world_id, token, owner_uid, read_only, created_at, state) "
@@ -1326,7 +1326,7 @@ class WorldStore:
             connection.execute("UPDATE talk_rooms SET state = ? WHERE world_id = ?", (state, world_id))
 
     def set_talk_owner(self, world_id: str, owner_uid: str, former_owner: str | None) -> None:
-        """Gameworld-Besitzer des Raums (D-16) und Ex-Verwalter, der in Talk noch Owner ist (D-19)."""
+        """Gameworld owner of the room (D-16) and former manager who is still owner in Talk (D-19)."""
         with self._connect() as connection:
             connection.execute(
                 "UPDATE talk_rooms SET owner_uid = ?, former_owner = ? WHERE world_id = ?",
@@ -1334,12 +1334,12 @@ class WorldStore:
             )
 
     def set_talk_orphaned(self, world_id: str, token: str | None) -> None:
-        """Merkt den alten Raum, den kein Verwalter mehr moderieren kann (Sperrfall, D-16)."""
+        """Remember the old room that no manager can moderate anymore (blocked case, D-16)."""
         with self._connect() as connection:
             connection.execute("UPDATE talk_rooms SET orphaned_token = ? WHERE world_id = ?", (token, world_id))
 
     def replace_talk_token(self, world_id: str, token: str, owner_uid: str, created_at: str) -> bool:
-        """Neuer Raum für dieselbe Welt; Nur-lesen und ``orphaned_token`` bleiben, ``former_owner`` fällt weg."""
+        """New room for the same world; read-only and ``orphaned_token`` stay, ``former_owner`` is dropped."""
         with self._connect() as connection:
             cursor = connection.execute(
                 "UPDATE talk_rooms SET token = ?, owner_uid = ?, created_at = ?, former_owner = NULL, state = ? "
@@ -1352,10 +1352,10 @@ class WorldStore:
         with self._connect() as connection:
             connection.execute("DELETE FROM talk_rooms WHERE world_id = ?", (world_id,))
 
-    # Verwalter-Gruppen: Stand je Gruppe und Dienstalter (Schema 8, Phase 6, ROLLE-03)
+    # Manager groups: state per group and service age (schema 8, phase 6, ROLLE-03)
 
     def group_snapshot(self) -> dict[str, set[str]]:
-        """Letzter bestätigter Mitgliederstand je Verwalter-Gruppe."""
+        """Last confirmed member state per manager group."""
         with self._connect() as connection:
             rows = connection.execute("SELECT gid, uid FROM verwalter_snapshot ORDER BY gid, uid").fetchall()
         snapshot: dict[str, set[str]] = {}
@@ -1364,7 +1364,7 @@ class WorldStore:
         return snapshot
 
     def replace_group_snapshot(self, gid: str, uids: set[str]) -> None:
-        """Ersetzt den Stand genau dieser Gruppe in einer Transaktion; andere Gruppen bleiben."""
+        """Replace the state of exactly this group in one transaction; other groups stay."""
         with self._connect() as connection:
             connection.execute("DELETE FROM verwalter_snapshot WHERE gid = ?", (gid,))
             connection.executemany(
@@ -1372,14 +1372,14 @@ class WorldStore:
             )
 
     def drop_group_snapshots(self, keep: set[str]) -> None:
-        """Vergisst den Stand aller Gruppen außerhalb ``keep`` (nicht mehr konfigurierte Gruppen)."""
+        """Forget the state of all groups outside ``keep`` (groups no longer configured)."""
         with self._connect() as connection:
             rows = connection.execute("SELECT DISTINCT gid FROM verwalter_snapshot").fetchall()
             gone = [(str(row[0]),) for row in rows if str(row[0]) not in keep]
             connection.executemany("DELETE FROM verwalter_snapshot WHERE gid = ?", gone)
 
     def sync_verwalter_seen(self, uids: set[str], now_iso: str) -> None:
-        """Neue Verwalter bekommen ``now_iso`` als ersten Tag, Ehemalige fallen heraus (D-16)."""
+        """New managers get ``now_iso`` as their first day, former ones drop out (D-16)."""
         with self._connect() as connection:
             rows = connection.execute("SELECT uid FROM verwalter_seen").fetchall()
             gone = [(str(row[0]),) for row in rows if str(row[0]) not in uids]
@@ -1390,15 +1390,15 @@ class WorldStore:
             )
 
     def verwalter_seniority(self) -> list[str]:
-        """Verwalter nach Dienstalter: zuerst gesehen zuerst, Gleichstand nach Konto-ID."""
+        """Managers by service age: first seen first, ties by account ID."""
         with self._connect() as connection:
             rows = connection.execute("SELECT uid FROM verwalter_seen ORDER BY first_seen, uid").fetchall()
         return [str(row[0]) for row in rows]
 
-    # Sicherungen (Schema 7, Phase 5)
+    # Backups (schema 7, phase 5)
 
     def add_backup(self, row: BackupRow) -> None:
-        """Nachweis speichern; gleiche (owner_uid, file_id) ersetzt den Eintrag (Files vergibt file_id einmalig)."""
+        """Store the proof; the same (owner_uid, file_id) replaces the entry (Files assigns file_id once)."""
         with self._connect() as connection:
             connection.execute(
                 f"INSERT OR REPLACE INTO backups ({', '.join(_BACKUP_COLUMNS)}) "  # noqa: S608
@@ -1407,7 +1407,7 @@ class WorldStore:
             )
 
     def backups_for(self, owner_uid: str, world_id: str) -> list[BackupRow]:
-        """Sicherungen einer Welt in den Files dieses Verwalters, neueste zuerst (D-13)."""
+        """Backups of a world in this manager's Files, newest first (D-13)."""
         with self._connect() as connection:
             rows = connection.execute(
                 f"SELECT {', '.join(_BACKUP_COLUMNS)} FROM backups "  # noqa: S608
@@ -1417,7 +1417,7 @@ class WorldStore:
         return [_backup_row(row) for row in rows]
 
     def backup_by_file(self, owner_uid: str, file_id: int) -> BackupRow | None:
-        """Nachweis zu einer Datei nur dieses Verwalters; fremde Einträge ergeben None (D-13)."""
+        """Proof for a file of this manager only; foreign entries yield None (D-13)."""
         with self._connect() as connection:
             row = connection.execute(
                 f"SELECT {', '.join(_BACKUP_COLUMNS)} FROM backups WHERE owner_uid = ? AND file_id = ?",  # noqa: S608
@@ -1435,7 +1435,7 @@ class WorldStore:
         started_at: str,
         finished_at: str | None,
     ) -> None:
-        """Auftragszustand einer Welt setzen; die eine Zeile je Welt wird überschrieben."""
+        """Set the job state of a world; the one row per world is overwritten."""
         with self._connect() as connection:
             connection.execute(
                 f"INSERT OR REPLACE INTO backup_jobs ({', '.join(_JOB_COLUMNS)}) "  # noqa: S608
@@ -1452,7 +1452,7 @@ class WorldStore:
         return None if row is None else _job_row(row)
 
     def running_backup_jobs(self) -> list[BackupJobRow]:
-        """Aufträge im Zustand running (nach einem Neustart unterbrochen, Boot-Abgleich)."""
+        """Jobs in state running (interrupted by a restart, boot reconciliation)."""
         with self._connect() as connection:
             rows = connection.execute(
                 f"SELECT {', '.join(_JOB_COLUMNS)} FROM backup_jobs WHERE state = ? ORDER BY world_id",  # noqa: S608
@@ -1465,7 +1465,7 @@ class WorldStore:
             connection.execute("DELETE FROM backup_jobs WHERE world_id = ?", (world_id,))
 
     def reset_event_cursor(self, world_id: str) -> None:
-        """Cursor der Ereignisdatei nur dieser Welt vergessen (nach Wiederherstellung neu verankern)."""
+        """Cursor of the event file of this world only, forget (re-anchor after a restore)."""
         with self._connect() as connection:
             connection.execute("DELETE FROM event_cursor WHERE world_id = ?", (world_id,))
 

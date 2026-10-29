@@ -1,1 +1,1 @@
-"""Spielzeiten: reine Plan-Auswertung (plan) und Verbuchung (ledger)."""
+"""Playtime: pure plan evaluation (plan) and booking (ledger)."""

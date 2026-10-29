@@ -1,1 +1,1 @@
-"""Soll-Zustand der Welten (SQLite) und der Ablauf beim Erzeugen."""
+"""Desired state of the worlds (SQLite) and the flow of creating them."""

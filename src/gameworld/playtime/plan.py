@@ -1,16 +1,16 @@
-"""Reine Plan-Auswertung der Spielzeiten mit zoneinfo (04-RESEARCH.md Pattern 4).
+"""Pure plan evaluation of the playtimes with zoneinfo (04-RESEARCH.md pattern 4).
 
-Die Container laufen in UTC, nur die ExApp kennt die Zeitzone: Diese Funktionen
-rechnen jede lokale Grenze mit ``zoneinfo`` (Vorgabe ``Europe/Berlin``) und
-``tzdata`` als Datenbank. Tagesgrenzen entstehen über
-``datetime.combine(tag, time(0), tzinfo=tz)`` bis zum Folgetag 00:00, nie über
-eine feste Tageslänge: So stimmen Wochentag und Fenster auch an den
-Umstellungstagen (23 h und 25 h). Alle Rückgaben sind absolute Epoch-Sekunden,
-damit der Welt-Mod sie ohne Zeitzonenwissen durchsetzen kann.
+The containers run in UTC, only the ExApp knows the time zone: these functions
+compute every local boundary with ``zoneinfo`` (default ``Europe/Berlin``) and
+``tzdata`` as the database. Day boundaries are built via
+``datetime.combine(day, time(0), tzinfo=tz)`` up to the next day 00:00, never via
+a fixed day length: this keeps weekday and window correct on the
+changeover days (23 h and 25 h). All return values are absolute epoch seconds,
+so the world mod can enforce them without time zone knowledge.
 
-Ein Kind ohne Plan wird gar nicht ausgewertet (Opt-in, O-10); das entscheidet
-der Aufrufer in 04-03. Nach dem lokalen Tagesende gibt es ohne neuen Plan keine
-Spielzeit (fail closed, O-04): ``until`` reicht nie über den Tag hinaus.
+A child without a plan is not evaluated at all (opt-in, O-10); the caller
+decides that in 04-03. After the local end of day there is no playtime without
+a new plan (fail closed, O-04): ``until`` never reaches beyond the day.
 """
 
 from __future__ import annotations
@@ -29,16 +29,16 @@ MSG_WINDOW_END_RANGE = "Das Fensterende liegt zwischen 1 und 1440 Minuten."
 MSG_WINDOW_START_BEFORE_END = "Der Fensteranfang liegt vor dem Fensterende."
 MSG_WEEK_SEVEN_DAYS = "Ein Wochenplan braucht genau die sieben Wochentage 1 bis 7."
 MSG_HOLIDAY_ENDS_BEFORE_START = "Ein Ferienzeitraum endet nicht vor seinem Beginn."
-# ISO-Wochentag 1..7 (Mo = 1) auf das ASCII-Token für den Kindertext.
+# ISO weekday 1..7 (Mon = 1) to the ASCII token for the child text.
 WEEKDAY_TOKENS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 _FULL_DAY_MINUTES = 1440
-# Tagesanfänge für die Zeile @tage der Regeldatei: heute bis heute+8 (time_mod.DAY_COUNT).
+# Day starts for the line @tage of the rule file: today to today+8 (time_mod.DAY_COUNT).
 _DAY_STARTS = 9
 
 
 @dataclass(frozen=True)
 class DayRule:
-    """Regel eines Wochentags: erlaubt, Tageslimit (Minuten) und ein Fenster (A3)."""
+    """Rule of one weekday: allowed, daily limit (minutes) and a window (A3)."""
 
     allowed: bool
     limit_minutes: int | None
@@ -61,14 +61,14 @@ class DayRule:
 
 
 def check_world_window(window_start: int, window_end: int) -> tuple[int, int]:
-    """Prüft ein Welt-Fenster mit derselben Regel wie ein Kinder-Fenster (ValueError bei Unsinn)."""
+    """Check a world window with the same rule as a child window (ValueError on nonsense)."""
     DayRule(allowed=True, limit_minutes=None, window_start=window_start, window_end=window_end)
     return window_start, window_end
 
 
 @dataclass(frozen=True)
 class WeekPlan:
-    """Wochenplan: genau die sieben ISO-Wochentage 1..7 auf je eine DayRule."""
+    """Weekly plan: exactly the seven ISO weekdays 1..7, each to one DayRule."""
 
     days: dict[int, DayRule]
 
@@ -79,7 +79,7 @@ class WeekPlan:
 
 @dataclass(frozen=True)
 class Holiday:
-    """Ferienzeitraum des Haushalts; Anfang und Ende inklusive (O-08)."""
+    """Holiday period of the household; start and end inclusive (O-08)."""
 
     start: date
     end: date
@@ -92,9 +92,9 @@ class Holiday:
 
 @dataclass(frozen=True)
 class NextStart:
-    """Nächste Fensteröffnung: Epoch, ISO-Wochentag 1..7 und lokale Minute 0..1439.
+    """Next window opening: epoch, ISO weekday 1..7 and local minute 0..1439.
 
-    Minute 0 heißt: ganzer Tag ohne Startzeit; der Kindertext zeigt dann keine Uhrzeit.
+    Minute 0 means: whole day without a start time; the child text then shows no clock time.
     """
 
     at: int
@@ -102,19 +102,19 @@ class NextStart:
     minute: int
 
     def token(self) -> str:
-        """Bisheriges Token wie ``Sa-10:00`` (6-Feld-Zeile der Regeldatei, für alte Mods)."""
+        """Former token like ``Sa-10:00`` (6-field line of the rule file, for old mods)."""
         return f"{WEEKDAY_TOKENS[self.weekday - 1]}-{self.minute // 60:02d}:{self.minute % 60:02d}"
 
 
 @dataclass(frozen=True)
 class ChildState:
-    """Auswertung für ein Kind: Fenster (Epoch), Rest in Sekunden, Grund, nächste Zeit.
+    """Evaluation for a child: window (epoch), rest in seconds, reason, next time.
 
-    ``cap_rest_s`` ist der Rest für den Deckel der Regeldatei (None = kein Limit).
-    Er gleicht ``rest_s``, nur vor dem heutigen Fenster nicht: Dort trägt er schon
-    den Rest des kommenden Fensters, damit der Welt-Mod ab ``start`` selbst öffnet,
-    auch wenn die ExApp bis dahin nicht neu schreibt (WR-02). Vor ``start`` sperrt
-    der Mod ohnehin über die Fenstergrenzen.
+    ``cap_rest_s`` is the rest for the cap of the rule file (None = no limit).
+    It equals ``rest_s``, except before today's window: there it already carries
+    the rest of the coming window, so the world mod opens by itself from ``start``,
+    even if the ExApp does not rewrite until then (WR-02). Before ``start`` the mod
+    blocks anyway via the window boundaries.
     """
 
     start: int
@@ -129,7 +129,7 @@ class ChildState:
 
 @dataclass(frozen=True)
 class WorldState:
-    """Auswertung eines Welt-Zeitfensters (ZEIT-05): Fenster, Grund, nächste Zeit."""
+    """Evaluation of a world time window (ZEIT-05): window, reason, next time."""
 
     start: int
     until: int
@@ -140,7 +140,7 @@ class WorldState:
 
 @dataclass(frozen=True)
 class WindowDay:
-    """Ein Wochentag des Welt-Zeitfensters für API und Weltenliste (ZEIT-05)."""
+    """One weekday of the world time window for the API and the world list (ZEIT-05)."""
 
     weekday: int
     open: bool
@@ -149,7 +149,7 @@ class WindowDay:
 
 
 def window_days(windows: dict[int, tuple[int, int]] | None) -> list[WindowDay] | None:
-    """Welt-Fenster als sieben Wochentage; None heißt: kein Fenster, die Welt ist immer offen."""
+    """World window as seven weekdays; None means: no window, the world is always open."""
     if windows is None:
         return None
     days: list[WindowDay] = []
@@ -163,24 +163,24 @@ def window_days(windows: dict[int, tuple[int, int]] | None) -> list[WindowDay] |
 
 
 def load_zone(name: str) -> ZoneInfo:
-    """Zeitzone aus dem Namen; leer bedeutet Europe/Berlin (meta time_zone, O-02)."""
+    """Time zone from the name; empty means Europe/Berlin (meta time_zone, O-02)."""
     return ZoneInfo(name or DEFAULT_TIME_ZONE)
 
 
 def local_day(now_epoch: int, tz: ZoneInfo) -> date:
-    """Lokaler Kalendertag zu einem Epoch-Zeitpunkt."""
+    """Local calendar day for an epoch timestamp."""
     return datetime.fromtimestamp(now_epoch, tz).date()
 
 
 def day_bounds(day: date, tz: ZoneInfo) -> tuple[int, int]:
-    """Lokaler Tag als Epoch ``[start, end)``: 00:00 bis Folgetag 00:00 (nie feste Länge)."""
+    """Local day as epoch ``[start, end)``: 00:00 to next day 00:00 (never a fixed length)."""
     start = int(datetime.combine(day, time(0), tzinfo=tz).timestamp())
     end = int(datetime.combine(day + timedelta(days=1), time(0), tzinfo=tz).timestamp())
     return start, end
 
 
 def day_starts(now_epoch: int, tz: ZoneInfo) -> tuple[int, ...]:
-    """Neun Epoch-Tagesanfänge ab dem lokalen Tag von ``now`` (über day_bounds, nie feste Tageslänge)."""
+    """Nine epoch day starts from the local day of ``now`` (via day_bounds, never a fixed day length)."""
     today = local_day(now_epoch, tz)
     return tuple(day_bounds(today + timedelta(days=offset), tz)[0] for offset in range(_DAY_STARTS))
 
@@ -190,10 +190,10 @@ def _minute_time(minutes: int) -> time:
 
 
 def window_bounds(day: date, tz: ZoneInfo, rule: DayRule) -> tuple[int, int]:
-    """Epoch-Grenzen des Fensters an diesem lokalen Tag.
+    """Epoch boundaries of the window on this local day.
 
-    Ohne Fenster (ganzer Tag) von 00:00 bis zum lokalen Tagesende; ein Fensterende
-    von 1440 Minuten ist ebenfalls das Tagesende (Folgetag 00:00, O-04).
+    Without a window (whole day) from 00:00 to the local end of day; a window end
+    of 1440 minutes is likewise the end of day (next day 00:00, O-04).
     """
     day_start, day_end = day_bounds(day, tz)
     start, end = rule.window_start, rule.window_end
@@ -207,14 +207,14 @@ def window_bounds(day: date, tz: ZoneInfo, rule: DayRule) -> tuple[int, int]:
 
 
 def plan_for(day: date, normal: WeekPlan, holiday: WeekPlan | None, holidays: list[Holiday]) -> WeekPlan:
-    """Ferienplan, wenn der Tag in einem Zeitraum liegt (inklusive), sonst Normalplan."""
+    """Holiday plan if the day lies in a period (inclusive), otherwise the normal plan."""
     if holiday is not None and any(period.start <= day <= period.end for period in holidays):
         return holiday
     return normal
 
 
 def _next_start(now: int, tz: ZoneInfo, rule_for: Callable[[date], DayRule | None]) -> NextStart | None:
-    """Nächste erlaubte Fensteröffnung ab jetzt, bis 7 Tage voraus, sonst None."""
+    """Next allowed window opening from now, up to 7 days ahead, otherwise None."""
     today = local_day(now, tz)
     for offset in range(8):
         day = today + timedelta(days=offset)
@@ -239,7 +239,7 @@ def _child_next_start(
 
 
 def next_hint(now: int, tz: ZoneInfo, normal: WeekPlan, holiday: WeekPlan | None, holidays: list[Holiday]) -> str:
-    """Nächster Start als Token wie ``Sa-10:00`` (Ferienwechsel eingeschlossen)."""
+    """Next start as a token like ``Sa-10:00`` (holiday change included)."""
     return _token(_child_next_start(now, tz, normal, holiday, holidays))
 
 
@@ -251,11 +251,11 @@ def evaluate_child(
     holidays: list[Holiday],
     used_today_s: int,
 ) -> ChildState:
-    """Rest, Fenster und Grund für ein Kind am lokalen Tag von ``now``.
+    """Rest, window and reason for a child on the local day of ``now``.
 
-    Gründe: ``tag`` (heute nicht erlaubt), ``fenster`` (vor oder nach dem Fenster),
-    ``limit`` (Tageslimit aufgebraucht), ``ok`` (im Fenster, Rest vorhanden). Rest
-    ist None bei einem Tag ohne Limit, sonst Sekunden; bei Sperren 0.
+    Reasons: ``tag`` (not allowed today), ``fenster`` (before or after the window),
+    ``limit`` (daily limit used up), ``ok`` (in the window, rest left). Rest
+    is None on a day without a limit, otherwise seconds; 0 when blocked.
     """
     day = local_day(now, tz)
     rule = plan_for(day, normal, holiday, holidays).days[day.isoweekday()]
@@ -264,13 +264,13 @@ def evaluate_child(
     if not rule.allowed:
         return ChildState(start=0, until=0, rest_s=0, reason="tag", next_hint=hint, day=day, next_start=upcoming)
     window_start, window_end = window_bounds(day, tz, rule)
-    # Rest des heutigen Fensters (None = kein Limit), unabhängig davon, ob es schon offen ist.
+    # Rest of today's window (None = no limit), regardless of whether it is already open.
     window_rest = None if rule.limit_minutes is None else max(rule.limit_minutes * 60 - used_today_s, 0)
     cap_rest: int | None = 0
     if now >= window_end:
         reason, rest = "fenster", 0
     elif now < window_start:
-        # Vor dem Fenster: gesperrt über die Grenzen, der Deckel trägt schon das kommende Fenster (WR-02).
+        # Before the window: blocked via the boundaries, the cap already carries the coming window (WR-02).
         reason, rest, cap_rest = "fenster", 0, window_rest
     elif window_rest is None:
         reason, rest, cap_rest = "ok", None, None
@@ -297,11 +297,11 @@ def _world_rule(windows: dict[int, tuple[int, int]], day: date) -> DayRule | Non
 
 
 def evaluate_world(now: int, tz: ZoneInfo, windows: dict[int, tuple[int, int]] | None) -> WorldState | None:
-    """Welt-Zeitfenster (ZEIT-05): None heißt immer offen; sonst Grund ``ok`` oder ``welt``.
+    """World time window (ZEIT-05): None means always open; otherwise reason ``ok`` or ``welt``.
 
-    An einem geschlossenen Tag steht ``0 0 welt`` in der Regeldatei (der Mod sieht
-    daran sofort geschlossen); außerhalb des Fensters bleiben die Fenstergrenzen
-    stehen, damit die Welt am richtigen Zeitpunkt wieder öffnet.
+    On a closed day ``0 0 welt`` stands in the rule file (the mod sees it as
+    closed immediately); outside the window the window boundaries stay in place,
+    so the world opens again at the right time.
     """
     if windows is None:
         return None

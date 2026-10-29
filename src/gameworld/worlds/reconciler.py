@@ -1,36 +1,35 @@
-"""Abgleich von Soll-Zustand (SQLite) und Ist-Zustand (Docker-Labels), PLATT-02.
+"""Reconciliation of desired state (SQLite) and actual state (Docker labels), PLATT-02.
 
-Regeltabelle (RESEARCH Pattern 4):
+Rule table (RESEARCH pattern 4):
 
-| Fall                                              | Boot              | Periodisch    |
+| Case                                              | Boot              | Periodic      |
 |---------------------------------------------------|-------------------|---------------|
-| desired running, Container exited/created, ohne OOM | START           | NONE          |
+| desired running, container exited/created, no OOM | START             | NONE          |
 | desired running, OOMKilled                        | MARK_OOM          | NONE          |
-| desired running, Container fehlt, Volume da       | RECREATE          | NONE          |
-| desired running, Container fehlt, Volume fehlt    | MARK_DATA_MISSING | NONE          |
-| desired stopped, Container läuft (von Hand)       | ADOPT_RUNNING     | ADOPT_RUNNING |
-| op_state creating (Prozess starb beim Erzeugen)   | MARK_INTERRUPTED  | NONE          |
-| desired deleted (Löschen brach ab)                | RETRY_DELETE      | NONE          |
-| op_state restoring_swap (Tausch brach ab)         | MARK_RESTORE_INTERRUPTED | NONE   |
-| op_state backing_up (Sicherung brach ab)          | CLEAR_BUSY, dann normal | NONE    |
-| op_state restoring (vor dem Tausch abgebrochen)   | CLEAR_BUSY, dann normal | NONE    |
+| desired running, container missing, volume there  | RECREATE          | NONE          |
+| desired running, container missing, volume missing| MARK_DATA_MISSING | NONE          |
+| desired stopped, container running (by hand)      | ADOPT_RUNNING     | ADOPT_RUNNING |
+| op_state creating (process died while creating)   | MARK_INTERRUPTED  | NONE          |
+| desired deleted (deletion was interrupted)        | RETRY_DELETE      | NONE          |
+| op_state restoring_swap (swap was interrupted)    | MARK_RESTORE_INTERRUPTED | NONE   |
+| op_state backing_up (backup was interrupted)      | CLEAR_BUSY, then normal | NONE    |
+| op_state restoring (aborted before the swap)      | CLEAR_BUSY, then normal | NONE    |
 | op_state failed                                   | NONE              | NONE          |
-| eigener Container ohne Zeile                      | nur melden        | nur melden    |
-| Container fremder Instanz                         | nie gelistet      | nie gelistet  |
+| own container without a row                       | report only       | report only   |
+| container of a foreign instance                   | never listed      | never listed  |
 
-Gestartet wird nur beim Boot, also einmal pro Prozessstart nach einem
-Host-Reboot oder ExApp-Update. Periodisch wird nie gestartet und nie neu
-erzeugt: Ein Reconciler, der abgestürzte oder per OOM beendete Welten alle
-30 s wieder hochfährt, wäre eine Crash-Schleife durch die Hintertür, genau
-die, die restart_policy "no" an den Welten verhindert. Neustart nach einem
-Absturz bleibt ein Elternklick. Fehlgeschlagene Welten (op_state failed)
-fasst der Abgleich ebenfalls nicht an; sie warten auf Starten oder Löschen.
+Starting happens only at boot, i.e. once per process start after a host
+reboot or ExApp update. Periodically nothing is started and nothing is
+recreated: a reconciler that restarts crashed or OOM-killed worlds every
+30 s would be a crash loop through the back door, exactly the one that the
+restart_policy "no" on the worlds prevents. Restarting after a crash stays a
+parent click. Failed worlds (op_state failed) are likewise not touched by
+the reconciliation; they wait for start or delete.
 
-Busy Welten (BUSY_OP_STATES) gehören dem laufenden Sicherungs- oder
-Wiederherstellungs-Job; der periodische Abgleich fasst sie nie an. Ein
-unterbrochener Tausch (restoring_swap) wird nie gestartet und nie als
-"Weltdaten fehlen" markiert, sondern zum erneuten Wiederherstellen
-freigegeben (RESEARCH Pitfall 2).
+Busy worlds (BUSY_OP_STATES) belong to the running backup or restore job;
+the periodic reconciliation never touches them. An interrupted swap
+(restoring_swap) is never started and never marked "world data missing",
+but released for another restore (RESEARCH pitfall 2).
 """
 
 from __future__ import annotations
@@ -49,12 +48,12 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# Bis Docker antwortet (Proxy nach einem Reboot evtl. später oben, Pitfall 5).
+# Until Docker answers (the proxy may come up later after a reboot, pitfall 5).
 BOOT_RETRY_SECONDS = 5.0
-# Nie exakt 10 s: Der HAProxy im Docker-Proxy schließt Keep-Alive nach 10 s (Pitfall 4).
+# Never exactly 10 s: the HAProxy in the Docker proxy closes keep-alive after 10 s (pitfall 4).
 INTERVAL_SECONDS = 30.0
 
-# Einzige Quelle der Busy-Zustände; alle anderen Module importieren sie von hier.
+# Single source of the busy states; all other modules import them from here.
 BUSY_OP_STATES = frozenset({"backing_up", "restoring", "restoring_swap"})
 
 
@@ -72,7 +71,7 @@ class ReconcileAction(StrEnum):
 
 
 def needs_volume_check(row: WorldRow, container: ContainerInfo | None) -> bool:
-    """Nur hier entscheidet das Volume zwischen RECREATE und MARK_DATA_MISSING."""
+    """Only here the volume decides between RECREATE and MARK_DATA_MISSING."""
     return (
         container is None
         and row.desired_state == "running"
@@ -106,7 +105,7 @@ def decide_boot(row: WorldRow, container: ContainerInfo | None, volume_exists: b
 
 
 def decide_periodic(row: WorldRow, container: ContainerInfo | None) -> ReconcileAction:
-    """Nur Zustand pflegen: Docker gewinnt bei von Hand gestarteten Welten, sonst nichts."""
+    """Maintain state only: Docker wins for worlds started by hand, nothing else."""
     if (
         row.desired_state == "stopped"
         and row.op_state not in {"creating", "failed"}
@@ -124,10 +123,10 @@ async def reconcile_forever(
     boot_retry_seconds: float = BOOT_RETRY_SECONDS,
     interval_seconds: float = INTERVAL_SECONDS,
 ) -> None:
-    """Boot-Abgleich, bis er vollständig gelang, danach periodische Pflege.
+    """Boot reconciliation until it fully succeeded, then periodic upkeep.
 
-    Läuft als Task im Lifespan; jeder Fehler wird geloggt und der Zyklus
-    wiederholt. Nur CancelledError (Herunterfahren) beendet die Schleife.
+    Runs as a task in the lifespan; every error is logged and the cycle
+    repeated. Only CancelledError (shutdown) ends the loop.
     """
     booted = False
     while True:
@@ -137,9 +136,9 @@ async def reconcile_forever(
             else:
                 booted = await service.boot_reconcile()
                 if booted:
-                    LOG.info("Boot-Abgleich der Welten abgeschlossen")
+                    LOG.info("Boot reconciliation of the worlds completed")
         except ProvisionerError as exc:
-            LOG.warning("Abgleich der Welten übersprungen: %s", exc)
+            LOG.warning("Reconciliation of the worlds skipped: %s", exc)
         except Exception:
-            LOG.exception("Abgleich der Welten fehlgeschlagen")
+            LOG.exception("Reconciliation of the worlds failed")
         await asyncio.sleep(interval_seconds if booted else boot_retry_seconds)

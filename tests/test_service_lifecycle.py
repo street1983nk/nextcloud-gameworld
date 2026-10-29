@@ -1,4 +1,4 @@
-"""Lebenszyklus ohne Docker: Starten, Stoppen, Löschen und die Port-Kollisions-Saga."""
+"""Lifecycle without Docker: start, stop, delete and the port collision saga."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ from tests.conftest import appapi_headers
 
 @dataclass
 class FakeProvisioner:
-    """Bildet die Schnittstelle von DockerProvisioner nach und protokolliert jeden Aufruf."""
+    """Mimics the interface of DockerProvisioner and records every call."""
 
     start_errors: list[ProvisionerError] = field(default_factory=list)
     create_errors: list[ProvisionerError] = field(default_factory=list)
@@ -67,9 +67,9 @@ class FakeProvisioner:
     started: list[str] = field(default_factory=list)
     stopped: list[str] = field(default_factory=list)
     removed: list[tuple[str, bool]] = field(default_factory=list)
-    # Reihenfolge der Mutationen ("stop:<id>", "start:<id>") für den Neustart.
+    # Order of the mutations ("stop:<id>", "start:<id>") for the restart.
     calls: list[str] = field(default_factory=list)
-    # Zusätzliche Inspect-Felder pro Welt (exit_code, oom_killed, started_at, schema).
+    # Additional inspect fields per world (exit_code, oom_killed, started_at, schema).
     extra: dict[str, dict[str, object]] = field(default_factory=dict)
     status_files: dict[str, StatusFile] = field(default_factory=dict)
     status_error: ProvisionerError | None = None
@@ -79,27 +79,27 @@ class FakeProvisioner:
     memory_reads: list[str] = field(default_factory=list)
     list_error: ProvisionerError | None = None
     list_calls: int = 0
-    # Welten, deren Volume (Weltdaten) fehlt, etwa nach docker volume prune.
+    # Worlds whose volume (world data) is missing, e.g. after docker volume prune.
     missing_volumes: set[str] = field(default_factory=set)
-    # Per write_world_files geschriebene Tars (Welt, Archiv), in Reihenfolge.
+    # Tars written via write_world_files (world, archive), in order.
     written: list[tuple[str, bytes]] = field(default_factory=list)
-    # State-Dateien des Zugangs-Mods pro Welt (fehlt: None) und ein optionaler Lesefehler.
+    # State files of the access mod per world (missing: None) and an optional read error.
     access_states: dict[str, StatusFile] = field(default_factory=dict)
     access_state_error: ProvisionerError | None = None
     access_state_reads: list[str] = field(default_factory=list)
-    # Zählbücher des Zeit-Mods pro Welt (fehlt: None) und ein optionaler Lesefehler.
+    # Ledgers of the time mod per world (missing: None) and an optional read error.
     ledgers: dict[str, StatusFile] = field(default_factory=dict)
     ledger_error: ProvisionerError | None = None
     ledger_reads: list[str] = field(default_factory=list)
-    # Ereignisdateien des Zugangs-Mods pro Welt (fehlt: None) und ein optionaler Lesefehler.
+    # Event files of the access mod per world (missing: None) and an optional read error.
     events: dict[str, StatusFile] = field(default_factory=dict)
     events_error: ProvisionerError | None = None
     event_reads: list[str] = field(default_factory=list)
-    # Snapshots (Tar-Bytes des Weltordners) pro Welt, Fehlerinjektion und eingespielte Restore-Tars.
+    # Snapshots (tar bytes of the world folder) per world, error injection and restore tars installed.
     snapshots: dict[str, bytes] = field(default_factory=dict)
     snapshot_errors: list[Exception] = field(default_factory=list)
     put_archives: list[tuple[str, bytes]] = field(default_factory=list)
-    # Aufräumen beim Deaktivieren (06-08): Stopp-Timeouts, Fehler je Welt, künstliche Dauer.
+    # Cleanup on deactivation (06-08): stop timeouts, errors per world, artificial duration.
     stop_timeouts: list[int] = field(default_factory=list)
     stop_errors: dict[str, ProvisionerError] = field(default_factory=dict)
     stop_delay: float = 0.0
@@ -206,7 +206,7 @@ class FakeProvisioner:
         return self.events.get(world_id)
 
     def snapshot_to[T](self, world_id: str, write: Callable[[Iterator[bytes]], T]) -> T:
-        """Wie DockerProvisioner.snapshot_to: nur bei gestopptem Container, Strom in Stücken."""
+        """Like DockerProvisioner.snapshot_to: only with a stopped container, stream in chunks."""
         _, status = self._known(world_id)
         self.calls.append(f"snapshot:{world_id}")
         if self.snapshot_errors:
@@ -232,7 +232,7 @@ class FakeProvisioner:
 
 
 class Clock:
-    """Steuert time.monotonic im Dienst (Cache der Weltenliste)."""
+    """Controls time.monotonic in the service (cache of the world list)."""
 
     def __init__(self) -> None:
         self.now = 1000.0
@@ -270,7 +270,7 @@ def service(store: WorldStore, fake: FakeProvisioner) -> WorldService:
 
 @pytest.fixture
 def payload_args(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
-    """Zeichnet alle Positionsargumente von build_world_payload auf und ruft die echte Funktion."""
+    """Records all positional arguments of build_world_payload and calls the real function."""
     calls: list[tuple[object, ...]] = []
     real = service_module.build_world_payload
 
@@ -317,7 +317,7 @@ async def test_saga_recreation_uses_row_preset(
     payload_args: list[tuple[object, ...]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Die Neuerzeugung in der Port-Saga baut aus row.preset, nie aus einer Vorgabe (Pitfall 2)."""
+    """The re-creation in the port saga builds from row.preset, never from a default (pitfall 2)."""
     marker = replace(MTG_KREATIV, id="test_spiel", conf_lines=("creative_mode = false",))
     monkeypatch.setitem(PRESETS, marker.id, marker)
     created = await service.create_world("Welt")
@@ -347,7 +347,7 @@ async def test_failed_create_with_successful_cleanup_leaves_no_row(
 async def test_failed_container_creation_is_cleaned_up(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Scheitert create_world_container, kann ein Volume übrig sein: Aufräumen läuft, dann keine Zeile."""
+    """If create_world_container fails, a volume may be left over: cleanup runs, then no row."""
     fake.create_errors = [DockerUnavailableError("Proxy weg")]
     with pytest.raises(DockerUnavailableError):
         await service.create_world("Welt")
@@ -434,7 +434,7 @@ async def test_three_port_conflicts_give_up(service: WorldService, fake: FakePro
 async def test_start_recreates_missing_container_from_volume(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Container weg (docker rm von außen oder Saga-Fehlerpfad), Volume da: Start erzeugt neu."""
+    """Container gone (docker rm from outside or saga error path), volume there: start recreates."""
     created = await service.create_world("Welt")
     fake.containers.pop(created.id)
     fake.created.clear()
@@ -452,7 +452,7 @@ async def test_start_recreates_missing_container_from_volume(
 async def test_saga_failure_leaves_recoverable_world(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Scheitert die Neuerzeugung in der Port-Saga, rettet der nächste Start die Welt (CR-01)."""
+    """If the re-creation in the port saga fails, the next start rescues the world (CR-01)."""
     created = await service.create_world("Welt")
     await service.stop_world(created.id)
     fake.start_errors = [PortInUseError(30015)]
@@ -461,7 +461,7 @@ async def test_saga_failure_leaves_recoverable_world(
     with pytest.raises(DockerUnavailableError):
         await service.start_world(created.id)
 
-    # Der Fehlerpfad hinterlässt genau den kritischen Zustand: Volume ohne Container.
+    # The error path leaves exactly the critical state: volume without container.
     assert created.id not in fake.containers
     row = store.get_world(created.id)
     assert row is not None
@@ -481,7 +481,7 @@ async def test_saga_failure_leaves_recoverable_world(
 async def test_recreated_container_still_runs_port_saga(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Auch der neu erzeugte Container durchläuft bei Port-Kollision die Saga."""
+    """The newly created container also goes through the saga on a port collision."""
     created = await service.create_world("Welt")
     fake.containers.pop(created.id)
     fake.created.clear()
@@ -497,7 +497,7 @@ async def test_recreated_container_still_runs_port_saga(
 async def test_stop_with_missing_container_is_noop(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Ein fehlender Container ist bereits gestoppt: Stoppen ist Erfolg, kein 404."""
+    """A missing container is already stopped: stopping is success, no 404."""
     created = await service.create_world("Welt")
     fake.containers.pop(created.id)
 
@@ -547,7 +547,7 @@ async def test_delete_removes_world_window_and_seen_ledger(service: WorldService
 
     assert store.world_window(created.id) is None
     assert store.ledger_seen(created.id) == {}
-    # Die andere Welt behält ihre Daten.
+    # The other world keeps its data.
     assert store.world_window(other.id) == {3: (600, 720)}
     assert store.ledger_seen(other.id) == {"Kind": 30}
 
@@ -556,7 +556,7 @@ async def test_list_worlds_carries_time_window(service: WorldService, store: Wor
     created = await service.create_world("Welt")
     assert {view.id: view for view in await service.list_worlds()}[created.id].time_window is None
 
-    # Wie ein Dienst unter der Sperre ändern: Der Listen-Cache wird dabei verworfen.
+    # Change like a service under the lock: the list cache is discarded in the process.
     with service.try_mutation() as acquired:
         assert acquired
         store.replace_world_window(created.id, {1: (600, 720)})
@@ -590,7 +590,7 @@ async def _status_of(service: WorldService, world_id: str) -> tuple[str, str]:
 async def test_external_clean_stop_shows_stopped_without_db_change(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Status kommt aus Docker: Stop von außen, desired_state bleibt running."""
+    """Status comes from Docker: stop from outside, desired_state stays running."""
     created = await service.create_world("Welt")
     fake.containers[created.id] = (created.port, "exited")
     fake.extra[created.id] = {"exit_code": 0}
@@ -623,7 +623,7 @@ async def test_oom_shows_error(service: WorldService, fake: FakeProvisioner) -> 
 async def test_stale_status_file_is_starting_fresh_is_running(
     service: WorldService, fake: FakeProvisioner, clock: Clock
 ) -> None:
-    """Pitfall 3: Eine Status-Datei aus dem letzten Lauf zählt nicht als bereit."""
+    """Pitfall 3: A status file from the last run does not count as ready."""
     created = await service.create_world("Welt")
     fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
 
@@ -762,12 +762,12 @@ async def test_running_world_shows_players_and_memory(service: WorldService, fak
 
 
 async def test_status_file_older_than_start_shows_no_players(service: WorldService, fake: FakeProvisioner) -> None:
-    """Namen aus einem früheren Lauf (Datei älter als StartedAt) erscheinen nie."""
+    """Names from an earlier run (file older than StartedAt) never appear."""
     world_id = await _running_world(service, fake, "Welt", mtime=STALE)
     view = await _view_of(service, world_id)
     assert view.status == "starting"
     assert view.players == []
-    # Der Container läuft, der RAM ist trotzdem sichtbar.
+    # The container is running, RAM is visible anyway.
     assert view.memory_used_bytes == MEM.used
 
 
@@ -978,7 +978,7 @@ async def test_api_lifecycle_round_trip(client: httpx.AsyncClient) -> None:
 async def test_world_without_container_is_recoverable_via_api(
     client: httpx.AsyncClient, fake: FakeProvisioner, suffix: str, expected_status: str
 ) -> None:
-    """Welt mit Volume, aber ohne Container: Start und Stop antworten 200, nie 404 (CR-01)."""
+    """World with volume but without container: start and stop answer 200, never 404 (CR-01)."""
     created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
     world_id = created.json()["id"]
     fake.containers.pop(world_id)
@@ -989,7 +989,7 @@ async def test_world_without_container_is_recoverable_via_api(
     assert response.json()["docker_status"] == expected_status
 
 
-# CR-01 (Phase-2-Review): Fehlen die Weltdaten, entsteht nie eine leere Welt unter altem Namen.
+# CR-01 (phase 2 review): if the world data is missing, an empty world under the old name is never created.
 
 
 @pytest.mark.parametrize("operation", ["start_world", "restart_world"])
@@ -997,7 +997,7 @@ async def test_world_without_container_is_recoverable_via_api(
 async def test_missing_volume_never_recreates_empty_world(
     service: WorldService, fake: FakeProvisioner, store: WorldStore, operation: str, stopped_first: bool
 ) -> None:
-    """Container und Volume weg (prune): kein create, die Welt wird "nur löschen"."""
+    """Container and volume gone (prune): no create, the world becomes "delete only"."""
     created = await service.create_world("Welt")
     if stopped_first:
         await service.stop_world(created.id)
@@ -1020,7 +1020,7 @@ async def test_missing_volume_never_recreates_empty_world(
 async def test_delete_only_world_refuses_start_without_touching_docker(
     service: WorldService, fake: FakeProvisioner, store: WorldStore, operation: str
 ) -> None:
-    """Auch wenn das Volume wieder auftaucht: Start ändert weder Docker noch die Zeile."""
+    """Even if the volume reappears: start changes neither Docker nor the row."""
     created = await service.create_world("Welt")
     store.update_world(created.id, op_state="failed", last_error=RECONCILE_DATA_MISSING, desired_state="stopped")
     fake.calls.clear()
@@ -1042,7 +1042,7 @@ async def test_delete_only_world_refuses_start_without_touching_docker(
 async def test_other_failed_world_stays_startable(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Gegenprobe: Ein gewöhnlicher Fehler sperrt Starten nicht."""
+    """Control: an ordinary error does not block starting."""
     created = await service.create_world("Welt")
     store.update_world(created.id, op_state="failed", last_error="Proxy weg")
     assert (await _view_of(service, created.id)).delete_only is False
@@ -1080,7 +1080,7 @@ async def test_api_delete_only_world_answers_409_and_allows_delete(
 async def test_api_interrupted_world_answers_409(
     client: httpx.AsyncClient, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """WR-05: Container existiert, Erstellen brach ab; Start und Neustart lassen ihn unberührt."""
+    """WR-05: container exists, creating aborted; start and restart leave it untouched."""
     created = await client.post("/api/worlds", json={"name": "Welt"}, headers=appapi_headers())
     world_id = created.json()["id"]
     store.update_world(world_id, op_state="failed", last_error=RECONCILE_INTERRUPTED)
@@ -1097,7 +1097,7 @@ async def test_api_interrupted_world_answers_409(
     assert world["last_error"] == RECONCILE_INTERRUPTED
 
 
-# WR-01 (Phase-2-Review): Auch Fehler außerhalb von ProvisionerError räumen das Erzeugen auf.
+# WR-01 (phase 2 review): errors outside ProvisionerError also clean up the creation.
 
 
 def _no_space(*args: object, **kwargs: object) -> WorldPayload:
@@ -1108,7 +1108,7 @@ def _no_space(*args: object, **kwargs: object) -> WorldPayload:
 async def test_payload_os_error_on_create_leaves_no_creating_row(
     service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ENOSPC beim Spoolen des Spiels: keine Zeile auf creating, Port frei, deutsche Meldung."""
+    """ENOSPC while spooling the game: no row on creating, port free, German message."""
     monkeypatch.setattr(service_module, "build_world_payload", _no_space)
 
     with pytest.raises(ProvisionerError) as raised:
@@ -1118,7 +1118,7 @@ async def test_payload_os_error_on_create_leaves_no_creating_row(
     assert isinstance(raised.value.__cause__, OSError)
     assert store.list_worlds() == []
     assert store.used_ports() == set()
-    # touched_docker war schon wahr: Aufräumen samt Volume lief.
+    # touched_docker was already true: cleanup including the volume ran.
     assert [keep for _, keep in fake.removed] == [False]
 
 
@@ -1150,7 +1150,7 @@ async def test_unexpected_error_with_failed_cleanup_marks_failed_not_creating(
 async def test_payload_os_error_on_start_saga_marks_failed(
     service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Auch die Neuerzeugung beim Start bekommt einen ProvisionerError statt eines rohen OSError."""
+    """The re-creation at start also gets a ProvisionerError instead of a raw OSError."""
     created = await service.create_world("Welt")
     await service.stop_world(created.id)
     fake.start_errors = [PortInUseError(30015)]
@@ -1162,7 +1162,7 @@ async def test_payload_os_error_on_start_saga_marks_failed(
     row = store.get_world(created.id)
     assert row is not None
     assert (row.op_state, row.last_error) == ("failed", PAYLOAD_FAILED)
-    # Nach dem Freiräumen bleibt die Welt startbar (Volume ist erhalten).
+    # After freeing space the world stays startable (volume is preserved).
     assert (await _view_of(service, created.id)).delete_only is False
 
 
@@ -1181,7 +1181,7 @@ async def test_api_create_with_payload_error_answers_german_500(
 
 @pytest.mark.usefixtures("_override")
 async def test_api_list_survives_unknown_preset(client: httpx.AsyncClient, store: WorldStore) -> None:
-    """WR-02: Eine Zeile mit unbekannter Spielart macht GET /api/worlds nicht zum 500er."""
+    """WR-02: A row with an unknown game type does not turn GET /api/worlds into a 500."""
     first = (await client.post("/api/worlds", json={"name": "Alt"}, headers=appapi_headers())).json()
     second = (await client.post("/api/worlds", json={"name": "Neu"}, headers=appapi_headers())).json()
     store.update_world(first["id"], preset="entfernt")
@@ -1195,7 +1195,7 @@ async def test_api_list_survives_unknown_preset(client: httpx.AsyncClient, store
     assert worlds[second["id"]]["status"] == "running"
 
 
-# 03-01: Mods und Zugangsdatei vor jedem Start (Nachrüsten älterer Welten).
+# 03-01: mods and access file before every start (retrofitting older worlds).
 
 EMPTY_ACCESS = render_access_file(0, {})
 
@@ -1229,7 +1229,7 @@ async def test_start_writes_files_before_start(service: WorldService, fake: Fake
 async def test_missing_container_on_write_recreates_then_writes_and_starts(
     service: WorldService, fake: FakeProvisioner
 ) -> None:
-    """WorldNotFoundError schon beim Schreiben nimmt den Neuerzeugungspfad, danach Schreiben und Start."""
+    """WorldNotFoundError already while writing takes the re-creation path, then writing and start."""
     created = await service.create_world("Welt")
     fake.containers.pop(created.id)
     fake.calls.clear()
@@ -1249,7 +1249,7 @@ async def test_payload_carries_empty_access_file(service: WorldService, payload_
     assert payload_args[0][3] == EMPTY_ACCESS
 
 
-# 04-01: Zeit-Mod und Regeldatei in jeder Welt, vor jedem Start neu geschrieben.
+# 04-01: time mod and rule file in every world, rewritten before every start.
 
 
 def _time_rules_of(archive_bytes: bytes) -> bytes:
@@ -1267,7 +1267,7 @@ def _time_rules_of(archive_bytes: bytes) -> bytes:
 def _assert_empty_rules(content: bytes) -> None:
     lines = content.decode("ascii").split("\n")
     head = lines[0].split(" ")
-    # Generation kommt jetzt aus der Datenbank (ab 04-03), nicht mehr fest 0.
+    # The generation now comes from the database (from 04-03), no longer fixed 0.
     assert head[:2] == ["gameworld-time", "1"]
     assert int(head[2]) >= 0
     assert int(head[3]) > 0
@@ -1293,7 +1293,7 @@ async def test_every_start_writes_time_mod_and_rules(service: WorldService, fake
     _assert_empty_rules(_time_rules_of(fake.written[0][1]))
 
 
-# 03-05: Spielernamen und Zugangsschutz-Status in der Weltenliste, kein Weltschlüssel in der API.
+# 03-05: player names and access protection status in the world list, no world key in the API.
 
 VERIFIER = "#1#c2FsdA==#dmVyaWZpZXI="
 
@@ -1333,7 +1333,7 @@ async def test_stale_access_state_needs_restart(service: WorldService, fake: Fak
 
 @pytest.mark.usefixtures("clock")
 async def test_access_state_only_read_when_running(service: WorldService, fake: FakeProvisioner) -> None:
-    """Gestoppt, startend oder fehlerhaft: kein Hinweis, kein Lesen der State-Datei."""
+    """Stopped, starting or faulty: no notice, no reading of the state file."""
     starting = await _running_world(service, fake, "Startend", mtime=STALE)
     stopped = await _running_world(service, fake, "Gestoppt")
     await service.stop_world(stopped)
@@ -1409,7 +1409,7 @@ async def test_api_create_has_no_world_key_but_new_fields(client: httpx.AsyncCli
     assert "world_key" not in listing
 
 
-# 04-03: Zeit-Mod aus Schema 4 (Zählbuch verbuchen, Regeldatei rendern, Neustart-Hinweis)
+# 04-03: time mod from schema 4 (book ledger, render rule file, restart notice)
 
 TIME_WEEK = WeekPlan({weekday: DayRule(True, 60, None, None) for weekday in range(1, 8)})
 
@@ -1434,7 +1434,7 @@ def _tar_names(archive_bytes: bytes) -> list[str]:
 
 
 async def test_push_access_also_pushes_time_rules(service: WorldService, fake: FakeProvisioner) -> None:
-    """Einladungspfad: push_access schreibt im selben Sperrblock auch die Regeldatei (push_time)."""
+    """Invitation path: push_access also writes the rule file (push_time) in the same lock block."""
     created = await service.create_world("Welt")
     fake.written.clear()
     with service.mutation():
@@ -1459,7 +1459,7 @@ async def test_newly_invited_child_appears_in_rules_immediately(
 async def test_launch_books_ledger_before_rendering(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """_launch liest das Zählbuch vor dem Rendern (Pitfall 7) und verbucht Kinder mit Regeln."""
+    """_launch reads the ledger before rendering (pitfall 7) and books children with rules."""
     created = await service.create_world("Welt")
     _invite_players(store, created.id, "Mia")
     store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
@@ -1544,7 +1544,7 @@ async def test_tick_time_isolates_database_and_value_errors(
     stage: str,
     error: Exception,
 ) -> None:
-    """WR-06: Ein Datenbank- oder Wertfehler in Welt A setzt Welt B im selben Takt nicht aus."""
+    """WR-06: A database or value error in world A does not suspend world B in the same tick."""
     broken = await service.create_world("Kaputt")
     healthy = await service.create_world("Heil")
     _invite_players(store, healthy.id, "Mia")
@@ -1576,7 +1576,7 @@ async def test_tick_time_isolates_database_and_value_errors(
 async def test_tick_time_does_not_swallow_programming_errors(
     service: WorldService, fake: FakeProvisioner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gegenprobe: Andere Fehlertypen (Programmfehler) bleiben sichtbar und werden nicht verschluckt."""
+    """Control: other error types (programming errors) stay visible and are not swallowed."""
     await service.create_world("Welt")
 
     def broken(world_id: str) -> tuple[bytes, bool]:
@@ -1591,19 +1591,19 @@ async def test_tick_time_does_not_swallow_programming_errors(
 async def test_incomplete_ledger_is_logged_not_silent(
     service: WorldService, fake: FakeProvisioner, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """WR-03: Ein vorhandenes Zählbuch ohne Schlusszeile wird nicht still übergangen."""
+    """WR-03: An existing ledger without a closing line is not silently skipped."""
     created = await service.create_world("Welt")
     fake.ledgers[created.id] = StatusFile(FRESH, b"gameworld-time-used 1 1 0\nMia 40\n")
     with caplog.at_level("WARNING"):
         service.tick_time()
-    assert "Zählbuch unvollständig" in caplog.text
+    assert "ledger incomplete" in caplog.text
     assert "Mia" not in caplog.text
 
 
 async def test_failed_push_time_is_retried_by_next_tick(
     service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CR-01: Scheitert das Schreiben einmal, schreibt der nächste Takt die Regeldatei sicher nach."""
+    """CR-01: If writing fails once, the next tick reliably writes the rule file afterwards."""
     created = await service.create_world("Welt")
     _invite_players(store, created.id, "Mia")
     store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
@@ -1626,7 +1626,7 @@ async def test_failed_push_time_is_retried_by_next_tick(
 async def test_failed_tick_write_is_retried_by_next_tick(
     service: WorldService, fake: FakeProvisioner, store: WorldStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CR-01: Auch ein im Takt gescheitertes Schreiben holt der folgende Takt nach."""
+    """CR-01: A write that failed in the tick is also caught up by the following tick."""
     created = await service.create_world("Welt")
     _invite_players(store, created.id, "Mia")
     store.set_child_plan("nc-mia", TIME_WEEK, None, "admin", "t")
@@ -1648,7 +1648,7 @@ async def test_failed_tick_write_is_retried_by_next_tick(
     assert any(b"\nMia " in _rules_of(archive) for world_id, archive in fake.written if world_id == created.id)
     fake.written.clear()
     service.tick_time()
-    # Nach dem erfolgreichen Schreiben bleibt es beim alten Verhalten: nichts Neues zu schreiben.
+    # After the successful write it stays at the old behaviour: nothing new to write.
     assert fake.written == []
 
 
@@ -1677,7 +1677,7 @@ async def test_time_restart_needed_read_error_is_false(service: WorldService, fa
     assert (await _view_of(service, world_id)).time_restart_needed is False
 
 
-# 04.1-02: Ereignisse, Start/Stopp und Fähigkeits-Merker im Takt (kein Netz, nur SQLite)
+# 04.1-02: events, start/stop and capability markers in the tick (no network, SQLite only)
 
 
 def _events_file(mtime: str, seq: int, *lines: tuple[int, int, str, str]) -> StatusFile:
@@ -1721,7 +1721,7 @@ async def test_tick_fresh_event_file_reports_first_events(
 
     assert _outbox(store) == [(created.id, "join", "lena")]
     assert store.event_cursor(created.id) == 1
-    # Derselbe Stand im nächsten Takt: nichts doppelt.
+    # Same state in the next tick: nothing twice.
     service.tick_time()
     assert len(_outbox(store)) == 1
 
@@ -1729,7 +1729,7 @@ async def test_tick_fresh_event_file_reports_first_events(
 async def test_tick_drops_future_deny_from_manipulated_file(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """IN-10: Eine deny-Zeile mit Zukunftsdatum landet nicht in der Outbox; der Cursor rückt trotzdem vor."""
+    """IN-10: A deny row with a future date does not land in the outbox; the cursor advances anyway."""
     created = await service.create_world("Welt")
     now = int(time.time())
     fake.events[created.id] = _events_file(
@@ -1777,7 +1777,7 @@ async def test_tick_reports_start_and_stop_from_docker_state(
 ) -> None:
     created = await service.create_world("Welt")
     service.tick_time()
-    # Erste Beobachtung verankert nur.
+    # The first observation only anchors.
     assert _outbox(store) == []
     assert store.run_state(created.id) is True
 
@@ -1791,7 +1791,7 @@ async def test_tick_reports_start_and_stop_from_docker_state(
     service.tick_time()
     assert _outbox(store) == [(created.id, "stop", ""), (created.id, "start", "")]
 
-    # Neustart zwischen zwei Takten: gewollt ruhig, keine Meldung.
+    # Restart between two ticks: deliberately quiet, no report.
     await service.restart_world(created.id)
     service.tick_time()
     assert len(_outbox(store)) == 2
@@ -1874,7 +1874,7 @@ async def test_api_world_carries_events_restart_needed(client: httpx.AsyncClient
     assert "events_restart_needed" in listing
 
 
-# Phase 5 (05-04): Busy-Zustände sperren Elternaktionen, ohne Pause und Takt zu blockieren.
+# Phase 5 (05-04): busy states block parent actions, without blocking pause and tick.
 
 BUSY_STATES = ["backing_up", "restoring", "restoring_swap"]
 
@@ -1908,7 +1908,7 @@ async def test_busy_world_refuses_parent_actions(
 async def test_delete_refused_while_job_runs_in_upload_phase(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Upload-Phase: op_state ist wieder ready, der Job steht noch auf running (T-05-45)."""
+    """Upload phase: op_state is ready again, the job is still running (T-05-45)."""
     created = await service.create_world("Welt")
     _job(store, created.id, "running")
     fake.calls.clear()
@@ -1989,7 +1989,7 @@ def _pause_now(current: PauseState | None, now: int) -> PauseState:
 async def test_pause_writes_rules_but_never_restarts_busy_world(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Alter Mod (keine Ereignisdatei) würde neu starten; busy Welten bekommen nur die Regeldatei."""
+    """An old mod (no event file) would restart; busy worlds get only the rule file."""
     busy = await _running_world(service, fake, "Busy")
     ready = await _running_world(service, fake, "Bereit")
     store.update_world(busy, op_state="backing_up")
@@ -2000,7 +2000,7 @@ async def test_pause_writes_rules_but_never_restarts_busy_world(
     assert f"stop:{busy}" not in fake.calls
     assert f"start:{busy}" not in fake.calls
     assert f"files:{busy}" in fake.calls
-    # Gegenprobe: Die bereite Welt mit altem Mod startet neu.
+    # Control: the ready world with an old mod restarts.
     assert f"stop:{ready}" in fake.calls
     by_id = {world.world_id: world for world in result.worlds}
     assert (by_id[busy].applied, by_id[busy].restarted) == (True, False)
@@ -2071,7 +2071,7 @@ async def test_list_carries_backup_job(
         "2026-10-23T10:01:00+00:00",
     )
 
-    # Auch ohne Docker bleibt der Fehler sichtbar (D-11).
+    # Even without Docker the error stays visible (D-11).
     fake.list_error = DockerUnavailableError("Proxy weg")
     clock.advance(LIST_CACHE_SECONDS)
     unknown = await _view_of(service, created.id)
@@ -2098,11 +2098,11 @@ async def test_api_world_carries_backup_job(client: httpx.AsyncClient, store: Wo
     }
 
 
-# 05-04 Task 3: kurze Offline-Abschnitte, die der Hintergrund-Job aneinanderreiht.
+# 05-04 task 3: short offline sections that the background job strings together.
 
 
 def _rules_written(fake: FakeProvisioner, world_id: str) -> list[bytes]:
-    """Regeldateien aus allen Tars, die an diese Welt gingen, in Schreibreihenfolge."""
+    """Rule files from all tars that went to this world, in write order."""
     result: list[bytes] = []
     for target, archive in fake.written:
         if target != world_id:
@@ -2168,7 +2168,7 @@ async def test_begin_offline_allows_only_one_job_at_a_time(service: WorldService
 
 
 async def test_begin_offline_refuses_while_job_uploads(service: WorldService, store: WorldStore) -> None:
-    """Upload-Phase einer anderen Welt (op_state ready, Job running) sperrt ebenfalls."""
+    """Upload phase of another world (op_state ready, job running) blocks as well."""
     first = await service.create_world("Erste")
     second = await service.create_world("Zweite")
     _job(store, first.id, "running")
@@ -2203,13 +2203,13 @@ async def test_begin_offline_rejects_non_busy_state(service: WorldService) -> No
 async def test_players_online_reads_status_file_while_busy(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """D-09, T-05-46: Auch im Busy-Zustand zählt die Status-Datei, sonst fehlte der Chat-Hinweis."""
+    """D-09, T-05-46: The status file also counts in the busy state, otherwise the chat notice would be missing."""
     world_id = await _running_world(service, fake, "Welt")
     service.begin_offline(world_id, "backing_up")
 
     assert service.players_online(world_id) == 2
 
-    # Die Ansicht bleibt bei Busy-Zuständen ohne Spieler (Task 2).
+    # The view stays without players in busy states (task 2).
     view = await _view_of(service, world_id)
     assert view.players == []
     assert view.status == "backing_up"
@@ -2287,7 +2287,7 @@ async def test_stop_for_snapshot_stops_without_booking(
     assert row is not None
     assert (row.op_state, row.desired_state) == ("backing_up", "running")
 
-    # Fehlender Container ist kein Fehler.
+    # A missing container is no error.
     fake.containers.pop(created.id)
     service.stop_for_snapshot(created.id)
 
@@ -2332,7 +2332,7 @@ async def test_end_offline_keeps_stopped_world_stopped(
 async def test_end_offline_reports_launch_failure_without_raising(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Pitfall 7: Der Zustand kehrt immer auf ready oder failed zurück."""
+    """Pitfall 7: The state always returns to ready or failed."""
     created = await service.create_world("Welt")
     service.begin_offline(created.id, "backing_up")
     service.stop_for_snapshot(created.id)
@@ -2378,7 +2378,7 @@ async def test_book_ledger_is_public_entry(service: WorldService, fake: FakeProv
 async def test_offline_sections_hold_lock_only_briefly(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """T-05-16: Zwischen stop_for_snapshot und end_offline läuft eine Pause ohne Warten durch."""
+    """T-05-16: Between stop_for_snapshot and end_offline a pause runs through without waiting."""
     world_id = await _running_world(service, fake, "Welt")
     stopped = threading.Event()
     release = threading.Event()
@@ -2434,11 +2434,11 @@ async def test_fake_snapshot_streams_chunks_and_refuses_running(fake: FakeProvis
     assert fake.calls[-1] == "put_archive:w"
 
 
-# 05-06 Task 1: Tausch über frisches Volume (restore_swap, D-06, T-05-32, T-05-33, T-05-50)
+# 05-06 task 1: swap over a fresh volume (restore_swap, D-06, T-05-32, T-05-33, T-05-50)
 
 
 def _record_creates(fake: FakeProvisioner) -> None:
-    """Schreibt jedes create_world_container zusätzlich als "create:<id>" in calls."""
+    """Additionally writes every create_world_container as "create:<id>" into calls."""
     original = fake.create_world_container
 
     def recording(world_id: str, host_port: int, payload: bytes, *, reuse_volume: bool = False) -> str:
@@ -2453,7 +2453,7 @@ def _halt_lines(data: bytes) -> list[str]:
 
 
 async def _swap_ready(service: WorldService, fake: FakeProvisioner, name: str = "Welt") -> OfflineTicket:
-    """Welt im Zustand restoring, gestoppt, Aufrufprotokoll geleert."""
+    """World in state restoring, stopped, call log cleared."""
     world_id = await _running_world(service, fake, name)
     ticket = service.begin_offline(world_id, "restoring", allow_failed=True)
     service.stop_for_snapshot(world_id)
@@ -2466,7 +2466,7 @@ async def _swap_ready(service: WorldService, fake: FakeProvisioner, name: str = 
 async def test_mark_swap_persists_before_remove(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """T-05-33: Beim remove steht restoring_swap schon in der Datenbank (Boot-Abgleich, Plan 04)."""
+    """T-05-33: On remove, restoring_swap is already in the database (boot reconciliation, plan 04)."""
     ticket = await _swap_ready(service, fake)
     world_id = ticket.world_id
     seen: list[str] = []
@@ -2496,7 +2496,7 @@ async def test_restore_swap_rebuilds_on_fresh_volume_in_order(
     assert before is not None
     _record_creates(fake)
     restore = io.BytesIO(b"restore-tar")
-    restore.read()  # Position am Ende: restore_swap muss selbst zurückspulen.
+    restore.read()  # Position at the end: restore_swap must rewind itself.
 
     service.mark_swap(world_id)
     service.restore_swap(world_id, restore, b"zaehlbuch")
@@ -2508,7 +2508,7 @@ async def test_restore_swap_rebuilds_on_fresh_volume_in_order(
     start = fake.calls.index(f"start:{world_id}")
     assert len(puts) == 2
     assert remove < create < puts[0] < puts[1] < start
-    # Frisches Volume (T-05-32): Ein heißes Journal der kaputten Welt überlebt nicht.
+    # Fresh volume (T-05-32): a hot journal of the broken world does not survive.
     assert fake.removed[-1] == (world_id, False)
     assert fake.created[-1] == (world_id, before.port, False)
     assert fake.put_archives[0] == (world_id, b"restore-tar")
@@ -2532,12 +2532,12 @@ async def test_restore_swap_without_ledger_puts_only_world(service: WorldService
 async def test_restore_swap_renders_rules_without_halt(
     service: WorldService, fake: FakeProvisioner, payload_args: list[tuple[object, ...]]
 ) -> None:
-    """T-05-50: Die frisch angelegte Welt bekommt eine Regeldatei ohne @halt."""
+    """T-05-50: The freshly created world gets a rule file without @halt."""
     ticket = await _swap_ready(service, fake)
     world_id = ticket.world_id
     service.time.set_halt(world_id, int(time.time()) + HALT_LEAD_SECONDS)
     data, _changed = service.time.render(world_id)
-    assert _halt_lines(data)  # Positivkontrolle: Ohne clear_halt stünde der Halt drin.
+    assert _halt_lines(data)  # Positive control: without clear_halt the halt would be in it.
     payload_args.clear()
 
     service.mark_swap(world_id)
@@ -2565,7 +2565,7 @@ async def test_restore_swap_resets_event_cursor(
 async def test_restore_swap_tolerates_missing_container(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """D-15: Eine kaputte Welt ohne Container lässt sich trotzdem neu aufbauen."""
+    """D-15: A broken world without a container can still be rebuilt."""
     created = await service.create_world("Kaputt")
     store.update_world(created.id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
     fake.containers.pop(created.id)
@@ -2630,7 +2630,7 @@ async def test_finish_swap_reports_launch_failure_without_raising(
 
 
 async def test_restore_swap_runs_without_lock(service: WorldService, fake: FakeProvisioner, store: WorldStore) -> None:
-    """Pitfall 3: Während der Docker-Schritte des Tauschs läuft eine Pause ohne Warten durch."""
+    """Pitfall 3: During the Docker steps of the swap a pause runs through without waiting."""
     ticket = await _swap_ready(service, fake)
     world_id = ticket.world_id
     inside = threading.Event()
@@ -2692,7 +2692,7 @@ async def test_mark_restore_interrupted_is_repeatable_failed_without_halt(
 async def test_abort_offline_restores_failed_world_without_halt(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Abbruch vor der Zerstörung: Eine kaputte Welt bleibt kaputt, kein Docker-Stopp, kein Halt."""
+    """Abort before the destruction: a broken world stays broken, no Docker stop, no halt."""
     world_id = await _running_world(service, fake, "Welt")
     store.update_world(world_id, op_state="failed", last_error=RECONCILE_DATA_MISSING)
     ticket = service.begin_offline(world_id, "restoring", allow_failed=True)
@@ -2709,11 +2709,11 @@ async def test_abort_offline_restores_failed_world_without_halt(
     assert _halt_lines(data) == []
 
 
-# Aufräumen beim Deaktivieren (06-08, D-17 Option A)
+# Cleanup on deactivation (06-08, D-17 option A)
 
 
 async def _three_worlds(service: WorldService) -> tuple[str, str, str]:
-    """Zwei laufende Welten und eine gestoppte."""
+    """Two running worlds and one stopped."""
     first = await service.create_world("Eins")
     second = await service.create_world("Zwei")
     third = await service.create_world("Drei")
@@ -2733,10 +2733,10 @@ async def test_teardown_all_removes_every_container_and_keeps_volumes(
     assert fake.containers == {}
     assert sorted(fake.removed[-3:]) == sorted([(first, True), (second, True), (third, True)])
     assert all(keep for _world, keep in fake.removed[-3:])
-    # Nur laufende Welten werden gestoppt, mit kurzem Timeout (P-07).
+    # Only running worlds are stopped, with a short timeout (P-07).
     assert sorted(fake.stopped) == sorted([first, second])
     assert fake.stop_timeouts[-2:] == [service_module.TEARDOWN_STOP_TIMEOUT] * 2
-    # Soll-Zustand und Zeilen bleiben unverändert (Boot-Abgleich baut daraus neu).
+    # Desired state and rows stay unchanged (the boot reconciliation rebuilds from them).
     assert {row.id: row.desired_state for row in store.list_worlds()} == desired_before
     assert desired_before == {first: "running", second: "running", third: "stopped"}
 
@@ -2744,7 +2744,7 @@ async def test_teardown_all_removes_every_container_and_keeps_volumes(
 async def test_teardown_error_of_one_world_does_not_stop_the_others(
     service: WorldService, fake: FakeProvisioner, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Fehler einer Welt stoppt die anderen nicht; gezählt, nie nach außen geworfen."""
+    """An error of one world does not stop the others; counted, never raised outwards."""
     first, second, third = await _three_worlds(service)
     fake.stop_errors[first] = ProvisionerError("Docker hat den Stopp abgelehnt: geheim-intern")
 
@@ -2753,7 +2753,7 @@ async def test_teardown_error_of_one_world_does_not_stop_the_others(
     assert errors == 1
     assert second not in fake.containers
     assert third not in fake.containers
-    # Entfernen wird auch nach gescheitertem Stopp versucht (force beendet den Prozess).
+    # Removal is attempted even after a failed stop (force ends the process).
     assert (first, True) in fake.removed
     assert "geheim-intern" not in caplog.text
     assert "ProvisionerError" in caplog.text
@@ -2776,7 +2776,7 @@ async def test_teardown_runs_worlds_in_parallel(service: WorldService, fake: Fak
     elapsed = time.monotonic() - began
 
     assert fake.containers == {}
-    # Seriell wären es mindestens 1,6 s.
+    # Serially it would take at least 1.6 s.
     assert elapsed < 1.2
 
 
@@ -2798,7 +2798,7 @@ async def test_teardown_deadline_counts_hanging_worlds(
 async def test_teardown_proceeds_without_lock(
     service: WorldService, fake: FakeProvisioner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Hängt eine Elternaktion, räumt teardown_all nach kurzer Wartezeit trotzdem auf."""
+    """If a parent action hangs, teardown_all cleans up after a short wait anyway."""
     await service.create_world("Welt")
     monkeypatch.setattr(service_module, "TEARDOWN_LOCK_WAIT", 0.05)
     assert service_module._LOCK.acquire(blocking=False)
@@ -2812,7 +2812,7 @@ async def test_teardown_proceeds_without_lock(
 async def test_boot_reconcile_rebuilds_after_teardown(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Boot-Abgleich baut nach teardown neu: Container fehlt, Volume da, Soll running -> RECREATE."""
+    """Boot reconciliation rebuilds after teardown: container missing, volume there, desired running -> RECREATE."""
     first, second, third = await _three_worlds(service)
     assert await service.teardown() == 0
     fake.created.clear()
@@ -2823,7 +2823,7 @@ async def test_boot_reconcile_rebuilds_after_teardown(
     assert rebuilt == {first, second}
     assert fake.containers[first][1] == "running"
     assert fake.containers[second][1] == "running"
-    # Gestoppt gewünschte Welt bleibt ohne Container, bis die Eltern sie starten.
+    # A world desired stopped stays without a container until the parents start it.
     assert third not in fake.containers
     for world_id in (first, second, third):
         row = store.get_world(world_id)
