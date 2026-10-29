@@ -48,3 +48,18 @@
 ### 06-26: Lua-Syntaxtest nicht gegen echtes Docker gelaufen
 
 - Docker Desktop startet auf diesem Rechner derzeit nicht ("Docker Desktop is unable to start", Daemon-Pipe fehlt, Dev-Proxy tcp://127.0.0.1:23750 nicht erreichbar). `tests/e2e/test_mod_syntax_e2e.py` (8 Tests) ist angelegt, ruff/pyright grün, wird ohne Proxy übersprungen. Nachholen, sobald Docker läuft: `uv run pytest -m docker -q tests/e2e/test_mod_syntax_e2e.py tests/e2e/test_play_proxy_e2e.py tests/e2e/test_play_srp_e2e.py` und ggf. test_time_mod_e2e.py/test_access_e2e.py. Ob das gepinnte Luanti-Image einen Lua-Compiler mitbringt (luac, luac5.1, luajit), ist damit offen; ohne Compiler überspringt der Test mit Begründung und die bestehenden Welt-Start-e2e-Tests sind der Ersatz.
+
+### 06-27: Lua-Syntaxtest gegen echtes Docker nachgeholt (Ergebnis)
+
+- Docker läuft wieder (Engine 29.5.2). `uv run pytest -m docker -q tests/e2e/test_mod_syntax_e2e.py tests/e2e/test_play_proxy_e2e.py tests/e2e/test_play_srp_e2e.py`: 7 bestanden, 8 übersprungen. Die 8 Syntaxtests springen mit Begründung an, weil das gepinnte Luanti-Image keinen Lua-Compiler (luac, luac5.1, luajit) mitbringt. Der Ersatz läuft: `tests/e2e/test_time_mod_e2e.py` und `tests/e2e/test_access_e2e.py` (Welt-Start parst init.lua): 5 bestanden. Offen bleibt nur, ob ein Image mit Lua-Compiler den Syntaxtest scharf schalten soll (derzeit nie aktiv).
+
+### 06-27: Bundle ist nicht byte-gleich, js/ liegt nicht im Git
+
+- Die Planannahme "sha256 von js/gameworld-main.js vorher gleich nachher" und `git diff BASE -- js/...` gelten nicht: `js/` steht in `.gitignore` (Bundle und Source-Map werden nie committet), und Vue leitet die scoped-CSS-Kennung (`data-v-xxxxxxxx`) im Produktionsbuild aus Pfad plus Quelltext der .vue-Datei ab. Jede Kommentaränderung in einer SFC ändert damit die Kennung dieser Komponente. Dazu vergibt der Minifier an 108 Stellen andere Kurznamen. Ergebnis und Beleg: siehe 06-27-SUMMARY.md. Für künftige Passes: Beleg als Token-Vergleich mit Normalisierung dieser beiden Größen führen, nicht als Hash.
+- Zeilenenden: Die Arbeitskopie von frontend/ hatte gemischte Zeilenenden (65 Dateien LF, 3 CRLF, 1 gemischt) bei `core.autocrlf=true`. Ein `git checkout` auf frontend/ stellt alles auf CRLF um und ändert damit den Quelltext-Hash der SFCs (und das Bundle). Für Bundle-Vergleiche nie per Checkout auf den Basisstand zurück.
+
+### 06-27: Stellen, die NC 32 nennen und bewusst nicht angefasst wurden
+
+- `.planning/REQUIREMENTS.md` Zeile 56: PLATT-01 "Ziel NC 32+". Planungsdokument des Owners, nach dem Minimum-Wechsel auf 33 inhaltlich veraltet; Anpassung auf Zuruf.
+- `CLAUDE.md` (Zeilen 28, 59, 76, 96, 104): "NC 32+" sind Aussagen über HaRP (empfohlener Deploy-Weg, DSP-Entfernung NC 35), kein Gameworld-Minimum.
+- `.dev/info-harp.xml`: von `scripts/dev/harp-install.sh` erzeugte, ignorierte Kopie der info.xml; wird beim nächsten Lauf neu erzeugt.

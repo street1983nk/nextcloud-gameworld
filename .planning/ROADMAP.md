@@ -407,7 +407,7 @@ Plans:
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 06-27-PLAN.md , Kommentare Englisch (D-26) Teil 3: Frontend, Skripte, Compose, Dockerfile, Workflows, pyproject/.gitattributes/.dockerignore, webplay, info.xml-Kommentare, vendor-README, repo-weite Abschluss-Suche
+- [x] 06-27-PLAN.md , Kommentare Englisch (D-26) Teil 3: Frontend, Skripte, Compose, Dockerfile, Workflows, pyproject/.gitattributes/.dockerignore, webplay, info.xml-Kommentare, vendor-README, repo-weite Abschluss-Suche
 
 **Wave 15** *(blocked on Wave 14 completion)*
 
@@ -439,4 +439,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
 | 5. Backup und Restore | 9/9 | Complete   | 2026-10-24 |
-| 6. Store-Release | 23/28 | In Progress|  |
+| 6. Store-Release | 24/28 | In Progress|  |
