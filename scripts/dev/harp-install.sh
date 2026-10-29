@@ -1,34 +1,34 @@
 #!/bin/sh
-# Installiert Gameworld über einen echten HaRP-Daemon aus einer lokalen Registry
-# in eine eigene Test-Nextcloud (Plan 06-12, 06-RESEARCH 5.2 und 9). Das ist der
-# Weg einer Store-Installation ohne Archiv-Download und Signaturprüfung: AppAPI
-# liest eine info.xml, HaRP zieht das Image und legt den ExApp-Container an.
-# Kein Push nach ghcr.io, kein Zertifikat nötig.
+# Installs Gameworld through a real HaRP daemon from a local registry
+# into a separate test Nextcloud (plan 06-12, 06-RESEARCH 5.2 and 9). This is the
+# path of a store installation without archive download and signature check: AppAPI
+# reads an info.xml, HaRP pulls the image and creates the ExApp container.
+# No push to ghcr.io, no certificate needed.
 #
-#   sh scripts/dev/harp-install.sh              installieren (idempotent)
-#   sh scripts/dev/harp-install.sh --uninstall  Registrierung, Daemon und den
-#                                               ganzen Test-Stack samt Volumes entfernen
+#   sh scripts/dev/harp-install.sh              install (idempotent)
+#   sh scripts/dev/harp-install.sh --uninstall  remove registration, daemon and the
+#                                               whole test stack including volumes
 #
-# Die Test-Instanz (harp.compose.yaml) ist vom Dev-Stack getrennt: eigene
-# Nextcloud, eigener Docker-Proxy, eigenes Netz. Die Dev-Nextcloud auf 8091, ihre
-# manual_install-Registrierung und ihre Welten fasst dieses Skript nie an.
+# The test instance (harp.compose.yaml) is separate from the dev stack: own
+# Nextcloud, own Docker proxy, own network. This script never touches the dev Nextcloud on 8091,
+# its manual_install registration and its worlds.
 #
-# Ablauf: Schlüssel in .dev/harp.key (gitignored, nie im Repository), Stack
-# starten, Test-Nextcloud vorbereiten (app_api, Talk), Image bauen und nach
-# localhost:5000 schieben, eine KOPIE der info.xml mit registry localhost:5000
-# nach .dev/info-harp.xml (das Original bleibt unverändert, T-06-55), beide
-# Richtungen der Front prüfen, Daemon harp_dev neu registrieren (idempotent:
-# vorhandene Registrierung und Daemon gleichen Namens zuerst entfernen), App per
-# --info-xml registrieren, ExApp-Container auf uid 10001 prüfen.
+# Sequence: key in .dev/harp.key (gitignored, never in the repository), start
+# the stack, prepare the test Nextcloud (app_api, Talk), build the image and push it to
+# localhost:5000, a COPY of info.xml with registry localhost:5000
+# to .dev/info-harp.xml (the original stays unchanged, T-06-55), check both
+# directions of the front, re-register the daemon harp_dev (idempotent:
+# first remove an existing registration and daemon of the same name), register the app via
+# --info-xml, check the ExApp container for uid 10001.
 #
-# Läuft unter Git Bash: Containerpfade brauchen MSYS_NO_PATHCONV=1.
+# Runs under Git Bash: container paths need MSYS_NO_PATHCONV=1.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)
 HARP_COMPOSE="${SCRIPT_DIR}/harp.compose.yaml"
-# Unten gilt MSYS_NO_PATHCONV=1 (Git Bash); docker compose bekommt die Datei darum
-# als Windows-Pfad, sonst findet es /c/... nicht. Ohne cygpath (Linux) bleibt er.
+# Below, MSYS_NO_PATHCONV=1 applies (Git Bash); docker compose therefore gets the file
+# as a Windows path, otherwise it does not find /c/... Without cygpath (Linux) it stays.
 if command -v cygpath >/dev/null 2>&1; then
 	HARP_COMPOSE=$(cygpath -m "${HARP_COMPOSE}")
 fi
@@ -45,7 +45,7 @@ FRONT_URL=http://127.0.0.1:${GAMEWORLD_HARP_PORT:-8093}
 REGISTRY=localhost:5000
 IMAGE_NAME=street1983nk/gameworld
 EXAPP_CONTAINER=nc_app_gameworld
-# Der gescopte Proxy der Test-Instanz unter seinem Dienstnamen im Compose-Netz.
+# The scoped proxy of the test instance under its service name in the Compose network.
 DOCKER_URL=tcp://gameworld-docker-proxy:2375
 
 MSYS_NO_PATHCONV=1
@@ -75,7 +75,7 @@ occ() {
 	harp_compose exec -T -u www-data "${NC_SERVICE}" php occ "$@"
 }
 
-# in_nc URL [curl-Optionen] -> HTTP-Code eines Abrufs aus dem Nextcloud-Container
+# in_nc URL [curl options] -> HTTP code of a request from inside the Nextcloud container
 in_nc() {
 	url=$1
 	shift
@@ -141,9 +141,9 @@ until curl -sf "${FRONT_URL}/status.php" 2>/dev/null | grep -q '"installed":true
 done
 
 occ app:enable app_api >/dev/null
-# Der Einrichtungsassistent legt sich sonst über jede Seite (Muster register-exapp.sh).
+# The setup wizard would otherwise cover every page (pattern register-exapp.sh).
 occ app:disable firstrunwizard >/dev/null 2>&1 || true
-# Talk für Kriterium 7 (wie docs/dev-setup.md "Talk im Dev-Stack", braucht beim ersten Mal Internet).
+# Talk for criterion 7 (as in docs/dev-setup.md "Talk im Dev-Stack", needs internet the first time).
 if ! occ app:list --output=json 2>/dev/null | grep -q '"spreed"'; then
 	say "installiere Talk (spreed) in der Test-Nextcloud"
 	occ app:install spreed >/dev/null 2>&1 || true
@@ -166,7 +166,7 @@ docker build -t "${LOCAL_IMAGE}" "${BUILD_CONTEXT}"
 say "schiebe ${LOCAL_IMAGE} in die lokale Registry"
 docker push "${LOCAL_IMAGE}"
 
-# Nur die Kopie umschreiben; das Original bleibt, wie es in den Store geht.
+# Rewrite the copy only; the original stays as it goes into the store.
 sed -e "s|<registry>ghcr.io</registry>|<registry>${REGISTRY}</registry>|" "${INFO_XML}" >"${INFO_COPY}"
 grep -q "<registry>${REGISTRY}</registry>" "${INFO_COPY}" || die "die Kopie der info.xml nennt die lokale Registry nicht"
 grep -q "<image>${IMAGE_NAME}</image>" "${INFO_COPY}" || die "die Kopie der info.xml nennt das Image ${IMAGE_NAME} nicht"
@@ -177,8 +177,8 @@ fi
 harp_compose cp "${INFO_COPY_HOST}" "${NC_SERVICE}:${INFO_IN_CONTAINER}"
 harp_compose exec -T "${NC_SERVICE}" chmod 0644 "${INFO_IN_CONTAINER}"
 
-# Beide Richtungen der Front prüfen, bevor etwas registriert wird (Lehre aus Findling):
-# / muss die Instanz erreichen, /exapps/ die Docker-Engine von HaRP.
+# Check both directions of the front before anything is registered (lesson from Findling):
+# / must reach the instance, /exapps/ the Docker engine of HaRP.
 CODE=$(in_nc http://harp-front/status.php)
 [ "${CODE}" = 200 ] || die "die Front reicht / nicht an die Test-Nextcloud weiter (status.php ${CODE})"
 i=0

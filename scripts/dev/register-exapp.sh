@@ -1,22 +1,22 @@
 #!/bin/sh
-# Startet die Gameworld-ExApp als Host-Prozess und registriert sie in der
-# Dev-Nextcloud (compose-Projekt gameworld-dev, Port 8091).
+# Starts the Gameworld ExApp as a host process and registers it in the
+# dev Nextcloud (compose project gameworld-dev, port 8091).
 #
-# Ein Befehl vom laufenden Compose-Stack zur registrierten, aktivierten ExApp.
-# Vorlage ist das Registrierungsskript von Findling; Struktur und Idempotenz sind
-# übernommen, nur IDs, Ports und Pfade sind getauscht.
+# One command from the running Compose stack to the registered, enabled ExApp.
+# The template is the registration script of Findling; structure and idempotence are
+# taken over, only IDs, ports and paths are swapped.
 #
-# Idempotenz mit einer bewussten Ausnahme: Eine bestehende Registrierung wird
-# zuerst entfernt. Ein Backend, das schon auf seinen Heartbeat antwortet, läuft
-# mit dem Secret aus .dev/exapp.secret weiter, solange es zu den Quellen passt.
-# Ein Prozess mit anderer Version, mit fehlender Route oder mit älterem Code als
-# src/ wird gestoppt und neu gestartet, mit einer Zeile, die den Grund nennt.
-# Ohne diese Prüfung antwortet ein alter Prozess nach einem Plan mit neuer Route
-# mit 404, und das sieht aus wie ein Fehler in Nextcloud.
+# Idempotence with one deliberate exception: an existing registration is removed
+# first. A backend that already answers its heartbeat keeps running
+# with the secret from .dev/exapp.secret as long as it matches the sources.
+# A process with another version, with a missing route or with older code than
+# src/ is stopped and restarted, with one line that names the reason.
+# Without this check an old process answers 404 after a plan with a new route,
+# and that looks like a bug in Nextcloud.
 #
-# .dev/ ist gitignored, kein Secret eines lokalen Laufs gelangt ins Repository.
-# Alles, was Nextcloud betrifft, läuft über den Container (occ per compose exec),
-# auf dem Entwicklungsrechner gibt es kein PHP.
+# .dev/ is gitignored, no secret of a local run reaches the repository.
+# Everything concerning Nextcloud runs through the container (occ via compose exec),
+# there is no PHP on the development machine.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -27,29 +27,29 @@ BACKEND_ID=gameworld
 DAEMON_NAME=manual_install
 BACKEND_PORT=10040
 NEXTCLOUD_URL=http://localhost:${GAMEWORLD_NC_PORT:-8091}
-# Die eine Datei, die sagt, was die ExApp ist und welche Routen sie freigibt.
-# Version und Routenliste werden unten daraus gelesen, damit nichts abweicht.
+# The one file that says what the ExApp is and which routes it exposes.
+# Version and route list are read from it below, so that nothing diverges.
 INFO_XML="${REPO_ROOT}/appinfo/info.xml"
-# Der Nextcloud-Container erreicht den Host-Prozess unter diesem Namen, nie
-# unter localhost (extra_hosts in compose.yaml).
+# The Nextcloud container reaches the host process under this name, never
+# under localhost (extra_hosts in compose.yaml).
 HOST_FROM_CONTAINER=host.docker.internal
 RUN_DIR="${REPO_ROOT}/.dev"
 LOG_FILE="${RUN_DIR}/exapp.log"
-# Logs früherer Backends: Jeder Start legt das alte exapp.log hier ab, statt es zu
-# überschreiben. Sonst ist nach einem ungeplanten Ende (Abnahme mit mehreren
-# Neustarts) genau das Log weg, das den Grund zeigt. Die neuesten LOG_KEEP bleiben.
+# Logs of earlier backends: each start puts the old exapp.log here instead of
+# overwriting it. Otherwise, after an unplanned end (acceptance with several
+# restarts), exactly the log that shows the reason is gone. The newest LOG_KEEP stay.
 LOG_DIR="${RUN_DIR}/logs"
 LOG_KEEP=20
 PID_FILE="${RUN_DIR}/exapp.pid"
 SECRET_FILE="${RUN_DIR}/exapp.secret"
 VERSION_FILE="${RUN_DIR}/exapp.version"
-# Version und Routen-Prüfsumme der letzten erfolgreichen Registrierung.
+# Version and route checksum of the last successful registration.
 REGISTRATION_FILE="${RUN_DIR}/exapp.registered"
-# 0.0.0.0, weil Docker Desktop den Host über eine eigene Bridge-Adresse
-# erreicht. Das Secret schützt den Port; mit GAMEWORLD_APP_HOST lässt sich die
-# Bindung auf diese Bridge-Adresse einengen.
+# 0.0.0.0, because Docker Desktop reaches the host through its own bridge address.
+# The secret protects the port; with GAMEWORLD_APP_HOST the binding can be
+# narrowed to this bridge address.
 BACKEND_HOST="${GAMEWORLD_APP_HOST:-0.0.0.0}"
-# Der gescopte Docker-Proxy aus compose.yaml, nur auf Loopback publiziert.
+# The scoped Docker proxy from compose.yaml, published on loopback only.
 GAMEWORLD_DOCKER_URL=tcp://127.0.0.1:23750
 GAMEWORLD_PORT_RANGE=30000-30019
 BUNDLE="${REPO_ROOT}/js/gameworld-main.js"
@@ -88,8 +88,8 @@ stop_backend() {
 		printf 'entferne die veraltete PID-Datei %s\n' "${PID_FILE}"
 	fi
 	rm -f "${PID_FILE}"
-	# uv startet python als Kindprozess; unter Windows überlebt das Kind den
-	# Elternprozess. Solange der Port noch antwortet, gilt er als belegt.
+	# uv starts python as a child process; on Windows the child survives the
+	# parent process. As long as the port still answers, it counts as occupied.
 	i=0
 	while [ "${i}" -lt 10 ]; do
 		if ! curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1; then
@@ -103,7 +103,7 @@ stop_backend() {
 	exit 1
 }
 
-# Liest die Routen aus info.xml als Zeilen "url verb level" mit AppAPI-Zahlen
+# Reads the routes from info.xml as lines "url verb level" with AppAPI numbers
 # (PUBLIC 0, USER 1, ADMIN 2).
 declared_routes() {
 	awk '
@@ -136,7 +136,7 @@ app_api_authorization() {
 	printf 'admin:%s' "$1" | base64 | tr -d '\r\n'
 }
 
-# Leer, wenn das laufende Backend zu den Quellen passt, sonst der Grund.
+# Empty if the running backend matches the sources, otherwise the reason.
 stale_reason() {
 	stale_auth=$(app_api_authorization "$1")
 	stale_version=$(cat "${VERSION_FILE}" 2>/dev/null || true)
@@ -160,14 +160,14 @@ stale_reason() {
 	fi
 }
 
-# Baut das Frontend, wenn das Bundle fehlt oder älter als frontend/src ist.
+# Builds the frontend if the bundle is missing or older than frontend/src.
 keep_previous_log() {
 	[ -s "${LOG_FILE}" ] || return 0
 	mkdir -p "${LOG_DIR}"
 	kept="${LOG_DIR}/exapp-$(date +%Y%m%d-%H%M%S)-$$.log"
 	mv "${LOG_FILE}" "${kept}"
 	printf 'Log des vorigen Backends liegt in %s\n' "${kept}"
-	# Dateinamen ohne Leerzeichen (Datum, Uhrzeit, PID), daher ist ls hier sicher.
+	# File names without spaces (date, time, PID), so ls is safe here.
 	ls -1t "${LOG_DIR}"/exapp-*.log 2>/dev/null | tail -n +$((LOG_KEEP + 1)) | while read -r old; do
 		rm -f "${old}"
 	done
@@ -229,8 +229,8 @@ printf 'registriere Version %s mit %s Routen aus appinfo/info.xml\n' "${BACKEND_
 
 mkdir -p "${RUN_DIR}"
 
-# Spieldateien hash-geprüft bereitstellen, bevor irgendetwas startet. Ein
-# Backend mit fehlenden oder beschädigten Spielen startet nie.
+# Provide game files hash-checked before anything starts. A
+# backend with missing or damaged games never starts.
 if ! sh "${REPO_ROOT}/scripts/fetch-games.sh"; then
 	printf 'Spieldateien fehlen oder sind beschädigt, siehe scripts/fetch-games.sh\n' >&2
 	exit 1
@@ -255,8 +255,8 @@ fi
 
 printf 'aktiviere app_api\n'
 nextcloud_occ app:enable app_api
-# Der Einrichtungsassistent legt sich beim ersten Login über jede Seite und
-# blockiert damit Browser-Prüfungen (Playwright); in der Dev-Nextcloud aus.
+# The setup wizard lays itself over every page at the first login and
+# thereby blocks browser checks (Playwright); off in the dev Nextcloud.
 nextcloud_occ app:disable firstrunwizard >/dev/null 2>&1 || true
 
 REUSE_BACKEND=0
@@ -283,13 +283,13 @@ else
 	stop_backend
 fi
 
-# Schutz der laufenden Welten (D-17, Plan 06-12): Das Entfernen einer aktiven
-# Registrierung ruft vorher /enabled?enabled=0 auf, und Gameworld räumt dabei
-# alle eigenen Welt-Container ab. Mit wiederverwendetem Backend gilt dessen
-# Secret noch, der Aufruf käme also an. Darum: Passt die Registrierung schon
-# (gleiche Version, gleiche Routen), bleibt sie stehen. Sonst startet das Backend
-# mit neuem Secret neu, dann weist es den Aufruf mit dem alten Secret ab (401)
-# und keine Welt wird abgeräumt.
+# Protection of the running worlds (D-17, plan 06-12): removing an active
+# registration first calls /enabled?enabled=0, and Gameworld clears away
+# all its own world containers. With a reused backend its
+# secret still applies, so the call would arrive. Therefore: if the registration already matches
+# (same version, same routes), it stays. Otherwise the backend restarts
+# with a new secret, then it rejects the call with the old secret (401)
+# and no world is cleared away.
 ROUTES_SUM=$(printf '%s' "${ROUTES_JSON}" | cksum | awk '{print $1}')
 WANT_REGISTRATION="${BACKEND_VERSION} ${ROUTES_SUM}"
 if [ "${REUSE_BACKEND}" -eq 1 ] && nextcloud_occ app_api:app:list 2>/dev/null | grep "^${BACKEND_ID} " | grep -q .; then
@@ -306,7 +306,7 @@ if [ "${REUSE_BACKEND}" -eq 1 ] && nextcloud_occ app_api:app:list 2>/dev/null | 
 fi
 
 if [ "${REUSE_BACKEND}" -eq 0 ]; then
-	# Neues Secret pro Lauf, nie ein festes im Repository (T-01-11).
+	# New secret per run, never a fixed one in the repository (T-01-11).
 	BACKEND_SECRET=$(new_secret)
 	(
 		umask 077
@@ -316,7 +316,7 @@ if [ "${REUSE_BACKEND}" -eq 0 ]; then
 	keep_previous_log
 	printf 'starte das Backend auf %s:%s, Log in %s\n' "${BACKEND_HOST}" "${BACKEND_PORT}" "${LOG_FILE}"
 	(
-		# cwd = Repo-Root: set_handlers mountet js/ und img/ relativ dazu.
+		# cwd = repo root: set_handlers mounts js/ and img/ relative to it.
 		cd "${REPO_ROOT}" || exit 1
 		APP_ID="${BACKEND_ID}"
 		APP_SECRET="${BACKEND_SECRET}"
@@ -326,8 +326,8 @@ if [ "${REUSE_BACKEND}" -eq 0 ]; then
 		APP_PERSISTENT_STORAGE="${RUN_DIR}/storage"
 		export APP_ID APP_SECRET APP_PORT APP_HOST APP_VERSION APP_PERSISTENT_STORAGE
 		export NEXTCLOUD_URL GAMEWORLD_DOCKER_URL GAMEWORLD_PORT_RANGE
-		# Ein harter Absturz (Fatal Python error, Zugriffsverletzung) schreibt so
-		# noch einen Traceback ins Log, statt den Prozess stumm verschwinden zu lassen.
+		# A hard crash (Fatal Python error, access violation) thus still writes
+		# a traceback to the log instead of letting the process vanish silently.
 		PYTHONFAULTHANDLER=1
 		export PYTHONFAULTHANDLER
 		exec uv run python -m gameworld.main
@@ -365,8 +365,8 @@ nextcloud_occ app_api:app:register "${BACKEND_ID}" "${DAEMON_NAME}" --json-info 
 	"{\"id\":\"${BACKEND_ID}\",\"name\":\"Gameworld\",\"daemon_config_name\":\"${DAEMON_NAME}\",\"version\":\"${BACKEND_VERSION}\",\"secret\":\"${BACKEND_SECRET}\",\"port\":${BACKEND_PORT},\"scopes\":[],\"system\":0,\"routes\":[${ROUTES_JSON}]}" \
 	--force-scopes --wait-finish
 
-# Die Registrierung aktiviert die App in der Regel schon; enable ist dann ein
-# harmloser zweiter Aufruf. Maßgeblich ist der Zustand in der Liste danach.
+# The registration usually enables the app already; enable is then a
+# harmless second call. The state in the list afterwards is what counts.
 nextcloud_occ app_api:app:enable "${BACKEND_ID}" >/dev/null 2>&1 || true
 if ! nextcloud_occ app_api:app:list 2>/dev/null | grep "${BACKEND_ID}" | grep -qi 'enabled'; then
 	printf 'Gameworld ist registriert, aber nicht aktiviert:\n' >&2

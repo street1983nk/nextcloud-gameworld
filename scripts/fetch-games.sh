@@ -1,20 +1,20 @@
 #!/bin/sh
-# Holt die Spiel-Zips, die wegen ihrer Größe nicht im Git liegen, nach
-# vendor/games und prüft jede Datei gegen vendor/games/SHA256SUMS.
+# Fetches the game zips that are not in Git because of their size into
+# vendor/games and checks every file against vendor/games/SHA256SUMS.
 #
-# Läuft nur beim Einrichten (scripts/dev/register-exapp.sh) und beim Image-Bau,
-# nie von Gameworld zur Laufzeit. Gameworld selbst lädt nichts von ContentDB.
+# Runs only during setup (scripts/dev/register-exapp.sh) and during the image build,
+# never by Gameworld at runtime. Gameworld itself downloads nothing from ContentDB.
 #
-# Eine Datei wird nur abgelegt, wenn ihre Prüfsumme stimmt: Der Download landet
-# zuerst in einer .part-Datei im selben Verzeichnis, wird geprüft und erst dann
-# per mv atomar an den Zielnamen gelegt. Bei Abweichung wird die .part-Datei
-# gelöscht und das Skript endet mit Exit 1.
+# A file is stored only if its checksum matches: the download first lands
+# in a .part file in the same directory, is checked and only then moved
+# atomically to the target name with mv. On a mismatch the .part file is
+# deleted and the script ends with exit 1.
 #
-# Offline-Variante: GAMEWORLD_GAME_SOURCE_DIR zeigt auf ein Verzeichnis mit
-# einer gleichnamigen Datei, die statt des Downloads übernommen wird. Die
-# Prüfsumme wird auch dann geprüft.
+# Offline variant: GAMEWORLD_GAME_SOURCE_DIR points to a directory with
+# a file of the same name, which is taken instead of the download. The
+# checksum is checked then as well.
 #
-# Idempotent: Eine vorhandene Datei mit stimmender Prüfsumme bleibt unberührt.
+# Idempotent: an existing file with a matching checksum stays untouched.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -22,8 +22,8 @@ REPO_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)
 GAMES_DIR="${REPO_ROOT}/vendor/games"
 SUMS_FILE="${GAMES_DIR}/SHA256SUMS"
 
-# Abzurufende Dateien als "Dateiname URL", eine Zeile pro Spiel.
-# VoxeLibre 0.92.4, ContentDB-Paket Wuzzy/mineclone2, Release 39534.
+# Files to fetch as "filename URL", one line per game.
+# VoxeLibre 0.92.4, ContentDB package Wuzzy/mineclone2, release 39534.
 GAMES='mineclone2-39534.zip https://cdn.content.luanti.org/uploads/3e11bd7181.zip'
 
 fail() {

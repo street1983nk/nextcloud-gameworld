@@ -6,9 +6,9 @@
 # retrieved 2026-08-15. Not rewritten on purpose: this file is the published contract
 # between HaRP and an ExApp, down to the certificate paths AppAPI mounts at install time.
 #
-# Gameworld: unveränderte Kopie aus nextcloud-mcp-connector/start.sh (dort seit 0.2.x im
-# Store gegen den echten HaRP-Daemon im Einsatz), übernommen am 24.10.2026. Alles, was
-# Gameworld vor dem Start entscheiden will, steht in entrypoint.sh.
+# Gameworld: unchanged copy from nextcloud-mcp-connector/start.sh (in use there since 0.2.x in the
+# store against the real HaRP daemon), taken over on 24.10.2026. Everything that
+# Gameworld wants to decide before the start is in entrypoint.sh.
 
 set -e
 

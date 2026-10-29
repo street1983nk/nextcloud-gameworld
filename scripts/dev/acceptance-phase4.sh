@@ -1,33 +1,33 @@
 #!/bin/sh
-# Phasenabnahme Phase 4: prüft die sechs Erfolgskriterien aus .planning/ROADMAP.md
-# (Spielzeitlimits) gegen den laufenden Dev-Stack mit echter Nextcloud und
-# laufender ExApp (Zeittakt 15 s im Lifespan, keine Fakes) und ruft am Ende die
-# Abnahme von Phase 3 als Regression (sie ruft Phase 1 und 2 selbst auf).
+# Phase acceptance phase 4: checks the six success criteria from .planning/ROADMAP.md
+# (playtime limits) against the running dev stack with a real Nextcloud and
+# running ExApp (15 s time cycle in the lifespan, no fakes) and at the end calls the
+# acceptance of phase 3 as a regression (it calls phase 1 and 2 itself).
 #
-# Bewusst unabhängig vom Implementierungsmuster: Belege kommen aus der
-# docker-CLI, aus curl gegen den AppAPI-Proxy mit echten Nextcloud-Konten, aus
-# jq, tar, grep und sqlite3 (fehlt sqlite3, liest die Python-Standardbibliothek
-# die Datei nur lesend). Einziges Python-Werkzeug des Projekts ist der
-# Session-Prober (tests/e2e/luanti_probe.py) über seine CLI. Zeit-EINGABEN
-# (Wochentag, Minute, Datum in Europe/Berlin) rechnet berlin_now per zoneinfo;
-# der Helfer bewertet nichts. Zu jeder Prüfung gibt es, wo sinnvoll, eine
-# Negativkontrolle (das Verbotene scheitert) und eine Positivkontrolle (die
-# Messmethode selbst funktioniert).
+# Deliberately independent of the implementation pattern: evidence comes from the
+# docker CLI, from curl against the AppAPI proxy with real Nextcloud accounts, from
+# jq, tar, grep and sqlite3 (if sqlite3 is missing, the Python standard library reads
+# the file read-only). The only Python tool of the project is the
+# session prober (tests/e2e/luanti_probe.py) through its CLI. Time INPUTS
+# (weekday, minute, date in Europe/Berlin) are calculated by berlin_now via zoneinfo;
+# the helper judges nothing. For every check there is, where sensible, a
+# negative control (the forbidden thing fails) and a positive control (the
+# measuring method itself works).
 #
-# Voraussetzung:
+# Prerequisite:
 #   docker compose -f scripts/dev/compose.yaml up -d
 #   sh scripts/dev/register-exapp.sh
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Spielpasswörter erscheinen nie in
-# der Ausgabe. Ein trap räumt in jedem Fall auf: Abnahme-Welt (Lösch-API,
-# Fallback docker rm -f -v), Regeln von gw-kind (DELETE), Ferien der Abnahme,
-# Zeitzone zurück auf Europe/Berlin, Wegwerfkonto gw-abnahme4, gw-kind nie in
-# admin. gw-kind selbst bleibt bestehen.
+# Exit 0 only if every check passes. Play passwords never appear in
+# the output. A trap cleans up in any case: acceptance world (delete API,
+# fallback docker rm -f -v), rules of gw-kind (DELETE), holidays of the acceptance,
+# time zone back to Europe/Berlin, throwaway account gw-abnahme4, gw-kind never in
+# admin. gw-kind itself stays.
 #
-# Phase 4 hat keine Prüfung der Phasen 1 bis 3 angepasst: Die Regression
-# erwartet weiter 84 von 84, 104 von 104 und 75 von 75.
+# Phase 4 adjusted no check of phases 1 to 3: the regression
+# still expects 84 of 84, 104 of 104 and 75 of 75.
 #
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -53,7 +53,7 @@ RULES_FILE="${WORLD_DIR}/gameworld_time.txt"
 LEDGER_FILE="${WORLD_DIR}/gameworld_time_used.txt"
 PROBE_HOST=127.0.0.1
 NAME_WORLD="Abnahme Spielzeit"
-# Weltnamen aller Abnahmen (Phase 1 bis 4); nur diese räumt der Vorlauf als Reste weg.
+# World names of all acceptances (phase 1 to 4); only these are cleared away by the pre-run as leftovers.
 ACCEPTANCE_WORLDS='["Abnahme Spielzeit","Abnahme Zugang","Abnahme A","Abnahme B","Abnahme Proxy",
 "Abnahme Kreativ","Abnahme Abenteuer","Abnahme Status","Abnahme Tot","Abnahme R1","Abnahme R2"]'
 HOLIDAY_LABEL="Abnahme Ferien"
@@ -61,18 +61,18 @@ SESSION_TIMEOUT=30
 NAME_RE='^[A-Za-z0-9_-]{1,20}$'
 PASSWORD_RE='^[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}$'
 IP_RE='([0-9]{1,3}\.){3}[0-9]{1,3}'
-# Kindertexte aus provisioner/time_mod.py und access_mod.py (Teilstrings).
+# Kid texts from provisioner/time_mod.py and access_mod.py (substrings).
 TEXT_LIMIT="Spielzeit für heute ist vorbei"
 TEXT_TAG="Heute ist kein Spieltag"
 TEXT_WELT="Diese Welt ist gerade zu"
-# Kindertexte ohne "0 Uhr" (Owner-Entscheid 21.10.2026): ganzer Tag ohne Uhrzeit.
+# Kid texts without "0 Uhr" (owner decision 21.10.2026): whole day without a clock time.
 TEXT_AGAIN_TOMORROW="Morgen kannst du wieder spielen."
 TEXT_OPEN_TOMORROW="Morgen ab 10 Uhr ist sie wieder offen."
 TEXT_DENY="nicht eingeladen"
 TEXT_WAIT="einen Moment warten"
 TEXT_WARN_1="Noch 1 Minute"
 
-# Der Prober gibt Kindertexte mit Umlauten aus; unter Windows sonst cp1252.
+# The prober prints kid texts with umlauts; on Windows otherwise cp1252.
 PYTHONUTF8=1
 PYTHONIOENCODING=utf-8
 export PYTHONUTF8 PYTHONIOENCODING
@@ -99,13 +99,13 @@ fail() {
 	printf 'FEHLGESCHLAGEN: %s\n' "$1" >&2
 }
 
-# Abbruch, wenn eine Voraussetzung fehlt und Folgeprüfungen sinnlos wären.
+# Abort if a prerequisite is missing and follow-up checks would be pointless.
 abort() {
 	printf 'ABBRUCH: %s\n' "$1" >&2
 	exit 1
 }
 
-# check BESCHREIBUNG BEDINGUNG... -> pass oder fail
+# check DESCRIPTION CONDITION... -> pass or fail
 check() {
 	description=$1
 	shift
@@ -120,11 +120,11 @@ occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
 }
 
-# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
-# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
-# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
-# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
-# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+# add_user ACCOUNT PASSWORD DISPLAYNAME -> creates the throwaway account fresh. An old account from
+# an aborted run is deleted first; occ user:add gets up to three attempts
+# (the password policy may ask an external service, which can fail
+# briefly). On every failure the occ output is in the log as a diagnosis; the password
+# goes to occ only via the environment and never appears in the output.
 add_user() {
 	occ user:delete "$1" >/dev/null 2>&1 || true
 	add_try=1
@@ -149,29 +149,29 @@ heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
 
-# So meldet AppAPI eine ExApp, auf deren Port niemand lauscht (Nextcloud antwortet dann 500).
+# This is how AppAPI reports an ExApp on whose port nobody listens (Nextcloud then answers 500).
 CONNECT_ERROR="Failed to connect to host.docker.internal port ${BACKEND_PORT}"
 
-# Zeilen des Nextcloud-Logs mit festem Text $1 (Logdatei aus der Konfiguration).
+# Lines of the Nextcloud log with fixed text $1 (log file from the configuration).
 nc_log_lines() {
 	nc_log=$(occ config:system:get logfile 2>/dev/null | tr -d '\r' || true)
 	if [ -z "${nc_log}" ]; then
 		nc_log="$(occ config:system:get datadirectory 2>/dev/null | tr -d '\r')/nextcloud.log"
 	fi
-	# MSYS_NO_PATHCONV: Git-Bash schriebe den Container-Pfad sonst in einen Windows-Pfad um;
-	# die Compose-Datei bekommt ihren Windows-Pfad deshalb selbst (cygpath).
+	# MSYS_NO_PATHCONV: Git Bash would otherwise rewrite the container path into a Windows path;
+	# the Compose file therefore gets its Windows path itself (cygpath).
 	compose_file=${COMPOSE_FILE}
 	command -v cygpath >/dev/null 2>&1 && compose_file=$(cygpath -m "${COMPOSE_FILE}")
 	MSYS_NO_PATHCONV=1 docker compose -f "${compose_file}" exec -T app grep -F -- "$1" "${nc_log}" 2>/dev/null || true
 }
 
-# Anzahl der Log-Einträge in Datei $2 mit Zeitstempel ab $1 (UTC, JJJJ-MM-TTTHH:MM:SS).
+# Number of log entries in file $2 with a timestamp from $1 on (UTC, YYYY-MM-DDTHH:MM:SS).
 entries_since() {
 	grep -o '"time":"[0-9T:-]*' "$2" 2>/dev/null | cut -c9- | awk -v s="$1" '$0 >= s' | wc -l | tr -d ' '
 }
 
-# Beendet gezielt den ExApp-Host-Prozess (PID-Datei, sonst nur der Prozess auf
-# dem Backend-Port); nie alle python.exe, damit Parallel-Sessions weiterlaufen.
+# Ends the ExApp host process in a targeted way (PID file, otherwise only the process on
+# the backend port); never all python.exe, so that parallel sessions keep running.
 kill_backend() {
 	if [ -f "${PID_FILE}" ]; then
 		kill -TERM "$(cat "${PID_FILE}")" 2>/dev/null || true
@@ -195,7 +195,7 @@ kill_backend() {
 	! heartbeat_up
 }
 
-# call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code
+# call AUTH METHOD URL OUTPUT [JSON] -> HTTP code
 call() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
@@ -205,7 +205,7 @@ call() {
 	fi
 }
 
-# http_code METHODE URL AUSGABE [JSON] als admin
+# http_code METHOD URL OUTPUT [JSON] as admin
 http_code() {
 	call "${ADMIN_AUTH}" "$@"
 }
@@ -220,7 +220,7 @@ remember_holiday() {
 	return 0
 }
 
-# Ferien der Abnahme (Bezeichnung) löschen, auch Reste früherer Läufe.
+# Delete holidays of the acceptance (label), also leftovers of earlier runs.
 remove_test_holidays() {
 	http_code GET "${API_URL}/playtime" "${WORK_DIR}/hol-clean.json" >/dev/null
 	ids=$(jq -r --arg l "${HOLIDAY_LABEL}" '.holidays[]? | select(.label == $l) | .id' \
@@ -230,7 +230,7 @@ remove_test_holidays() {
 	done
 }
 
-# Alles, was die Abnahme anlegt oder umstellt, wieder in den Ausgangszustand.
+# Everything the acceptance creates or changes, back to the initial state.
 reset_fixtures() {
 	http_code DELETE "${API_URL}/playtime/children/${KID}" /dev/null >/dev/null 2>&1 || true
 	reset_usage "${KID}"
@@ -253,7 +253,7 @@ cleanup() {
 	for world_id in ${WORLD_IDS}; do
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 			"${API_URL}/worlds/${world_id}" >/dev/null 2>&1 || true
-		# Fallback, falls die API nicht mehr antwortet: direkt über die docker-CLI.
+		# Fallback if the API no longer answers: directly through the docker CLI.
 		for container in $(docker ps -aq --filter "label=gameworld.world_id=${world_id}" 2>/dev/null); do
 			docker rm -f -v "${container}" >/dev/null 2>&1 || true
 		done
@@ -291,9 +291,9 @@ wait_status() {
 	done
 }
 
-# read_file CONTAINER PFAD ZIEL -> Inhalt per docker cp, tar-Kopf in ZIEL.list
+# read_file CONTAINER PATH TARGET -> content via docker cp, tar header in TARGET.list
 read_file() {
-	# MSYS_NO_PATHCONV: Git Bash würde den Containerpfad sonst umschreiben.
+	# MSYS_NO_PATHCONV: Git Bash would otherwise rewrite the container path.
 	MSYS_NO_PATHCONV=1 docker cp "$1:$2" - >"$3.tar" 2>/dev/null || true
 	tar -xOf "$3.tar" 2>/dev/null | tr -d '\r' >"$3" || true
 	tar -tvf "$3.tar" --numeric-owner >"$3.list" 2>/dev/null || true
@@ -303,7 +303,7 @@ player_field() {
 	jq -r --arg u "$2" ".players[]? | select(.nc_user == \$u) | .$3 // empty" "$1" 2>/dev/null || true
 }
 
-# Ein Join-Versuch oder (mit --hold) eine Sitzung über die Prober-CLI, JSON nach $1.
+# A join attempt or (with --hold) a session via the prober CLI, JSON to $1.
 probe() {
 	out=$1
 	shift
@@ -311,7 +311,7 @@ probe() {
 		>"${out}" 2>"${out}.err" || printf '{"result":"prober_error"}' >"${out}"
 }
 
-# probe_expect DATEI JQ-BEDINGUNG SEKUNDEN NAME [PW] -> 0, sobald die Bedingung gilt
+# probe_expect FILE JQ-CONDITION SECONDS NAME [PW] -> 0 as soon as the condition holds
 probe_expect() {
 	out=$1
 	condition=$2
@@ -331,7 +331,7 @@ probe_summary() {
 	jq -r '"\(.result) \(.code // "") \(.reason // "") \(.after_s // "")"' "$1" 2>/dev/null || printf 'nicht lesbar'
 }
 
-# denied_with DATEI TEXT -> Join abgelehnt und Begründung enthält TEXT
+# denied_with FILE TEXT -> join denied and the reason contains TEXT
 denied_with() {
 	[ "$(jq -r --arg t "$2" '.result == "denied" and ((.reason // "") | contains($t))' "$1" 2>/dev/null)" = true ]
 }
@@ -340,7 +340,7 @@ accepted() {
 	[ "$(jq -r '.result' "$1" 2>/dev/null)" = auth_accept ]
 }
 
-# Lesender SQL-Zugriff auf die ExApp-Datei: sqlite3, sonst die Standardbibliothek.
+# Read-only SQL access to the ExApp file: sqlite3, otherwise the standard library.
 sql() {
 	if command -v sqlite3 >/dev/null 2>&1; then
 		sqlite3 -readonly "${DB_FILE}" "$1"
@@ -356,9 +356,9 @@ for row in con.execute(sys.argv[2]):
 ' "${db_path}" "$1") 2>/dev/null | tr -d '\r'
 }
 
-# Verbrauch eines Kontos löschen (einzige schreibende SQL-Stelle der Abnahme). Seit WR-04
-# behält "Regeln entfernen" den heutigen Verbrauch (Owner-Entscheid); die Abnahme misst K5
-# aber ab null und darf an einem Tag mehrfach laufen.
+# Delete the usage of an account (the only writing SQL place of the acceptance). Since WR-04
+# "remove rules" keeps today's usage (owner decision); the acceptance measures K5
+# from zero, though, and may run several times a day.
 reset_usage() {
 	db_path=${DB_FILE}
 	command -v cygpath >/dev/null 2>&1 && db_path=$(cygpath -w "${DB_FILE}")
@@ -371,9 +371,9 @@ con.close()
 ' "${db_path}" "$1") >/dev/null 2>&1 || true
 }
 
-# Nur Zeit-EINGABEN: ISO-Wochentag heute, morgen, lokale Minute, Datum, Epoch
-# von heute 00:00 und optional von heute MINUTE (1440 = morgen 00:00), alles in
-# Europe/Berlin. TZ=... date geht hier nicht (Git-Bash ohne zoneinfo).
+# Time INPUTS only: ISO weekday today, tomorrow, local minute, date, epoch
+# of today 00:00 and optionally of today MINUTE (1440 = tomorrow 00:00), all in
+# Europe/Berlin. TZ=... date does not work here (Git Bash without zoneinfo).
 berlin_now() {
 	(cd "${WORK_DIR}" && uv run --project "${REPO_ROOT}" python -I -c '
 import sys
@@ -392,8 +392,8 @@ print(now.isoweekday(), (day + timedelta(days=1)).isoweekday(), now.hour * 60 + 
 ' "$@") 2>/dev/null | tr -d '\r'
 }
 
-# week TAGE LIMIT ANFANG ENDE -> sieben Wochentage als JSON; TAGE z. B. "3" oder
-# "1,2,3,4,5,6,7", LIMIT/ANFANG/ENDE als Zahl oder null; nicht genannte Tage aus.
+# week DAYS LIMIT START END -> seven weekdays as JSON; DAYS e.g. "3" or
+# "1,2,3,4,5,6,7", LIMIT/START/END as a number or null; days not named are off.
 week() {
 	jq -nc --arg days "$1" --argjson limit "$2" --argjson ws "$3" --argjson we "$4" '
 		($days | split(",") | map(tonumber)) as $on
@@ -403,7 +403,7 @@ week() {
 				else {weekday: $d, allowed: false} end]'
 }
 
-# set_plan NORMAL [FERIEN] -> HTTP-Code von POST /playtime/children/gw-kind
+# set_plan NORMAL [HOLIDAY] -> HTTP code of POST /playtime/children/gw-kind
 set_plan() {
 	if [ -n "${2:-}" ]; then
 		body=$(jq -nc --argjson n "$1" --argjson h "$2" '{normal: $n, holiday: $h}')
@@ -428,7 +428,7 @@ user_present() { occ user:info "$1" >/dev/null 2>&1; }
 user_absent() { ! user_present "$1"; }
 
 eq() { [ "$1" = "$2" ]; }
-# same_nonempty A B: gleich und nicht leer; ein gescheitertes Lesen (leer) besteht nie (WR-08).
+# same_nonempty A B: equal and not empty; a failed read (empty) never passes (WR-08).
 same_nonempty() { [ -n "$1" ] && [ "$1" = "$2" ]; }
 ne() { [ "$1" != "$2" ]; }
 matches() { printf '%s' "$1" | grep -Eq "$2"; }
@@ -440,7 +440,7 @@ hits_in() {
 	grep -c -a -F -- "$1" "$2" 2>/dev/null || true
 }
 
-# Voraussetzungen ---------------------------------------------------------
+# Prerequisites ---------------------------------------------------------
 for tool in docker curl jq tar grep awk uv; do
 	command -v "${tool}" >/dev/null 2>&1 || abort "Werkzeug ${tool} fehlt"
 done
@@ -457,7 +457,7 @@ occ user:info "${KID}" >/dev/null 2>&1 || abort "Konto ${KID} fehlt (legt accept
 [ -f "${DB_FILE}" ] || abort "SQLite-Datei fehlt: ${DB_FILE}"
 [ -n "$(berlin_now)" ] || abort "berlin_now liefert nichts (tzdata im venv? uv sync)"
 
-# Nahe Mitternacht bis 00:01 warten: Fenster und Tagesgrenze gehören zu heute.
+# Wait until shortly after midnight up to 00:01: window and day boundary belong to today.
 set -- $(berlin_now)
 if [ "$3" -ge 1430 ]; then
 	pause=$(((1441 - $3) * 60))
@@ -465,12 +465,12 @@ if [ "$3" -ge 1430 ]; then
 	sleep "${pause}"
 fi
 
-# Ab hier zählen AppAPI-Verbindungsfehler zur ExApp (Prüfung am Ende), UTC wie im Nextcloud-Log.
+# From here on AppAPI connection errors count against the ExApp (check at the end), UTC as in the Nextcloud log.
 RUN_START=$(date -u +%Y-%m-%dT%H:%M:%S)
 
-# Reste eines abgebrochenen früheren Laufs entfernen, auch Welten der Phasen 1 bis 3:
-# Fiel die ExApp dort aus, löscht deren Aufräumen nur Container und Volume, die Zeile
-# bleibt, und der nächste Start des Backends legt die Welt neu an.
+# Remove leftovers of an aborted earlier run, also worlds of phases 1 to 3:
+# if the ExApp failed there, its cleanup deletes only container and volume, the row
+# stays, and the next start of the backend creates the world anew.
 reset_fixtures
 http_code GET "${API_URL}/worlds" "${WORK_DIR}/pre.json" >/dev/null
 for old_id in $(jq -r --argjson names "${ACCEPTANCE_WORLDS}" \
@@ -479,8 +479,8 @@ for old_id in $(jq -r --argjson names "${ACCEPTANCE_WORLDS}" \
 	remember_world "${old_id}"
 	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
 done
-# Grundlinie: Welt-Container, die schon vor diesem Lauf da waren (andere ExApp-Instanzen,
-# Testreste anderer Sitzungen), bleiben unangetastet und zählen am Ende nicht als Rest.
+# Baseline: world containers that existed before this run (other ExApp instances,
+# test leftovers of other sessions) stay untouched and do not count as leftovers at the end.
 BASELINE_CONTAINERS=$(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null | tr '
 ' ' ')
 
@@ -528,7 +528,7 @@ printf 'Zeit-Eingaben (Europe/Berlin): Wochentag %s, morgen %s, Minute %s, Datum
 OTHER_DAYS=$(printf '1\n2\n3\n4\n5\n6\n7\n' | grep -v -x "${TODAY_WD}" | paste -sd, -)
 
 printf '\n== K1 Limit und Fenster pro Kind ==\n'
-# K1 Eltern legen pro Kind ein Tageslimit und erlaubte Uhrzeiten fest (SC 1)
+# K1 Parents set a daily limit and allowed clock times per child (SC 1)
 WINDOW_END=1140
 [ "${NOW_MIN}" -ge 1110 ] && WINDOW_END=1440
 set -- $(berlin_now "${WINDOW_END}")
@@ -563,7 +563,7 @@ check "K1 Negativkontrolle: Fensterende vor Fensteranfang HTTP 422 (ist ${CODE})
 CODE=$(set_plan "$(week "${TODAY_WD}" 60 null null | jq -c '.[0:6]')")
 check "K1 Negativkontrolle: nur 6 Wochentage HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/playtime/children/${KID}" /dev/null "{\"normal\":$(week "${TODAY_WD}" null null null)}")
-# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
+# Since 06-02 (ROLLE-03) all routes are USER; the lock sits in the backend (require_verwalter) and answers exactly 403.
 check "K1 Negativkontrolle: ${KID} setzt eigene Regeln, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 http_code GET "${API_URL}/playtime" "${WORK_DIR}/pt1b.json" >/dev/null
 check "K1 nach den Fehlversuchen gilt weiter limit 120 am heutigen Tag" \
@@ -574,7 +574,7 @@ check "K1 Positivkontrolle: mit dieser Regel ${KID} auth_accept" \
 	probe_expect "${WORK_DIR}/k1-kid.json" '.result == "auth_accept"' 10 "${KID_NAME}" "${KID_PW}"
 
 printf '\n== K2 Wochenplan ==\n'
-# K2 Wochenplan je Wochentag, Server setzt ihn ohne Neustart durch (SC 2)
+# K2 Weekly plan per weekday, the server enforces it without restart (SC 2)
 CODE=$(set_plan "$(week "${TOMORROW_WD}" null null null)")
 check "K2 Plan nur morgen (${TOMORROW_TOKEN}) erlaubt: HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 probe "${WORK_DIR}/k2-deny.json" "${KID_NAME}" "${KID_PW}"
@@ -599,7 +599,7 @@ check "K2 Negativkontrolle: dasselbe grep findet eine erfundene Voreinstellung n
 	sh -c '[ "$(grep -c -F -- "Jeden Tag 7 Stunden" "$1" || true)" = 0 ]' _ "${WORK_DIR}/bundle.js"
 
 printf '\n== K3 Ferien ==\n'
-# K3 Ferienplan je Kind, Ferienzeiträume für den Haushalt (SC 3)
+# K3 Holiday plan per child, holiday periods for the household (SC 3)
 CODE=$(set_plan "$(week "${OTHER_DAYS}" null null null)" "$(week 1,2,3,4,5,6,7 null null null)")
 check "K3 Normalplan heute aus, Ferienplan jeden Tag: HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 probe "${WORK_DIR}/k3-deny.json" "${KID_NAME}" "${KID_PW}"
@@ -631,10 +631,10 @@ http_code GET "${API_URL}/playtime" "${WORK_DIR}/pt3b.json" >/dev/null
 check "K3 Zeitzone bleibt Europe/Berlin" eq "$(jq -r '.time_zone' "${WORK_DIR}/pt3b.json" 2>/dev/null)" Europe/Berlin
 
 printf '\n== K4 Welt-Zeitfenster ==\n'
-# K4 Zeitfenster pro Welt, Verwalter immer drin, Welt läuft weiter (SC 4)
+# K4 Time window per world, managers always in, the world keeps running (SC 4)
 CODE=$(http_code DELETE "${API_URL}/playtime/children/${KID}" /dev/null)
 check "K4 Regeln von ${KID} gelöscht (Opt-in) HTTP 200 (ist ${CODE})" eq "${CODE}" 200
-# K5 misst den Verbrauch ab null (der heutige bleibt seit WR-04 beim Entfernen stehen).
+# K5 measures the usage from zero (today's usage stays on removal since WR-04).
 reset_usage "${KID}"
 WINDOW_BODY=$(jq -nc --argjson t "${TOMORROW_WD}" \
 	'{days: [range(1; 8) as $d | if $d == $t then {weekday: $d, open: true, window_start: 600, window_end: 720} else {weekday: $d, open: false} end]}')
@@ -660,12 +660,12 @@ check "K4 Positivkontrolle: ohne Fenster ${KID} auth_accept" \
 	probe_expect "${WORK_DIR}/k4-kid-ok.json" '.result == "auth_accept"' 10 "${KID_NAME}" "${KID_PW}"
 
 printf '\n== K5 Trennen mit Vorwarnung und Join-Sperre ==\n'
-# K5 Vorwarnung, Trennen am Limit, danach keine Rückkehr; ohne Regeln kein Trennen (SC 5)
-# Erstkontakt: Taucht ein Name zum ersten Mal im Zählbuch einer Welt auf, verankert
-# die ExApp nur (playtime/ledger.py, Schutz gegen Doppelzählung); die Sekunden bis
-# zum ersten Takt, höchstens etwa 20, bleiben einmalig je Kind und Welt ungezählt.
-# Damit der Messwert nicht von dieser Lage im Takt abhängt, betritt gw-kind die
-# Welt vorher einmal kurz ohne Regeln, und das Skript wartet auf die Verankerung.
+# K5 Warning, disconnect at the limit, no return afterwards; without rules no disconnect (SC 5)
+# First contact: when a name appears in the ledger of a world for the first time,
+# the ExApp only anchors it (playtime/ledger.py, protection against double counting); the seconds until
+# the first cycle, at most about 20, stay uncounted once per child and world.
+# So that the measured value does not depend on this position in the cycle, gw-kind enters the
+# world once briefly beforehand without rules, and the script waits for the anchoring.
 probe "${WORK_DIR}/k5-warm.json" "${KID_NAME}" "${KID_PW}" --hold 3 --timeout "${SESSION_TIMEOUT}"
 check "K5 Vorlauf: ${KID} ohne Regeln 3 s verbunden (held)" eq "$(jq -r '.result' "${WORK_DIR}/k5-warm.json" 2>/dev/null)" held
 SEEN=0
@@ -727,13 +727,13 @@ check "K5 Positivkontrolle: ${GUEST} ohne Regeln bleibt 170 s verbunden (result 
 	eq "$(jq -r '.result' "${WORK_DIR}/k5-guest.json" 2>/dev/null)" held
 
 printf '\n== K6 Neustart- und Rejoin-Festigkeit ==\n'
-# K6 Limit hält über Welt-Neustart, ExApp-Neustart und Rejoin (SC 6)
+# K6 The limit holds over world restart, ExApp restart and rejoin (SC 6)
 CODE=$(http_code POST "${API_URL}/worlds/${WORLD_ID}/restart" /dev/null)
 check "K6 POST restart HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 check "K6 Welt nach dem Neustart running binnen 60 s" wait_status "${WORLD_ID}" running 60
 CONTAINER=$(container_of "${WORLD_ID}")
 STARTED_RESTART=$(inspect "${CONTAINER}" '{{.State.StartedAt}}')
-# Beide Zeitpunkte müssen gelesen sein: ein leeres inspect besteht nicht (WR-08).
+# Both timestamps must have been read: an empty inspect does not pass (WR-08).
 check "K6 Welt wirklich neu gestartet (StartedAt geändert, ${STARTED} -> ${STARTED_RESTART:-leer})" sh -c \
 	'[ -n "$1" ] && [ -n "$2" ] && [ "$1" != "$2" ]' _ "${STARTED_RESTART}" "${STARTED}"
 PORT=$(docker port "${CONTAINER}" 30000/udp 2>/dev/null | head -n 1 | awk -F: '{print $NF}' | tr -d '\r')
@@ -777,11 +777,11 @@ check "K6 Positivkontrolle: dieselben greps finden eine IP und eine fremde Zeile
 	"${WORK_DIR}/ip-probe.txt" "${IP_RE}"
 
 printf 'Wiederbeitritts-Sperre: fünf Runden %s, Sitzung 2 s, Join nach 0,2 s\n' "${GUEST}"
-# Sitzung und neuer Versuch laufen in EINEM Prober-Prozess (--rejoin-after): Zwei
-# getrennte Aufrufe brauchen je einen Prozessstart (uv), der unter Windows bis zu
-# etwa 2 s dauert und damit die 2-s-Sperre des Mods (COOLDOWN) gelegentlich schon
-# überschreitet (früher 4 von 5). Der gemessene Abstand gap_s muss klar unter der
-# Sperre liegen, sonst belegt die Runde nichts und zählt nicht.
+# Session and new attempt run in ONE prober process (--rejoin-after): two
+# separate calls each need a process start (uv), which takes up to about 2 s on Windows and thus
+# occasionally already exceeds the 2 s lock of the mod (COOLDOWN)
+# (formerly 4 of 5). The measured distance gap_s must lie clearly below the
+# lock, otherwise the round proves nothing and does not count.
 STARTED_GUARD=$(inspect "${CONTAINER}" '{{.State.StartedAt}}')
 GUARD_OK=0
 round=1
@@ -848,13 +848,13 @@ done
 check "keine Welt-Container übrig (ist ${LEFT}, fremde vor dem Lauf nicht gezählt)" eq "${LEFT}" 0
 
 printf '\n== Regression Phase 1 bis 3 ==\n'
-# Nur für schnelle Iterationen: übersprungene Regression zählt als Fehlschlag.
+# Only for quick iterations: a skipped regression counts as a failure.
 if [ "${GAMEWORLD_SKIP_REGRESSION:-0}" = 1 ]; then
 	fail "Regression übersprungen (GAMEWORLD_SKIP_REGRESSION=1), keine Phasenabnahme"
 	printf '\n%s von %s Prüfungen bestanden\n' "${PASSED}" "${TOTAL}"
 	exit 1
 fi
-# acceptance-phase3.sh ruft acceptance-phase1.sh und acceptance-phase2.sh selbst auf.
+# acceptance-phase3.sh calls acceptance-phase1.sh and acceptance-phase2.sh itself.
 if sh "${PHASE3_SCRIPT}" >"${WORK_DIR}/phase3.log" 2>&1; then
 	pass "Regression: acceptance-phase3.sh Exit 0 ($(grep 'Prüfungen bestanden' "${WORK_DIR}/phase3.log" | tail -n 1))"
 else
@@ -862,16 +862,16 @@ else
 	grep 'FEHLGESCHLAGEN\|ABBRUCH' "${WORK_DIR}/phase3.log" >&2 || tail -n 20 "${WORK_DIR}/phase3.log" >&2
 fi
 for expected in "84 von 84 Prüfungen bestanden" "104 von 104 Prüfungen bestanden" "75 von 75 Prüfungen bestanden"; do
-	# Nur die Summenzeile oder eine bestanden-Zeile zählt, nie ein Zitat in einer FEHLGESCHLAGEN-Zeile.
+	# Only the sum line or a bestanden line counts, never a quote in a FEHLGESCHLAGEN line.
 	check "Regression: Log enthält '${expected}'" awk -v e="${expected}" \
 		'$0 == e || (index($0, "bestanden: ") == 1 && index($0, e) > 0) { found = 1 } END { exit !found }' \
 		"${WORK_DIR}/phase3.log"
 done
 
 printf '\n== ExApp über den ganzen Lauf erreichbar ==\n'
-# Die geplanten Neustarts (Phase 4 K6, Phase 3 K5, Phase 2 K4a/K4b) machen keine
-# API-Aufrufe, solange das Backend fehlt. Ein Eintrag hier heißt: Das Backend war
-# ungeplant weg, und jede 500 der Abnahme in dieser Zeit ist eine Folge davon.
+# The planned restarts (phase 4 K6, phase 3 K5, phase 2 K4a/K4b) make no
+# API calls while the backend is missing. An entry here means: the backend was
+# gone unplanned, and every 500 of the acceptance in this time is a consequence of it.
 nc_log_lines "${CONNECT_ERROR}" >"${WORK_DIR}/nc-connect.log"
 CONNECT_ERRORS=$(entries_since "${RUN_START}" "${WORK_DIR}/nc-connect.log")
 if [ "${CONNECT_ERRORS}" = 0 ]; then
@@ -879,7 +879,7 @@ if [ "${CONNECT_ERRORS}" = 0 ]; then
 else
 	fail "AppAPI erreichte die ExApp ${CONNECT_ERRORS}-mal nicht (Backend ungeplant weg; Logs der Backends in .dev/logs)"
 fi
-# Probedatei: ein Eintrag jetzt, einer vor Laufbeginn, einer mit anderem Text; zählen darf nur der erste.
+# Probe file: one entry now, one before the start of the run, one with different text; only the first may count.
 for stamp_text in "$(date -u +%Y-%m-%dT%H:%M:%S)|${CONNECT_ERROR}" "2000-01-01T00:00:00|${CONNECT_ERROR}" \
 	"$(date -u +%Y-%m-%dT%H:%M:%S)|Could not resolve host"; do
 	printf '{"time":"%s+00:00","app":"app_api","message":"Error during request to ExApp gameworld: cURL error 7: %s"}\n' \

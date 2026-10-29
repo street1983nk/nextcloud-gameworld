@@ -1,25 +1,25 @@
 #!/bin/sh
-# Phasenabnahme Phase 2: prüft die vier Erfolgskriterien aus .planning/ROADMAP.md
-# gegen den laufenden Dev-Stack (Nextcloud 8091, gescopter Docker-Proxy,
-# ExApp als Host-Prozess) und ruft am Ende die Phase-1-Abnahme als Regression.
+# Phase acceptance phase 2: checks the four success criteria from .planning/ROADMAP.md
+# against the running dev stack (Nextcloud 8091, scoped Docker proxy,
+# ExApp as a host process) and at the end calls the phase 1 acceptance as a regression.
 #
-# Bewusst unabhängig vom Implementierungsmuster: Belege kommen nur aus der
-# docker-CLI, aus curl gegen Nextcloud, aus tar, jq und grep. Die Python-
-# Testhelfer des Projekts werden nicht benutzt. Zu jeder Prüfung gibt es, wo
-# sinnvoll, eine Negativkontrolle (das Verbotene scheitert) und eine
-# Positivkontrolle (die Messmethode selbst funktioniert).
+# Deliberately independent of the implementation pattern: evidence comes only from the
+# docker CLI, from curl against Nextcloud, from tar, jq and grep. The Python
+# test helpers of the project are not used. For every check there is, where
+# sensible, a negative control (the forbidden thing fails) and a
+# positive control (the measuring method itself works).
 #
-# Voraussetzung:
+# Prerequisite:
 #   docker compose -f scripts/dev/compose.yaml up -d
 #   sh scripts/dev/register-exapp.sh
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Der Docker-Proxy wird für K2 kurz
-# gestoppt, der ExApp-Prozess für K4 zweimal beendet; beides stellt ein trap in
-# jedem Fall wieder her. Welten der Abnahme werden am Ende entfernt (Lösch-API,
-# Fallback docker rm -f -v). Weltschlüssel aus den Antworten werden nie
-# ausgegeben. Höchstens eine VoxeLibre-Welt existiert gleichzeitig (RAM).
+# Exit 0 only if every check passes. The Docker proxy is stopped briefly for K2,
+# the ExApp process is ended twice for K4; a trap restores both in
+# any case. Worlds of the acceptance are removed at the end (delete API,
+# fallback docker rm -f -v). World keys from the responses are never
+# printed. At most one VoxeLibre world exists at a time (RAM).
 #
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -70,13 +70,13 @@ hint() {
 	printf 'Hinweis: %s\n' "$1"
 }
 
-# Abbruch, wenn eine Voraussetzung fehlt und Folgeprüfungen sinnlos wären.
+# Abort if a prerequisite is missing and follow-up checks would be pointless.
 abort() {
 	printf 'ABBRUCH: %s\n' "$1" >&2
 	exit 1
 }
 
-# check BESCHREIBUNG BEDINGUNG... -> pass oder fail
+# check DESCRIPTION CONDITION... -> pass or fail
 check() {
 	description=$1
 	shift
@@ -99,8 +99,8 @@ heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
 
-# Beendet den ExApp-Host-Prozess. Unter Windows überlebt das Python-Kind von uv
-# den Elternprozess; dann wird der Prozess auf dem Port per taskkill beendet.
+# Ends the ExApp host process. On Windows the Python child of uv survives
+# the parent process; then the process on the port is ended by taskkill.
 kill_backend() {
 	if [ -f "${PID_FILE}" ]; then
 		kill -TERM "$(cat "${PID_FILE}")" 2>/dev/null || true
@@ -147,7 +147,7 @@ cleanup() {
 	for world_id in ${WORLD_IDS}; do
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 			"${API_URL}/worlds/${world_id}" >/dev/null 2>&1 || true
-		# Fallback, falls die API nicht mehr antwortet: direkt über die docker-CLI.
+		# Fallback if the API no longer answers: directly through the docker CLI.
 		for container in $(docker ps -aq --filter "label=gameworld.world_id=${world_id}" 2>/dev/null); do
 			docker rm -f -v "${container}" >/dev/null 2>&1 || true
 		done
@@ -161,7 +161,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-# http_code METHODE URL AUSGABE [JSON]
+# http_code METHOD URL OUTPUT [JSON]
 http_code() {
 	if [ -n "${4:-}" ]; then
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
@@ -184,13 +184,13 @@ inspect() {
 	docker inspect -f "$2" "$1" 2>/dev/null || printf 'nicht lesbar'
 }
 
-# world_field ID JQ-AUSDRUCK -> Feld der Welt aus GET /worlds
+# world_field ID JQ-EXPRESSION -> field of the world from GET /worlds
 world_field() {
 	http_code GET "${API_URL}/worlds" "${WORK_DIR}/field.json" >/dev/null
 	jq -r --arg id "$1" ".worlds[]? | select(.id == \$id) | $2" "${WORK_DIR}/field.json" 2>/dev/null || true
 }
 
-# wait_status ID ERWARTUNG SEKUNDEN -> 0 bei Erfolg, Wartezeit in WAITED
+# wait_status ID EXPECTATION SECONDS -> 0 on success, waiting time in WAITED
 wait_status() {
 	WAITED=0
 	while :; do
@@ -201,14 +201,14 @@ wait_status() {
 	done
 }
 
-# read_file CONTAINER PFAD ZIEL -> Inhalt einer Datei per docker cp und tar
+# read_file CONTAINER PATH TARGET -> content of a file via docker cp and tar
 read_file() {
-	# MSYS_NO_PATHCONV: Git Bash würde den Containerpfad sonst umschreiben.
+	# MSYS_NO_PATHCONV: Git Bash would otherwise rewrite the container path.
 	MSYS_NO_PATHCONV=1 docker cp "$1:$2" - >"$3.tar" 2>/dev/null || true
 	tar -xOf "$3.tar" >"$3" 2>/dev/null || true
 }
 
-# create_world NAME PRESET(leer = One-Click) ZIEL -> HTTP-Code, merkt die ID
+# create_world NAME PRESET(empty = One-Click) TARGET -> HTTP code, remembers the ID
 create_world() {
 	if [ -n "$2" ]; then
 		body="{\"name\":\"$1\",\"preset\":\"$2\"}"
@@ -220,12 +220,12 @@ create_world() {
 	printf '%s' "${code}"
 }
 
-# Doppelte Schlüssel einer conf-Datei (Kommentare und Leerzeilen ignoriert).
+# Duplicate keys of a conf file (comments and blank lines ignored).
 dup_keys() {
 	grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$1" | cut -d= -f1 | sed 's/[[:space:]]*$//' | sort | uniq -d
 }
 
-# Spiegelt die Lage aller Nicht-Gameworld-Container: ID, Name, Zustand, Startzeit.
+# Mirrors the state of all non-Gameworld containers: ID, name, state, start time.
 foreign_snapshot() {
 	ids=$(docker ps -aq --no-trunc 2>/dev/null || true)
 	[ -n "${ids}" ] || return 0
@@ -234,12 +234,12 @@ foreign_snapshot() {
 		${ids} 2>/dev/null | grep -v ' gw=true$' | sort || true
 }
 
-# Zeilen aus $1, deren ID in $2 noch existiert, aber mit anderem Inhalt.
+# Lines from $1 whose ID still exists in $2, but with different content.
 changed_lines() {
 	awk 'NR == FNR { before[$1] = $0; next } ($1 in before) && before[$1] != $0 { print }' "$1" "$2"
 }
 
-# MemUsage aus docker stats ("45.3MiB / 512MiB") als Byte-Zahl.
+# MemUsage from docker stats ("45.3MiB / 512MiB") as a byte number.
 to_bytes() {
 	printf '%s\n' "$1" | awk '{
 		v = $1; n = v + 0; u = v; sub(/^[0-9.]+/, "", u)
@@ -260,7 +260,7 @@ empty() { [ -z "$1" ]; }
 nonempty() { [ -n "$1" ]; }
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
 
-# Voraussetzungen ---------------------------------------------------------
+# Prerequisites ---------------------------------------------------------
 for tool in docker curl jq tar grep awk date; do
 	command -v "${tool}" >/dev/null 2>&1 || abort "Werkzeug ${tool} fehlt"
 done
@@ -276,7 +276,7 @@ if [ "$(docker compose -f "${COMPOSE_FILE}" ps "${PROXY_SERVICE}" --format '{{.S
 	abort "${PROXY_SERVICE} läuft nicht. Zuerst: docker compose -f scripts/dev/compose.yaml up -d"
 fi
 
-# Reste eines abgebrochenen früheren Laufs mit denselben Weltnamen entfernen.
+# Remove leftovers of an aborted earlier run with the same world names.
 http_code GET "${API_URL}/worlds" "${WORK_DIR}/pre.json" >/dev/null
 for old_id in $(jq -r --arg a "${NAME_KREATIV}" --arg b "${NAME_SANFT}" --arg c "${NAME_STATUS}" \
 	--arg d "${NAME_DOWN}" --arg e "${NAME_R1}" --arg f "${NAME_R2}" \
@@ -288,7 +288,7 @@ for old_id in $(jq -r --arg a "${NAME_KREATIV}" --arg b "${NAME_SANFT}" --arg c 
 done
 
 printf '\n== K1 Presets per One-Click ==\n'
-# K1 Presets per One-Click, ohne Konfigfragen
+# K1 Presets via One-Click, without config questions
 CODE=$(http_code GET "${API_URL}/presets" "${WORK_DIR}/presets.json")
 check "K1 GET /presets HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 PRESET_IDS=$(jq -r '[.presets[].id] | sort | join(",")' "${WORK_DIR}/presets.json" 2>/dev/null || true)
@@ -355,13 +355,13 @@ CODE=$(http_code POST "${API_URL}/worlds" "${WORK_DIR}/neg2.json" '{"name":"x","
 remember_world "$(jq -r '.id // empty' "${WORK_DIR}/neg2.json" 2>/dev/null || true)"
 check "K1 Negativkontrolle: preset plus mem_limit HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 
-# Nie zwei VoxeLibre-Welten gleichzeitig: Abenteuer sofort wieder löschen.
+# Never two VoxeLibre worlds at the same time: delete Adventure again at once.
 CODE=$(http_code DELETE "${API_URL}/worlds/${ID_S}" /dev/null)
 check "K1 DELETE '${NAME_SANFT}' HTTP 204 (ist ${CODE})" eq "${CODE}" 204
 check "K1 Abenteuer-Container ist weg" empty "$(container_of "${ID_S}")"
 
 printf '\n== K2 Lebenszyklus und Status aus Docker ==\n'
-# K2 Starten, Stoppen, Neustarten; Status kommt aus Docker, nicht aus der DB
+# K2 Start, stop, restart; status comes from Docker, not from the DB
 CODE=$(create_world "${NAME_STATUS}" "" "${WORK_DIR}/status.json")
 check "K2 POST '${NAME_STATUS}' HTTP 201 (ist ${CODE})" eq "${CODE}" 201
 ID_ST=$(jq -r '.id // empty' "${WORK_DIR}/status.json" 2>/dev/null || true)
@@ -390,7 +390,7 @@ check "K2 State.StartedAt nach restart neuer" \
 	"${STARTED_BEFORE}" "${STARTED_AFTER}"
 check "K2 status running nach restart binnen 30 s" wait_status "${ID_ST}" running 30
 
-# Von außen gestoppt: die DB sagt weiter running, der Status folgt Docker.
+# Stopped from outside: the DB keeps saying running, the status follows Docker.
 docker stop "${C_ST}" >/dev/null
 check "K2 docker stop von außen: status stopped binnen 10 s" wait_status "${ID_ST}" stopped 10
 check "K2 desired_state bleibt running (Beleg: Status aus Docker, nicht aus der DB)" \
@@ -439,7 +439,7 @@ PROXY_STOPPED=0
 printf 'gewartet: %s s\n' "${WAITED}"
 
 printf '\n== K3 Spieler und RAM ==\n'
-# K3 Spieler und Arbeitsspeicher pro Welt
+# K3 Players and memory per world
 http_code GET "${API_URL}/worlds" "${WORK_DIR}/k3.json" >/dev/null
 USED=$(jq -r --arg id "${ID_ST}" '.worlds[] | select(.id == $id) | .memory_used_bytes' "${WORK_DIR}/k3.json")
 LIMIT=$(jq -r --arg id "${ID_ST}" '.worlds[] | select(.id == $id) | .memory_limit_bytes' "${WORK_DIR}/k3.json")
@@ -484,7 +484,7 @@ for world_id in "${ID_K}" "${ID_ST}"; do
 done
 
 printf '\n== K4 Update und Reboot ==\n'
-# K4 Nach ExApp-Update und Host-Reboot stimmt das Dashboard wieder
+# K4 After ExApp update and host reboot the dashboard is right again
 CODE=$(create_world "${NAME_R1}" "" "${WORK_DIR}/r1.json")
 check "K4 POST '${NAME_R1}' HTTP 201 (ist ${CODE})" eq "${CODE}" 201
 CODE=$(create_world "${NAME_R2}" "" "${WORK_DIR}/r2.json")
@@ -507,7 +507,7 @@ check "K4 Positivkontrolle: Fremd-Schnappschuss enthält gameworld-dev-app-1" \
 check "K4 Fremd-Schnappschuss enthält keine Abnahme-Welt" \
 	sh -c '! grep -q -e "$1" -e "$2" "$3"' _ "${C_R1}" "${C_R2}" "${WORK_DIR}/foreign-before.txt"
 
-# (a) Update-Simulation: Prozess beenden, neu registrieren ohne --rm-data.
+# (a) Update simulation: end the process, re-register without --rm-data.
 printf 'beende den ExApp-Prozess (Update-Simulation)\n'
 BACKEND_DOWN=1
 OLD_PID=$(cat "${PID_FILE}" 2>/dev/null || true)
@@ -530,7 +530,7 @@ check "K4a Container-IDs unverändert" \
 		[ "$(docker ps -aq --no-trunc --filter label=gameworld.world_id=$2)" = "$4" ]' _ \
 	"${ID_R1}" "${ID_R2}" "${C_R1}" "${C_R2}"
 
-# (b) Reboot-Simulation: Prozess beenden, R1 von außen stoppen, neu starten.
+# (b) Reboot simulation: end the process, stop R1 from outside, restart.
 printf 'beende den ExApp-Prozess und stoppe R1 (Reboot-Simulation)\n'
 docker inspect -f '{{.Id}} {{.Name}} {{.State.Status}} {{.State.StartedAt}}' "${C_R1}" >"${WORK_DIR}/r1-before.txt"
 BACKEND_DOWN=1

@@ -1,15 +1,15 @@
-# Dev-Stack für Gameworld: eigene Nextcloud 34.0.3 plus gescopter Docker-Proxy.
-# Projektname gameworld-dev, damit nichts mit den Findling-Stacks auf derselben
-# Maschine kollidiert. Start: docker compose -f scripts/dev/compose.yaml up -d
+# Dev stack for Gameworld: own Nextcloud 34.0.3 plus scoped Docker proxy.
+# Project name gameworld-dev, so that nothing collides with the Findling stacks on the same
+# machine. Start: docker compose -f scripts/dev/compose.yaml up -d
 name: gameworld-dev
 
 services:
   app:
     image: nextcloud:34.0.3-apache
     ports:
-      # Loopback-Bindung auch hier: Die Dev-Nextcloud hat ein festes
-      # Admin-Passwort aus dem Repository; im LAN erreichbar wäre sie ein
-      # signierender Zugang zur ExApp und damit zur Container-Provisionierung.
+      # Loopback binding here as well: the dev Nextcloud has a fixed
+      # admin password from the repository; reachable in the LAN it would be a
+      # signing access to the ExApp and thus to the container provisioning.
       - "127.0.0.1:${GAMEWORLD_NC_PORT:-8091}:80"
     environment:
       SQLITE_DATABASE: nextcloud
@@ -23,12 +23,12 @@ services:
 
   gameworld-docker-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
-    # Wie in docs/install.md: Nach einem Docker-Neustart ist der Proxy wieder
-    # da, egal ob vor oder nach der ExApp; der Reconciler wartet ohnehin.
+    # As in docs/install.md: after a Docker restart the proxy is back
+    # again, no matter whether before or after the ExApp; the reconciler waits anyway.
     restart: unless-stopped
     environment:
-      # Nur was der Provisioner braucht. Alle übrigen Bereiche stehen explizit
-      # auf 0, damit ein geänderter Image-Default nichts unbemerkt öffnet.
+      # Only what the provisioner needs. All other areas are explicitly set
+      # to 0, so that a changed image default does not open anything unnoticed.
       CONTAINERS: 1
       IMAGES: 1
       POST: 1
@@ -50,9 +50,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      # Loopback-Bindung ist Pflicht: Jeder mit Zugriff auf diesen Port kann
-      # privilegierte Container erzeugen und ist damit root-äquivalent auf dem
-      # Host. Nur für die Entwicklung, weil die ExApp hier als Host-Prozess läuft.
+      # Loopback binding is mandatory: anyone with access to this port can create
+      # privileged containers and is thereby root-equivalent on the
+      # host. Development only, because the ExApp runs here as a host process.
       - "127.0.0.1:23750:2375"
 
 volumes:

@@ -1,21 +1,21 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Baut das App-Store-Archiv von Gameworld: dist/gameworld-<version>.tar.gz.
+# Builds the Gameworld app store archive: dist/gameworld-<version>.tar.gz.
 #
-# Das Store-Artefakt ist NICHT das Docker-Image. Es ist ein tar.gz mit genau einem
-# Top-Ordner gameworld/ mit appinfo/info.xml, img/app.svg und LICENSE. Das Image wird
-# nur aus info.xml (docker-install) referenziert und von AppAPI bei der Installation
-# aus ghcr.io gezogen. Vorlage: nextcloud-mcp-connector/scripts/build_store_release.sh,
-# hier POSIX-sh statt bash und ohne grep -P.
+# The store artifact is NOT the Docker image. It is a tar.gz with exactly one
+# top folder gameworld/ with appinfo/info.xml, img/app.svg and LICENSE. The image is
+# referenced only from info.xml (docker-install) and pulled by AppAPI at install
+# time from ghcr.io. Template: nextcloud-mcp-connector/scripts/build_store_release.sh,
+# here POSIX sh instead of bash and without grep -P.
 #
-# Aufruf: sh scripts/build-store-release.sh
-# Die Version kommt aus appinfo/info.xml <version>.
+# Usage: sh scripts/build-store-release.sh
+# The version comes from appinfo/info.xml <version>.
 #
-# Signatur nur zur Diagnose und nur, wenn GAMEWORLD_SIGN_KEY auf einen Schlüssel zeigt:
-# tar.gz ist nicht bytegenau reproduzierbar, der Store prüft das heruntergeladene
-# Release-Asset. Die Einreichungs-Signatur entsteht über genau diese Datei, nie über
-# das lokale Archiv.
+# Signature for diagnosis only and only if GAMEWORLD_SIGN_KEY points to a key:
+# tar.gz is not byte-for-byte reproducible, the store checks the downloaded
+# release asset. The submission signature is made over exactly that file, never over
+# the local archive.
 set -eu
 
 APP_ID="gameworld"

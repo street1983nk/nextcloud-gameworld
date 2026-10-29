@@ -1,28 +1,28 @@
 #!/bin/sh
-# Live-Prüfung Talk-Raum je Welt und Gameworld-Bot (Phase 4.1, TALK-01, TALK-02)
-# gegen den laufenden Dev-Stack mit installiertem Talk (spreed) und laufender
-# ExApp, ohne Fakes.
+# Live check of the Talk room per world and the Gameworld bot (phase 4.1, TALK-01, TALK-02)
+# against the running dev stack with Talk (spreed) installed and the running
+# ExApp, without fakes.
 #
-# Belege kommen aus curl gegen die OCS-API von Talk mit echten Nextcloud-Konten,
-# aus curl gegen den AppAPI-Proxy der ExApp, aus jq und aus dem Log der ExApp
-# (.dev/exapp.log: Webhook-Aufrufe, kein Chatinhalt). Einziges
-# Python-Werkzeug ist der Session-Prober (tests/e2e/luanti_probe.py) über seine
-# CLI. Zu jeder Verbotsprüfung gibt es eine Positivkontrolle.
+# Evidence comes from curl against the OCS API of Talk with real Nextcloud accounts,
+# from curl against the AppAPI proxy of the ExApp, from jq and from the log of the ExApp
+# (.dev/exapp.log: webhook calls, no chat content). The only
+# Python tool is the session prober (tests/e2e/luanti_probe.py) through its
+# CLI. Every prohibition check has a positive control.
 #
-# Voraussetzung:
+# Prerequisite:
 #   docker compose -f scripts/dev/compose.yaml up -d
-#   occ app:install spreed (siehe docs/dev-setup.md)
+#   occ app:install spreed (see docs/dev-setup.md)
 #   sh scripts/dev/register-exapp.sh
 #
-# Dauer: einige Minuten, weil die Prüfung des Abgleichs bis zu 330 s wartet
-# (die ExApp-Wartung läuft alle 5 Minuten und wird nicht erzwungen).
+# Duration: a few minutes, because the sync check waits up to 330 s
+# (the ExApp maintenance runs every 5 minutes and is not forced).
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Spielpasswörter erscheinen nie in
-# der Ausgabe. Ein trap räumt in jedem Fall auf: Welt "Abnahme Talk" (Lösch-API,
-# Fallback docker rm -f -v), Wegwerfkonto gw-talk-gast. gw-kind bleibt bestehen.
-# Aufgerufen aus der Phasenabnahme 04.1-09.
+# Exit 0 only if every check passes. Play passwords never appear in
+# the output. A trap cleans up in any case: world "Abnahme Talk" (delete API,
+# fallback docker rm -f -v), throwaway account gw-talk-gast. gw-kind stays.
+# Called from the phase acceptance 04.1-09.
 #
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -39,13 +39,13 @@ SPREED="${NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api"
 NAME_WORLD="Abnahme Talk"
 ROOM_NAME="Gameworld: ${NAME_WORLD}"
 PROBE_HOST=127.0.0.1
-# Abgleich alle 300 s plus Durchlauf des Loops; das Skript erzwingt ihn nicht.
+# Sync every 300 s plus a pass of the loop; the script does not force it.
 RECONCILE_WAIT=330
 TEXT_START="Die Welt ist gestartet."
 TEXT_STOP="Die Welt ist gestoppt."
 TEXT_JOIN="ist jetzt in der Welt."
 TEXT_LEAVE="hat die Welt verlassen."
-# Kinderchat-Nachricht des Tests; sie darf nie im ExApp-Log stehen.
+# Kid chat message of the test; it must never be in the ExApp log.
 CHAT_MARKER="Smoke Kinderchat 4711"
 EXAPP_LOG="${REPO_ROOT}/.dev/exapp.log"
 BACKEND_PORT=10040
@@ -72,17 +72,17 @@ fail() {
 	printf 'FEHLGESCHLAGEN: %s\n' "$1" >&2
 }
 
-# skip GRUND -> eine Prüfung, die im Dev-Stack nichts belegen kann, ehrlich ausweisen statt
-# grün zählen (WR-08). Zählt weder als bestanden noch als fehlgeschlagen.
+# skip REASON -> report honestly a check that cannot prove anything in the dev stack instead of
+# counting it green (WR-08). Counts neither as passed nor as failed.
 SKIPPED=0
 skip() {
 	SKIPPED=$((SKIPPED + 1))
 	printf 'ÜBERSPRUNGEN: %s\n' "$1"
 }
 
-# backend_post BENUTZER PFAD KÖRPER -> HTTP-Code; ruft das ExApp-Backend direkt mit
-# AppAPI-Authentifizierung (Secret aus .dev/exapp.secret), wie AppAPI selbst. BENUTZER leer
-# heißt: ohne Nutzer, so ruft AppAPIs talk_proxy den Bot-Webhook auf.
+# backend_post USER PATH BODY -> HTTP code; calls the ExApp backend directly with
+# AppAPI authentication (secret from .dev/exapp.secret), like AppAPI itself. An empty USER
+# means: without user, this is how AppAPI's talk_proxy calls the bot webhook.
 backend_post() {
 	secret=$(cat "${REPO_ROOT}/.dev/exapp.secret" 2>/dev/null || true)
 	version=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' "${REPO_ROOT}/appinfo/info.xml" | head -n 1)
@@ -119,11 +119,11 @@ occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
 }
 
-# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
-# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
-# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
-# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
-# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+# add_user ACCOUNT PASSWORD DISPLAYNAME -> creates the throwaway account fresh. An old account from
+# an aborted run is deleted first; occ user:add gets up to three attempts
+# (the password policy may ask an external service, which can fail
+# briefly). On every failure the occ output is in the log as a diagnosis; the password
+# goes to occ only via the environment and never appears in the output.
 add_user() {
 	occ user:delete "$1" >/dev/null 2>&1 || true
 	add_try=1
@@ -141,7 +141,7 @@ add_user() {
 	return 1
 }
 
-# call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code; OCS-Antworten als JSON.
+# call AUTH METHOD URL OUTPUT [JSON] -> HTTP code; OCS responses as JSON.
 call() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
@@ -190,7 +190,7 @@ wait_status() {
 	done
 }
 
-# Token des Raums "Gameworld: Abnahme Talk" aus Sicht von admin, leer, wenn keiner da ist.
+# Token of the room "Gameworld: Abnahme Talk" from the view of admin, empty if there is none.
 room_token() {
 	http_code GET "${SPREED}/v4/room" "${WORK_DIR}/rooms.json" >/dev/null
 	jq -r --arg n "${ROOM_NAME}" '[.ocs.data[]? | select(.name == $n) | .token][0] // empty' \
@@ -213,7 +213,7 @@ room_field() {
 	jq -r ".ocs.data.$1 // empty" "${WORK_DIR}/room.json" 2>/dev/null || true
 }
 
-# Teilnehmer als Zeilen "actorType actorId participantType", sortiert.
+# Participants as lines "actorType actorId participantType", sorted.
 participants() {
 	http_code GET "${SPREED}/v4/room/${TOKEN}/participants" "${WORK_DIR}/parts.json" >/dev/null
 	jq -r '.ocs.data[]? | "\(.actorType) \(.actorId) \(.participantType)"' "${WORK_DIR}/parts.json" 2>/dev/null \
@@ -242,7 +242,7 @@ wait_without_user() {
 	done
 }
 
-# bot_said TEXT SEKUNDEN -> 0, sobald eine Nachricht des Bots TEXT enthält
+# bot_said TEXT SECONDS -> 0 as soon as a message of the bot contains TEXT
 bot_said() {
 	waited=0
 	while :; do
@@ -258,7 +258,7 @@ bot_said() {
 	done
 }
 
-# bot_count TEXT -> Zahl der Bot-Nachrichten mit TEXT (frisch gelesen)
+# bot_count TEXT -> number of bot messages with TEXT (read fresh)
 bot_count() {
 	http_code GET "${SPREED}/v1/chat/${TOKEN}?lookIntoFuture=0&limit=100&setReadMarker=0" \
 		"${WORK_DIR}/chat.json" >/dev/null
@@ -266,8 +266,8 @@ bot_count() {
 		"${WORK_DIR}/chat.json" 2>/dev/null || printf 'x'
 }
 
-# Erfolgreiche Webhook-Aufrufe laut Zugriffslog der ExApp (uvicorn loggt nur Pfad und Status).
-# Ohne lesbares Log x statt einer Zahl: dann scheitert jeder Vergleich (WR-08).
+# Successful webhook calls according to the access log of the ExApp (uvicorn logs only path and status).
+# Without a readable log x instead of a number: then every comparison fails (WR-08).
 webhook_hits() {
 	if [ ! -r "${EXAPP_LOG}" ]; then
 		printf 'x'
@@ -276,7 +276,7 @@ webhook_hits() {
 	grep -c -F 'POST /talk/bot HTTP/1.1" 200' "${EXAPP_LOG}" 2>/dev/null || true
 }
 
-# num WERT -> 0, wenn WERT eine nicht leere Ganzzahl ist
+# num VALUE -> 0 if VALUE is a non-empty integer
 num() { printf '%s' "$1" | grep -Eq '^[0-9]+$'; }
 
 bot_names() {
@@ -301,7 +301,7 @@ CODE=$(http_code GET "${API_URL}/talk" "${WORK_DIR}/talk.json")
 check "GET /api/talk HTTP 200 mit available und bots true (ist ${CODE})" eq \
 	"${CODE} $(jq -r '"\(.available) \(.bots)"' "${WORK_DIR}/talk.json" 2>/dev/null || true)" "200 true true"
 
-# Reste eines abgebrochenen Laufs entfernen.
+# Remove leftovers of an aborted run.
 http_code GET "${API_URL}/worlds" "${WORK_DIR}/pre.json" >/dev/null
 for old_id in $(jq -r --arg n "${NAME_WORLD}" '.worlds[]? | select(.name == $n) | .id' "${WORK_DIR}/pre.json" \
 	2>/dev/null || true); do
@@ -341,8 +341,8 @@ printf '\n== (4) Kind kann niemanden hinzufügen ==\n'
 add_user "${GUEST}" "${GUEST_PASS}" "Gast Talk" || abort "Konto ${GUEST} ließ sich nach drei Versuchen nicht anlegen (occ-Ausgabe oben)"
 ADD_BODY="{\"newParticipant\":\"${GUEST}\",\"source\":\"users\"}"
 CODE=$(call "${KID_AUTH}" POST "${SPREED}/v4/room/${TOKEN}/participants" "${WORK_DIR}/kidadd.json" "${ADD_BODY}")
-# Talk antwortet Nicht-Moderatoren mit 403 (spreed NotAModeratorException, Quelltext Talk
-# 24.0.6 im Dev-Stack); 000, 500 oder 404 bestehen nicht mehr (WR-08).
+# Talk answers non-moderators with 403 (spreed NotAModeratorException, source of Talk
+# 24.0.6 in the dev stack); 000, 500 or 404 no longer pass (WR-08).
 check "${KID} fügt ${GUEST} hinzu: abgewiesen, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 check "${GUEST} ist danach nicht im Raum" not has_user "${GUEST}"
 
@@ -369,7 +369,7 @@ CODE=$(http_code POST "${API_URL}/worlds/${WORLD_ID}/start" "${WORK_DIR}/start.j
 check "POST start HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 check "Welt wieder running binnen 60 s" wait_status "${WORLD_ID}" running 60
 check "Bot schreibt '${TEXT_START}' binnen 60 s" bot_said "${TEXT_START}" 60
-# Talk hängt an Bot-Namen selbst " (Bot)" an.
+# Talk appends " (Bot)" to bot names itself.
 check "Bot-Nachrichten stehen unter dem Namen Gameworld (ist $(bot_names))" \
 	sh -c '[ "$1" = "Gameworld (Bot)" ] || [ "$1" = Gameworld ]' _ "$(bot_names)"
 
@@ -397,14 +397,14 @@ while :; do
 done
 check "${KID} tritt der Welt bei (Prober: Sitzung gehalten)" eq "${JOINED}" 0
 check "Bot schreibt '... ${TEXT_JOIN}' binnen 60 s" bot_said "${TEXT_JOIN}" 60
-# Drossel D-22: erneut rein und raus binnen 10 Minuten bringt keine neue Meldung.
-# Steht die Beitrittsmeldung schon beim ersten Blick im Chat, käme der zweite Beitritt
-# sonst in die Wiederbeitritts-Sperre der Welt (etwa 2 s, "Bitte einen Moment warten").
+# Throttle D-22: re-entering and leaving again within 10 minutes brings no new message.
+# If the join message is already in the chat at the first look, the second join would
+# otherwise fall into the rejoin lock of the world (about 2 s, "Bitte einen Moment warten").
 sleep 2.5
 probe "${WORK_DIR}/rejoin.json" "${KID_NAME}" "${KID_PW}" --hold 5 --timeout 30
 check "Positivkontrolle: zweiter Beitritt gelingt (ist $(jq -r '"\(.result) \(.reason // "")"' "${WORK_DIR}/rejoin.json" 2>/dev/null))" \
 	eq "$(jq -r '.result' "${WORK_DIR}/rejoin.json" 2>/dev/null)" held
-# Takt 15 s plus Loop 5 s: nach 30 s wären neue Meldungen sicher im Chat.
+# Cycle 15 s plus loop 5 s: after 30 s new messages would surely be in the chat.
 sleep 30
 check "Drossel: genau eine Beitrittsmeldung und keine Verlassen-Meldung (ist $(bot_count "${TEXT_JOIN}") und $(bot_count "${TEXT_LEAVE}"))" \
 	eq "$(bot_count "${TEXT_JOIN}") $(bot_count "${TEXT_LEAVE}")" "1 0"
@@ -413,12 +413,12 @@ printf '\n== (8b) Webhook verwirft Kinderchats ==\n'
 CODE=$(call "${KID_AUTH}" POST "${SPREED}/v1/chat/${TOKEN}" "${WORK_DIR}/kidmsg.json" \
 	"{\"message\":\"${CHAT_MARKER}\"}")
 check "Positivkontrolle: ${KID} schreibt in den Raum, HTTP 201 (ist ${CODE})" eq "${CODE}" 201
-# Im Dev-Stack erreicht Talk die Bot-URL nicht: AppAPI trägt sie mit der Adresse
-# des Browsers ein (localhost:8091), im Container lauscht dort niemand. Dass ein
-# echter Kinderchat über Talk ankommt und verworfen wird, belegt darum nur eine
-# Instanz mit erreichbarer eigener URL (Prüfpunkt Phase 6). Statt eines leeren
-# Grüns (WR-08) prüft das Skript den Webhook direkt am Backend, so wie AppAPI ihn
-# aufruft, mit Positivkontrolle für den Zähler.
+# In the dev stack Talk does not reach the bot URL: AppAPI registers it with the address
+# of the browser (localhost:8091), nobody listens there in the container. That a
+# real kid chat arrives through Talk and is discarded is therefore proven only by an
+# instance with a reachable own URL (check point phase 6). Instead of an empty
+# green (WR-08) the script checks the webhook directly at the backend, the way AppAPI
+# calls it, with a positive control for the counter.
 skip "echter Webhook von Talk mit Kinderchat (im Dev-Stack nicht erreichbar, Prüfpunkt Phase 6)"
 WEBHOOK_BEFORE=$(webhook_hits)
 CHAT_BODY="{\"type\":\"Create\",\"object\":{\"name\":\"message\",\"content\":\"{\\\"message\\\":\\\"${CHAT_MARKER}\\\"}\"}}"
@@ -431,7 +431,7 @@ check "Positivkontrolle: das Zugriffslog zählt diesen Webhook (${WEBHOOK_BEFORE
 	"${WEBHOOK_BEFORE}" "${WEBHOOK_AFTER}"
 check "Chatinhalt des Webhooks steht nicht im Log der ExApp (Log lesbar, 0 Treffer)" sh -c \
 	'[ -r "$1" ] && [ "$(grep -c -F -- "$2" "$1" || true)" = 0 ]' _ "${EXAPP_LOG}" "${CHAT_MARKER}"
-# IN-01: Über den Nutzer-Proxy käme jedes Konto zum Webhook; mit Nutzer gilt 403.
+# IN-01: through the user proxy every account would reach the webhook; with a user 403 applies.
 CODE=$(backend_post "${KID}" /talk/bot "${CHAT_BODY}")
 check "Negativkontrolle: Webhook mit Nutzer ${KID} HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 WEBHOOK_BEFORE=$(webhook_hits)

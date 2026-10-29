@@ -1,19 +1,19 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Entrypoint des Gameworld-Images: zwei Wächter, dann das unveränderte HaRP-start.sh.
-# Vorlage: nextcloud-mcp-connector/entrypoint.sh (WR-04). Die dortige DNS-Rebinding-Zeile
-# entfällt, Gameworld hat keinen MCP-Transport.
+# Entrypoint of the Gameworld image: two guards, then the unchanged HaRP start.sh.
+# Template: nextcloud-mcp-connector/entrypoint.sh (WR-04). The DNS rebinding line there
+# is dropped, Gameworld has no MCP transport.
 #
-# Wächter 1 (T-06-44): start.sh fällt ohne /certs/frp auf transport.tls.enable = false
-# zurück und schickt HP_SHARED_KEY dann im Klartext. HaRP installiert das Zertifikat erst
-# im laufenden Container, darum wird darauf gewartet; kommt es nicht, startet der
-# Container nicht (außer ALLOW_PLAINTEXT_FRP=1 auf einem vertrauten lokalen Netz).
+# Guard 1 (T-06-44): without /certs/frp, start.sh falls back to transport.tls.enable = false
+# and then sends HP_SHARED_KEY in plain text. HaRP installs the certificate only
+# in the running container, so it is waited for; if it does not arrive, the
+# container does not start (unless ALLOW_PLAINTEXT_FRP=1 on a trusted local network).
 #
-# Wächter 2 (D-22): Der Container läuft fest als uid 10001, ohne root-Moment und ohne
-# chown. Ein frisches Volume nc_app_gameworld_data übernimmt Besitzer und Modus des im
-# Image vorbereiteten Verzeichnisses. Gehört es doch root (etwa nach Handarbeit), bricht
-# der Start hier mit klarer Meldung ab, statt später still an SQLite zu scheitern.
+# Guard 2 (D-22): the container runs fixed as uid 10001, without a root moment and without
+# chown. A fresh volume nc_app_gameworld_data takes over owner and mode of the directory
+# prepared in the image. If it belongs to root after all (e.g. after manual work), the start
+# aborts here with a clear message instead of failing silently at SQLite later.
 set -eu
 
 FRP_CERT_DIR="/certs/frp"
@@ -38,8 +38,8 @@ if ! storage_writable; then
     exit 1
 fi
 
-# Das Verzeichnis allein ist noch nicht das Zertifikat: HaRP legt es per mkdir -p an,
-# bevor es die drei Dateien kopiert. Gewartet wird auf die Dateien selbst.
+# The directory alone is not yet the certificate: HaRP creates it with mkdir -p
+# before it copies the three files. The files themselves are waited for.
 frp_certs_present() {
     [ -f "${FRP_CERT_DIR}/client.crt" ] &&
         [ -f "${FRP_CERT_DIR}/client.key" ] &&

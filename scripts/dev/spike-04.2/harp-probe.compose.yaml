@@ -1,20 +1,20 @@
-# HaRP-Probe für den Browser-Spike 04.2 (Plan 03, Task 2), nur Dev-Stack und nur
-# für die Dauer der Probe. Prüft, ob HaRP die Antwort-Header einer ExApp
-# unverändert durchreicht und ein WebSocket-Upgrade mit Identität zulässt
-# (live mit nextcloud/app-skeleton-python).
+# HaRP probe for browser spike 04.2 (plan 03, task 2), dev stack only and only
+# for the duration of the probe. Checks whether HaRP passes the response headers of an ExApp
+# through unchanged and permits a WebSocket upgrade with identity
+# (live with nextcloud/app-skeleton-python).
 #
-# Ohne Docker-Socket: HaRP bekommt keinen Zugriff auf die Docker-Engine. Der
-# Daemon wird als "manual-install" mit --harp registriert (Vorlage "Harp Manual
-# Install" aus occ app_api:daemon:register --help), das Skeleton startet hier als
-# zweiter Dienst und meldet sich per frpc beim FRP-Server von HaRP an. HaRP
-# leitet dann an 127.0.0.1:<APP_PORT> im eigenen Container weiter
+# Without Docker socket: HaRP gets no access to the Docker engine. The
+# daemon is registered as "manual-install" with --harp (template "Harp Manual
+# Install" from occ app_api:daemon:register --help), the skeleton starts here as a
+# second service and logs in via frpc at the FRP server of HaRP. HaRP
+# then forwards to 127.0.0.1:<APP_PORT> in its own container
 # (AppAPI HarpService::getExAppHost).
 #
-# Start (Werte nur in .dev/, nie im Repository):
+# Start (values only in .dev/, never in the repository):
 #   HARP_PROBE_KEY=$(cat .dev/harp-probe.key) \
 #   HARP_PROBE_APP_SECRET=$(cat .dev/harp-probe-app.secret) \
 #     docker compose -f scripts/dev/spike-04.2/harp-probe.compose.yaml up -d
-# Rückbau:
+# Teardown:
 #   docker compose -f scripts/dev/spike-04.2/harp-probe.compose.yaml down -v
 name: gameworld-harp-probe
 
@@ -25,13 +25,13 @@ services:
     hostname: appapi-harp-probe
     environment:
       HP_SHARED_KEY: ${HARP_PROBE_KEY:?HARP_PROBE_KEY fehlt}
-      # Die Dev-Nextcloud vertraut nur localhost und host.docker.internal.
+      # The dev Nextcloud trusts only localhost and host.docker.internal.
       NC_INSTANCE_URL: http://host.docker.internal:8091
-      # Negativkontrollen erzeugen 401; ohne höhere Schwelle sperrt HaRP nach
-      # 10 Fehlversuchen in 5 Minuten die Adresse des Prüfers.
+      # Negative controls produce 401; without a higher threshold HaRP blocks, after
+      # 10 failed attempts in 5 minutes, the address of the checker.
       HP_BLACKLIST_COUNT: "1000"
-      # Das Skeleton bekommt hier keine FRP-Zertifikate (die kopiert HaRP sonst
-      # beim Deploy über die Docker-Engine hinein); nur im Probe-Netz ohne TLS.
+      # The skeleton gets no FRP certificates here (HaRP otherwise copies them in
+      # on deploy through the Docker engine); only in the probe network without TLS.
       HP_FRP_DISABLE_TLS: "true"
       HP_LOG_LEVEL: info
     extra_hosts:
@@ -56,7 +56,7 @@ services:
       APP_HOST: 127.0.0.1
       APP_PERSISTENT_STORAGE: /tmp/storage
       NEXTCLOUD_URL: http://host.docker.internal:8091
-      # frpc im Skeleton meldet sich mit diesem Wert an (start.sh des Skeletons).
+      # frpc in the skeleton logs in with this value (start.sh of the skeleton).
       HP_SHARED_KEY: ${HARP_PROBE_KEY:?HARP_PROBE_KEY fehlt}
       HP_FRP_ADDRESS: appapi-harp-probe
       HP_FRP_PORT: "8782"
@@ -65,10 +65,10 @@ services:
     networks:
       - devstack
 
-  # Nur mit --profile gameworld: Tunnel vom FRP-Server in HaRP zum Gameworld-
-  # Host-Prozess auf Port 10040, damit die echte Spielseite /play/ hinter HaRP
-  # gemessen werden kann (das Skeleton sendet selbst kein COOP/COEP). Gameworld
-  # wird dafür vorübergehend auf dem Daemon harp_probe mit Port 23001 registriert.
+  # Only with --profile gameworld: tunnel from the FRP server in HaRP to the Gameworld
+  # host process on port 10040, so that the real play page /play/ behind HaRP
+  # can be measured (the skeleton itself sends no COOP/COEP). Gameworld
+  # is temporarily registered for this on the daemon harp_probe with port 23001.
   gameworld-tunnel:
     image: ghcr.io/nextcloud/app-skeleton-python:latest
     container_name: gameworld-harp-tunnel-probe

@@ -1,15 +1,15 @@
-# ExApp-Image von Gameworld bauen und nach ghcr.io schieben (D-14, PLATT-01).
+# Build the Gameworld ExApp image and push it to ghcr.io (D-14, PLATT-01).
 #
-# Zwei Wege:
-#   - Tag v<version>: echtes Release. Lockstep-Prüfung (Tag == info.xml <version> ==
-#     <image-tag> == pyproject version), Multi-Arch-Image ghcr.io/street1983nk/gameworld:<version>,
-#     danach GitHub-Release mit dem Store-Archiv als Asset.
-#   - workflow_dispatch mit image_tag (z. B. 1.0.0-rc.1): nur das Image, kein Release.
-#     image_tag muss <version> oder <version>-rc.N sein.
+# Two paths:
+#   - Tag v<version>: real release. Lockstep check (tag == info.xml <version> ==
+#     <image-tag> == pyproject version), multi-arch image ghcr.io/street1983nk/gameworld:<version>,
+#     then a GitHub release with the store archive as an asset.
+#   - workflow_dispatch with image_tag (e.g. 1.0.0-rc.1): image only, no release.
+#     image_tag must be <version> or <version>-rc.N.
 #
-# Die Store-Einreichung bleibt Handarbeit (Signatur über das heruntergeladene Asset).
-# Ein Asset wird nie ersetzt (P-10, T-06-46): neue Version statt Re-Upload.
-# Nach dem ersten Push das ghcr-Paket einmal von Hand auf öffentlich stellen.
+# The store submission stays manual work (signature over the downloaded asset).
+# An asset is never replaced (P-10, T-06-46): a new version instead of a re-upload.
+# After the first push, set the ghcr package to public by hand once.
 name: image
 
 on:
@@ -23,7 +23,7 @@ on:
         required: true
         type: string
 
-# Oben nur Lesen; Schreibrechte stehen am jeweiligen Job (T-06-47).
+# Read-only at the top; write permissions sit on the respective job (T-06-47).
 permissions:
   contents: read
 
@@ -135,8 +135,8 @@ jobs:
             echo "::error::${notes} fehlt (englische Faktenliste), kein Release ohne Notes"
             exit 1
           fi
-          # gh release create scheitert, wenn das Release schon existiert: so wird nie
-          # ein veröffentlichtes Asset ersetzt.
+          # gh release create fails if the release already exists: this way a
+          # published asset is never replaced.
           gh release create "v${VERSION}" "dist/gameworld-${VERSION}.tar.gz" \
             --verify-tag \
             --title "Gameworld ${VERSION}" \

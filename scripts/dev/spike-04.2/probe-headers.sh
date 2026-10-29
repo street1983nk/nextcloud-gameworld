@@ -1,17 +1,17 @@
 #!/bin/sh
-# Header- und WebSocket-Probe für den Browser-Spike 04.2 (Plan 03), nur Dev-Stack.
+# Header and WebSocket probe for browser spike 04.2 (plan 03), dev stack only.
 #
-# Misst, welche Content-Security-Policy-, COOP-, COEP-, Feature-Policy- und
-# X-Frame-Options-Header unter manual-install durch den AppAPI-PHP-Proxy beim
-# Browser ankommen, vergleicht mit der direkten Antwort der ExApp auf Port 10040
-# und versucht ein WebSocket-Upgrade über den PHP-Proxy.
+# Measures which Content-Security-Policy, COOP, COEP, Feature-Policy and
+# X-Frame-Options headers arrive at the browser through the AppAPI PHP proxy under manual-install,
+# compares with the direct response of the ExApp on port 10040
+# and tries a WebSocket upgrade through the PHP proxy.
 #
-# Das Admin-Passwort kommt aus GAMEWORLD_NC_ADMIN_PASSWORD oder aus
-# scripts/dev/compose.yaml; es wird nie ausgegeben. Set-Cookie-Werte werden vor
-# dem Schreiben des Belegs ersetzt.
+# The admin password comes from GAMEWORLD_NC_ADMIN_PASSWORD or from
+# scripts/dev/compose.yaml; it is never printed. Set-Cookie values are replaced before
+# the evidence is written.
 #
-# Aufruf: sh scripts/dev/spike-04.2/probe-headers.sh
-# Ausgabe: .planning/phases/04.2-browser-spike-luanti-wasm/evidence/03-manual-install.txt
+# Usage: sh scripts/dev/spike-04.2/probe-headers.sh
+# Output: .planning/phases/04.2-browser-spike-luanti-wasm/evidence/03-manual-install.txt
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -34,8 +34,8 @@ if [ -z "${PW}" ]; then
 	exit 1
 fi
 
-# Das Passwort geht über eine curl-Konfiguration auf stdin, damit es weder in der
-# Prozessliste noch in einer Ausgabe steht.
+# The password goes through a curl config on stdin, so that it is neither in the
+# process list nor in any output.
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT INT TERM
 
@@ -43,7 +43,7 @@ sanitize() {
 	sed -e 's/^\([Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee]\):.*/Set-Cookie: <entfernt>/' -e 's/\r$//'
 }
 
-# probe <Titel> <auth: ja|nein> <URL> [weitere curl-Argumente]
+# probe <title> <auth: ja|nein> <URL> [further curl arguments]
 probe() {
 	title=$1
 	auth=$2
@@ -85,8 +85,8 @@ probe "direkt-wasm" nein "${DIRECT}/play/static/${BUILD}/probe.wasm"
 probe "proxy-ws-upgrade" ja "${PROXY}/play/ws" --http1.1 --max-time 5 \
 	-H "Connection: Upgrade" -H "Upgrade: websocket" \
 	-H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="
-# Vergleich: Wer erzeugt die Antwort auf den Upgrade? Derselbe Upgrade direkt an
-# die ExApp und dieselbe Proxy-Adresse ohne Upgrade-Header.
+# Comparison: who produces the response to the upgrade? The same upgrade directly to
+# the ExApp and the same proxy address without an Upgrade header.
 probe "direkt-ws-upgrade" nein "${DIRECT}/play/ws" --http1.1 --max-time 5 \
 	-H "Connection: Upgrade" -H "Upgrade: websocket" \
 	-H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="

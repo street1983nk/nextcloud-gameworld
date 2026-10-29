@@ -1,33 +1,33 @@
 #!/bin/sh
-# Demo-Daten für die Store-Screenshots (06-13, D-10) im Dev-Stack.
+# Demo data for the store screenshots (06-13, D-10) in the dev stack.
 #
-# Legt nur Wegwerf-Konten und -Welten mit kindgerechten Demo-Namen an, damit auf
-# den Bildern nie echte Konten, Welten oder Sicherungen stehen:
-#   Gruppen  familie (Kinder und Oma), eltern (Verwalter-Gruppe, D-01)
-#   Konten   mama (Verwalterin über eltern, Mitglied von familie), mia, leo
-#            (Kinder in familie), oma (in familie, als erwachsen markiert)
-#   Welten   "Baumhaus" (mtg_kreativ, eingeladen: mia, leo, oma) und
-#            "Inselabenteuer" (voxelibre_sanft, eingeladen: Gruppe familie),
-#            beide von mama angelegt und laufend
-#   Regeln   Spielzeitregel für mia (Mo bis Fr 60 min 15 bis 19 Uhr, Sa und So
-#            90 min), eine Sicherung von "Baumhaus" in den Files von mama
+# Creates only throwaway accounts and worlds with child-friendly demo names, so that the
+# images never show real accounts, worlds or backups:
+#   Groups   familie (children and Oma), eltern (manager group, D-01)
+#   Accounts mama (manager via eltern, member of familie), mia, leo
+#            (children in familie), oma (in familie, marked as adult)
+#   Worlds   "Baumhaus" (mtg_kreativ, invited: mia, leo, oma) and
+#            "Inselabenteuer" (voxelibre_sanft, invited: group familie),
+#            both created by mama and running
+#   Rules    playtime rule for mia (Mon to Fri 60 min 15 to 19 o'clock, Sat and Sun
+#            90 min), a backup of "Baumhaus" in the files of mama
 #
-# Idempotent: Vorhandenes bleibt stehen, nur Fehlendes wird angelegt. Mit
-# --cleanup entfernt das Skript alles wieder (Welten samt Containern, Volumes
-# und Talk-Räumen über die API, Verwalter-Gruppe, Konten samt Files, Gruppen).
-# Fremde Welten (etwa laufende Dev-Welten anderer Instanzen) fasst es nie an:
-# Gelöscht wird nur, was einen Demo-Namen trägt UND dessen ID dieses Skript in
-# .dev/screenshot-demo.json festgehalten hat.
+# Idempotent: what exists stays, only what is missing is created. With
+# --cleanup the script removes everything again (worlds including containers, volumes
+# and Talk rooms via the API, manager group, accounts including files, groups).
+# It never touches foreign worlds (e.g. running dev worlds of other instances):
+# only what carries a demo name AND whose ID this script recorded in
+# .dev/screenshot-demo.json is deleted.
 #
-# Die Bilder nimmt danach scripts/dev/screenshot-capture.mjs auf (Playwright,
-# siehe Kopf dort). Die IDs der Demo-Welten schreibt dieses Skript nach
-# .dev/screenshot-demo.json (gitignored), damit die Aufnahme nur sie zeigt.
+# The images are taken afterwards by scripts/dev/screenshot-capture.mjs (Playwright,
+# see the header there). This script writes the IDs of the demo worlds to
+# .dev/screenshot-demo.json (gitignored), so that the capture shows only them.
 #
-# Zugangsdaten: reine Dev-Konten der Loopback-Instanz; Passwörter und
-# Spielpasswörter erscheinen nie in der Ausgabe.
+# Credentials: pure dev accounts of the loopback instance; passwords and
+# play passwords never appear in the output.
 #
-# Aufruf:  sh scripts/dev/screenshot-demo.sh            anlegen
-#          sh scripts/dev/screenshot-demo.sh --cleanup  wieder entfernen
+# Usage:  sh scripts/dev/screenshot-demo.sh            create
+#         sh scripts/dev/screenshot-demo.sh --cleanup  remove again
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -61,13 +61,13 @@ occ() {
 	docker exec -u www-data "${NC_CONTAINER}" php occ "$@"
 }
 
-# call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code (Antwort nur in AUSGABE, nie auf stdout)
+# call AUTH METHOD URL OUTPUT [JSON] -> HTTP code (response only in OUTPUT, never on stdout)
 call() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' -H 'Content-Type: application/json' \
 			-X "$2" -d "$5" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
 	else
-		# Content-Type auch ohne Body: Die CSRF-Prüfung der App lehnt DELETE sonst mit 403 ab.
+		# Content-Type even without a body: otherwise the CSRF check of the app rejects DELETE with 403.
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' -H 'Content-Type: application/json' \
 			-X "$2" -o "$4" -w '%{http_code}' "$3" 2>/dev/null || printf '000'
 	fi
@@ -112,7 +112,7 @@ in_group() {
 	occ group:adduser "$1" "$2" >/dev/null 2>&1 || true
 }
 
-# world_id NAME -> ID der Demo-Welt NAME, die mama gehört (leer, wenn keine)
+# world_id NAME -> ID of the demo world NAME that belongs to mama (empty if none)
 world_id() {
 	call "${MAMA_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/worlds.json" >/dev/null
 	jq -r --arg n "$1" --slurpfile s "$(state_or_empty)" \
@@ -121,7 +121,7 @@ world_id() {
 		"${WORK_DIR}/worlds.json" 2>/dev/null | tr -d '\r' || true
 }
 
-# name_taken NAME -> 0, wenn eine fremde Welt (nicht aus diesem Skript) den Demo-Namen trägt
+# name_taken NAME -> 0 if a foreign world (not from this script) carries the demo name
 name_taken() {
 	jq -e --arg n "$1" --slurpfile s "$(state_or_empty)" \
 		'(($s[0].worlds) // []) as $mine
@@ -152,7 +152,7 @@ wait_field() {
 	return 1
 }
 
-# record_world ID -> ID sofort festhalten, damit --cleanup auch nach einem Abbruch greift
+# record_world ID -> record the ID at once, so that --cleanup works even after an abort
 record_world() {
 	mkdir -p "$(dirname "${STATE_FILE}")"
 	if [ -f "${STATE_FILE}" ]; then
@@ -163,7 +163,7 @@ record_world() {
 	mv "${WORK_DIR}/state.json" "${STATE_FILE}"
 }
 
-# ensure_world NAME PRESET -> setzt WID
+# ensure_world NAME PRESET -> sets WID
 ensure_world() {
 	WID=$(world_id "$1")
 	if [ -n "${WID}" ]; then
@@ -188,7 +188,7 @@ invite() {
 	say "eingeladen: $2 $3"
 }
 
-# RAM-Prüfung vor Welt-Starts (seriell, Heimserver-Regel); Windows-Host über PowerShell, sonst /proc/meminfo.
+# RAM check before world starts (serial, home server rule); Windows host via PowerShell, otherwise /proc/meminfo.
 free_mb() {
 	if command -v powershell >/dev/null 2>&1; then
 		powershell -NoProfile -Command '[int]((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1024)' 2>/dev/null | tr -d '\r'
@@ -211,7 +211,7 @@ week_plan() {
 }
 
 cleanup() {
-	# Nur Welten, deren ID dieses Skript festgehalten hat UND die einen Demo-Namen tragen.
+	# Only worlds whose ID this script recorded AND which carry a demo name.
 	if [ -f "${STATE_FILE}" ] && user_present "${MAMA}"; then
 		call "${MAMA_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/worlds.json" >/dev/null
 		for id in $(jq -r '.worlds[]?' "${STATE_FILE}" | tr -d ''); do

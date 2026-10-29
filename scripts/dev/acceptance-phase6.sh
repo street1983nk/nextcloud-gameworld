@@ -1,60 +1,60 @@
 #!/bin/sh
-# Phasenabnahme Phase 6: prüft die sieben Erfolgskriterien aus .planning/ROADMAP.md
-# (Store-Release) gegen eine echte Nextcloud 34.0.3 mit echter ExApp und echtem
-# Docker. Am Ende ruft es die Abnahme von Phase 5 als Regression (sie ruft Phase
-# 4.1 bis 1 selbst auf).
+# Phase acceptance phase 6: checks the seven success criteria from .planning/ROADMAP.md
+# (store release) against a real Nextcloud 34.0.3 with a real ExApp and real
+# Docker. At the end it calls the acceptance of phase 5 as a regression (it calls phase
+# 4.1 to 1 itself).
 #
-# Zwei Modi (GAMEWORLD_DEPLOY):
-#   manual (Standard) Dev-Stack scripts/dev/compose.yaml, ExApp als Host-Prozess
-#                     über manual_install (sh scripts/dev/register-exapp.sh).
-#   harp              Test-Instanz scripts/dev/harp.compose.yaml, ExApp als
-#                     Container aus der lokalen Registry über einen echten
-#                     HaRP-Daemon (sh scripts/dev/harp-install.sh). Kriterium 1
-#                     vollständig (Registry-Image, uid 10001) belegt erst dieser
-#                     Modus; die Store-Installation selbst folgt in 06-15.
+# Two modes (GAMEWORLD_DEPLOY):
+#   manual (default)  dev stack scripts/dev/compose.yaml, ExApp as a host process
+#                     via manual_install (sh scripts/dev/register-exapp.sh).
+#   harp              test instance scripts/dev/harp.compose.yaml, ExApp as a
+#                     container from the local registry via a real
+#                     HaRP daemon (sh scripts/dev/harp-install.sh). Criterion 1
+#                     is proven completely (registry image, uid 10001) only by this
+#                     mode; the store installation itself follows in 06-15.
 #
-# Kriterien, je mit Negativ- und Positivkontrolle:
-#   K1 Installation: harp: app_api:app:list mit gameworld (Name Gameworld) auf
-#      harp_dev, ExApp-Container aus localhost:5000 als 10001:10001 und healthy,
-#      /exapps/ über HaRP ohne Anmeldung 403 (Negativ), mit Anmeldung 200 (Positiv);
-#      beide Modi: Welt anlegen, nicht eingeladener Name abgewiesen (Negativ),
-#      eingeladenes Kind tritt bei (Positiv, Prober-CLI).
-#   K2 Setup-Check: Docker-Proxy der aktiven Instanz gestoppt, GET /api/setup-check
-#      meldet proxy_refused, proxy_dns oder proxy_timeout mit Doku-Anker
-#      #setup-check (Negativ); Proxy wieder an, Setup-Check ohne Fehler (Positiv).
-#   K3 Lebenszyklus: harp (eigene Test-Instanz): app_api:app:disable, binnen 60 s
-#      kein Container der eigenen Instanz mehr, Volume noch da; enable, die Welt
-#      läuft wieder und das Kind tritt bei. Im Modus manual wird NICHT deaktiviert:
-#      Der Instanz gehören dort die laufenden Welten der Dev-Umgebung (D-17 räumte
-#      sie ab). Beide Modi: Orphan-Container (Label gameworld.managed=true,
-#      gameworld.instance=acceptance-orphan) und Volume gameworld-acceptance-orphan-x
-#      per docker CLI; GET /api/admin/orphans als admin listet beide (Positiv), als
-#      gw-lehrer 403 (Negativ); Entfernen per API, docker CLI findet beide nicht
-#      mehr; scripts/gameworld-orphans.sh ohne Optionen ändert nichts und nennt die
-#      Orphans nicht mehr (Grundlinie fremder Objekte, Gegenprobe gegen docker CLI).
-#   K4 Listing: info.xml mit genau einem <name>, de/fr-Beschreibungen mit
-#      Privilegien-Überschrift, docs/privacy.md und privacy.de.md; Negativ: eine
-#      erfundene Überschrift findet dasselbe grep nicht.
-#   K5 Verwalter-Gruppen: gw-lehrer vor der Freischaltung 403 (Negativ), danach 200
-#      (Positiv); gw-lehrer ändert keine Verwalter-Gruppen (403); lädt gw-kind-k
-#      (200) und die Gruppe klasse (200) ein, gw-kind-out (403, Text) und die Gruppe
-#      admin (403) nicht; 404-Falle: ein von admin direkt eingeladenes Konto
-#      außerhalb der Gruppen von gw-lehrer übersteht zwei Besuche von gw-lehrer im
-#      Abstand des Abgleich-Intervalls (Zugänge vorher gleich nachher); gw-kind-k
-#      auf jeder Verwaltungsroute 403, auf /api/me und /api/my/worlds 200.
-#   K6 Erwachsen: Regel "kein Spieltag" für gw-erwachsen, Beitritt abgewiesen
-#      (Negativ); adult true, Beitritt gelingt (Positiv); gw-kind-k setzt adult für
-#      sich 403, Flag unverändert; adult false trennt die gehaltene Sitzung;
-#      minetest.conf vorher gleich nachher. Pause für alle (gw-lehrer): gw-kind-k
-#      getrennt mit Pausentext (Negativ), gw-erwachsen tritt bei (Positiv), Ende
-#      HTTP 200. Geschlossenes Welt-Zeitfenster: gw-kind-k abgewiesen mit
-#      Fenstertext, gw-erwachsen tritt bei, DELETE 200; danach weder Pause noch
-#      Fenster aktiv.
-#   K7 Talk: gw-alt (Verwalter über lehrkraefte) besitzt den Raum seiner Welt;
-#      aus lehrkraefte entfernt, zeigt GET /api/talk owner_not_admin true; recreate
-#      liefert ein neues Token ohne gw-alt; zweite Welt von gw-alt, gw-alt gelöscht,
-#      nach dem Abgleich owner_not_admin false und der Raum für admin erreichbar.
-#      Übersprung NUR mit GAMEWORLD_SKIP_TALK=1, sonst ist fehlendes Talk ein Fehler.
+# Criteria, each with negative and positive control:
+#   K1 Installation: harp: app_api:app:list with gameworld (name Gameworld) on
+#      harp_dev, ExApp container from localhost:5000 as 10001:10001 and healthy,
+#      /exapps/ via HaRP without login 403 (negative), with login 200 (positive);
+#      both modes: create a world, name not invited is refused (negative),
+#      invited child joins (positive, prober CLI).
+#   K2 Setup check: Docker proxy of the active instance stopped, GET /api/setup-check
+#      reports proxy_refused, proxy_dns or proxy_timeout with the docs anchor
+#      #setup-check (negative); proxy on again, setup check without error (positive).
+#   K3 Lifecycle: harp (own test instance): app_api:app:disable, within 60 s
+#      no container of the own instance any more, volume still there; enable, the world
+#      runs again and the child joins. In manual mode NOTHING is disabled:
+#      the instance owns the running worlds of the dev environment there (D-17 cleared
+#      them away). Both modes: orphan container (label gameworld.managed=true,
+#      gameworld.instance=acceptance-orphan) and volume gameworld-acceptance-orphan-x
+#      via docker CLI; GET /api/admin/orphans as admin lists both (positive), as
+#      gw-lehrer 403 (negative); removal via API, the docker CLI finds neither
+#      any more; scripts/gameworld-orphans.sh without options changes nothing and no longer
+#      names the orphans (baseline of foreign objects, counter-check against the docker CLI).
+#   K4 Listing: info.xml with exactly one <name>, de/fr descriptions with a
+#      privileges heading, docs/privacy.md and privacy.de.md; negative: an
+#      invented heading is not found by the same grep.
+#   K5 Manager groups: gw-lehrer before the release 403 (negative), afterwards 200
+#      (positive); gw-lehrer changes no manager groups (403); invites gw-kind-k
+#      (200) and the group klasse (200), not gw-kind-out (403, text) and not the group
+#      admin (403); 404 trap: an account invited directly by admin
+#      outside the groups of gw-lehrer survives two visits of gw-lehrer at the
+#      distance of the sync interval (accesses before equal after); gw-kind-k
+#      403 on every management route, 200 on /api/me and /api/my/worlds.
+#   K6 Adult: rule "no play day" for gw-erwachsen, join refused
+#      (negative); adult true, join succeeds (positive); gw-kind-k sets adult for
+#      itself 403, flag unchanged; adult false disconnects the held session;
+#      minetest.conf before equal after. Pause for all (gw-lehrer): gw-kind-k
+#      disconnected with the pause text (negative), gw-erwachsen joins (positive), end
+#      HTTP 200. Closed world time window: gw-kind-k refused with the
+#      window text, gw-erwachsen joins, DELETE 200; afterwards neither pause nor
+#      window active.
+#   K7 Talk: gw-alt (manager via lehrkraefte) owns the room of its world;
+#      removed from lehrkraefte, GET /api/talk shows owner_not_admin true; recreate
+#      delivers a new token without gw-alt; second world of gw-alt, gw-alt deleted,
+#      after the sync owner_not_admin false and the room reachable for admin.
+#      Skipping ONLY with GAMEWORLD_SKIP_TALK=1, otherwise missing Talk is a failure.
 #   K8 Language (D-25, D-27): gw6-en (manager, core lang en) gets /api/me language en,
 #      gw6-lehrer (de) gets de; gw6-kind-en gets the English 403 text, a German kid
 #      still the exact German one; a world created by gw6-en is en, one by gw6-lehrer
@@ -65,30 +65,30 @@
 #      attempt notification is English for gw6-en and German for gw6-lehrer (on the
 #      daily throttle: summary message as positive control, announced as a hint line).
 #
-# Bewusst unabhängig vom Implementierungsmuster: Belege kommen aus curl gegen den
-# AppAPI-Proxy, HaRP und die Talk-OCS-API mit echten Nextcloud-Konten, aus occ, aus
-# der docker CLI (inspect, ps, volume, cp, stop/start nur des Docker-Proxys der
-# aktiven Instanz), aus jq und grep. Einziges Python-Werkzeug des Projekts ist der
-# Session-Prober (tests/e2e/luanti_probe.py) über seine CLI; die Uhrzeit der
-# Haushalts-Zeitzone rechnet die Standardbibliothek (zoneinfo).
+# Deliberately independent of the implementation pattern: evidence comes from curl against the
+# AppAPI proxy, HaRP and the Talk OCS API with real Nextcloud accounts, from occ, from
+# the docker CLI (inspect, ps, volume, cp, stop/start only of the Docker proxy of the
+# active instance), from jq and grep. The only Python tool of the project is the
+# session prober (tests/e2e/luanti_probe.py) through its CLI; the time of the
+# household time zone is calculated by the standard library (zoneinfo).
 #
-# Fixtures: Gruppen gw6-lehrkraefte und gw6-klasse; Wegwerfkonten gw6-lehrer
-# (gw6-lehrkraefte, gw6-klasse), gw6-kind-k (gw6-klasse), gw6-kind-out (keine Gruppe),
+# Fixtures: groups gw6-lehrkraefte and gw6-klasse; throwaway accounts gw6-lehrer
+# (gw6-lehrkraefte, gw6-klasse), gw6-kind-k (gw6-klasse), gw6-kind-out (no group),
 # gw6-erwachsen (gw6-klasse), gw6-alt (gw6-lehrkraefte), for K8 gw6-en (both groups,
 # lang en) and gw6-kind-en (gw6-klasse, lang en). All other accounts get core lang de.
-# The gw6 prefix keeps the demo environment (gw-lehrer, lehrkraefte, klasse) untouched. Spielpasswörter erscheinen nie in der Ausgabe, nur ihre
-# Länge. Zugangsdaten hier sind reine Dev-Konten von Loopback-Instanzen.
+# The gw6 prefix keeps the demo environment (gw-lehrer, lehrkraefte, klasse) untouched. Play passwords never appear in the output, only their
+# length. Credentials here are pure dev accounts of loopback instances.
 #
-# Voraussetzung:
+# Prerequisite:
 #   manual: docker compose -f scripts/dev/compose.yaml up -d
 #           sh scripts/dev/register-exapp.sh   (Talk: docs/dev-setup.md)
 #   harp:   sh scripts/dev/harp-install.sh
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Ein trap räumt in jedem Fall auf:
-# Abnahme-Welten, Pause, Zeitfenster, Regeln, Verwalter-Gruppe, Konten, Gruppen,
-# Orphan-Objekte, Docker-Proxy wieder an, ExApp wieder aktiviert. Fremde Welten
-# (andere Instanzen, laufende Dev-Welten) bleiben unangetastet; die Prüfung auf
-# übrig gebliebene Container zählt nur, was dieser Lauf neu hinterlassen hätte.
+# Exit 0 only if every check passes. A trap cleans up in any case:
+# acceptance worlds, pause, time window, rules, manager group, accounts, groups,
+# orphan objects, Docker proxy on again, ExApp enabled again. Foreign worlds
+# (other instances, running dev worlds) stay untouched; the check for
+# leftover containers counts only what this run would have left behind newly.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -158,14 +158,14 @@ ORPHAN_VOLUME=gameworld-acceptance-orphan-x
 LUANTI_IMAGE=ghcr.io/luanti-org/luanti:5.17.0
 CONF_PATH=/var/lib/minetest/minetest.conf
 DOC_ANCHOR="install.md#setup-check"
-# Kindertexte aus provisioner/time_mod.py und access_mod.py (Teilstrings, eigene Literale).
+# Kid texts from provisioner/time_mod.py and access_mod.py (substrings, literals of our own).
 TEXT_TAG="Heute ist kein Spieltag"
 TEXT_PAUSE="Kurze Pause!"
 TEXT_WELT="Diese Welt ist gerade zu"
 TEXT_DENY="nicht eingeladen"
 TEXT_OUT_OF_SCOPE="Dieses Konto ist in keiner deiner Gruppen."
 TEXT_GROUP_OUT_OF_SCOPE="Diese Gruppe gehört nicht zu deinen Gruppen."
-# Abgleich beim Verwalter-Besuch höchstens alle 60 s (access/service.py), Talk alle 300 s.
+# Sync on a manager visit at most every 60 s (access/service.py), Talk every 300 s.
 SYNC_WAIT=65
 # K8: own expected literals, copied from the catalogs as an independent cross-check
 # (catalog_en.py roles.MSG_FORBIDDEN, access_mod.py and time_mod.py MOD_TEXTS, notify/texts.py).
@@ -237,7 +237,7 @@ occ() {
 	docker exec -u www-data "${NC_CONTAINER}" php occ "$@"
 }
 
-# add_user KONTO PASSWORT ANZEIGENAME -> Wegwerfkonto frisch anlegen (Muster acceptance-phase5.sh)
+# add_user ACCOUNT PASSWORD DISPLAYNAME -> create the throwaway account fresh (pattern acceptance-phase5.sh)
 add_user() {
 	occ user:delete "$1" >/dev/null 2>&1 || true
 	add_try=1
@@ -261,7 +261,7 @@ add_user() {
 user_present() { occ user:info "$1" >/dev/null 2>&1; }
 user_absent() { ! user_present "$1"; }
 
-# call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code
+# call AUTH METHOD URL OUTPUT [JSON] -> HTTP code
 call() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' -H 'Content-Type: application/json' \
@@ -320,7 +320,7 @@ wait_online() {
 	done
 }
 
-# wait_code AUTH URL CODE SEKUNDEN -> 0, sobald GET URL den Code liefert
+# wait_code AUTH URL CODE SECONDS -> 0 as soon as GET URL delivers the code
 wait_code() {
 	until_ts=$(deadline "$4")
 	while :; do
@@ -342,7 +342,7 @@ player_field() {
 	jq -r --arg u "$2" ".players[]? | select(.nc_user == \$u) | .$3 // empty" "$1" 2>/dev/null || true
 }
 
-# create_world AUTH NAME -> setzt NEW_ID und NEW_CODE
+# create_world AUTH NAME -> sets NEW_ID and NEW_CODE
 create_world() {
 	NEW_CODE=$(call "$1" POST "${API_URL}/worlds" "${WORK_DIR}/new-world.json" "{\"name\":\"$2\",\"preset\":\"mtg_kreativ\"}")
 	NEW_ID=$(jq -r '.id // empty' "${WORK_DIR}/new-world.json" 2>/dev/null || true)
@@ -386,7 +386,7 @@ accepted() {
 	[ "$(jq -r '.result' "$1" 2>/dev/null)" = auth_accept ]
 }
 
-# week TAGE -> Wochenplan: an TAGE (z. B. "1,2") erlaubt ohne Grenze, sonst kein Spieltag
+# week DAYS -> weekly plan: allowed on DAYS (e.g. "1,2") without limit, otherwise no play day
 week() {
 	jq -nc --arg days "$1" '
 		($days | split(",") | map(select(. != "") | tonumber)) as $on
@@ -394,7 +394,7 @@ week() {
 			| if any($on[]; . == $d) then {weekday: $d, allowed: true} else {weekday: $d, allowed: false} end]'
 }
 
-# zone_now ZONE -> "MINUTE" (Minuten seit 0 Uhr in der Haushalts-Zeitzone)
+# zone_now ZONE -> "MINUTE" (minutes since 0 o'clock in the household time zone)
 zone_now() {
 	(cd "${WORK_DIR}" && uv run --project "${REPO_ROOT}" python -I -c '
 import sys
@@ -405,7 +405,7 @@ print(now.hour * 60 + now.minute)
 ' "$1") 2>/dev/null | tr -d '\r'
 }
 
-# talk_field WELT JQ -> Feld aus GET /api/talk als admin
+# talk_field WORLD JQ -> field from GET /api/talk as admin
 talk_field() {
 	http_code GET "${API_URL}/talk" "${WORK_DIR}/talk.json" >/dev/null
 	jq -r --arg id "$1" ".worlds[]? | select(.world_id == \$id) | $2" "${WORK_DIR}/talk.json" 2>/dev/null || true
@@ -420,12 +420,12 @@ wait_talk() {
 	done
 }
 
-# fetch_parts TOKEN -> Teilnehmerliste als admin nach parts.json, HTTP-Code in PART_CODE (nie in $(...) aufrufen)
+# fetch_parts TOKEN -> participant list as admin to parts.json, HTTP code in PART_CODE (never call inside $(...))
 fetch_parts() {
 	PART_CODE=$(http_code GET "${SPREED}/room/$1/participants" "${WORK_DIR}/parts.json")
 }
 
-# ptype KONTO -> participantType aus der zuletzt geholten Liste (leer, wenn nicht Teilnehmer)
+# ptype ACCOUNT -> participantType from the most recently fetched list (empty if not a participant)
 ptype() {
 	jq -r --arg u "$1" '[.ocs.data[]? | select(.actorType == "users" and .actorId == $u) | .participantType][0] // empty' \
 		"${WORK_DIR}/parts.json" 2>/dev/null || true
@@ -508,7 +508,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-# Voraussetzungen ---------------------------------------------------------
+# Prerequisites ---------------------------------------------------------
 for tool in docker curl jq grep sed awk sort uv; do
 	command -v "${tool}" >/dev/null 2>&1 || abort "Werkzeug ${tool} fehlt"
 done
@@ -732,7 +732,7 @@ check "K3 gameworld-orphans.sh nennt den entfernten Orphan nicht mehr" \
 if [ -z "$(docker ps -aq --filter label=gameworld.managed=true)" ] && [ -z "$(docker volume ls -q --filter name=gameworld- | grep -E '^gameworld-[a-z0-9-]+$' || true)" ]; then
 	check "K3 gameworld-orphans.sh: 'No Gameworld leftovers found.'" grep -qx 'No Gameworld leftovers found.' "${WORK_DIR}/orphans-script.txt"
 else
-	# Grundlinie: laufende Welten dieser und anderer Instanzen listet das Skript ehrlich mit.
+	# Baseline: running worlds of this and other instances are listed honestly by the script.
 	check "K3 gameworld-orphans.sh listet die vorhandenen Welt-Container (Positivkontrolle ${C1})" \
 		grep -q "$(docker inspect --format '{{.Name}}' "${C1}" | tr -d '/\r')" "${WORK_DIR}/orphans-script.txt"
 	check "K3 gameworld-orphans.sh: 'Nothing was changed.'" grep -q 'Nothing was changed.' "${WORK_DIR}/orphans-script.txt"
@@ -896,7 +896,7 @@ wait "${KID_JOB}" || true
 KID_JOB=""
 printf '%s: %s\n' "${KIND}" "$(probe_summary "${WORK_DIR}/k6-kid-hold.json")"
 check "K6 Negativkontrolle: ${KIND} getrennt mit '${TEXT_PAUSE}'" kicked_with "${WORK_DIR}/k6-kid-hold.json" "${TEXT_PAUSE}"
-# Nach dem Trennen sperrt der Mod 2 s jeden Wiederbeitritt ("einen Moment warten"), erst danach greift die Pause.
+# After disconnecting, the mod blocks every rejoin for 2 s ("einen Moment warten"), only afterwards does the pause apply.
 sleep 3
 probe_expect "${WORK_DIR}/k6-kid-pause.json" ".result == \"denied\" and ((.reason // \"\") | contains(\"${TEXT_PAUSE}\"))" 15 \
 	"${K2_NAME}" "${K2_PW}" || true
@@ -992,10 +992,10 @@ else
 	check "K7 Talk-Raum für '${W4_NAME}' entsteht (binnen ${TALK_WAIT} s)" wait_talk "${W4}" '.has_room' "${TALK_WAIT}"
 	http_code POST "${API_URL}/worlds/${W4}/stop" /dev/null >/dev/null || true
 	T4=$(talk_field "${W4}" '.token // empty')
-	# Erst übernehmen lassen, wenn der Abgleich die übrigen Verwalter als Moderatoren
-	# hinzugefügt hat: Bis dahin ist gw-alt allein im Raum (Verwalter-Schnappschuss
-	# höchstens alle 60 s, Abgleich alle 5 min). Ein Verwalter-Besuch (GET /api/pause)
-	# frischt den Schnappschuss auf, wie in der Oberfläche.
+	# Only let it take over once the sync has added the other managers as moderators:
+	# until then gw-alt is alone in the room (manager snapshot
+	# at most every 60 s, sync every 5 min). A manager visit (GET /api/pause)
+	# refreshes the snapshot, as in the UI.
 	check "K7 ${ALT} ist Owner des zweiten Raums, admin nach dem Abgleich Moderator (binnen ${TALK_WAIT} s)" room_synced "${T4}"
 	occ user:delete "${ALT}" >/dev/null 2>&1 || fail "K7 occ user:delete ${ALT} scheiterte"
 	check "K7 Konto ${ALT} gelöscht" user_absent "${ALT}"
@@ -1243,7 +1243,7 @@ if [ "${GAMEWORLD_SKIP_REGRESSION:-0}" = 1 ]; then
 elif [ "${DEPLOY}" != manual ]; then
 	fail "Regression nur im Modus manual (Dev-Stack); mit GAMEWORLD_SKIP_REGRESSION=1 aufrufen"
 else
-	# acceptance-phase5.sh ruft acceptance-phase4_1.sh, das Phase 4 bis 1 selbst aufruft.
+	# acceptance-phase5.sh calls acceptance-phase4_1.sh, which calls phase 4 to 1 itself.
 	if sh "${PHASE5_SCRIPT}" >"${WORK_DIR}/phase5.log" 2>&1; then
 		pass "Regression: acceptance-phase5.sh Exit 0 ($(grep 'Prüfungen bestanden' "${WORK_DIR}/phase5.log" | tail -n 1))"
 	else
@@ -1255,7 +1255,7 @@ else
 		grep -qx 'Phasenabnahme Phase 5 erfolgreich' "${WORK_DIR}/phase5.log"
 	check "Regression: Phase 5 meldet 'Phasenabnahme Phase 4.1 erfolgreich' bestanden" \
 		grep -qx "bestanden: Regression: Log enthält 'Phasenabnahme Phase 4.1 erfolgreich'" "${WORK_DIR}/phase5.log"
-	# N von N je Phase 4 bis 1 (Phase 5 prüft sie im Log von Phase 4.1) und die eigene Zeile von Phase 5.
+	# N von N for each of phase 4 to 1 (phase 5 checks them in the log of phase 4.1) and the own line of phase 5.
 	check "Regression: vier bestandene N-von-N-Zeilen der Phasen 4 bis 1" eq "$(awk '
 		$1 == "bestanden:" && $2 == "Regression:" && $3 == "Log" && $6 == "von" && $8 == "Prüfungen" &&
 		substr($5, 1, 1) == "\047" && substr($5, 2) == $7 { n++ }

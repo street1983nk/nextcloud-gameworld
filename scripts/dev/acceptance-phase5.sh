@@ -1,47 +1,47 @@
 #!/bin/sh
-# Phasenabnahme Phase 5: prüft die drei Erfolgskriterien aus .planning/ROADMAP.md
-# (Sicherung und Wiederherstellung) gegen den laufenden Dev-Stack mit echter
-# Nextcloud 34.0.3, laufender ExApp (keine Fakes, echte Files-Ablage per WebDAV im
-# Namen des Verwalters) und echtem Docker. Am Ende ruft es die Abnahme von Phase 4.1
-# als Regression (sie ruft Phase 4 bis 1 selbst auf).
+# Phase acceptance phase 5: checks the three success criteria from .planning/ROADMAP.md
+# (backup and restore) against the running dev stack with a real
+# Nextcloud 34.0.3, running ExApp (no fakes, real Files storage via WebDAV in the
+# name of the manager) and real Docker. At the end it calls the acceptance of phase 4.1
+# as a regression (it calls phase 4 to 1 itself).
 #
-#   K1 Cold-Backup: Sichern trennt spielende Kinder nur nach Bestätigung, der
-#      Welt-Container wird gestoppt, gesichert und wieder gestartet.
-#   K2 Die Sicherung liegt in Nextcloud Files unter Gameworld/Sicherungen/<Welt>/
-#      mit Namen <weltname>-JJJJ-MM-TT-HHMM.tar.gz, enthält die SQLite-Welt
-#      (world.mt: backend = sqlite3) ohne Laufzeitdateien der eigenen Mods, und
-#      ein zweiter Verwalter sieht sie nicht (D-13).
-#   K3 Restore-Roundtrip: Mia vor der Sicherung, Leo danach, kaputte map.sqlite
-#      plus Journal; nach dem Wiederherstellen ist Mia da, Leo weg, die Karte heil,
-#      und die vor-restore-Sicherung liegt daneben.
+#   K1 Cold backup: backing up disconnects playing children only after confirmation, the
+#      world container is stopped, backed up and started again.
+#   K2 The backup is in Nextcloud Files under Gameworld/Sicherungen/<Welt>/
+#      with the name <worldname>-YYYY-MM-DD-HHMM.tar.gz, contains the SQLite world
+#      (world.mt: backend = sqlite3) without runtime files of its own mods, and
+#      a second manager does not see it (D-13).
+#   K3 Restore roundtrip: Mia before the backup, Leo after, broken map.sqlite
+#      plus journal; after the restore Mia is there, Leo gone, the map intact,
+#      and the vor-restore backup lies next to it.
 #
-# Bewusst unabhängig vom Implementierungsmuster: Belege kommen aus der docker-CLI
-# (inspect, events, cp), aus curl gegen den AppAPI-Proxy und gegen WebDAV
-# (PROPFIND, GET) mit echten Nextcloud-Konten, aus jq, tar und grep. SQLite-Dateien
-# liest die Python-Standardbibliothek nur lesend (mode=ro). Einziges Python-Werkzeug
-# des Projekts ist der Session-Prober (tests/e2e/luanti_probe.py) über seine CLI.
+# Deliberately independent of the implementation pattern: evidence comes from the docker CLI
+# (inspect, events, cp), from curl against the AppAPI proxy and against WebDAV
+# (PROPFIND, GET) with real Nextcloud accounts, from jq, tar and grep. SQLite files
+# are read by the Python standard library read-only (mode=ro). The only Python tool
+# of the project is the session prober (tests/e2e/luanti_probe.py) through its CLI.
 #
-# Spieler: Mia und Leo sind die realen Dev-Konten gw-kind (Mia-Rolle) und gw-kind2
-# (Leo-Rolle, Wegwerfkonto dieses Laufs). Die Einladungen legt das Skript per API
-# an; Spielname und Spielpasswort kommen aus der Einladungs-Antwort
-# (GET /players) und erscheinen nie in der Ausgabe, nur ihre Länge.
+# Players: Mia and Leo are the real dev accounts gw-kind (Mia role) and gw-kind2
+# (Leo role, throwaway account of this run). The script creates the invitations via the API;
+# player name and play password come from the invitation response
+# (GET /players) and never appear in the output, only their length.
 #
 # Voraussetzung:
 #   docker compose -f scripts/dev/compose.yaml up -d
 #   sh scripts/dev/register-exapp.sh
-#   (für die Regression zusätzlich Talk, siehe docs/dev-setup.md)
+#   (for the regression additionally Talk, see docs/dev-setup.md)
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Ein trap räumt in jedem Fall auf:
-# Abnahme-Welt (Lösch-API, Fallback docker rm -f -v), die Abnahme-Dateien in den
-# Files von admin (WebDAV DELETE nur auf Namen, die dem Abnahme-Muster entsprechen,
-# der Ordner nur, wenn er danach leer ist), Wegwerfkonten gw-kind2 und gw-admin2,
-# gw-kind nie in admin. gw-kind selbst bleibt bestehen.
+# Exit 0 only if every check passes. A trap cleans up in any case:
+# acceptance world (delete API, fallback docker rm -f -v), the acceptance files in the
+# Files of admin (WebDAV DELETE only on names that match the acceptance pattern,
+# the folder only if it is empty afterwards), throwaway accounts gw-kind2 and gw-admin2,
+# gw-kind never in admin. gw-kind itself stays.
 #
-# Fremde Welt-Container (andere ExApp-Instanzen, Testreste anderer Sitzungen)
-# bleiben unangetastet; die Prüfung auf übrig gebliebene Container zählt nur, was
-# dieser Lauf neu hinterlassen hätte (Grundlinie beim Start).
+# Foreign world containers (other ExApp instances, test leftovers of other sessions)
+# stay untouched; the check for leftover containers counts only what
+# this run would have left behind newly (baseline at the start).
 #
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -61,14 +61,14 @@ API_URL="${PROXY_BASE}/api"
 BACKEND_PORT=10040
 PROBE_HOST=127.0.0.1
 WORLD_NAME="Abnahme Sicherung"
-# Ordner und Dateinamen nach D-01/D-02 (eigene Literale, nicht aus dem Code).
+# Folder and file names after D-01/D-02 (literals of our own, not from the code).
 DAV_FOLDER="${NEXTCLOUD_URL}/remote.php/dav/files/admin/Gameworld/Sicherungen/Abnahme%20Sicherung"
 BACKUP_RE='^Abnahme Sicherung-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}\.tar\.gz$'
 VOR_RESTORE_RE='^Abnahme Sicherung-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}-vor-restore\.tar\.gz$'
-# Nur diese Namen darf das Skript in den Files von admin löschen (T-05-43).
+# Only these names may the script delete in the Files of admin (T-05-43).
 OWN_FILE_RE='^Abnahme Sicherung-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}(-vor-restore)?(-[0-9]+)?\.tar\.gz$'
 WORLD_PATH=/var/lib/minetest/.minetest/worlds/world
-# Elterntext aus backup/service.py (Teilstring) und Kindertext des Halts.
+# Parent text from backup/service.py (substring) and kid text of the halt.
 TEXT_DISCONNECT="kurz getrennt"
 TEXT_HALT="Die Welt macht kurz Pause"
 TEXT_HALT_SOON="Die Welt macht gleich eine kurze Pause."
@@ -118,7 +118,7 @@ occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
 }
 
-# add_user KONTO PASSWORT ANZEIGENAME -> Wegwerfkonto frisch anlegen (Muster acceptance-phase4_1.sh)
+# add_user ACCOUNT PASSWORD DISPLAYNAME -> create the throwaway account fresh (pattern acceptance-phase4_1.sh)
 add_user() {
 	occ user:delete "$1" >/dev/null 2>&1 || true
 	add_try=1
@@ -143,7 +143,7 @@ heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
 
-# call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code
+# call AUTH METHOD URL OUTPUT [JSON] -> HTTP code
 call() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' -H 'Content-Type: application/json' \
@@ -176,7 +176,7 @@ delete_world_hard() {
 
 # WebDAV ---------------------------------------------------------------------
 
-# dav_list URL DATEI -> HTTP-Code; die Dateinamen (dekodiert, ohne Ordner) landen zeilenweise in DATEI
+# dav_list URL FILE -> HTTP code; the file names (decoded, without folder) end up line by line in FILE
 dav_list() {
 	list_code=$(curl -s -u "${ADMIN_AUTH}" -X PROPFIND -H 'Depth: 1' -o "${WORK_DIR}/propfind.xml" \
 		-w '%{http_code}' "$1/" 2>/dev/null || printf '000')
@@ -193,18 +193,18 @@ dav_list() {
 	printf '%s' "${list_code}"
 }
 
-# dav_url NAME -> URL der Datei im Abnahme-Ordner (nur Leerzeichen kommen im Namen vor)
+# dav_url NAME -> URL of the file in the acceptance folder (only spaces occur in the name)
 dav_url() {
 	printf '%s/%s' "${DAV_FOLDER}" "$(printf '%s' "$1" | sed 's/ /%20/g')"
 }
 
-# dav_delete_own NAME -> löscht nur Namen nach OWN_FILE_RE (T-05-43)
+# dav_delete_own NAME -> deletes only names matching OWN_FILE_RE (T-05-43)
 dav_delete_own() {
 	printf '%s' "$1" | grep -Eq "${OWN_FILE_RE}" || return 1
 	curl -s -u "${ADMIN_AUTH}" -X DELETE -o /dev/null "$(dav_url "$1")" >/dev/null 2>&1 || true
 }
 
-# Räumt die eigenen Abnahme-Dateien im Ordner weg; der Ordner selbst nur, wenn er danach leer ist.
+# Clears away the own acceptance files in the folder; the folder itself only if it is empty afterwards.
 dav_cleanup() {
 	[ "$(dav_list "${DAV_FOLDER}" "${WORK_DIR}/dav-clean.txt")" = 207 ] || return 0
 	while IFS= read -r name; do
@@ -215,9 +215,9 @@ dav_cleanup() {
 	fi
 }
 
-# SQLite nur lesend über die Standardbibliothek ---------------------------------
+# SQLite read-only via the standard library ---------------------------------
 
-# sqlite_ro DATEI SQL -> Zeilen mit | getrennt; Exit ungleich 0, wenn die Datei keine SQLite-Datei ist
+# sqlite_ro FILE SQL -> rows separated by |; exit other than 0 if the file is not a SQLite file
 sqlite_ro() {
 	db_path=$1
 	command -v cygpath >/dev/null 2>&1 && db_path=$(cygpath -w "$1")
@@ -247,24 +247,24 @@ started_at() {
 	docker inspect --format '{{.State.StartedAt}}' "$1" 2>/dev/null | tr -d '\r' || true
 }
 
-# copy_out CONTAINER DATEI ZIELORDNER -> 0, wenn die Datei aus dem Weltordner kam
+# copy_out CONTAINER FILE TARGETDIR -> 0 if the file came from the world folder
 copy_out() {
 	rm -f "$3/$2"
-	# MSYS_NO_PATHCONV: Git Bash würde den Containerpfad sonst umschreiben.
+	# MSYS_NO_PATHCONV: Git Bash would otherwise rewrite the container path.
 	MSYS_NO_PATHCONV=1 docker cp "$1:${WORLD_PATH}/$2" - >"${WORK_DIR}/cp.tar" 2>/dev/null || return 1
 	tar -xf "${WORK_DIR}/cp.tar" -C "$3" 2>/dev/null || return 1
 	[ -f "$3/$2" ]
 }
 
-# API-Helfer -------------------------------------------------------------------
+# API helpers -------------------------------------------------------------------
 
 world_field() {
 	http_code GET "${API_URL}/worlds" "${WORK_DIR}/field.json" >/dev/null
 	jq -r --arg id "$1" ".worlds[]? | select(.id == \$id) | $2" "${WORK_DIR}/field.json" 2>/dev/null || true
 }
 
-# Fristen zählen echte Sekunden (date), nicht Schleifenrunden: ein Abruf über den
-# AppAPI-Proxy dauert am Dev-Stack bis zu 5 s.
+# Deadlines count real seconds (date), not loop rounds: a fetch through the
+# AppAPI proxy takes up to 5 s on the dev stack.
 deadline() { printf '%s' "$(($(date +%s) + $1))"; }
 before() { [ "$(date +%s)" -lt "$1" ]; }
 
@@ -277,8 +277,8 @@ wait_status() {
 	done
 }
 
-# wait_job WELT ART SEKUNDEN -> 0, sobald backup_job dieser Art fertig ist (ok oder failed);
-# der Zustand steht danach in JOB_STATE, jeder beobachtete Weltstatus in BUSY_SEEN.
+# wait_job WORLD KIND SECONDS -> 0 as soon as backup_job of this kind is finished (ok or failed);
+# the state is then in JOB_STATE, every observed world status in BUSY_SEEN.
 wait_job() {
 	until_ts=$(deadline "$3")
 	JOB_STATE=""
@@ -326,7 +326,7 @@ probe_summary() {
 	jq -r '"\(.result) \(.code // "") \(.reason // "") \(.after_s // "")"' "$1" 2>/dev/null || printf 'nicht lesbar'
 }
 
-# wait_online WELT SPIELERNAME SEKUNDEN -> 0, sobald die Weltenliste den Namen unter players führt
+# wait_online WORLD PLAYERNAME SECONDS -> 0 as soon as the world list carries the name under players
 wait_online() {
 	until_ts=$(deadline "$3")
 	while :; do
@@ -338,13 +338,13 @@ wait_online() {
 
 eq() { [ "$1" = "$2" ]; }
 not() { ! "$@"; }
-# not_grep MUSTER DATEI -> 0, wenn DATEI lesbar ist und keine Zeile auf MUSTER passt
+# not_grep PATTERN FILE -> 0 if FILE is readable and no line matches PATTERN
 not_grep() { [ -s "$2" ] && ! grep -Eq "$1" "$2"; }
 matches() { printf '%s' "$1" | grep -Eq "$2"; }
 user_present() { occ user:info "$1" >/dev/null 2>&1; }
 user_absent() { ! user_present "$1"; }
 
-# new_containers -> Anzahl Welt-Container, die beim Start noch nicht da waren
+# new_containers -> number of world containers that were not there at the start
 new_containers() {
 	count=0
 	for cid in $(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null); do
@@ -534,7 +534,7 @@ check "K2 Liste: total_size gleich der Dateigröße (ist $(jq -r '.total_size' "
 FILE_ID=$(jq -r '.backups[0].file_id // empty' "${WORK_DIR}/list1.json" 2>/dev/null || true)
 check "K2 file_id ist eine Zahl (ist ${FILE_ID:-leer})" matches "${FILE_ID}" '^[0-9]+$'
 
-# D-13: Positivkontrolle, dass gw-admin2 wirklich Verwalter ist und die Welt sieht.
+# D-13: positive control that gw-admin2 really is a manager and sees the world.
 CODE=$(call "${ADMIN2_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/a2-worlds.json")
 check "K2 Positivkontrolle: ${ADMIN2} ist Verwalter, GET /api/worlds HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 check "K2 Positivkontrolle: ${ADMIN2} sieht die Welt '${WORLD_NAME}'" \
@@ -571,7 +571,7 @@ check "K3 Positivkontrolle: Leo steht vor dem Wiederherstellen in players.sqlite
 check "K3 Positivkontrolle: Mia steht vor dem Wiederherstellen in players.sqlite" \
 	has_player "${WORK_DIR}/pre/players.sqlite" "${MIA_NAME}"
 
-# Weltkarte zerstören: Zufallsbytes als map.sqlite plus heißes Journal.
+# Destroy the world map: random bytes as map.sqlite plus hot journal.
 mkdir -p "${WORK_DIR}/broken"
 head -c 65536 /dev/urandom >"${WORK_DIR}/broken/map.sqlite"
 head -c 4096 /dev/urandom >"${WORK_DIR}/broken/map.sqlite-journal"
@@ -601,7 +601,7 @@ BUSY_SEEN=""
 check "K3 Auftrag fertig binnen ${JOB_WAIT} s" wait_job "${WORLD_ID}" restore "${JOB_WAIT}"
 check "K3 backup_job.state ok (ist ${JOB_STATE:-leer}, $(world_field "${WORLD_ID}" '.backup_job.message // ""'))" eq "${JOB_STATE}" ok
 printf 'beobachtete Weltstatus während des Wiederherstellens:%s\n' "${BUSY_SEEN}"
-# Die Welt war vor dem Wiederherstellen gestoppt; sie bleibt es, bis jemand sie startet.
+# The world was stopped before the restore; it stays so until someone starts it.
 STATUS_AFTER=$(world_field "${WORLD_ID}" '.status')
 printf 'Status nach dem Wiederherstellen: %s\n' "${STATUS_AFTER}"
 if [ "${STATUS_AFTER}" != running ]; then
@@ -671,7 +671,7 @@ if [ "${GAMEWORLD_SKIP_REGRESSION:-0}" = 1 ]; then
 	printf '\n%s von %s Prüfungen bestanden\n' "${PASSED}" "${TOTAL}"
 	exit 1
 fi
-# acceptance-phase4_1.sh ruft acceptance-phase4.sh, das Phase 3 bis 1 selbst aufruft.
+# acceptance-phase4_1.sh calls acceptance-phase4.sh, which calls phase 3 to 1 itself.
 if sh "${PHASE41_SCRIPT}" >"${WORK_DIR}/phase41.log" 2>&1; then
 	pass "Regression: acceptance-phase4_1.sh Exit 0 ($(grep 'Prüfungen bestanden' "${WORK_DIR}/phase41.log" | tail -n 1))"
 else

@@ -3,8 +3,8 @@
 #
 # Docker HEALTHCHECK of the ExApp container (T-02-25).
 #
-# Gameworld: unveränderte Kopie aus nextcloud-mcp-connector/healthcheck.sh, übernommen am
-# 24.10.2026. Gameworld beantwortet /heartbeat über nc_py_api (set_handlers).
+# Gameworld: unchanged copy from nextcloud-mcp-connector/healthcheck.sh, taken over on
+# 24.10.2026. Gameworld answers /heartbeat through nc_py_api (set_handlers).
 #
 # AppAPI reads the container health before it sends the first heartbeat, and a container
 # without a healthcheck counts as healthy, which hides a failed start until the fifteen

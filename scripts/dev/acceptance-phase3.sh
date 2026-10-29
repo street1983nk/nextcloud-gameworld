@@ -1,28 +1,28 @@
 #!/bin/sh
-# Phasenabnahme Phase 3: prüft die fünf Erfolgskriterien aus .planning/ROADMAP.md
-# (Zugang und Rollen) gegen den laufenden Dev-Stack mit echter Nextcloud und
-# ruft am Ende die Abnahmen von Phase 1 und Phase 2 als Regression.
+# Phase acceptance phase 3: checks the five success criteria from .planning/ROADMAP.md
+# (access and roles) against the running dev stack with a real Nextcloud and
+# at the end calls the acceptances of phase 1 and phase 2 as a regression.
 #
-# Bewusst unabhängig vom Implementierungsmuster: Belege kommen aus der
-# docker-CLI, aus curl gegen den AppAPI-Proxy mit echten Nextcloud-Konten, aus
-# jq, tar und grep. Einziges Python-Werkzeug ist der UDP-Prober
-# (tests/e2e/luanti_probe.py) über seine CLI; er spricht das Luanti-Protokoll
-# gegen eine echte Welt und nutzt keinen Codepfad der ExApp außer den
-# SRP-Konstanten N und G. Zu jeder Prüfung gibt es, wo sinnvoll, eine
-# Negativkontrolle (das Verbotene scheitert) und eine Positivkontrolle (die
-# Messmethode selbst funktioniert).
+# Deliberately independent of the implementation pattern: evidence comes from the
+# docker CLI, from curl against the AppAPI proxy with real Nextcloud accounts, from
+# jq, tar and grep. The only Python tool is the UDP prober
+# (tests/e2e/luanti_probe.py) through its CLI; it speaks the Luanti protocol
+# against a real world and uses no code path of the ExApp except the
+# SRP constants N and G. For every check there is, where sensible, a
+# negative control (the forbidden thing fails) and a positive control (the
+# measuring method itself works).
 #
-# Voraussetzung:
+# Prerequisite:
 #   docker compose -f scripts/dev/compose.yaml up -d
 #   sh scripts/dev/register-exapp.sh
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Spielpasswörter erscheinen nie in
-# der Ausgabe, nur ihr Muster und Vergleiche von sha256-Werten. Ein trap räumt in
-# jedem Fall auf: Abnahme-Welt (Lösch-API, Fallback docker rm -f -v), Gruppe
-# gw-familie, Wegwerfkonto gw-abnahme2, Spieler-Adresse zurück auf leer und
-# gw-kind wieder aus der Gruppe admin. gw-kind selbst bleibt bestehen.
+# Exit 0 only if every check passes. Play passwords never appear in
+# the output, only their pattern and comparisons of sha256 values. A trap cleans up in
+# any case: acceptance world (delete API, fallback docker rm -f -v), group
+# gw-familie, throwaway account gw-abnahme2, player address back to empty and
+# gw-kind out of the group admin again. gw-kind itself stays.
 #
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -74,13 +74,13 @@ fail() {
 	printf 'FEHLGESCHLAGEN: %s\n' "$1" >&2
 }
 
-# Abbruch, wenn eine Voraussetzung fehlt und Folgeprüfungen sinnlos wären.
+# Abort if a prerequisite is missing and follow-up checks would be pointless.
 abort() {
 	printf 'ABBRUCH: %s\n' "$1" >&2
 	exit 1
 }
 
-# check BESCHREIBUNG BEDINGUNG... -> pass oder fail
+# check DESCRIPTION CONDITION... -> pass or fail
 check() {
 	description=$1
 	shift
@@ -95,11 +95,11 @@ occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
 }
 
-# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
-# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
-# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
-# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
-# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+# add_user ACCOUNT PASSWORD DISPLAYNAME -> creates the throwaway account fresh. An old account from
+# an aborted run is deleted first; occ user:add gets up to three attempts
+# (the password policy may ask an external service, which can fail
+# briefly). On every failure the occ output is in the log as a diagnosis; the password
+# goes to occ only via the environment and never appears in the output.
 add_user() {
 	occ user:delete "$1" >/dev/null 2>&1 || true
 	add_try=1
@@ -124,8 +124,8 @@ heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
 
-# Beendet gezielt den ExApp-Host-Prozess (PID-Datei, sonst nur der Prozess auf
-# dem Backend-Port); nie alle python.exe, damit Parallel-Sessions weiterlaufen.
+# Ends the ExApp host process in a targeted way (PID file, otherwise only the process on
+# the backend port); never all python.exe, so that parallel sessions keep running.
 kill_backend() {
 	if [ -f "${PID_FILE}" ]; then
 		kill -TERM "$(cat "${PID_FILE}")" 2>/dev/null || true
@@ -149,7 +149,7 @@ kill_backend() {
 	! heartbeat_up
 }
 
-# Alles, was die Abnahme anlegt oder umstellt, wieder in den Ausgangszustand.
+# Everything the acceptance creates or changes, back to the initial state.
 reset_fixtures() {
 	occ group:removeuser admin "${KID}" >/dev/null 2>&1 || true
 	occ group:delete "${GROUP}" >/dev/null 2>&1 || true
@@ -171,7 +171,7 @@ cleanup() {
 	for world_id in ${WORLD_IDS}; do
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 			"${API_URL}/worlds/${world_id}" >/dev/null 2>&1 || true
-		# Fallback, falls die API nicht mehr antwortet: direkt über die docker-CLI.
+		# Fallback if the API no longer answers: directly through the docker CLI.
 		for container in $(docker ps -aq --filter "label=gameworld.world_id=${world_id}" 2>/dev/null); do
 			docker rm -f -v "${container}" >/dev/null 2>&1 || true
 		done
@@ -186,7 +186,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-# call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code
+# call AUTH METHOD URL OUTPUT [JSON] -> HTTP code
 call() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
@@ -196,7 +196,7 @@ call() {
 	fi
 }
 
-# http_code METHODE URL AUSGABE [JSON] als admin
+# http_code METHOD URL OUTPUT [JSON] as admin
 http_code() {
 	call "${ADMIN_AUTH}" "$@"
 }
@@ -229,25 +229,25 @@ wait_status() {
 	done
 }
 
-# read_file CONTAINER PFAD ZIEL -> Inhalt per docker cp, tar-Kopf in ZIEL.list
+# read_file CONTAINER PATH TARGET -> content via docker cp, tar header in TARGET.list
 read_file() {
-	# MSYS_NO_PATHCONV: Git Bash würde den Containerpfad sonst umschreiben.
+	# MSYS_NO_PATHCONV: Git Bash would otherwise rewrite the container path.
 	MSYS_NO_PATHCONV=1 docker cp "$1:$2" - >"$3.tar" 2>/dev/null || true
 	tar -xOf "$3.tar" >"$3" 2>/dev/null || true
 	tar -tvf "$3.tar" --numeric-owner >"$3.list" 2>/dev/null || true
 }
 
-# players_to DATEI -> GET players als admin
+# players_to FILE -> GET players as admin
 players_to() {
 	http_code GET "${API_URL}/worlds/${WORLD_ID}/players" "$1"
 }
 
-# player_field DATEI NC_USER FELD -> Feld eines Spielers aus einer players-Antwort
+# player_field FILE NC_USER FIELD -> field of a player from a players response
 player_field() {
 	jq -r --arg u "$2" ".players[]? | select(.nc_user == \$u) | .$3 // empty" "$1" 2>/dev/null || true
 }
 
-# Ein Join-Versuch über die Prober-CLI, JSON nach $1; Passwort nur als Argument.
+# A join attempt via the prober CLI, JSON to $1; password only as an argument.
 probe() {
 	out=$1
 	shift
@@ -255,7 +255,7 @@ probe() {
 		>"${out}" 2>"${out}.err" || printf '{"result":"prober_error"}' >"${out}"
 }
 
-# probe_expect DATEI JQ-BEDINGUNG SEKUNDEN NAME [PW] -> 0, sobald die Bedingung gilt
+# probe_expect FILE JQ-CONDITION SECONDS NAME [PW] -> 0 as soon as the condition holds
 probe_expect() {
 	out=$1
 	condition=$2
@@ -283,7 +283,7 @@ matches() {
 	printf '%s' "$1" | grep -Eq "$2"
 }
 
-# Zählt Fundstellen eines festen Strings in einer Datei (binär-tolerant).
+# Counts occurrences of a fixed string in a file (binary tolerant).
 hits_in() {
 	grep -c -a -F -- "$1" "$2" 2>/dev/null || true
 }
@@ -293,8 +293,8 @@ role_of() {
 	jq -r '.role // empty' "${WORK_DIR}/me.json" 2>/dev/null || true
 }
 
-# Spalten der Tabelle players: sqlite3, sonst die Standardbibliothek
-# (nur lesend, unabhängig vom Code der ExApp).
+# Columns of the table players: sqlite3, otherwise the standard library
+# (read-only, independent of the code of the ExApp).
 players_columns() {
 	if command -v sqlite3 >/dev/null 2>&1; then
 		sqlite3 -readonly "${DB_FILE}" "PRAGMA table_info(players)" | cut -d'|' -f2 | paste -sd, -
@@ -318,7 +318,7 @@ empty() { [ -z "$1" ]; }
 nonempty() { [ -n "$1" ]; }
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
 
-# Voraussetzungen ---------------------------------------------------------
+# Prerequisites ---------------------------------------------------------
 for tool in docker curl jq tar grep awk sha256sum uv; do
 	command -v "${tool}" >/dev/null 2>&1 || abort "Werkzeug ${tool} fehlt"
 done
@@ -334,7 +334,7 @@ heartbeat_up || abort "ExApp antwortet nicht auf Port ${BACKEND_PORT}. Zuerst: s
 occ user:info "${KID}" >/dev/null 2>&1 || abort "Konto ${KID} fehlt (legt acceptance-phase1.sh an)"
 [ -f "${DB_FILE}" ] || abort "SQLite-Datei fehlt: ${DB_FILE}"
 
-# Reste eines abgebrochenen früheren Laufs entfernen.
+# Remove leftovers of an aborted earlier run.
 reset_fixtures
 http_code GET "${API_URL}/worlds" "${WORK_DIR}/pre.json" >/dev/null
 for old_id in $(jq -r --arg a "${NAME_WORLD}" '.worlds[]? | select(.name == $a) | .id' "${WORK_DIR}/pre.json" 2>/dev/null || true); do
@@ -342,19 +342,19 @@ for old_id in $(jq -r --arg a "${NAME_WORLD}" '.worlds[]? | select(.name == $a) 
 	remember_world "${old_id}"
 	curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null "${API_URL}/worlds/${old_id}" || true
 done
-# Grundlinie: Welt-Container, die schon vor diesem Lauf da waren (andere ExApp-Instanzen,
-# Testreste anderer Sitzungen), bleiben unangetastet und zählen am Ende nicht als Rest.
+# Baseline: world containers that existed before this run (other ExApp instances,
+# test leftovers of other sessions) stay untouched and do not count as leftovers at the end.
 BASELINE_CONTAINERS=$(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null | tr '
 ' ' ')
-# Grundlinie der Kind-Sicht: Welten, in die gw-kind schon vor dem Lauf eingeladen ist
-# (etwa Owner-Spike-Welten), zählen in K3 nicht als Abnahme-Welt.
+# Baseline of the kid view: worlds into which gw-kind is already invited before the run
+# (e.g. owner spike worlds) do not count as the acceptance world in K3.
 call "${KID_AUTH}" GET "${API_URL}/my/worlds" "${WORK_DIR}/my-pre.json" >/dev/null
 BASELINE_MY_WORLDS=$(jq -c '[.worlds[]?.id]' "${WORK_DIR}/my-pre.json" 2>/dev/null || true)
 [ -n "${BASELINE_MY_WORLDS}" ] || BASELINE_MY_WORLDS='[]'
 printf 'Grundlinie /my/worlds von %s: %s\n' "${KID}" "${BASELINE_MY_WORLDS}"
 
 printf '\n== K1 Einladen und Provisionieren ==\n'
-# K1 Einladen von Konten und Gruppen; Zugang wird in die Welt geschrieben
+# K1 Inviting accounts and groups; access is written into the world
 CODE=$(http_code POST "${API_URL}/worlds" "${WORK_DIR}/world.json" "{\"name\":\"${NAME_WORLD}\",\"preset\":\"mtg_kreativ\"}")
 WORLD_ID=$(jq -r '.id // empty' "${WORK_DIR}/world.json" 2>/dev/null || true)
 remember_world "${WORLD_ID}"
@@ -392,7 +392,7 @@ check "K1 GET players: ${KID} weiterhin direkt eingeladen (via user)" \
 CODE=$(http_code POST "${API_URL}/worlds/${WORLD_ID}/invites" "${WORK_DIR}/inv-neg.json" '{"kind":"user","target":"gibt-es-nicht"}')
 check "K1 Negativkontrolle: invites user gibt-es-nicht HTTP 422 (ist ${CODE})" eq "${CODE}" 422
 
-# Gegenprobe direkt im Weltordner: Was steht in der Zugangsdatei?
+# Counter-check directly in the world folder: what is in the access file?
 read_file "${CONTAINER}" "${ACCESS_FILE}" "${WORK_DIR}/access.txt"
 tr -d '\r' <"${WORK_DIR}/access.txt" >"${WORK_DIR}/access.lf"
 check "K1 Zugangsdatei per docker cp gelesen (Positivkontrolle)" test -s "${WORK_DIR}/access.lf"
@@ -408,7 +408,7 @@ check "K1 kein Spielpasswort im Klartext in der Zugangsdatei" \
 	"${WORK_DIR}/access.lf" "${KID_PW}" "${GUEST_PW}"
 
 printf '\n== K2 Join nur für Eingeladene ==\n'
-# K2 Nicht Eingeladene kommen nicht hinein, Eingeladene mit den Nextcloud-Daten schon
+# K2 Uninvited players do not get in, invited ones do with the Nextcloud data
 probe "${WORK_DIR}/j-fremd.json" Fremder
 printf 'Fremder: %s\n' "$(probe_summary "${WORK_DIR}/j-fremd.json")"
 check "K2 Negativ-Join 'Fremder': denied mit 'nicht eingeladen'" \
@@ -446,13 +446,13 @@ EXEC=$(curl -s -X POST -o /dev/null -w '%{http_code}' "${DOCKER_PROXY_URL}/exec/
 check "K2 Docker-Proxy POST /exec/x/start weiterhin 403 (ist ${EXEC})" eq "${EXEC}" 403
 
 printf '\n== K3 Verbindungsinfo für das Kind ==\n'
-# K3 Kinder sehen ihre Welten mit Adresse, Port, Spielername und Passwort
+# K3 Kids see their worlds with address, port, player name and password
 CODE=$(http_code POST "${API_URL}/worlds/${WORLD_ID}/invites" "${WORK_DIR}/inv-kid2.json" "{\"kind\":\"user\",\"target\":\"${KID}\"}")
 check "K3 ${KID} wieder eingeladen, HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 players_to "${WORK_DIR}/p3.json" >/dev/null
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/my/worlds" "${WORK_DIR}/my.json")
 check "K3 GET /my/worlds als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
-# Nur die vom Lauf neu angelegte Welt zählt; Welten der Grundlinie bleiben außen vor.
+# Only the world newly created by the run counts; worlds of the baseline stay out.
 MY_NEW=$(jq -r --argjson base "${BASELINE_MY_WORLDS}" \
 	'[.worlds[].id | select(. as $i | $base | index($i) | not)] | join(",")' "${WORK_DIR}/my.json" 2>/dev/null)
 check "K3 genau die Abnahme-Welt neu in der Liste (Grundlinie nicht gezählt, ist ${MY_NEW:-leer})" \
@@ -479,13 +479,13 @@ http_code GET "${API_URL}/settings" "${WORK_DIR}/set-get.json" >/dev/null
 check "K3 nach dem 422 bleibt join_host ${JOIN_HOST}" eq "$(jq -r '.join_host' "${WORK_DIR}/set-get.json" 2>/dev/null)" "${JOIN_HOST}"
 
 printf '\n== K4 Kind-Ansicht und Sperre ==\n'
-# K4 Kinder sehen die Seite, aber keine Verwaltung und keine fremden Zugänge
+# K4 Kids see the page, but no management and no foreign credentials
 CODE=$(call "${KID_AUTH}" GET "${PAGE_URL}" "${WORK_DIR}/page-kid.html")
 check "K4 Seite als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${KID_AUTH}" GET "${BUNDLE_URL}" /dev/null)
 check "K4 Bundle als ${KID} HTTP 200 (ist ${CODE})" eq "${CODE}" 200
-# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
-# Ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht (WR-08).
+# Since 06-02 (ROLLE-03) all routes are USER; the lock sits in the backend (require_verwalter) and answers exactly 403.
+# A crashed backend (500, 503) or curl error (000) does not pass this way (WR-08).
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/worlds" /dev/null)
 check "K4 Negativkontrolle: GET /api/worlds als ${KID} HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 WORLDS_BEFORE=$(call "${ADMIN_AUTH}" GET "${API_URL}/worlds" "${WORK_DIR}/kid-before.json" >/dev/null; jq -r '.worlds | length' "${WORK_DIR}/kid-before.json" 2>/dev/null || printf 'x')
@@ -511,7 +511,7 @@ check "K4 Positivkontrolle: dasselbe grep findet beide in der Verwalter-Antwort"
 	"${WORK_DIR}/p4.json" "${GUEST_NAME}" "${GUEST_PW}"
 
 printf '\n== K5 Rollen aus Nextcloud, keine gespeicherten Passwörter ==\n'
-# K5 Rollen kommen aus Nextcloud, keine eigene Benutzerverwaltung, kein Passwort in der DB
+# K5 Roles come from Nextcloud, no user management of our own, no password in the DB
 check "K5 /api/me für ${KID}: role spieler" eq "$(role_of "${KID_AUTH}")" spieler
 check "K5 /api/me für admin: role verwalter" eq "$(role_of "${ADMIN_AUTH}")" verwalter
 KID_IN_ADMIN=1
@@ -528,9 +528,9 @@ sleep "${ROLE_CACHE_WAIT}"
 check "K5 ${KID} nach dem Entfernen: role spieler" eq "$(role_of "${KID_AUTH}")" spieler
 
 COLUMNS=$(players_columns)
-# Seit dabe0c0 hat players zusätzlich die Spalte salt. Die Prüfung verlangt die
-# Pflichtspalten und bleibt tolerant gegenüber weiteren; die Absicht bleibt:
-# keine Passwortspalte in der Datenbank.
+# Since dabe0c0 players has the additional column salt. The check requires the
+# mandatory columns and stays tolerant of further ones; the intent stays:
+# no password column in the database.
 check "K5 Tabelle players hat nc_user, player_name, rotation und keine Passwortspalte (ist ${COLUMNS:-leer})" \
 	sh -c 'cols=",$1,"
 		for c in nc_user player_name rotation; do
@@ -588,7 +588,7 @@ done
 check "keine Welt-Container übrig (ist ${LEFT}, fremde vor dem Lauf nicht gezählt)" eq "${LEFT}" 0
 
 printf '\n== Regression Phase 1 und Phase 2 ==\n'
-# Nur für schnelle Iterationen: übersprungene Regression zählt als Fehlschlag.
+# Only for quick iterations: a skipped regression counts as a failure.
 if [ "${GAMEWORLD_SKIP_REGRESSION:-0}" = 1 ]; then
 	fail "Regression übersprungen (GAMEWORLD_SKIP_REGRESSION=1), keine Phasenabnahme"
 	printf '\n%s von %s Prüfungen bestanden\n' "${PASSED}" "${TOTAL}"

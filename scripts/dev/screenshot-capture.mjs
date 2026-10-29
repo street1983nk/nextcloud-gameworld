@@ -1,22 +1,22 @@
-// Store-Screenshots (06-13, D-10) mit Playwright gegen den Dev-Stack.
+// Store screenshots (06-13, D-10) with Playwright against the dev stack.
 //
-// Voraussetzung: sh scripts/dev/screenshot-demo.sh (Demo-Konten mama, mia, leo,
-// oma und die Welten Baumhaus und Inselabenteuer; Welt-IDs in
-// .dev/screenshot-demo.json). Playwright ist keine Projektabhängigkeit: Das
-// Paket kommt aus einem vorhandenen npx-Cache über NODE_PATH, etwa
+// Prerequisite: sh scripts/dev/screenshot-demo.sh (demo accounts mama, mia, leo,
+// oma and the worlds Baumhaus and Inselabenteuer; world IDs in
+// .dev/screenshot-demo.json). Playwright is not a project dependency: the
+// package comes from an existing npx cache via NODE_PATH, e.g.
 //   NODE_PATH=<npx-cache>/node_modules node scripts/dev/screenshot-capture.mjs [name ...]
-// Ohne Namen entstehen alle sechs Bilder in docs/screenshots/ (-v1, der
-// Store-Spiegel lädt ein Bild nie neu).
+// Without names, all six images are created in docs/screenshots/ (-v1, the
+// store mirror never reloads an image).
 //
-// Nur Demo-Daten auf den Bildern: Andere Welten und Konten der Dev-Instanz
-// (laufende Dev-Welten des Owners, Dev-Konto gw-kind) blendet die Aufnahme aus,
-// indem sie Antworten der Gameworld-API im Browser auf die Demo-Welt-IDs und
-// Demo-Konten filtert. Nichts wird erfunden, nur weggelassen; die Instanz
-// selbst bleibt unberührt. Einzige Ersetzung: Ohne eingestellte
-// Spieler-Adresse (join_host leer, host null in /api/my/worlds) zeigt die
-// Kinder-Ansicht den Rechnernamen des Browsers, also "localhost". Die Aufnahme
-// setzt dort den Beispielnamen DEMO_HOST ein, so wie es eine eingestellte
-// Spieler-Adresse täte, ohne die gespeicherte Einstellung zu ändern.
+// Only demo data on the images: other worlds and accounts of the dev instance
+// (running dev worlds of the owner, dev account gw-kind) are hidden by the capture
+// by filtering responses of the Gameworld API in the browser down to the demo world IDs and
+// demo accounts. Nothing is invented, only left out; the instance
+// itself stays untouched. Only replacement: without a configured
+// player address (join_host empty, host null in /api/my/worlds) the
+// kid view shows the computer name of the browser, i.e. "localhost". The capture
+// puts the example name DEMO_HOST there, as a configured
+// player address would, without changing the stored setting.
 import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,7 +40,7 @@ const DEMO_USERS = new Set(['mama', 'mia', 'leo', 'oma'])
 const DESKTOP = { width: 1280, height: 800 }
 const MOBILE = { width: 390, height: 844 }
 
-// Behält in Listen nur Demo-Welten (Schlüssel "worlds") und Demo-Konten (Einträge mit nc_user).
+// Keeps only demo worlds in lists (key "worlds") and demo accounts (entries with nc_user).
 function keep(key, item) {
 	if (!item || typeof item !== 'object') {
 		return true
@@ -84,7 +84,7 @@ async function session(browser, user, viewport) {
 		try {
 			response = await route.fetch()
 		} catch {
-			// Der 5-s-Abruf der Seite läuft noch, während die Aufnahme den Kontext schließt.
+			// The 5 s fetch of the page is still running while the capture closes the context.
 			return route.abort().catch(() => {})
 		}
 		const type = response.headers()['content-type'] ?? ''
@@ -108,7 +108,7 @@ async function session(browser, user, viewport) {
 	await page.goto(APP)
 	await page.waitForLoadState('networkidle')
 	await page.waitForTimeout(1500)
-	// Keine Benachrichtigungs-Overlays auf den Bildern (Toasts, Status-Hinweise).
+	// No notification overlays on the images (toasts, status hints).
 	await page.addStyleTag({ content: '.toastify, #notification-container, .notifications-button .notification__dot { display: none !important; }' })
 	return { context, page }
 }
@@ -142,7 +142,7 @@ const SHOTS = {
 		await row(page, 'Baumhaus').getByRole('button', { name: 'Einladen' }).click()
 		const dialog = page.getByRole('dialog').first()
 		await dialog.waitFor()
-		// Suche offen zeigen: Gruppe familie als Vorschlag.
+		// Show the search open: group familie as a suggestion.
 		await dialog.locator('input[type=search], input').first().click()
 		await page.keyboard.type('fam', { delay: 80 })
 		await page.getByRole('option', { name: /familie/i }).first().waitFor({ timeout: 15000 })
@@ -171,7 +171,7 @@ const SHOTS = {
 		await context.close()
 	},
 	async mobile(browser) {
-		// Kinder-Ansicht auf dem Handy: Zugangsdaten und Spielzeit von Mia.
+		// Kid view on the phone: credentials and playtime of Mia.
 		const { context, page } = await session(browser, 'mia', MOBILE)
 		await shot(page, 'mobile')
 		await context.close()

@@ -1,18 +1,18 @@
 #!/bin/sh
-# Echtstack-Smoketest 03-03: Einladen über den AppAPI-Proxy der Dev-Nextcloud,
-# Spielpasswort abgeleitet aus dem Geheimnis in appconfig_ex.
+# Real-stack smoke test 03-03: inviting through the AppAPI proxy of the dev Nextcloud,
+# play password derived from the secret in appconfig_ex.
 #
-# Belegt gegen die echte Nextcloud, was die Unit-Tests nur mit Fakes zeigen:
-#   - Kontoprüfung als Verwalter (users.get_user) bestätigt gw-kind
-#   - Geheimnis wird in appconfig_ex angelegt (sensitive) und nach einem
-#     Neustart der ExApp zurückgelesen: Passwort vorher und nachher gleich
-#   - Passwort steht nicht in der SQLite-Datei der ExApp, der Spielername schon
+# Proves against the real Nextcloud what the unit tests show only with fakes:
+#   - account check as manager (users.get_user) confirms gw-kind
+#   - secret is created in appconfig_ex (sensitive) and read back after a
+#     restart of the ExApp: password before and after identical
+#   - password is not in the SQLite file of the ExApp, the player name is
 #
-# Das Passwort wird nie ausgegeben, nur sein Muster und ein Vergleich der
-# sha256-Werte. Die Abnahme-Welt wird in jedem Fall entfernt (trap).
+# The password is never printed, only its pattern and a comparison of the
+# sha256 values. The acceptance world is removed in any case (trap).
 #
-# Voraussetzung: docker compose -f scripts/dev/compose.yaml up -d
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Prerequisite: docker compose -f scripts/dev/compose.yaml up -d
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -63,8 +63,8 @@ heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
 
-# Beendet gezielt den ExApp-Prozess (PID-Datei, sonst nur der Prozess auf dem
-# Backend-Port); nie alle python.exe, damit Parallel-Sessions weiterlaufen.
+# Terminates the ExApp process in a targeted way (PID file, otherwise only the process on the
+# backend port); never all python.exe, so that parallel sessions keep running.
 kill_backend() {
 	if [ -f "${PID_FILE}" ]; then
 		kill -TERM "$(cat "${PID_FILE}")" 2>/dev/null || true
@@ -111,7 +111,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-# http_code METHODE URL AUSGABE [JSON]
+# http_code METHOD URL OUTPUT [JSON]
 http_code() {
 	if [ -n "${4:-}" ]; then
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
@@ -121,7 +121,7 @@ http_code() {
 	fi
 }
 
-# Passwort von gw-kind aus GET players, nur in eine Datei (nie auf die Ausgabe).
+# Password of gw-kind from GET players, only into a file (never to the output).
 kid_password() {
 	code=$(http_code GET "${API_URL}/worlds/${WORLD_ID}/players" "${WORK_DIR}/players.json")
 	[ "${code}" = "200" ] || return 1
@@ -183,7 +183,7 @@ check 'sha256 des Passworts vor und nach dem Neustart gleich (Geheimnis aus appc
 
 printf '\n== Passwortfreiheit der Datenbank ==\n'
 [ -f "${DB_FILE}" ] || abort "SQLite-Datei fehlt: ${DB_FILE}"
-# Nur in einer Variable, nie ausgegeben.
+# Only in a variable, never printed.
 KID_PASSWORD=$(tr -d '\r\n' <"${WORK_DIR}/pw-after")
 PW_HITS=$(grep -c -a -F -- "${KID_PASSWORD}" "${DB_FILE}" || true)
 KID_PASSWORD=""

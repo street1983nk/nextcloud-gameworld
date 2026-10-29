@@ -1,27 +1,27 @@
 #!/bin/sh
-# Findet Reste von Gameworld auf dem Docker-Host und entfernt sie auf Wunsch.
+# Finds leftovers of Gameworld on the Docker host and removes them on request.
 #
-# Gedacht für die Zeit nach dem Deinstallieren der ExApp (ROADMAP Phase 6,
-# Kriterium 3): Gameworld räumt beim Deaktivieren seine Welt-Container selbst
-# ab, die Volumes mit den Spielständen bleiben aber absichtlich liegen
-# (D-15/D-17), und ein abgebrochenes Deaktivieren kann Container hinterlassen.
+# Meant for the time after uninstalling the ExApp (ROADMAP phase 6,
+# criterion 3): Gameworld clears away its world containers itself on deactivation,
+# but the volumes with the save games deliberately stay behind
+# (D-15/D-17), and an aborted deactivation can leave containers behind.
 #
-# Wirkung nur auf
-#   - Container mit dem Label gameworld.managed=true (Welt-Container jeder
-#     Gameworld-Instanz auf diesem Host) und
-#   - Volumes, deren Name dem Schema gameworld-<instanz>-<welt> folgt
-#     (^gameworld-[a-z0-9-]+$, also nie Compose-Volumes mit Unterstrich).
-# Alles andere (Nextcloud, AppAPI, HaRP, der Docker-Proxy, andere Projekte)
-# wird nie angefasst. Die Filter von docker werden im Skript ein zweites Mal
-# geprüft.
+# Acts only on
+#   - containers with the label gameworld.managed=true (world containers of every
+#     Gameworld instance on this host) and
+#   - volumes whose name follows the scheme gameworld-<instance>-<world>
+#     (^gameworld-[a-z0-9-]+$, i.e. never Compose volumes with an underscore).
+# Everything else (Nextcloud, AppAPI, HaRP, the Docker proxy, other projects)
+# is never touched. The docker filters are checked a second time
+# in the script.
 #
-# Standard ist nur Auflisten. Entfernen erst mit --remove-containers bzw.
-# --remove-volumes und nach getippter Bestätigung; --yes überspringt nur die
-# Frage für Container, nie die für Volumes (Spielstände gehen sonst verloren).
+# The default is listing only. Removal only with --remove-containers or
+# --remove-volumes and after typed confirmation; --yes skips only the
+# question for containers, never the one for volumes (save games would be lost otherwise).
 #
-# Läuft auf dem Docker-Host, braucht die docker CLI mit Rechten auf den
-# Host-Daemon (root oder Gruppe docker). Ausgaben auf Englisch, weil das Skript
-# Store-Nutzer weltweit erreicht.
+# Runs on the Docker host, needs the docker CLI with rights on the
+# host daemon (root or group docker). Output in English because the script
+# reaches store users worldwide.
 set -eu
 
 VOLUME_PATTERN='^gameworld-[a-z0-9-]+$'
@@ -73,24 +73,24 @@ done
 
 command -v docker >/dev/null 2>&1 || fail "docker CLI not found. Run this on the Docker host of your Nextcloud."
 
-# list_containers -> Zeilen "ID<TAB>Name<TAB>Instanz<TAB>Status", nur mit Label managed=true
+# list_containers -> lines "ID<TAB>Name<TAB>Instance<TAB>Status", only with label managed=true
 list_containers() {
 	raw=$(docker ps -a --filter "label=gameworld.managed=true" \
 		--format '{{.ID}}	{{.Names}}	{{.Label "gameworld.managed"}}	{{.Label "gameworld.instance"}}	{{.Status}}') ||
 		fail "Cannot talk to the Docker daemon. Run as root or as a member of the docker group."
 	printf '%s\n' "${raw}" | while IFS="${TAB}" read -r cid name managed instance state; do
-		# Zweite Prüfung am Ergebnis: nur echte Gameworld-Welt-Container.
+		# Second check on the result: only real Gameworld world containers.
 		[ "${managed}" = "true" ] || continue
 		[ -n "${cid}" ] || continue
 		printf '%s\t%s\t%s\t%s\n' "${cid}" "${name}" "${instance}" "${state}"
 	done
 }
 
-# list_volumes -> Volume-Namen nach dem Gameworld-Schema
+# list_volumes -> volume names following the Gameworld scheme
 list_volumes() {
 	raw=$(docker volume ls -q --filter "name=gameworld-") ||
 		fail "Cannot talk to the Docker daemon. Run as root or as a member of the docker group."
-	# Zweite Prüfung: docker filtert nach Teilstring, das Skript nach dem vollen Schema.
+	# Second check: docker filters by substring, the script by the full scheme.
 	printf '%s\n' "${raw}" | grep -E "${VOLUME_PATTERN}" || true
 }
 
@@ -162,12 +162,12 @@ if [ "${REMOVE_CONTAINERS}" -eq 1 ] && [ -n "${CONTAINERS}" ]; then
 fi
 
 if [ "${REMOVE_VOLUMES}" -eq 1 ]; then
-	# Neu lesen: Volumes und Container können sich seit der Liste geändert haben.
+	# Read again: volumes and containers may have changed since the list.
 	VOLUMES=$(list_volumes)
 	if [ -n "${VOLUMES}" ]; then
 		n=$(count_lines "${VOLUMES}")
 		printf '\nVolumes hold the game worlds. Download backups in Nextcloud Files first if you still need them.\n'
-		# Bewusst ohne --yes: Spielstände nie ohne Tippen löschen.
+		# Deliberately without --yes: never delete save games without typing.
 		if ask "This deletes the game worlds stored in ${n} volumes permanently. Type delete:" "delete"; then
 			for volume in ${VOLUMES}; do
 				if docker volume rm "${volume}" >/dev/null; then

@@ -1,47 +1,47 @@
 #!/bin/sh
-# Phasenabnahme Phase 4.1: prüft die sechs Erfolgskriterien aus .planning/ROADMAP.md
-# (Eltern-Handy: Pause, Hinweise, Rückblick, Talk-Raum, Bot) gegen den laufenden
-# Dev-Stack mit echter Nextcloud, laufender ExApp (15-s-Takt und 5-s-Benachrichtigungs-
-# Loop im Lifespan, keine Fakes) und installiertem Talk (spreed). Am Ende ruft es die
-# Abnahme von Phase 4 als Regression (sie ruft Phase 1 bis 3 selbst auf).
+# Phase acceptance phase 4.1: checks the six success criteria from .planning/ROADMAP.md
+# (parent phone: pause, notices, review, Talk room, bot) against the running
+# dev stack with a real Nextcloud, running ExApp (15 s cycle and 5 s notification
+# loop in the lifespan, no fakes) and installed Talk (spreed). At the end it calls the
+# acceptance of phase 4 as a regression (it calls phase 1 to 3 itself).
 #
-# Bewusst unabhängig vom Implementierungsmuster: Belege kommen aus der docker-CLI,
-# aus curl gegen den AppAPI-Proxy und die OCS-API (Benachrichtigungen, Talk) mit
-# echten Nextcloud-Konten, aus jq, grep und sqlite3 (fehlt sqlite3, liest die
-# Python-Standardbibliothek die Datei nur lesend). Einziges Python-Werkzeug des
-# Projekts ist der Session-Prober (tests/e2e/luanti_probe.py) über seine CLI.
-# Zeit-EINGABEN (Wochentag, Minute, Datum in Europe/Berlin) rechnet berlin_now per
-# zoneinfo; der Helfer bewertet nichts.
+# Deliberately independent of the implementation pattern: evidence comes from the docker CLI,
+# from curl against the AppAPI proxy and the OCS API (notifications, Talk) with
+# real Nextcloud accounts, from jq, grep and sqlite3 (if sqlite3 is missing, the
+# Python standard library reads the file read-only). The only Python tool of the
+# project is the session prober (tests/e2e/luanti_probe.py) through its CLI.
+# Time INPUTS (weekday, minute, date in Europe/Berlin) are calculated by berlin_now via
+# zoneinfo; the helper judges nothing.
 #
-# Echter Push auf ein Handy ist im Dev-Stack nicht prüfbar (localhost,
-# manual-install, Annahme A6). Ersatz: Die Benachrichtigungen werden in der echten
-# Nextcloud-Benachrichtigungsliste der Verwalter gezählt (dieselbe Liste, aus der
-# die Nextcloud-App den Push holt).
+# A real push to a phone cannot be checked in the dev stack (localhost,
+# manual-install, assumption A6). Substitute: the notifications are counted in the real
+# Nextcloud notification list of the managers (the same list from which
+# the Nextcloud app fetches the push).
 #
-# Voraussetzung:
+# Prerequisite:
 #   docker compose -f scripts/dev/compose.yaml up -d
-#   occ app:install spreed (siehe docs/dev-setup.md)
+#   occ app:install spreed (see docs/dev-setup.md)
 #   sh scripts/dev/register-exapp.sh
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Spielpasswörter erscheinen nie in der
-# Ausgabe. Ein trap räumt in jedem Fall auf: Abnahme-Welten (Lösch-API, Fallback
-# docker rm -f -v), laufende Pause (POST /pause/end), Rückblick-Einstellung von
-# admin (alter Stand), Regeln und Verbrauch von gw-kind, Wegwerfkonten gw-abnahme41
-# und gw-admin2, gw-kind nie in admin, Talk (spreed) wieder aktiviert, ExApp läuft.
-# gw-kind selbst bleibt bestehen. Die Benachrichtigungen bleiben in der Glocke von
-# admin stehen: Die gemeinsame Playwright-Abnahme (04.1-09 Schritt 5) tippt sie an.
+# Exit 0 only if every check passes. Play passwords never appear in the
+# output. A trap cleans up in any case: acceptance worlds (delete API, fallback
+# docker rm -f -v), running pause (POST /pause/end), review setting of
+# admin (old state), rules and usage of gw-kind, throwaway accounts gw-abnahme41
+# and gw-admin2, gw-kind never in admin, Talk (spreed) enabled again, ExApp running.
+# gw-kind itself stays. The notifications stay in the bell of
+# admin: the shared Playwright acceptance (04.1-09 step 5) taps them.
 #
-# Schreibende SQL-Stellen (nur bei gestoppter ExApp, Vorbereitung): Fremdversuche,
-# Tagesmerker und Rückblick-Versand des heutigen Tages werden gelöscht. Die Drossel
-# zählt Einzelhinweise je Tag über alle Welten (D-08), der Rückblick kommt einmal je
-# Verwalter und Tag (D-15); ohne Zurücksetzen könnte die Abnahme an einem Tag nur
-# einmal laufen. Dazu wie in Phase 4 reset_usage für gw-kind.
+# Writing SQL places (only with a stopped ExApp, preparation): foreign attempts,
+# day marker and review dispatch of today are deleted. The throttle
+# counts single notices per day over all worlds (D-08), the review comes once per
+# manager and day (D-15); without resetting, the acceptance could run only once
+# a day. In addition, as in phase 4, reset_usage for gw-kind.
 #
-# Phase 4.1 hat keine Prüfung der Phasen 1 bis 4 angepasst: Die Regression erwartet
-# weiter 84 von 84, 104 von 104, 75 von 75 und 109 von 109 (Phase 4 seit f6ecfed
-# mit der Prüfung auf AppAPI-Verbindungsfehler und ihrer Positivkontrolle).
+# Phase 4.1 adjusted no check of phases 1 to 4: the regression still expects
+# 84 of 84, 104 of 104, 75 of 75 and 109 of 109 (phase 4 since f6ecfed
+# with the check for AppAPI connection errors and its positive control).
 #
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -72,30 +72,30 @@ PROBE_HOST=127.0.0.1
 NAME_PAUSE="Abnahme Pause"
 NAME_NOTALK="Abnahme Ohne Talk"
 NAME_BACKFILL="Abnahme Nachlegen"
-# Weltnamen dieser Abnahme; nur diese räumt der Vorlauf als Reste weg.
+# World names of this acceptance; only these are cleared away by the pre-run as leftovers.
 ACCEPTANCE_WORLDS='["Abnahme Pause","Abnahme Ohne Talk","Abnahme Nachlegen"]'
 SESSION_TIMEOUT=30
-# Benachrichtigungen: 15-s-Takt plus 5-s-Loop, also höchstens etwa 20 s.
+# Notifications: 15 s cycle plus 5 s loop, so at most about 20 s.
 NOTIFY_WAIT=30
-# Talk-Abgleich alle 300 s plus Durchlauf des Loops; das Skript erzwingt ihn nicht.
+# Talk sync every 300 s plus a pass of the loop; the script does not force it.
 RECONCILE_WAIT=330
-# Kindertexte aus provisioner/time_mod.py und access_mod.py (Teilstrings).
+# Kid texts from provisioner/time_mod.py and access_mod.py (substrings).
 TEXT_PAUSE="Kurze Pause!"
 TEXT_PAUSE_SOON="In 30 Sekunden ist Pause."
 TEXT_SCHLUSS="Für heute ist Schluss."
-# gw-kind darf in K1 morgen ab 9 Uhr spielen; so steht die Uhrzeit im Schluss-Text.
+# gw-kind may play tomorrow from 9 o'clock in K1; this is how the clock time appears in the closing text.
 TEXT_SCHLUSS_FULL="Für heute ist Schluss. Morgen ab 9 Uhr kannst du wieder spielen."
 TEXT_DENY="nicht eingeladen"
-# Groß/Klein-Hinweis aus provisioner/access_mod.py (Teilstring, IN-07: ohne Namen).
+# Upper/lower case hint from provisioner/access_mod.py (substring, IN-07: without names).
 TEXT_CASE_HINT="Groß- und Kleinschreibung"
-# Elterntexte aus notify/texts.py.
+# Parent texts from notify/texts.py.
 SUBJECT_ATTEMPT="Unbekannter Spielername"
 SUBJECT_SUMMARY="Weitere Beitrittsversuche"
 SUBJECT_REVIEW="Tagesrückblick"
 MESSAGE_REVIEW="Heute gespielt:"
 STRANGERS="Fremder2 Fremder3 Fremder4 Fremder5 Fremder6"
 
-# Der Prober gibt Kindertexte mit Umlauten aus; unter Windows sonst cp1252.
+# The prober prints kid texts with umlauts; on Windows otherwise cp1252.
 PYTHONUTF8=1
 PYTHONIOENCODING=utf-8
 export PYTHONUTF8 PYTHONIOENCODING
@@ -129,7 +129,7 @@ abort() {
 	exit 1
 }
 
-# check BESCHREIBUNG BEDINGUNG... -> pass oder fail
+# check DESCRIPTION CONDITION... -> pass or fail
 check() {
 	description=$1
 	shift
@@ -144,11 +144,11 @@ occ() {
 	docker compose -f "${COMPOSE_FILE}" exec -T -u www-data app php occ "$@"
 }
 
-# add_user KONTO PASSWORT ANZEIGENAME -> legt das Wegwerfkonto frisch an. Ein Altkonto aus
-# einem abgebrochenen Lauf wird vorher gelöscht; occ user:add bekommt bis zu drei Versuche
-# (die Passwort-Richtlinie fragt unter Umständen einen externen Dienst, das kann kurz
-# scheitern). Bei jedem Fehlschlag steht die occ-Ausgabe als Diagnose im Log; das Passwort
-# geht nur per Umgebung an occ und erscheint nie in der Ausgabe.
+# add_user ACCOUNT PASSWORD DISPLAYNAME -> creates the throwaway account fresh. An old account from
+# an aborted run is deleted first; occ user:add gets up to three attempts
+# (the password policy may ask an external service, which can fail
+# briefly). On every failure the occ output is in the log as a diagnosis; the password
+# goes to occ only via the environment and never appears in the output.
 add_user() {
 	occ user:delete "$1" >/dev/null 2>&1 || true
 	add_try=1
@@ -173,8 +173,8 @@ heartbeat_up() {
 	curl -sf "http://127.0.0.1:${BACKEND_PORT}/heartbeat" >/dev/null 2>&1
 }
 
-# Beendet gezielt den ExApp-Host-Prozess (PID-Datei, sonst nur der Prozess auf
-# dem Backend-Port); nie alle python.exe, damit Parallel-Sessions weiterlaufen.
+# Ends the ExApp host process in a targeted way (PID file, otherwise only the process on
+# the backend port); never all python.exe, so that parallel sessions keep running.
 kill_backend() {
 	if [ -f "${PID_FILE}" ]; then
 		kill -TERM "$(cat "${PID_FILE}")" 2>/dev/null || true
@@ -198,7 +198,7 @@ kill_backend() {
 	! heartbeat_up
 }
 
-# restart_backend LOG -> beendet die ExApp gezielt und startet sie über register-exapp.sh
+# restart_backend LOG -> ends the ExApp in a targeted way and starts it via register-exapp.sh
 restart_backend() {
 	BACKEND_DOWN=1
 	kill_backend || return 1
@@ -210,7 +210,7 @@ restart_backend() {
 	heartbeat_up
 }
 
-# call AUTH METHODE URL AUSGABE [JSON] -> HTTP-Code
+# call AUTH METHOD URL OUTPUT [JSON] -> HTTP code
 call() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$1" -H 'OCS-APIRequest: true' -H 'Accept: application/json' -H 'Content-Type: application/json' \
@@ -241,7 +241,7 @@ delete_world_hard() {
 	done
 }
 
-# Lesender SQL-Zugriff auf die ExApp-Datei: sqlite3, sonst die Standardbibliothek.
+# Read-only SQL access to the ExApp file: sqlite3, otherwise the standard library.
 sql() {
 	if command -v sqlite3 >/dev/null 2>&1; then
 		sqlite3 -readonly "${DB_FILE}" "$1"
@@ -257,7 +257,7 @@ for row in con.execute(sys.argv[2]):
 ' "${db_path}" "$1") 2>/dev/null | tr -d '\r'
 }
 
-# Schreibender SQL-Zugriff, nur aus der Vorbereitung bei gestoppter ExApp (siehe Kopf).
+# Writing SQL access, only from the preparation with a stopped ExApp (see header).
 sql_write() {
 	db_path=${DB_FILE}
 	command -v cygpath >/dev/null 2>&1 && db_path=$(cygpath -w "${DB_FILE}")
@@ -275,15 +275,15 @@ reset_usage() {
 	sql_write "DELETE FROM time_usage WHERE nc_user = '$1'" || true
 }
 
-# Heutige Fremdversuche, Tagesmerker (Sammelnachricht) und Rückblick-Versand löschen.
+# Delete today's foreign attempts, day marker (collective message) and review dispatch.
 reset_today_notify() {
 	sql_write "DELETE FROM join_attempts WHERE day = '${TODAY}'" \
 		"DELETE FROM daily_flags WHERE day = '${TODAY}'" \
 		"DELETE FROM review_sent WHERE day = '${TODAY}'"
 }
 
-# Nur Zeit-EINGABEN: ISO-Wochentag heute, morgen, lokale Minute, Datum in
-# Europe/Berlin. TZ=... date geht hier nicht (Git-Bash ohne zoneinfo).
+# Time INPUTS only: ISO weekday today, tomorrow, local minute, date in
+# Europe/Berlin. TZ=... date does not work here (Git Bash without zoneinfo).
 berlin_now() {
 	(cd "${WORK_DIR}" && uv run --project "${REPO_ROOT}" python -I -c '
 from datetime import datetime, timedelta
@@ -360,7 +360,7 @@ player_field() {
 	jq -r --arg u "$2" ".players[]? | select(.nc_user == \$u) | .$3 // empty" "$1" 2>/dev/null || true
 }
 
-# Ein Join-Versuch oder (mit --hold) eine Sitzung über die Prober-CLI, JSON nach $1.
+# A join attempt or (with --hold) a session via the prober CLI, JSON to $1.
 probe() {
 	out=$1
 	shift
@@ -368,7 +368,7 @@ probe() {
 		>"${out}" 2>"${out}.err" || printf '{"result":"prober_error"}' >"${out}"
 }
 
-# probe_expect DATEI JQ-BEDINGUNG SEKUNDEN NAME [PW] -> 0, sobald die Bedingung gilt
+# probe_expect FILE JQ-CONDITION SECONDS NAME [PW] -> 0 as soon as the condition holds
 probe_expect() {
 	out=$1
 	condition=$2
@@ -404,22 +404,22 @@ play_today() {
 	sql "SELECT COALESCE(SUM(seconds), 0) FROM play_daily WHERE nc_user = '$1' AND day = '${TODAY}'" | head -n 1
 }
 
-# Benachrichtigungen ---------------------------------------------------------
+# Notifications ---------------------------------------------------------
 
-# num WERT -> 0, wenn WERT eine nicht leere Ganzzahl ist (WR-08: leere Abrufe bestehen nie)
+# num VALUE -> 0 if VALUE is a non-empty integer (WR-08: empty fetches never pass)
 num() { printf '%s' "$1" | grep -Eq '^[0-9]+$'; }
-# eq_num A B -> beide Zahlen und gleich
+# eq_num A B -> both numbers and equal
 eq_num() { num "$1" && num "$2" && [ "$1" = "$2" ]; }
 
-# notif_fetch AUTH DATEI -> Liste der Benachrichtigungen als JSON; Exit 1 bei HTTP-Code ungleich 200
-# oder einer Antwort ohne OCS-Liste (WR-08: ein 401 oder 404 heißt nie "keine Hinweise").
+# notif_fetch AUTH FILE -> list of notifications as JSON; exit 1 on an HTTP code other than 200
+# or a response without an OCS list (WR-08: a 401 or 404 never means "no notices").
 notif_fetch() {
 	fetch_code=$(call "$1" GET "${NOTIFY_URL}" "$2")
 	[ "${fetch_code}" = 200 ] || return 1
 	[ "$(jq -r '(.ocs.data | type) == "array"' "$2" 2>/dev/null)" = true ]
 }
 
-# notif_max AUTH -> höchste notification_id des Kontos (Grundlinie, 0 ohne Einträge), x bei Abruffehler
+# notif_max AUTH -> highest notification_id of the account (baseline, 0 without entries), x on fetch failure
 notif_max() {
 	notif_fetch "$1" "${WORK_DIR}/nmax.json" || {
 		printf 'x'
@@ -428,8 +428,8 @@ notif_max() {
 	jq -r '[.ocs.data[]?.notification_id] | max // 0' "${WORK_DIR}/nmax.json" 2>/dev/null || printf 'x'
 }
 
-# notif_new AUTH GRUNDLINIE BETREFF DATEI -> neue Gameworld-Benachrichtigungen mit BETREFF (JSON-Liste);
-# bei Abruffehler oder ungültiger Grundlinie steht FEHLER in DATEI (kein JSON, length scheitert).
+# notif_new AUTH BASELINE SUBJECT FILE -> new Gameworld notifications with SUBJECT (JSON list);
+# on a fetch failure or invalid baseline FEHLER is in FILE (no JSON, length fails).
 notif_new() {
 	if ! num "$2" || ! notif_fetch "$1" "${WORK_DIR}/nall.json"; then
 		printf 'FEHLER' >"$4"
@@ -440,13 +440,13 @@ notif_new() {
 		"${WORK_DIR}/nall.json" >"$4" 2>/dev/null || printf 'FEHLER' >"$4"
 }
 
-# notif_count AUTH GRUNDLINIE BETREFF -> Anzahl, x bei Abruffehler (dann scheitert jedes eq)
+# notif_count AUTH BASELINE SUBJECT -> count, x on fetch failure (then every eq fails)
 notif_count() {
 	notif_new "$1" "$2" "$3" "${WORK_DIR}/ncount.json"
 	jq -r 'length' "${WORK_DIR}/ncount.json" 2>/dev/null || printf 'x'
 }
 
-# notif_wait AUTH GRUNDLINIE BETREFF ANZAHL SEKUNDEN -> 0, sobald mindestens ANZAHL da sind
+# notif_wait AUTH BASELINE SUBJECT COUNT SECONDS -> 0 as soon as at least COUNT are there
 notif_wait() {
 	waited=0
 	while :; do
@@ -465,7 +465,7 @@ room_token_of() {
 		"${WORK_DIR}/rooms.json" 2>/dev/null || true
 }
 
-# Voraussetzungen ---------------------------------------------------------
+# Prerequisites ---------------------------------------------------------
 for tool in docker curl jq grep awk uv; do
 	command -v "${tool}" >/dev/null 2>&1 || abort "Werkzeug ${tool} fehlt"
 done
@@ -483,8 +483,8 @@ SPREED_VERSION=$(occ app:list --output=json 2>/dev/null | jq -r '.enabled.spreed
 [ -n "${SPREED_VERSION}" ] || abort "Talk (spreed) ist nicht aktiviert (siehe docs/dev-setup.md, Talk im Dev-Stack)"
 [ -f "${TALK_SMOKE}" ] || abort "smoke-talk.sh fehlt"
 
-# Der Rückblick-Test (K3) stellt die laufende Minute minus 1 ein: dafür braucht es Minute 16
-# oder später, und der Lauf soll nicht über Mitternacht gehen (Tagesgrenze).
+# The review test (K3) sets the running minute minus 1: for that it needs minute 16
+# or later, and the run should not cross midnight (day boundary).
 set -- $(berlin_now)
 if [ "$3" -lt 16 ]; then
 	pause=$(((16 - $3) * 60))
@@ -509,8 +509,8 @@ for old_id in $(jq -r --argjson names "${ACCEPTANCE_WORLDS}" \
 	printf 'entferne Rest eines früheren Laufs: %s\n' "${old_id}"
 	delete_world_hard "${old_id}"
 done
-# Grundlinie: Welt-Container, die schon vor diesem Lauf da waren (andere ExApp-Instanzen,
-# Testreste anderer Sitzungen), bleiben unangetastet und zählen am Ende nicht als Rest.
+# Baseline: world containers that existed before this run (other ExApp instances,
+# test leftovers of other sessions) stay untouched and do not count as leftovers at the end.
 BASELINE_CONTAINERS=$(docker ps -aq --filter "label=gameworld.managed=true" 2>/dev/null | tr '
 ' ' ')
 
@@ -523,8 +523,8 @@ occ group:adduser admin "${ADMIN2}" >/dev/null 2>&1 || abort "${ADMIN2} ließ si
 check "zweites Verwalter-Konto ${ADMIN2} in Gruppe admin" \
 	eq "$(occ group:list --output=json 2>/dev/null | jq -r --arg u "${ADMIN2}" '(.admin // []) | index($u) != null')" true
 
-# Gezielter Neustart: frischer Verwalter-Schnappschuss ohne Drossel; die heutigen
-# Benachrichtigungs-Daten werden zurückgesetzt, solange niemand schreibt.
+# Targeted restart: fresh manager snapshot without throttle; today's
+# notification data are reset as long as nobody writes.
 printf 'starte die ExApp gezielt neu (Zurücksetzen der heutigen Hinweise)\n'
 check "Vorbereitung: ExApp gezielt neu gestartet, heutige Hinweise zurückgesetzt" \
 	restart_backend "${WORK_DIR}/register-pre.log" reset_today_notify
@@ -532,14 +532,14 @@ heartbeat_up || abort "ExApp nach dem Neustart nicht erreichbar"
 check "Vorbereitung: keine Fremdversuche und kein Rückblick-Versand für ${TODAY} (sqlite3)" \
 	eq "$(sql "SELECT (SELECT count(*) FROM join_attempts WHERE day = '${TODAY}') + (SELECT count(*) FROM review_sent WHERE day = '${TODAY}')")" 0
 
-# Erste Adresse gilt, ein Wechsel nur bestätigt (WR-04): Die Abnahme bestätigt ausdrücklich.
+# First address applies, a change only when confirmed (WR-04): the acceptance confirms explicitly.
 CODE=$(http_code POST "${API_URL}/origin" "${WORK_DIR}/origin.json" \
 	"{\"origin\":\"${NEXTCLOUD_URL}\",\"webroot\":\"\",\"confirm\":true}")
 check "POST /api/origin ${NEXTCLOUD_URL} (bestätigt) HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 ORIGIN_NOW=$(sql "SELECT value FROM meta WHERE key = 'link_origin'")
 check "link_origin ist ${NEXTCLOUD_URL} (ist ${ORIGIN_NOW:-leer})" eq "${ORIGIN_NOW}" "${NEXTCLOUD_URL}"
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/origin" /dev/null '{"origin":"http://evil.example","confirm":true}')
-# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
+# Since 06-02 (ROLLE-03) all routes are USER; the lock sits in the backend (require_verwalter) and answers exactly 403.
 check "Negativkontrolle: ${KID} setzt die Basis-URL nicht, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 ORIGIN_AFTER=$(sql "SELECT value FROM meta WHERE key = 'link_origin'")
 check "Negativkontrolle: link_origin danach unverändert (ist ${ORIGIN_AFTER:-leer})" \
@@ -558,7 +558,7 @@ check "Verwalter-Schnappschuss enthält admin und ${ADMIN2}, nicht ${KID} (ist $
 	'printf "%s" "$1" | grep -q "\"admin\"" && printf "%s" "$1" | grep -q "\"$2\"" && ! printf "%s" "$1" | grep -q "\"$3\""' \
 	_ "${ADMINS}" "${ADMIN2}" "${KID}"
 
-# Rückblick bis K3 aus: so kommt keiner zu früh, falls die Uhr schon nach der Vorgabe steht.
+# Review off until K3: this way none arrives too early if the clock is already past the default.
 http_code GET "${API_URL}/review/prefs" "${WORK_DIR}/prefs-old.json" >/dev/null
 ADMIN_PREFS=$(jq -c '{enabled, minute}' "${WORK_DIR}/prefs-old.json" 2>/dev/null || true)
 check "GET /review/prefs von admin lesbar (ist ${ADMIN_PREFS:-leer})" matches "${ADMIN_PREFS}" '"minute":[0-9]+'
@@ -567,7 +567,7 @@ check "Rückblick admin vorerst aus HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${ADMIN2_AUTH}" POST "${API_URL}/review/prefs" /dev/null '{"enabled":false,"minute":1200}')
 check "Rückblick ${ADMIN2} aus HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 CODE=$(call "${KID_AUTH}" POST "${API_URL}/review/prefs" /dev/null '{"enabled":true,"minute":600}')
-# Ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht (WR-08).
+# A crashed backend (500, 503) or curl error (000) does not pass this way (WR-08).
 check "Negativkontrolle: ${KID} hat keine Rückblick-Einstellung, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 KID_PREFS=$(sql "SELECT count(*) FROM review_prefs WHERE nc_user = '${KID}'")
 check "Negativkontrolle: keine Rückblick-Zeile für ${KID} in review_prefs (ist ${KID_PREFS:-leer})" eq "${KID_PREFS}" 0
@@ -595,9 +595,9 @@ ADMIN_NAME=$(player_field "${WORK_DIR}/players.json" admin player_name)
 ADMIN_PW=$(player_field "${WORK_DIR}/players.json" admin password)
 check "Spielernamen und Passwörter vorhanden (${KID_NAME}, ${GUEST_NAME}, ${ADMIN_NAME}; Längen ${#KID_PW}, ${#GUEST_PW}, ${#ADMIN_PW})" \
 	sh -c 'for v in "$@"; do [ -n "$v" ] || exit 1; done' _ "${KID_NAME}" "${KID_PW}" "${GUEST_NAME}" "${GUEST_PW}" "${ADMIN_NAME}" "${ADMIN_PW}"
-# gw-kind bekommt Regeln (heute ganzer Tag 120 min, morgen ab 9 Uhr), damit sein
-# Verbrauch zählt und der Schluss-Text eine echte Startzeit nennen kann; gw-abnahme41
-# bleibt ohne Regeln (die Pause gilt für alle Kinder, auch ohne Regeln).
+# gw-kind gets rules (today whole day 120 min, tomorrow from 9 o'clock), so that its
+# usage counts and the closing text can name a real start time; gw-abnahme41
+# stays without rules (the pause applies to all children, even without rules).
 PLAN=$(jq -nc --argjson t "${TODAY_WD}" --argjson m "${TOMORROW_WD}" '{normal: [range(1; 8) as $d
 	| if $d == $t then {weekday: $d, allowed: true, limit_minutes: 120, window_start: 0, window_end: 1440}
 	elif $d == $m then {weekday: $d, allowed: true, limit_minutes: 120, window_start: 540, window_end: 1140}
@@ -609,7 +609,7 @@ check "Positivkontrolle: ${KID} kommt vor der Pause hinein (auth_accept)" \
 sleep 2.5
 
 printf '\n== K1 Pause für alle Welten ==\n'
-# K1 Eltern pausieren vom Handy alle Welten, Kinder getrennt, Verwalter bleiben (SC 1)
+# K1 Parents pause all worlds from the phone, children separately, managers stay (SC 1)
 printf 'Sitzungen %s, %s und admin für bis zu 70 s\n' "${KID}" "${GUEST}"
 probe "${WORK_DIR}/k1-kid.json" "${KID_NAME}" "${KID_PW}" --hold 70 --timeout "${SESSION_TIMEOUT}" &
 KID_JOB=$!
@@ -656,13 +656,13 @@ printf '%s: %s\n' "${GUEST}" "$(probe_summary "${WORK_DIR}/k1-guest.json")"
 check "K1 ${GUEST} ohne Regeln ebenfalls getrennt mit '${TEXT_PAUSE}'" sh -c \
 	'[ "$(jq -r --arg t "$2" ".result == \"kicked\" and ((.reason // \"\") | contains(\$t))" "$1")" = true ]' _ \
 	"${WORK_DIR}/k1-guest.json" "${TEXT_PAUSE}"
-# Wiederbeitritts-Sperre der Welt (etwa 2 s nach dem Verlassen) abwarten.
+# Wait out the rejoin lock of the world (about 2 s after leaving).
 sleep 2.5
 probe "${WORK_DIR}/k1-join.json" "${KID_NAME}" "${KID_PW}"
 check "K1 Beitritt von ${KID} in der Pause denied mit '${TEXT_PAUSE}' ($(probe_summary "${WORK_DIR}/k1-join.json"))" \
 	denied_with "${WORK_DIR}/k1-join.json" "${TEXT_PAUSE}"
-# Die Sekunden bis zum Trennen bucht die ExApp erst im nächsten 15-s-Takt; darum zuerst
-# einen Takt plus Loop (20 s) abwarten, dann über zwei weitere Takte messen.
+# The ExApp books the seconds until disconnect only in the next 15 s cycle; therefore first
+# wait one cycle plus loop (20 s), then measure over two further cycles.
 sleep 20
 USAGE_A=$(usage_today "${KID}")
 PLAY_A=$(play_today "${KID}")
@@ -670,7 +670,7 @@ printf 'warte zwei Takte (35 s): Verbrauch %s s, Spielzeit %s s\n' "${USAGE_A}" 
 sleep 35
 USAGE_B=$(usage_today "${KID}")
 PLAY_B=$(play_today "${KID}")
-# Beide Seiten müssen Zahlen sein: Scheitert sql, wären sonst beide leer und gleich (WR-08).
+# Both sides must be numbers: if sql fails, both would otherwise be empty and equal (WR-08).
 check "K1 time_usage von ${KID} steigt in der Pause nicht (${USAGE_A:-leer} -> ${USAGE_B:-leer})" \
 	eq_num "${USAGE_B}" "${USAGE_A}"
 check "K1 play_daily von ${KID} steigt in der Pause nicht (${PLAY_A:-leer} -> ${PLAY_B:-leer})" eq_num "${PLAY_B}" "${PLAY_A}"
@@ -705,7 +705,7 @@ check "K1 Positivkontrolle: nach Weiter kommt ${KID} wieder hinein" \
 	probe_expect "${WORK_DIR}/k1-after2.json" '.result == "auth_accept"' 15 "${KID_NAME}" "${KID_PW}"
 
 printf '\n== K2 Hinweis bei fremdem Beitrittsversuch ==\n'
-# K2 Fremder Name: Hinweis an alle Verwalter mit Link, gedrosselt (SC 2)
+# K2 Foreign name: notice to all managers with link, throttled (SC 2)
 BASE_ADMIN=$(notif_max "${ADMIN_AUTH}")
 BASE_ADMIN2=$(notif_max "${ADMIN2_AUTH}")
 BASE_KID=$(notif_max "${KID_AUTH}")
@@ -725,7 +725,7 @@ check "K2 admin hat genau einen Hinweis (ist $(jq -r 'length' "${WORK_DIR}/k2-ad
 jq -r '.[0] | "  Betreff: \(.subject)\n  Text: \(.message)\n  Link: \(.link)"' "${WORK_DIR}/k2-admin.json" 2>/dev/null || true
 check "K2 Betreff nennt die Welt '${NAME_PAUSE}'" \
 	eq "$(jq -r --arg w "${NAME_PAUSE}" '.[0].subject | contains($w)' "${WORK_DIR}/k2-admin.json" 2>/dev/null)" true
-# Seit da2ad56 lautet der Text "<Name> wollte um H:MM beitreten." (ohne "Uhr").
+# Since da2ad56 the text reads "<Name> wollte um H:MM beitreten." (without "Uhr").
 check "K2 Text nennt Fremder1 und eine Uhrzeit" \
 	eq "$(jq -r '.[0].message | (contains("Fremder1") and test("um [0-9]{1,2}:[0-9]{2} beitreten"))' "${WORK_DIR}/k2-admin.json" 2>/dev/null)" true
 LINK=$(jq -r '.[0].link // empty' "${WORK_DIR}/k2-admin.json" 2>/dev/null || true)
@@ -751,8 +751,8 @@ done
 CASE_NAME=$(printf '%s' "${KID_NAME}" | tr '[:lower:]' '[:upper:]')
 [ "${CASE_NAME}" = "${KID_NAME}" ] && CASE_NAME=$(printf '%s' "${KID_NAME}" | tr '[:upper:]' '[:lower:]')
 probe "${WORK_DIR}/k2-case.json" "${CASE_NAME}"
-# Erwartet ist die konkrete Ablehnung, nie "nicht auth_accept": Ein Prober-Fehler (Welt
-# nicht erreichbar) bestünde sonst (WR-08). Der Hinweis nennt den eingeladenen Namen nicht (IN-07).
+# The expected result is the concrete rejection, never "not auth_accept": a prober error (world
+# not reachable) would otherwise pass (WR-08). The notice does not name the invited name (IN-07).
 check "K2 Groß/Klein-Variante '${CASE_NAME}' denied mit '${TEXT_CASE_HINT}', ohne den Namen ($(probe_summary "${WORK_DIR}/k2-case.json"))" \
 	sh -c '[ "$(jq -r --arg t "$2" --arg n "$3" ".result == \"denied\" and ((.reason // \"\") | (contains(\$t) and (contains(\$n) | not)))" "$1" 2>/dev/null)" = true ]' _ \
 	"${WORK_DIR}/k2-case.json" "${TEXT_CASE_HINT}" "${KID_NAME}"
@@ -794,8 +794,8 @@ check "K2 Liste enthält Fremder1 bis Fremder6 mit Uhrzeit H:MM und Welt '${NAME
 		| (index("Fremder1") != null) and (index("Fremder2") != null) and (index("Fremder3") != null)
 		and (index("Fremder4") != null) and (index("Fremder5") != null) and (index("Fremder6") != null)' \
 		"${WORK_DIR}/attempts.json" 2>/dev/null)" true
-# Die Wiederholungen von Fremder1 binnen 60 s erhöhen den Zähler nicht: Der Welt-Mod
-# meldet je Name höchstens ein deny pro 60 s (access_mod.DENY_PER_NAME_SECONDS).
+# The repetitions of Fremder1 within 60 s do not raise the counter: the world mod
+# reports at most one deny per name per 60 s (access_mod.DENY_PER_NAME_SECONDS).
 check "K2 Fremder1 genau einmal in der Liste (ist $(jq -r '[.attempts[]? | select(.player_name == "Fremder1")] | length' "${WORK_DIR}/attempts.json"))" \
 	eq "$(jq -r '[.attempts[]? | select(.player_name == "Fremder1")] | length' "${WORK_DIR}/attempts.json" 2>/dev/null)" 1
 check "K2 Variante '${CASE_NAME}' und ${KID_NAME} stehen nicht in der Liste" \
@@ -810,7 +810,7 @@ CODE=$(call "${KID_AUTH}" GET "${API_URL}/attempts?day=${TODAY}" /dev/null)
 check "K2 Negativkontrolle: ${KID} liest /attempts nicht, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
 
 printf '\n== K3 Tagesrückblick ==\n'
-# K3 Rückblick einmal am Tag je Verwalter, abschaltbar, neustartfest (SC 3)
+# K3 Review once a day per manager, can be switched off, restart-proof (SC 3)
 printf 'Sitzung %s für 70 s\n' "${KID}"
 probe "${WORK_DIR}/k3-kid.json" "${KID_NAME}" "${KID_PW}" --hold 70 --timeout "${SESSION_TIMEOUT}"
 check "K3 ${KID} spielt 70 s (result held)" result_is "${WORK_DIR}/k3-kid.json" held
@@ -862,11 +862,11 @@ check "K3 Verwalter erscheinen nicht im Rückblick" \
 	eq "$(jq -r --arg a "${ADMIN2}" '[.kids[]? | select(.nc_user == "admin" or .nc_user == $a)] | length' "${WORK_DIR}/review.json" 2>/dev/null)" 0
 CODE=$(call "${KID_AUTH}" GET "${API_URL}/review?day=${TODAY}" /dev/null)
 check "K3 Negativkontrolle: ${KID} liest /review nicht, HTTP 403 (ist ${CODE})" eq "${CODE}" 403
-# Ohne Spielzeit kommt kein Rückblick (D-14): ein frischer Tag ohne Spielzeit ist im
-# laufenden Stack nicht herstellbar; belegt durch tests/test_notify_loop.py.
+# Without playtime no review arrives (D-14): a fresh day without playtime cannot be produced in the
+# running stack; proven by tests/test_notify_loop.py.
 
 printf '\n== K4 Handy-Seiten hinter den Links ==\n'
-# K4 Links öffnen die Gameworld-Seiten pause, versuch, rueckblick (SC 4)
+# K4 Links open the Gameworld pages pause, versuch, rueckblick (SC 4)
 for page in "pause" "versuch?welt=${WORLD_ID}&tag=${TODAY}" "rueckblick?tag=${TODAY}"; do
 	CODE=$(curl -s -u "${ADMIN_AUTH}" -o "${WORK_DIR}/page.html" -w '%{http_code}' "${EMBED_URL}/${page}" 2>/dev/null || printf '000')
 	check "K4 GET .../${page} als admin HTTP 200 und lädt gameworld-main.js (ist ${CODE})" sh -c \
@@ -888,8 +888,8 @@ check "K4 Negativkontrolle: dasselbe grep findet einen erfundenen Text nicht" \
 
 CODE=$(http_code DELETE "${API_URL}/worlds/${WORLD_ID}" /dev/null)
 check "Welt '${NAME_PAUSE}' gelöscht HTTP 204 (ist ${CODE})" eq "${CODE}" 204
-# smoke-talk.sh erwartet seinen Ausgangszustand: genau admin als Verwalter (sonst wäre
-# gw-admin2 zu Recht Mitglied jedes Raums) und gw-kind ohne Regeln.
+# smoke-talk.sh expects its initial state: exactly admin as manager (otherwise
+# gw-admin2 would rightly be a member of every room) and gw-kind without rules.
 CODE=$(http_code DELETE "${API_URL}/playtime/children/${KID}" /dev/null)
 check "Regeln von ${KID} wieder gelöscht HTTP 200 (ist ${CODE})" eq "${CODE}" 200
 reset_usage "${KID}"
@@ -904,13 +904,13 @@ while [ "${waited}" -le 15 ]; do
 	sleep 3
 	waited=$((waited + 3))
 done
-# Ein leerer Wert (sql gescheitert) besteht nie: admin muss darin stehen, ${ADMIN2} nicht (WR-08).
+# An empty value (sql failed) never passes: admin must be in it, ${ADMIN2} must not (WR-08).
 check "Verwalter-Schnappschuss ohne ${ADMIN2}, mit admin (ist ${ADMINS:-leer})" sh -c \
 	'printf "%s" "$1" | grep -q "\"admin\"" && ! printf "%s" "$1" | grep -q "\"$2\""' _ "${ADMINS}" "${ADMIN2}"
 
 printf '\n== K5 Talk-Raum je Welt und K6 Bot (smoke-talk.sh) ==\n'
-# K5 Talk-Raum je Welt mit exakten Mitgliedern, nur lesen, Raum verschwindet mit der Welt (SC 5)
-# K6 Gameworld-Bot meldet Start, Stopp, Beitritt gedrosselt; ohne Talk läuft alles weiter (SC 6)
+# K5 Talk room per world with exact members, read-only, room disappears with the world (SC 5)
+# K6 Gameworld bot announces start, stop, join throttled; without Talk everything keeps running (SC 6)
 printf 'smoke-talk.sh läuft (bis zu 330 s Wartezeit für den Abgleich)\n'
 if sh "${TALK_SMOKE}" >"${WORK_DIR}/talk.log" 2>&1; then
 	pass "K5/K6 smoke-talk.sh Exit 0 ($(grep 'Prüfungen bestanden' "${WORK_DIR}/talk.log" | tail -n 1))"
@@ -926,8 +926,8 @@ occ app:disable spreed >/dev/null 2>&1 || true
 SPREED_DISABLED=1
 check "K6 occ app:disable spreed: Talk ist aus" \
 	eq "$(occ app:list --output=json 2>/dev/null | jq -r '.enabled.spreed // "aus"')" aus
-# Die ExApp fragt die Talk-Fähigkeiten höchstens alle 300 s ab; der gezielte Neustart
-# macht die Prüfung sofort möglich, statt 5 Minuten zu warten.
+# The ExApp asks for the Talk capabilities at most every 300 s; the targeted restart
+# makes the check possible at once instead of waiting 5 minutes.
 check "K6 ExApp gezielt neu gestartet (Talk-Fähigkeiten frisch)" restart_backend "${WORK_DIR}/register-k6.log"
 CODE=$(http_code GET "${API_URL}/talk" "${WORK_DIR}/talk-off.json")
 check "K6 GET /api/talk HTTP 200 mit available false (ist ${CODE} $(jq -r '.available' "${WORK_DIR}/talk-off.json" 2>/dev/null))" \
@@ -948,8 +948,8 @@ check "K6 occ app:enable spreed: Talk ist wieder an" \
 	ne "$(occ app:list --output=json 2>/dev/null | jq -r '.enabled.spreed // empty')" ""
 SPREED_DISABLED=0
 ENABLED_AT=$(date +%s)
-# Die ExApp weiß noch nichts davon (Fähigkeiten im Speicher): Der Raum der neuen Welt
-# kommt aus dem 5-min-Abgleich (Backfill D-20), nicht aus dem Anlegen.
+# The ExApp does not know about it yet (capabilities in memory): the room of the new world
+# comes from the 5 min sync (backfill D-20), not from the creation.
 CODE=$(http_code POST "${API_URL}/worlds" "${WORK_DIR}/w-back.json" "{\"name\":\"${NAME_BACKFILL}\",\"preset\":\"mtg_kreativ\"}")
 BACK_ID=$(jq -r '.id // empty' "${WORK_DIR}/w-back.json" 2>/dev/null || true)
 remember_world "${BACK_ID}"
@@ -1022,7 +1022,7 @@ if [ "${GAMEWORLD_SKIP_REGRESSION:-0}" = 1 ]; then
 	printf '\n%s von %s Prüfungen bestanden\n' "${PASSED}" "${TOTAL}"
 	exit 1
 fi
-# acceptance-phase4.sh ruft acceptance-phase3.sh, das Phase 1 und 2 selbst aufruft.
+# acceptance-phase4.sh calls acceptance-phase3.sh, which calls phase 1 and 2 itself.
 if sh "${PHASE4_SCRIPT}" >"${WORK_DIR}/phase4.log" 2>&1; then
 	pass "Regression: acceptance-phase4.sh Exit 0 ($(grep 'Prüfungen bestanden' "${WORK_DIR}/phase4.log" | tail -n 1))"
 else
@@ -1031,7 +1031,7 @@ else
 fi
 for expected in "84 von 84 Prüfungen bestanden" "104 von 104 Prüfungen bestanden" \
 	"75 von 75 Prüfungen bestanden" "109 von 109 Prüfungen bestanden"; do
-	# Nur die Summenzeile oder eine bestanden-Zeile zählt, nie ein Zitat in einer FEHLGESCHLAGEN-Zeile.
+	# Only the sum line or a bestanden line counts, never a quote in a FEHLGESCHLAGEN line.
 	check "Regression: Log enthält '${expected}'" awk -v e="${expected}" \
 		'$0 == e || (index($0, "bestanden: ") == 1 && index($0, e) > 0) { found = 1 } END { exit !found }' \
 		"${WORK_DIR}/phase4.log"

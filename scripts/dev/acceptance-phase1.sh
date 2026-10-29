@@ -1,24 +1,24 @@
 #!/bin/sh
-# Phasenabnahme Phase 1: prüft die fünf Erfolgskriterien aus .planning/ROADMAP.md
-# gegen den laufenden Dev-Stack (Nextcloud 8091, gescopter Docker-Proxy,
-# ExApp als Host-Prozess).
+# Phase acceptance phase 1: checks the five success criteria from .planning/ROADMAP.md
+# against the running dev stack (Nextcloud 8091, scoped Docker proxy,
+# ExApp as a host process).
 #
-# Bewusst unabhängig vom Implementierungsmuster: Belege kommen nur aus der
-# docker-CLI, aus curl gegen Nextcloud und den Proxy, aus tar und grep. Die
-# Python-Testhelfer des Projekts werden nicht benutzt. Zu jeder Prüfung gibt
-# es, wo sinnvoll, eine Negativkontrolle (das Verbotene scheitert) und eine
-# Positivkontrolle (die Messmethode selbst funktioniert).
+# Deliberately independent of the implementation pattern: evidence comes only from the
+# docker CLI, from curl against Nextcloud and the proxy, from tar and grep. The
+# Python test helpers of the project are not used. For every check there is,
+# where sensible, a negative control (the forbidden thing fails) and a
+# positive control (the measuring method itself works).
 #
-# Voraussetzung:
+# Prerequisite:
 #   docker compose -f scripts/dev/compose.yaml up -d
 #   sh scripts/dev/register-exapp.sh
 #
-# Exit 0 nur, wenn jede Prüfung bestanden ist. Der Docker-Proxy wird für K5 kurz
-# gestoppt und in jedem Fall per trap wieder gestartet. Welten der Abnahme werden
-# am Ende entfernt, der Nutzer gw-kind bleibt für die Playwright-Abnahme stehen.
-# Weltschlüssel aus den Antworten werden nie ausgegeben.
+# Exit 0 only if every check passes. The Docker proxy is stopped briefly for K5
+# and started again in any case by a trap. Worlds of the acceptance are removed
+# at the end, the user gw-kind stays for the Playwright acceptance.
+# World keys from the responses are never printed.
 #
-# Zugangsdaten hier sind reine Dev-Konten einer Loopback-Dev-Instanz.
+# Credentials here are pure dev accounts of a loopback dev instance.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -63,13 +63,13 @@ hint() {
 	printf 'Hinweis: %s\n' "$1"
 }
 
-# Abbruch, wenn eine Voraussetzung fehlt und Folgeprüfungen sinnlos wären.
+# Abort if a prerequisite is missing and follow-up checks would be pointless.
 abort() {
 	printf 'ABBRUCH: %s\n' "$1" >&2
 	exit 1
 }
 
-# check BESCHREIBUNG BEDINGUNG... -> pass oder fail
+# check DESCRIPTION CONDITION... -> pass or fail
 check() {
 	description=$1
 	shift
@@ -102,7 +102,7 @@ cleanup() {
 	for world_id in ${WORLD_IDS}; do
 		curl -s -u "${ADMIN_AUTH}" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' -X DELETE -o /dev/null \
 			"${API_URL}/worlds/${world_id}" >/dev/null 2>&1 || true
-		# Fallback, falls die API nicht mehr antwortet: direkt über die docker-CLI.
+		# Fallback if the API no longer answers: directly through the docker CLI.
 		for container in $(docker ps -aq --filter "label=gameworld.world_id=${world_id}" 2>/dev/null); do
 			docker rm -f -v "${container}" >/dev/null 2>&1 || true
 		done
@@ -116,7 +116,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-# http_code METHODE URL AUTH AUSGABE [JSON]
+# http_code METHOD URL AUTH OUTPUT [JSON]
 http_code() {
 	if [ -n "${5:-}" ]; then
 		curl -s -u "$3" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' \
@@ -140,7 +140,7 @@ inspect() {
 }
 
 wait_running() {
-	# wait_running CONTAINER ERWARTUNG SEKUNDEN -> 0 bei Erfolg
+	# wait_running CONTAINER EXPECTATION SECONDS -> 0 on success
 	waited=0
 	while [ "$(inspect "$1" '{{.State.Running}}')" != "$2" ]; do
 		[ "${waited}" -lt "$3" ] || return 1
@@ -156,7 +156,7 @@ empty() { [ -z "$1" ]; }
 nonempty() { [ -n "$1" ]; }
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
 
-# Voraussetzungen ---------------------------------------------------------
+# Prerequisites ---------------------------------------------------------
 for tool in docker curl jq tar grep; do
 	command -v "${tool}" >/dev/null 2>&1 || abort "Werkzeug ${tool} fehlt"
 done
@@ -175,7 +175,7 @@ if [ "$(docker compose -f "${COMPOSE_FILE}" ps "${PROXY_SERVICE}" --format '{{.S
 	abort "${PROXY_SERVICE} läuft nicht. Zuerst: docker compose -f scripts/dev/compose.yaml up -d"
 fi
 
-# Reste eines abgebrochenen früheren Laufs mit denselben Weltnamen entfernen.
+# Remove leftovers of an aborted earlier run with the same world names.
 http_code GET "${API_URL}/worlds" "${ADMIN_AUTH}" "${WORK_DIR}/pre.json" >/dev/null
 for old_id in $(jq -r --arg a "${NAME_A}" --arg b "${NAME_B}" \
 	'.worlds[]? | select(.name == $a or .name == $b or .name == "Abnahme Proxy") | .id' \
@@ -186,7 +186,7 @@ for old_id in $(jq -r --arg a "${NAME_A}" --arg b "${NAME_B}" \
 done
 
 printf '\n== K1 Installation und Top-Menü ==\n'
-# K1 Installation und Top-Menü; Nicht-Admin sieht Seite und Bundle, aber keine Verwaltung
+# K1 Installation and top menu; non-admin sees page and bundle, but no management
 check "K1 occ app_api:app:list zeigt gameworld als enabled" \
 	sh -c 'printf "%s\n" "$1" | grep "^gameworld " | grep -q "\[enabled\]"' _ "${APP_LIST}"
 
@@ -208,21 +208,21 @@ fi
 KID_ADMIN=$(occ group:list --output=json 2>/dev/null | jq -r --arg u "${KID_USER}" '(.admin // []) | index($u) // "nein"')
 check "K1 ${KID_USER} ist nicht in der Gruppe admin" eq "${KID_ADMIN}" nein
 
-# Positivkontrolle: gw-kind kann sich überhaupt anmelden. Sonst wäre ein 401
-# unten ein falscher Beleg für die Sperre.
+# Positive control: gw-kind can log in at all. Otherwise a 401
+# below would be false evidence for the lock.
 KID_LOGIN=$(http_code GET "${NEXTCLOUD_URL}/ocs/v2.php/cloud/user?format=json" "${KID_AUTH}" "${WORK_DIR}/kid-user.json")
 check "K1 Positivkontrolle: ${KID_USER} meldet sich an, OCS cloud/user 200 (ist ${KID_LOGIN})" eq "${KID_LOGIN}" 200
 
-# seit 03-02: Kinder sehen Seite und Bundle, Verwaltung bleibt gesperrt
-# (AppAPI-Route ADMIN plus require_verwalter in Python).
+# since 03-02: children see page and bundle, management stays locked
+# (AppAPI route ADMIN plus require_verwalter in Python).
 KID_PAGE=$(http_code GET "${PAGE_URL}" "${KID_AUTH}" "${WORK_DIR}/page-kid.html")
 check "K1 Seite für ${KID_USER} HTTP 200 (ist ${KID_PAGE})" eq "${KID_PAGE}" 200
 KID_BUNDLE=$(http_code GET "${BUNDLE_URL}" "${KID_AUTH}" /dev/null)
 check "K1 Bundle für ${KID_USER} HTTP 200 (ist ${KID_BUNDLE})" eq "${KID_BUNDLE}" 200
 
 KID_API=$(http_code GET "${API_URL}/worlds" "${KID_AUTH}" /dev/null)
-# Seit 06-02 (ROLLE-03) sind alle Routen USER; die Sperre sitzt im Backend (require_verwalter) und antwortet genau 403.
-# Ein abgestürztes Backend (500, 503) oder curl-Fehler (000) besteht so nicht (WR-08).
+# Since 06-02 (ROLLE-03) all routes are USER; the lock sits in the backend (require_verwalter) and answers exactly 403.
+# A crashed backend (500, 503) or curl error (000) does not pass this way (WR-08).
 check "K1 Negativkontrolle: Welt-API für ${KID_USER} HTTP 403 (ist ${KID_API})" eq "${KID_API}" 403
 
 KID_ME=$(http_code GET "${API_URL}/me" "${KID_AUTH}" "${WORK_DIR}/me-kid.json")
@@ -236,7 +236,7 @@ check "K1 Positivkontrolle: /api/me als admin HTTP 200 und Rolle verwalter (ist 
 	eq "${ADMIN_ME}/${ADMIN_ROLE}" 200/verwalter
 
 printf '\n== K2 Lebenszyklus und Parallelität ==\n'
-# K2 Lebenszyklus und Parallelität
+# K2 Lifecycle and parallelism
 CODE_A=$(http_code POST "${API_URL}/worlds" "${ADMIN_AUTH}" "${WORK_DIR}/a.json" "{\"name\":\"${NAME_A}\"}")
 ID_A=$(jq -r '.id // empty' "${WORK_DIR}/a.json" 2>/dev/null || true)
 remember_world "${ID_A}"
@@ -256,7 +256,7 @@ check "K2 beide Container gleichzeitig running (docker ps)" eq "$(printf '%s\n' 
 
 PORT_A=$(inspect "${CONTAINER_A}" '{{index .Config.Labels "gameworld.port"}}')
 PORT_B=$(inspect "${CONTAINER_B}" '{{index .Config.Labels "gameworld.port"}}')
-# Beide Ports müssen Zahlen sein: ein leerer Wert (inspect gescheitert) besteht nicht (WR-08).
+# Both ports must be numbers: an empty value (inspect failed) does not pass (WR-08).
 check "K2 Ports verschieden (A=${PORT_A}, B=${PORT_B})" sh -c \
 	'printf "%s %s" "$1" "$2" | grep -Eq "^[0-9]+ [0-9]+$" && [ "$1" != "$2" ]' _ "${PORT_A}" "${PORT_B}"
 for pair in "A ${CONTAINER_A} ${PORT_A}" "B ${CONTAINER_B} ${PORT_B}"; do
@@ -290,7 +290,7 @@ LISTED=$(jq -r --arg a "${ID_A}" --arg b "${ID_B}" \
 check "K2 Liste zeigt beide Welten mit Status running (ist '${LISTED}')" eq "${LISTED}" "running running"
 
 printf '\n== K3 Limits ==\n'
-# K3 Limits und Härtung (vor dem Löschen aus K2)
+# K3 Limits and hardening (before the deletion from K2)
 for pair in "A ${CONTAINER_A}" "B ${CONTAINER_B}"; do
 	# shellcheck disable=SC2086
 	set -- ${pair}
@@ -316,8 +316,8 @@ remember_world "$(jq -r '.id // empty' "${WORK_DIR}/mem.json" 2>/dev/null || tru
 check "K3 Negativkontrolle: POST mit mem_limit 8g HTTP 422 (ist ${CODE_MEM})" eq "${CODE_MEM}" 422
 
 printf '\n== K4 Privat per Default ==\n'
-# K4 Privat per Default, gelesen per docker cp und tar
-# MSYS_NO_PATHCONV: Git Bash würde den Containerpfad sonst in einen Windows-Pfad umschreiben.
+# K4 Private by default, read via docker cp and tar
+# MSYS_NO_PATHCONV: Git Bash would otherwise rewrite the container path into a Windows path.
 MSYS_NO_PATHCONV=1 docker cp "${CONTAINER_A}:/var/lib/minetest/minetest.conf" - >"${WORK_DIR}/conf.tar" 2>/dev/null || true
 tar -xOf "${WORK_DIR}/conf.tar" >"${WORK_DIR}/minetest.conf" 2>/dev/null || true
 CONF="${WORK_DIR}/minetest.conf"
@@ -325,8 +325,8 @@ check "K4 Positivkontrolle: minetest.conf per docker cp gelesen (nicht leer)" te
 check "K4 server_announce = false" grep -qx 'server_announce = false' "${CONF}"
 check "K4 disallow_empty_password = true" grep -qx 'disallow_empty_password = true' "${CONF}"
 check "K4 default_password mit nicht leerem Wert" grep -Eq '^default_password = [^ ]+' "${CONF}"
-# Seit 02-01 Kreativ-Preset mit fly, fast: genau eine default_privs-Zeile, sie beginnt
-# mit interact, shout und enthält keine Admin-Rechte.
+# Since 02-01 creative preset with fly, fast: exactly one default_privs line, it starts
+# with interact, shout and contains no admin rights.
 PRIVS_LINES=$(grep -c '^default_privs[[:space:]]*=' "${CONF}" 2>/dev/null || true)
 check "K4 genau eine default_privs-Zeile (ist ${PRIVS_LINES})" eq "${PRIVS_LINES}" 1
 check "K4 default_privs beginnt mit interact, shout und ohne Admin-Rechte" \
@@ -346,15 +346,15 @@ CODE_INJ=$(http_code POST "${API_URL}/worlds" "${ADMIN_AUTH}" "${WORK_DIR}/inj.j
 remember_world "$(jq -r '.id // empty' "${WORK_DIR}/inj.json" 2>/dev/null || true)"
 check "K4 Negativkontrolle: Weltname mit Zeilenumbruch HTTP 422 (ist ${CODE_INJ})" eq "${CODE_INJ}" 422
 
-# Die Page Visibility API des Browsers (Polling seit 02-04) ist keine
-# Sichtbarkeitsoption einer Welt; nur diese beiden Namen werden ausgeblendet,
-# jedes andere Vorkommen in derselben Zeile zählt weiter.
+# The Page Visibility API of the browser (polling since 02-04) is not a
+# visibility option of a world; only these two names are hidden,
+# any other occurrence in the same line still counts.
 strip_page_visibility() {
 	sed -E 's/document\.visibilityState|visibilitychange//g' | grep -iE 'announce|serverlist|visibility' || true
 }
-# Store-Texte (<description>, seit 06-11) sind Prosa für Menschen und sagen ausdrücklich
-# "keine Welt steht jemals in einer Serverliste"; geprüft wird die Konfiguration von
-# info.xml ohne diese Blöcke (Routen, Variablen, Docker-Angaben).
+# Store texts (<description>, since 06-11) are prose for humans and expressly say
+# "keine Welt steht jemals in einer Serverliste"; what is checked is the configuration of
+# info.xml without these blocks (routes, variables, Docker details).
 info_xml_config() {
 	awk '/<description[ >]/ { skip = 1 } !skip { print FILENAME ":" FNR ":" $0 } /<\/description>/ { skip = 0 }' "$1"
 }
@@ -362,14 +362,14 @@ STATIC_HITS=$({
 	grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/frontend/src" || true
 	info_xml_config "${REPO_ROOT}/appinfo/info.xml" | grep -iE 'announce|serverlist|visibility' || true
 } | strip_page_visibility)
-# Gleiche Zahl an Prüfungen wie vorher: Die Regressionen zählen "N von N" fest mit.
+# Same number of checks as before: the regressions count "N von N" as a fixed value.
 check "K4 statisch: kein announce/serverlist/visibility in frontend/src und info.xml (ohne Store-Texte)" empty "${STATIC_HITS}"
 check "K4 Positivkontrolle: der Filter lässt eine echte Sichtbarkeitsoption durch" \
 	nonempty "$(printf '%s\n' "if (document.visibilityState) world.visibility = 'public'" | strip_page_visibility)"
 CONTROL_HITS=$(grep -rniE 'announce|serverlist|visibility' "${REPO_ROOT}/src/gameworld/provisioner/luanti_conf.py" || true)
 check "K4 Positivkontrolle: dasselbe grep findet die Keys in luanti_conf.py" nonempty "${CONTROL_HITS}"
 
-# Lebenszyklus aus K2 zu Ende: stoppen, starten, löschen
+# Finish the lifecycle from K2: stop, start, delete
 printf '\n== K2 Stoppen, Starten, Löschen ==\n'
 CODE=$(http_code POST "${API_URL}/worlds/${ID_A}/stop" "${ADMIN_AUTH}" /dev/null)
 check "K2 POST stop A HTTP 200 (ist ${CODE})" eq "${CODE}" 200
@@ -393,7 +393,7 @@ LEFT_VOLUMES=$(docker volume ls -q | grep -x -e "${NAME_CA}" -e "${NAME_CB}" || 
 check "K2 docker volume ls ohne die beiden Volumes" empty "${LEFT_VOLUMES}"
 
 printf '\n== K5 Proxy und Setup-Check ==\n'
-# K5 Proxy-Scope, Loopback-Bindung, Setup-Check mit gestopptem Proxy
+# K5 Proxy scope, loopback binding, setup check with stopped proxy
 PING=$(curl -s -o /dev/null -w '%{http_code}' "${DOCKER_PROXY_URL}/_ping" 2>/dev/null || printf '000')
 check "K5 Positivkontrolle: Proxy /_ping HTTP 200 (ist ${PING})" eq "${PING}" 200
 EXEC=$(curl -s -X POST -o /dev/null -w '%{http_code}' "${DOCKER_PROXY_URL}/exec/x/start" 2>/dev/null || printf '000')
@@ -441,9 +441,9 @@ done
 PROXY_STOPPED=0
 check "K5 setup-check nach Neustart binnen 10 s \"ok\":true (nach ${waited} s)" eq "${SC_OK}" true
 
-# Gewolltes Verhalten aus 01-03: Ein gescheiterter POST bleibt als Zeile mit
-# op_state failed und der Fehlermeldung sichtbar, ohne Container, und lässt sich
-# löschen.
+# Intended behavior from 01-03: a failed POST stays visible as a row with
+# op_state failed and the error message, without a container, and can be
+# deleted.
 http_code GET "${API_URL}/worlds" "${ADMIN_AUTH}" "${WORK_DIR}/post.json" >/dev/null
 GHOST=$(jq -r '[.worlds[]? | select(.name == "Abnahme Proxy") | "\(.op_state)/\(.docker_status)"] | join(",")' \
 	"${WORK_DIR}/post.json" 2>/dev/null || printf 'unbekannt')
