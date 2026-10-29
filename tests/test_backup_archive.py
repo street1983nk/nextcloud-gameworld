@@ -1,4 +1,4 @@
-"""Archiv-Kern für Sicherung und Wiederherstellung (BACKUP-01/02, T-05-01..03, T-05-49)."""
+"""Archive core for backup and restore (BACKUP-01/02, T-05-01..03, T-05-49)."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ WORLD_ID = "a1b2c3d4e5f6"
 PRESET = "mtg-kreativ"
 MAP = b"SQLite format 3\x00" + b"karte" * 200
 
-# Ein Eintrag: (Name, Typ, Inhalt, Linkziel)
+# One entry: (name, type, content, link target)
 Entry = tuple[str, bytes, bytes, str]
 
 
@@ -72,7 +72,7 @@ def _tar_bytes(entries: list[Entry], *, gz: bool = False) -> bytes:
 
 
 def _chunks(raw: bytes) -> Iterator[bytes]:
-    """Ungleich große Chunks mit leeren Chunks dazwischen, wie ein Netzstrom."""
+    """Unevenly sized chunks with empty chunks in between, like a network stream."""
     sizes = [1, 0, 7, 513, 0, 4096, 3]
     position = 0
     index = 0
@@ -124,7 +124,7 @@ def _restore(raw: bytes, *, world_id: str = WORLD_ID, preset: str = PRESET) -> t
 
 
 def _backup(entries: list[Entry], manifest: bytes | None = None) -> bytes:
-    """Ein tar.gz, wie es in Nextcloud Files liegen könnte (auch manipuliert)."""
+    """A tar.gz as it might lie in Nextcloud Files (also tampered with)."""
     head = [] if manifest is None else [_file(MANIFEST_NAME, manifest)]
     return _tar_bytes(head + entries, gz=True)
 
@@ -275,7 +275,7 @@ def test_verify_rejects_foreign_manifest() -> None:
         verify_snapshot(io.BytesIO(raw), world_id="ffffffffffff", preset=PRESET)
 
 
-# prepare_restore: Erfolg
+# prepare_restore: success
 
 
 def test_restore_tar_is_relative_to_world_folder() -> None:
@@ -424,7 +424,7 @@ def test_restore_rejects_compression_bomb(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_small_highly_compressible_world_is_accepted() -> None:
-    """Unter RATIO_FLOOR greift die Verhältnisgrenze nicht (leere SQLite-Seiten packen stark)."""
+    """Below RATIO_FLOOR the ratio limit does not apply (empty SQLite pages pack heavily)."""
     world = [_dir("world"), _file("world/map.sqlite", b"\x00" * (4 * 1024 * 1024))]
     info, _ = _restore(_backup(world, _manifest()))
     assert info.unpacked_size == 4 * 1024 * 1024

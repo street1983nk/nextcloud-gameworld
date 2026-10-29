@@ -1,35 +1,35 @@
-"""Ablauf der Sicherung als Hintergrund-Auftrag (BACKUP-01, D-09, D-11, D-14).
+"""Flow of the backup as a background job (BACKUP-01, D-09, D-11, D-14).
 
-Der Eltern-Request prüft nur (Spieler online, Busy, Ein-Job-Schutz), setzt die
-Welt auf ``backing_up`` und trägt den Auftrag als ``running`` ein; dann
-antwortet die API 202. Der Ablauf selbst läuft als verfolgter Task:
+The parent request only checks (player online, busy, one-job protection), sets the
+world to ``backing_up`` and enters the job as ``running``; then the API
+answers 202. The flow itself runs as a tracked task:
 
-1. Platzprüfung (Pitfall 10), bei Spielern Chat-Hinweis über ``@halt`` und
-   Warten bis ``ab`` plus Gnadenfrist (D-09).
-2. Stopp, Snapshot am gestoppten Container in eine anonyme Temp-Datei unter
-   ``storage_dir/tmp``, im ``finally`` sofort ``end_offline`` (Welt startet
-   wieder, D-11, D-14).
-3. Restore-Probelauf (``verify_snapshot``): Nur was der Restore-Pfad annähme,
-   wird hochgeladen (T-05-27).
-4. Upload in die Files des auslösenden Verwalters, Nachweis in ``backups``,
-   Auftrag ``ok``.
+1. Space check (pitfall 10), with players a chat notice via ``@halt`` and
+   waiting until ``ab`` plus grace period (D-09).
+2. Stop, snapshot of the stopped container into an anonymous temp file under
+   ``storage_dir/tmp``, in the ``finally`` immediately ``end_offline`` (world starts
+   again, D-11, D-14).
+3. Restore dry run (``verify_snapshot``): only what the restore path would accept
+   is uploaded (T-05-27).
+4. Upload into the files of the triggering manager, proof in ``backups``,
+   job ``ok``.
 
-Wiederherstellen (BACKUP-02, D-04, D-05, D-06, D-13, D-15) zerstört erst, wenn
-Sicherung und Rückweg bewiesen sind:
+Restore (BACKUP-02, D-04, D-05, D-06, D-13, D-15) destroys only when
+backup and way back are proven:
 
-A. Ohne Stopp: Download, Größe und SHA-256 gegen den eigenen Nachweis,
-   vollständige Prüfung und Filterung (``prepare_restore``). Scheitert etwas,
-   läuft die Welt unverändert weiter (``abort_offline``).
-B. Halt, Stopp, Zählbuch verbuchen und bewahren, geprüfte vor-restore-Sicherung
-   in Files. Scheitert etwas, startet die alte Welt wieder (``end_offline``).
-C. ``mark_swap``, Tausch über ein frisches Volume mit einem zweiten Versuch,
-   sonst Rückfall auf den lokalen Sicherheits-Snapshot, sonst
-   ``RESTORE_INTERRUPTED`` (wiederholbar).
+A. Without stopping: download, size and SHA-256 against the own proof,
+   complete check and filtering (``prepare_restore``). If anything fails,
+   the world keeps running unchanged (``abort_offline``).
+B. Halt, stop, book and preserve the ledger, checked vor-restore backup
+   in Files. If anything fails, the old world starts again (``end_offline``).
+C. ``mark_swap``, swap via a fresh volume with a second attempt,
+   otherwise fall back to the local safety snapshot, otherwise
+   ``RESTORE_INTERRUPTED`` (repeatable).
 
-Die Welt-Sperre hält jeder Schritt nur kurz (Abschnitte aus worlds/service.py);
-Snapshot, Probelauf und Upload laufen ohne Sperre (Pitfall 3). Alle
-fehlgeschlagenen Ausgänge laufen über ``_finish_failed`` mit festem deutschem
-Text; ins Log kommen nur Welt-ID und Fehlertyp, nie Pfade, Konten oder Namen.
+Every step holds the world lock only briefly (sections from worlds/service.py);
+snapshot, dry run and upload run without the lock (pitfall 3). All
+failed outcomes go through ``_finish_failed`` with a fixed German
+text; only world ID and error type go into the log, never paths, accounts or names.
 """
 
 from __future__ import annotations
@@ -86,41 +86,41 @@ from gameworld.worlds.store import BACKUP_JOB_RUNNING, BackupRow
 
 LOG = logging.getLogger(__name__)
 
-# Festtexte der Auftragszeile (D-11); die Oberfläche zeigt sie unverändert.
+# Fixed texts of the job row (D-11); the UI shows them unchanged.
 JOB_FAILED = "Die Sicherung ist fehlgeschlagen. Die Welt läuft weiter."
 JOB_UNUSABLE = "Die Sicherung war unvollständig und wurde verworfen. Die Welt läuft weiter."
-# D-09: Bestätigung, bevor spielende Kinder kurz getrennt werden.
+# D-09: confirmation before playing children are briefly disconnected.
 PLAYERS_ONLINE_ONE = "In der Welt spielt gerade 1 Kind, es wird kurz getrennt."
 PLAYERS_ONLINE_MANY = "In der Welt spielen gerade {count} Kinder, sie werden kurz getrennt."
-# Beim Start gefundene Aufträge im Zustand running (Prozess starb mittendrin).
+# Jobs found at start in the state running (process died midway).
 JOB_INTERRUPTED = "Die Sicherung wurde durch einen Neustart des Servers unterbrochen."
 RESTORE_JOB_INTERRUPTED = "Das Wiederherstellen wurde durch einen Neustart des Servers unterbrochen."
 KIND_RESTORE = "restore"
 
-# Wiederherstellen (BACKUP-02, D-04, D-05, D-13, D-15).
+# Restore (BACKUP-02, D-04, D-05, D-13, D-15).
 RESTORE_NOT_CONFIRMED = "Bitte das Wiederherstellen bestätigen."
 BACKUP_NOT_FOUND = "Diese Sicherung gibt es nicht (mehr)."
 RESTORE_TAMPERED = "Die Sicherung wurde verändert und wird nicht eingespielt."
 RESTORE_FAILED = "Das Wiederherstellen ist fehlgeschlagen. Die Welt läuft weiter."
 RESTORE_FALLBACK = "Das Wiederherstellen ist fehlgeschlagen. Die alte Welt wurde wiederhergestellt."
 RESTORE_SWAP_FAILED = "Das Wiederherstellen ist fehlgeschlagen. Bitte erneut wiederherstellen."
-# So oft wird der Tausch mit der gewählten Sicherung versucht, bevor der Rückfall greift.
+# This often the swap with the chosen backup is tried before the fallback applies.
 SWAP_ATTEMPTS = 2
-# Platz für Download, Restore-Tar und Sicherheits-Snapshot (Pitfall 10, T-05-35).
+# Space for download, restore tar and safety snapshot (pitfall 10, T-05-35).
 RESTORE_SPACE_FACTOR = 3
-# Für diese kaputten Welten gibt es keinen Stand, den eine vor-restore-Sicherung retten könnte (D-15).
+# For these broken worlds there is no state that a vor-restore backup could save (D-15).
 NO_SAFETY_ERRORS = frozenset({RECONCILE_DATA_MISSING, RESTORE_INTERRUPTED})
 
 STATE_OK = "ok"
 STATE_FAILED = "failed"
 OP_BACKING_UP = "backing_up"
 OP_RESTORING = "restoring"
-# Nach ``ab`` noch so lange warten, bis der Zeit-Mod im 5-s-Takt alle getrennt hat:
-# ein voller Takt (der Kick kommt bis zu 5 s nach ``ab``) plus 2 s für Trennen und
-# Speichern. Mit nur 2 s stoppte der Server am Dev-Stack oft vor dem Kick, das Kind
-# las dann "Server shutting down." statt des Pausentexts (Abnahme 05-09).
+# After ``ab`` keep waiting until the time mod has disconnected everyone in its 5 s tick:
+# one full tick (the kick comes up to 5 s after ``ab``) plus 2 s for disconnecting and
+# saving. With only 2 s the server often stopped before the kick on the dev stack, the child
+# then read "Server shutting down." instead of the pause text (acceptance 05-09).
 HALT_GRACE_SECONDS = 7
-# Platz für den Spool: das Doppelte der letzten Sicherung dieser Welt (Pitfall 10).
+# Space for the spool: twice the last backup of this world (pitfall 10).
 SPACE_FACTOR = 2
 SPOOL_DIR_NAME = "tmp"
 SHUTDOWN_SECONDS = 5.0
@@ -130,7 +130,7 @@ Sleep = Callable[[float], Awaitable[None]]
 
 
 class PlayersOnline(Exception):
-    """In der Welt spielen Kinder, und die Bestätigung fehlt (HTTP 409, D-09)."""
+    """Children are playing in the world and the confirmation is missing (HTTP 409, D-09)."""
 
     def __init__(self, count: int) -> None:
         text = PLAYERS_ONLINE_ONE if count == 1 else PLAYERS_ONLINE_MANY.format(count=count)
@@ -139,36 +139,36 @@ class PlayersOnline(Exception):
 
 
 class RestoreNotConfirmed(Exception):
-    """Wiederherstellen ohne ausdrückliche Bestätigung (HTTP 409, D-04)."""
+    """Restore without explicit confirmation (HTTP 409, D-04)."""
 
     def __init__(self) -> None:
         super().__init__(RESTORE_NOT_CONFIRMED)
 
 
 class BackupNotFound(Exception):
-    """Kein eigener Nachweis zu dieser Datei und Welt (HTTP 404, D-13)."""
+    """No own proof for this file and world (HTTP 404, D-13)."""
 
     def __init__(self) -> None:
         super().__init__(BACKUP_NOT_FOUND)
 
 
 class RestoreTampered(BackupError):
-    """Größe oder SHA-256 der heruntergeladenen Datei weichen vom eigenen Nachweis ab (T-05-29)."""
+    """Size or SHA-256 of the downloaded file differ from the own proof (T-05-29)."""
 
     def __init__(self) -> None:
         super().__init__(RESTORE_TAMPERED)
 
 
 class _RestoreOutcome(Exception):
-    """Fester Ausgang des Tauschs (Rückfall oder unterbrochen); der Text geht an die Auftragszeile."""
+    """Fixed outcome of the swap (fallback or interrupted); the text goes to the job row."""
 
 
 class _CappedWriter(io.RawIOBase):
-    """Deckelt den Restore-Download auf die nachgewiesene Größe (T-05-35).
+    """Caps the restore download at the proven size (T-05-35).
 
-    Mehr Bytes als ``proof.size`` sind eine getauschte Datei: sofort
-    ``RestoreTampered``, statt beliebig viel in den Spool zu puffern und erst
-    danach zu prüfen (gleiche Fehlerklasse wie der Body-Deckel aus Phase 04.2).
+    More bytes than ``proof.size`` mean a swapped file: ``RestoreTampered``
+    at once, instead of buffering arbitrary amounts into the spool and checking
+    only afterwards (same error class as the body cap from phase 04.2).
     """
 
     def __init__(self, sink: BinaryIO, limit: int) -> None:
@@ -189,7 +189,7 @@ class _CappedWriter(io.RawIOBase):
 
 @dataclass(frozen=True)
 class BackupItem:
-    """Eine gültige Sicherung in der Liste; ohne Pfad (der liegt nur im Nachweis)."""
+    """A valid backup in the list; without a path (that lives only in the proof)."""
 
     file_id: int
     name: str
@@ -202,12 +202,12 @@ class BackupItem:
 class BackupList:
     entries: list[BackupItem]
     total_size: int
-    # Dateien im Ordner ohne passenden eigenen Nachweis (fremd, verändert, unvollständig).
+    # Files in the folder without a matching own proof (foreign, changed, incomplete).
     other_files: int
 
 
 def disk_free(path: Path) -> int:
-    """Freie Bytes auf dem Datenträger von ``path`` (eigene Funktion, damit Tests sie ersetzen)."""
+    """Free bytes on the disk of ``path`` (own function, so that tests can replace it)."""
     return shutil.disk_usage(path).free
 
 
@@ -216,28 +216,28 @@ def _iso(epoch: float) -> str:
 
 
 def user_text(exc: BaseException, world_id: str) -> str:
-    """Fester deutscher Text zu einer Ausnahme des Ablaufs; Unbekanntes nur mit Typ ins Log."""
+    """Fixed German text for an exception of the flow; unknown ones only with type into the log."""
     if isinstance(exc, RestoreRejected) or (isinstance(exc, BackupError) and str(exc) == MSG_NO_MAP):
-        LOG.warning("Sicherung von Welt %s verworfen: %s", world_id, type(exc).__name__)
+        LOG.warning("Backup of world %s discarded: %s", world_id, type(exc).__name__)
         return JOB_UNUSABLE
     if isinstance(exc, (BackupError, FilesError, ProvisionerError)):
-        LOG.warning("Sicherung von Welt %s gescheitert: %s", world_id, type(exc).__name__)
+        LOG.warning("Backup of world %s failed: %s", world_id, type(exc).__name__)
         return str(exc)
-    LOG.error("Sicherung von Welt %s scheiterte unerwartet: %s", world_id, type(exc).__name__)
+    LOG.error("Backup of world %s failed unexpectedly: %s", world_id, type(exc).__name__)
     return JOB_FAILED
 
 
 def restore_text(exc: BaseException, world_id: str) -> str:
-    """Fester deutscher Text zu einer Ausnahme des Wiederherstellens; Unbekanntes nur mit Typ ins Log."""
+    """Fixed German text for an exception of the restore; unknown ones only with type into the log."""
     if isinstance(exc, (_RestoreOutcome, BackupError, FilesError, ProvisionerError)):
-        LOG.warning("Wiederherstellen von Welt %s gescheitert: %s", world_id, type(exc).__name__)
+        LOG.warning("Restore of world %s failed: %s", world_id, type(exc).__name__)
         return str(exc)
-    LOG.error("Wiederherstellen von Welt %s scheiterte unerwartet: %s", world_id, type(exc).__name__)
+    LOG.error("Restore of world %s failed unexpectedly: %s", world_id, type(exc).__name__)
     return RESTORE_FAILED
 
 
 class BackupService:
-    """Startet und verfolgt Sicherungsaufträge; höchstens einer läuft im ganzen Haushalt."""
+    """Starts and tracks backup jobs; at most one runs in the whole household."""
 
     def __init__(
         self,
@@ -257,13 +257,13 @@ class BackupService:
         self._sleep = sleep
         self._tasks: set[asyncio.Task[None]] = set()
 
-    # Auslösen (Eltern-Request)
+    # Trigger (parent request)
 
     async def start_backup(self, world_id: str, uid: str, *, confirm_disconnect: bool) -> None:
-        """Prüft, setzt die Welt auf backing_up und startet den Ablauf im Hintergrund.
+        """Checks, sets the world to backing_up and starts the flow in the background.
 
-        Wirft PlayersOnline (ohne Bestätigung), WorldBusyError, DeleteOnlyError
-        oder WorldNotFoundError; dann ist nichts verändert.
+        Raises PlayersOnline (without confirmation), WorldBusyError, DeleteOnlyError
+        or WorldNotFoundError; then nothing is changed.
         """
         started_at = _iso(self._clock())
         ticket = await anyio.to_thread.run_sync(self._prepare, world_id, confirm_disconnect, started_at)
@@ -288,13 +288,13 @@ class BackupService:
         return ticket
 
     def _abort_start(self, ticket: OfflineTicket, kind: str, message: str, started_at: str) -> None:
-        """Der Task kam nicht zustande: Welt zurück, Auftrag nicht mehr running."""
+        """The task did not come into being: world back, job no longer running."""
         self.worlds.abort_offline(ticket)
         self.worlds.store.set_backup_job(
             ticket.world_id, kind, STATE_FAILED, message, None, started_at, _iso(self._clock())
         )
 
-    # Ablauf (Hintergrund)
+    # Flow (background)
 
     async def _run_backup(self, ticket: OfflineTicket, uid: str, started_at: str) -> None:
         try:
@@ -307,7 +307,7 @@ class BackupService:
         try:
             spool = await anyio.to_thread.run_sync(self._open_spool)
         except BaseException:
-            # Noch nichts gestoppt: Welt in ihren alten Zustand zurück.
+            # Nothing stopped yet: world back to its old state.
             await self._shielded(self.worlds.abort_offline, ticket)
             raise
         try:
@@ -330,7 +330,7 @@ class BackupService:
             raise BackupError(MSG_NO_SPACE) from exc
 
     async def _offline_snapshot(self, ticket: OfflineTicket, uid: str, spool: IO[bytes]) -> SnapshotInfo:
-        """Platzprüfung, Chat-Hinweis, Stopp und Snapshot; die Welt startet danach immer wieder."""
+        """Space check, chat notice, stop and snapshot; the world always starts again afterwards."""
         world_id = ticket.world_id
         stopping = False
         try:
@@ -345,14 +345,14 @@ class BackupService:
             if stopping:
                 restart_error = await self._shielded(self.worlds.end_offline, world_id, ticket.was_running)
                 if restart_error is not None:
-                    LOG.warning("Welt %s: nach dem Snapshot nicht wieder gestartet", world_id)
+                    LOG.warning("World %s: not restarted after the snapshot", world_id)
             else:
                 await self._shielded(self.worlds.abort_offline, ticket)
 
     @staticmethod
     async def _shielded[*A, R](func: Callable[[*A], R], *args: *A) -> R:
-        """Zurücksetzen auch bei Abbruch des Tasks (Herunterfahren) zu Ende führen."""
-        # Liste statt Variable: pyright hält einen CancelScope für möglicherweise schluckend.
+        """Finish the reset even if the task is cancelled (shutdown)."""
+        # List instead of variable: pyright considers a CancelScope possibly swallowing.
         results: list[R] = []
         with anyio.CancelScope(shield=True):
             results.append(await anyio.to_thread.run_sync(func, *args))
@@ -383,12 +383,12 @@ class BackupService:
         self.worlds.store.set_backup_job(
             ticket.world_id, KIND_BACKUP, STATE_OK, None, entry.name, started_at, _iso(self._clock())
         )
-        LOG.info("Welt %s gesichert: %d Bytes", ticket.world_id, entry.size)
+        LOG.info("World %s backed up: %d bytes", ticket.world_id, entry.size)
 
     def _add_proof(
         self, ticket: OfflineTicket, uid: str, entry: FilesEntry, info: SnapshotInfo, kind: str, created_at: str
     ) -> None:
-        """Integritätsnachweis der hochgeladenen Datei (D-12): nur damit ist sie wiederherstellbar."""
+        """Integrity proof of the uploaded file (D-12): only with it is it restorable."""
         self.worlds.store.add_backup(
             BackupRow(
                 file_id=entry.file_id,
@@ -405,10 +405,10 @@ class BackupService:
         )
 
     async def _finish_failed(self, world_id: str, uid: str, kind: str, message: str, started_at: str) -> None:
-        """Einziger Ausgang für fehlgeschlagene Aufträge: Zeile failed, dann Hinweis an ``uid`` (D-16).
+        """Single exit for failed jobs: row failed, then notice to ``uid`` (D-16).
 
-        Nur der auslösende Verwalter bekommt die Benachrichtigung, Erfolg bleibt
-        still. Ein Fehler beim Benachrichtigen ändert den Auftrag nicht.
+        Only the triggering manager gets the notification, success stays
+        silent. An error while notifying does not change the job.
         """
         target = await self._shielded(self._mark_failed, world_id, kind, message, started_at)
         if target is None:
@@ -422,13 +422,13 @@ class BackupService:
         try:
             delivered = await self._notifier().notify(uid, text.subject, text.message, text.params, link)
         except Exception as exc:
-            LOG.warning("Fehler-Hinweis zu Welt %s nicht gesendet: %s", world_id, type(exc).__name__)
+            LOG.warning("Error notice for world %s not sent: %s", world_id, type(exc).__name__)
             return
         if not delivered:
-            LOG.info("Fehler-Hinweis zu Welt %s nicht zugestellt", world_id)
+            LOG.info("Error notice for world %s not delivered", world_id)
 
     def _mark_failed(self, world_id: str, kind: str, message: str, started_at: str) -> tuple[str, str | None] | None:
-        """Zeile auf failed; liefert Weltname und Link-Basis, oder None ohne Welt."""
+        """Row to failed; returns world name and link base, or None without a world."""
         store = self.worlds.store
         row = store.get_world(world_id)
         if row is None:
@@ -436,17 +436,17 @@ class BackupService:
         store.set_backup_job(world_id, kind, STATE_FAILED, message, None, started_at, _iso(self._clock()))
         return row.name, link_origin(store)
 
-    # Wiederherstellen (BACKUP-02): Eltern-Request
+    # Restore (BACKUP-02): parent request
 
     async def start_restore(
         self, world_id: str, uid: str, file_id: int, *, confirm: bool, confirm_disconnect: bool
     ) -> None:
-        """Prüft, setzt die Welt auf restoring und startet den Ablauf im Hintergrund (D-04).
+        """Checks, sets the world to restoring and starts the flow in the background (D-04).
 
-        Wirft RestoreNotConfirmed, WorldNotFoundError, BackupNotFound (unbekannte,
-        fremde oder zu einer anderen Welt gehörende Datei, vor jedem Docker- oder
-        Files-Aufruf, D-13), PlayersOnline oder WorldBusyError; dann ist nichts
-        verändert. Eine kaputte Welt (failed, auch delete-only) ist erlaubt (D-15).
+        Raises RestoreNotConfirmed, WorldNotFoundError, BackupNotFound (unknown,
+        foreign or belonging to another world, before any Docker or
+        Files call, D-13), PlayersOnline or WorldBusyError; then nothing is
+        changed. A broken world (failed, also delete-only) is allowed (D-15).
         """
         if not confirm:
             raise RestoreNotConfirmed
@@ -468,7 +468,7 @@ class BackupService:
         store = self.worlds.store
         if store.get_world(world_id) is None:
             raise WorldNotFoundError(NOT_FOUND)
-        # Nur der eigene Nachweis zu genau dieser Welt macht eine Datei vertrauenswürdig (T-05-28).
+        # Only the own proof for exactly this world makes a file trustworthy (T-05-28).
         proof = store.backup_by_file(uid, file_id)
         if proof is None or proof.world_id != world_id:
             raise BackupNotFound
@@ -483,7 +483,7 @@ class BackupService:
             raise
         return ticket, proof
 
-    # Wiederherstellen: Ablauf (Hintergrund)
+    # Restore: flow (background)
 
     async def _run_restore(self, ticket: OfflineTicket, proof: BackupRow, uid: str, started_at: str) -> None:
         spools: list[IO[bytes]] = []
@@ -499,11 +499,11 @@ class BackupService:
     async def _restore_steps(
         self, ticket: OfflineTicket, proof: BackupRow, uid: str, started_at: str, spools: list[IO[bytes]]
     ) -> None:
-        """A: holen und prüfen (Welt läuft), B: Stopp und vor-restore, C: Tausch (RESEARCH Pattern 4/5)."""
+        """A: fetch and check (world runs), B: stop and vor-restore, C: swap (RESEARCH pattern 4/5)."""
         try:
             restore = await self._fetch_and_check(ticket, proof, uid, spools)
         except BaseException:
-            # Noch nichts gestoppt: Welt in ihren alten Zustand zurück, auch eine kaputte bleibt kaputt.
+            # Nothing stopped yet: world back to its old state, a broken one stays broken.
             await self._shielded(self.worlds.abort_offline, ticket)
             raise
         ledger, safety = await self._offline_safety(ticket, uid, spools)
@@ -518,7 +518,7 @@ class BackupService:
     async def _fetch_and_check(
         self, ticket: OfflineTicket, proof: BackupRow, uid: str, spools: list[IO[bytes]]
     ) -> IO[bytes]:
-        """Phase A: Platz, gedeckelter Download, Größe und SHA-256 gegen den Nachweis, Restore-Tar bauen."""
+        """Phase A: space, capped download, size and SHA-256 against the proof, build the restore tar."""
         await anyio.to_thread.run_sync(self._check_restore_space, proof)
         path = await self._current_path(ticket, proof, uid)
         download = await self._new_spool(spools)
@@ -530,13 +530,13 @@ class BackupService:
         return restore
 
     async def _current_path(self, ticket: OfflineTicket, proof: BackupRow, uid: str) -> str:
-        """Aktueller Pfad zur nachgewiesenen file_id; der Verwalter darf die Datei in Files umbenennen.
+        """Current path to the proven file_id; the manager may rename the file in Files.
 
-        Wie die Liste (list_backups) zählt die file_id aus dem Ordner-Listing,
-        nicht der beim Sichern gespeicherte Pfad: Eine umbenannte Sicherung bleibt
-        wiederherstellbar, eine fremde Datei unter dem alten Namen wird nie
-        geladen. Fehlt die file_id, ist die Sicherung weg (MSG_FILE_GONE).
-        Größe und SHA-256 bleiben die Autorität (_check_integrity).
+        Like the list (list_backups), the file_id from the folder listing counts,
+        not the path stored at backup time: a renamed backup stays
+        restorable, a foreign file under the old name is never
+        loaded. If the file_id is missing, the backup is gone (MSG_FILE_GONE).
+        Size and SHA-256 remain the authority (_check_integrity).
         """
         folder = folder_path(folder_name(ticket.name, ticket.world_id))
         for entry in await self._files().listdir(uid, folder):
@@ -551,7 +551,7 @@ class BackupService:
 
     @staticmethod
     def _check_integrity(download: IO[bytes], proof: BackupRow) -> None:
-        """Files ist für Verwalter beschreibbar: nur exakt die nachgewiesene Datei wird eingespielt."""
+        """Files is writable for managers: exactly the proven file and only that is put in."""
         download.seek(0, io.SEEK_END)
         size = download.tell()
         if size != proof.size or sha256_of(cast(BinaryIO, download)) != proof.sha256:
@@ -559,7 +559,7 @@ class BackupService:
 
     @staticmethod
     def _restore_tar(ticket: OfflineTicket, source: IO[bytes], sink: IO[bytes]) -> None:
-        """Volle Prüfung und Filterung (Plan 01); Manifest muss zu Welt und Spielart der Zeile passen."""
+        """Full check and filtering (plan 01); the manifest must match world and game kind of the row."""
         source.seek(0)
         prepare_restore(
             cast(BinaryIO, source), world_id=ticket.world_id, preset=ticket.preset, sink=cast(BinaryIO, sink)
@@ -568,7 +568,7 @@ class BackupService:
     async def _offline_safety(
         self, ticket: OfflineTicket, uid: str, spools: list[IO[bytes]]
     ) -> tuple[bytes | None, IO[bytes] | None]:
-        """Phase B: Halt, Stopp, Zählbuch, vor-restore-Sicherung; scheitert etwas, startet die alte Welt."""
+        """Phase B: halt, stop, ledger, vor-restore backup; if anything fails, the old world starts again."""
         world_id = ticket.world_id
         stopping = False
         try:
@@ -589,13 +589,13 @@ class BackupService:
         return ledger, safety
 
     def _needs_safety(self, ticket: OfflineTicket) -> bool:
-        """Gibt es einen Stand, den eine vor-restore-Sicherung retten kann (D-05, D-15)?"""
+        """Is there a state that a vor-restore backup can save (D-05, D-15)?"""
         if ticket.previous_op_state == "failed" and ticket.previous_error in NO_SAFETY_ERRORS:
             return False
         return ticket.world_id in self.worlds.provisioner.list_managed()
 
     def _take_ledger(self, world_id: str) -> bytes | None:
-        """Zählbuch verbuchen und unverändert bewahren (D-06); fehlt oder ist es kaputt, None."""
+        """Book the ledger and preserve it unchanged (D-06); if it is missing or broken, None."""
         self.worlds.book_ledger(world_id)
         try:
             status_file = self.worlds.provisioner.read_time_ledger(world_id)
@@ -606,10 +606,10 @@ class BackupService:
         return status_file.content
 
     async def _safety_backup(self, ticket: OfflineTicket, uid: str, spools: list[IO[bytes]]) -> IO[bytes] | None:
-        """Geprüfte vor-restore-Sicherung in Files mit eigenem Nachweis; der Spool bleibt für den Rückfall.
+        """Checked vor-restore backup in Files with own proof; the spool stays for the fallback.
 
-        Hat die Welt noch keinen Spielstand (MSG_NO_MAP), gibt es nichts zu bewahren:
-        None, der Tausch läuft weiter. Jeder andere Fehler bricht vor der Zerstörung ab.
+        If the world has no save state yet (MSG_NO_MAP), there is nothing to preserve:
+        None, the swap continues. Any other error aborts before the destruction.
         """
         spool = await self._new_spool(spools)
         try:
@@ -617,7 +617,7 @@ class BackupService:
         except BackupError as exc:
             if str(exc) != MSG_NO_MAP:
                 raise
-            LOG.info("Welt %s ohne Spielstand, keine Sicherung vor dem Wiederherstellen", ticket.world_id)
+            LOG.info("World %s without save state, no backup before the restore", ticket.world_id)
             return None
         await anyio.to_thread.run_sync(self._verify, ticket, spool)
         now = self._clock()
@@ -636,10 +636,10 @@ class BackupService:
         safety: IO[bytes] | None,
         spools: list[IO[bytes]],
     ) -> None:
-        """Phase C: Tausch mit einem zweiten Versuch, sonst Rückfall auf den Sicherheits-Snapshot.
+        """Phase C: swap with a second attempt, otherwise fall back to the safety snapshot.
 
-        Ab mark_swap ist die alte Welt nicht mehr sicher vorhanden: Jeder Ausgang
-        endet in ready (Erfolg oder Rückfall) oder failed mit RESTORE_INTERRUPTED.
+        From mark_swap on the old world is no longer safely there: every outcome
+        ends in ready (success or fallback) or failed with RESTORE_INTERRUPTED.
         """
         world_id = ticket.world_id
         try:
@@ -670,7 +670,7 @@ class BackupService:
             try:
                 await anyio.to_thread.run_sync(self.worlds.restore_swap, world_id, cast(BinaryIO, tar), ledger)
             except Exception as exc:
-                LOG.warning("Welt %s: Tausch Versuch %d gescheitert (%s)", world_id, attempt, type(exc).__name__)
+                LOG.warning("World %s: swap attempt %d failed (%s)", world_id, attempt, type(exc).__name__)
                 continue
             return True
         return False
@@ -678,33 +678,33 @@ class BackupService:
     async def _fallback(
         self, ticket: OfflineTicket, safety: IO[bytes], ledger: bytes | None, spools: list[IO[bytes]]
     ) -> bool:
-        """Den lokalen Sicherheits-Snapshot auf demselben Weg einspielen (Pattern 5 "Fehler im Tausch")."""
+        """Put the local safety snapshot in the same way (pattern 5 "error in the swap")."""
         fallback = await self._new_spool(spools)
         try:
             await anyio.to_thread.run_sync(self._restore_tar, ticket, safety, fallback)
         except Exception as exc:
-            LOG.warning("Welt %s: Rückfall nicht vorbereitet (%s)", ticket.world_id, type(exc).__name__)
+            LOG.warning("World %s: fallback not prepared (%s)", ticket.world_id, type(exc).__name__)
             return False
         return await self._try_swap(ticket.world_id, fallback, ledger, 1)
 
     async def _finish_swap(self, ticket: OfflineTicket) -> None:
         error = await self._shielded(self.worlds.finish_swap, ticket.world_id, ticket.was_running)
         if error is not None:
-            # Die Weltdaten sind eingespielt; den Startfehler zeigt die Welt selbst.
-            LOG.warning("Welt %s: nach dem Wiederherstellen nicht gestartet", ticket.world_id)
+            # The world data is in place; the world itself shows the start error.
+            LOG.warning("World %s: not started after the restore", ticket.world_id)
 
     def _finish_restore_ok(self, world_id: str, proof: BackupRow, started_at: str) -> None:
         self.worlds.store.set_backup_job(
             world_id, KIND_RESTORE, STATE_OK, None, proof.name, started_at, _iso(self._clock())
         )
-        LOG.info("Welt %s wiederhergestellt", world_id)
+        LOG.info("World %s restored", world_id)
 
-    # Wiederanlauf und Liste
+    # Restart and list
 
     def recover_jobs(self) -> int:
-        """Nach dem Start: Aufträge im Zustand running wurden unterbrochen (D-11); Anzahl.
+        """After the start: jobs in the state running were interrupted (D-11); count.
 
-        Synchron im Lifespan, bevor ein Request einen neuen Auftrag starten kann.
+        Synchronous in the lifespan, before a request can start a new job.
         """
         store = self.worlds.store
         jobs = store.running_backup_jobs()
@@ -712,15 +712,15 @@ class BackupService:
         for job in jobs:
             text = RESTORE_JOB_INTERRUPTED if job.kind == KIND_RESTORE else JOB_INTERRUPTED
             store.set_backup_job(job.world_id, job.kind, STATE_FAILED, text, job.file_name, job.started_at, finished)
-            LOG.warning("Auftrag für Welt %s durch Neustart unterbrochen", job.world_id)
+            LOG.warning("Job for world %s interrupted by restart", job.world_id)
         return len(jobs)
 
     async def list_backups(self, world_id: str, uid: str) -> BackupList:
-        """Gültige Sicherungen dieser Welt in den Files von ``uid`` (D-07, D-08, D-12, D-13).
+        """Valid backups of this world in the files of ``uid`` (D-07, D-08, D-12, D-13).
 
-        Nur Dateien, deren (file_id, Größe) auch ein eigener Nachweis hat; alles
-        andere im Ordner zählt ``other_files``. Reihenfolge wie der Nachweis
-        (neueste zuerst). Wirft WorldNotFoundError oder FilesError.
+        Only files whose (file_id, size) also have an own proof; everything
+        else in the folder counts as ``other_files``. Order like the proof
+        (newest first). Raises WorldNotFoundError or FilesError.
         """
         row = await anyio.to_thread.run_sync(self.worlds.store.get_world, world_id)
         if row is None:
@@ -748,7 +748,7 @@ class BackupService:
             other_files=len(files) - len(entries),
         )
 
-    # Verfolgte Tasks (Muster talk/service.py)
+    # Tracked tasks (pattern talk/service.py)
 
     def _spawn(self, world_id: str, work: Coroutine[Any, Any, None]) -> None:
         task = asyncio.get_running_loop().create_task(self._tracked(world_id, work))
@@ -758,22 +758,22 @@ class BackupService:
         try:
             await work
         except Exception as exc:
-            LOG.warning("Sicherungsauftrag für Welt %s endete mit Fehler: %s", world_id, type(exc).__name__)
+            LOG.warning("Backup job for world %s ended with error: %s", world_id, type(exc).__name__)
         finally:
             current = asyncio.current_task()
             if current is not None:
                 self._tasks.discard(current)
 
     async def drain(self) -> None:
-        """Wartet, bis alle Aufträge fertig sind (Tests)."""
+        """Waits until all jobs are finished (tests)."""
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
     async def shutdown(self, grace_seconds: float = SHUTDOWN_SECONDS) -> int:
-        """Lifespan-Ende: kurz warten, dann abbrechen; Anzahl abgebrochen.
+        """Lifespan end: wait briefly, then cancel; count cancelled.
 
-        Ein abgebrochener Auftrag startet die Welt im ``finally`` noch (abgeschirmt)
-        neu; seine Zeile bleibt running und wird beim nächsten Start failed.
+        A cancelled job still restarts the world in the ``finally`` (shielded);
+        its row stays running and becomes failed at the next start.
         """
         pending = set(self._tasks)
         if not pending:
@@ -790,7 +790,7 @@ _backup_service: BackupService | None = None
 
 
 def get_backup_service(worlds: WorldService) -> BackupService:
-    """Modulweites Singleton zum Welt-Dienst; Tests setzen es je Test zurück."""
+    """Module-wide singleton to the world service; tests reset it per test."""
     global _backup_service
     if _backup_service is None or _backup_service.worlds is not worlds:
         _backup_service = BackupService(worlds, load_settings().storage_dir / SPOOL_DIR_NAME)
@@ -798,7 +798,7 @@ def get_backup_service(worlds: WorldService) -> BackupService:
 
 
 async def shutdown_backups(grace_seconds: float = SHUTDOWN_SECONDS) -> int:
-    """Lifespan-Ende: offene Aufträge abwarten oder abbrechen; ohne Dienst nichts."""
+    """Lifespan end: wait for or cancel open jobs; without a service nothing."""
     if _backup_service is None:
         return 0
     return await _backup_service.shutdown(grace_seconds)

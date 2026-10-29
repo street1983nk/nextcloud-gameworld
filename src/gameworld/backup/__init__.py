@@ -1,1 +1,1 @@
-"""Sicherung und Wiederherstellung von Welten über Nextcloud Files (Phase 5, BACKUP-01/02)."""
+"""Backup and restore of worlds via Nextcloud Files (phase 5, BACKUP-01/02)."""

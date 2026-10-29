@@ -1,4 +1,4 @@
-"""Bot-Meldungen aus der Outbox (TALK-02): Texte, still oder mit Ton, Drossel, Anzeigenamen."""
+"""Bot messages from the outbox (TALK-02): texts, silent or with sound, throttle, display names."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ async def _run(
     await run_once(service, notifier, directory, now)
 
 
-# Reine Bausteine
+# Pure building blocks
 
 
 def test_md_escape_masks_markdown() -> None:
@@ -88,7 +88,7 @@ def test_bot_texts_follow_text_rules() -> None:
     assert texts.BOT_WARN10 == "Noch 10 Minuten Spielzeit für {name}."
 
 
-# Beitritt, Verlassen, Drossel
+# Join, leave, throttle
 
 
 async def test_join_uses_display_name_and_is_silent(
@@ -192,7 +192,7 @@ async def test_display_name_markdown_is_escaped_and_capped(
     assert "](" not in text
 
 
-# Spielzeit, Welt, Pause
+# Playtime, world, pause
 
 
 async def test_warn10_has_sound(
@@ -210,7 +210,7 @@ async def test_warn10_has_sound(
 
 @pytest.mark.parametrize("display", ["@all", '@"papa"', "Lena @admin", "@@here"])
 def test_bot_name_never_mentions(display: str) -> None:
-    """WR-07: Kein echtes @ im Bot-Text, damit ein Anzeigename niemanden anpingt."""
+    """WR-07: no real @ in the bot text, so that a display name pings nobody."""
     name = texts.bot_name(display)
     assert "@" not in name
     assert texts.MENTION_SAFE in name
@@ -224,7 +224,7 @@ async def test_join_with_mention_display_name_pings_nobody(
     fake_talk: FakeTalkRooms,
     fake_bot: FakeBot,
 ) -> None:
-    """Negativtest: Ein Kind setzt den Anzeigenamen "@all" und tritt bei, mit Ton (warn10) und still (join)."""
+    """Negative test: a child sets the display name "@all" and joins, with sound (warn10) and silent (join)."""
     fake_directory.users["lena"] = ("@all", True)
     store.add_outbox(W1, "join", "lena", _epoch(17, 0))
     store.add_outbox(W1, "warn10", "lena", _epoch(17, 0))
@@ -244,13 +244,13 @@ async def test_warn10_flood_by_rejoining_rings_once_per_day(
     fake_talk: FakeTalkRooms,
     fake_bot: FakeBot,
 ) -> None:
-    """WR-02: Neuverbinden alle paar Sekunden erzeugt je Beitritt ein warn10, gesendet wird einmal."""
+    """WR-02: reconnecting every few seconds creates a warn10 per join, only one is sent."""
     for second in range(0, 60, 3):
         store.add_outbox(W1, "warn10", "lena", _epoch(17, 0) + second)
     store.add_outbox(W1, "warn10", "LENA", _epoch(17, 1))
     await _run(service, fake_notifier, fake_directory, _epoch(17, 1), fake_talk)
     assert fake_bot.sent == [(ROOM, "Noch 10 Minuten Spielzeit für Lena.", False)]
-    # Auch nach einem Neustart der ExApp (frischer Dienst, gleiche Datenbank) nicht erneut.
+    # Also not again after a restart of the ExApp (fresh service, same database).
     restarted = WorldService(store, cast(DockerProvisioner, FakeProvisioner()), load_settings())
     store.add_outbox(W1, "warn10", "lena", _epoch(19, 0))
     await _run(restarted, fake_notifier, fake_directory, _epoch(19, 0), fake_talk)
@@ -265,7 +265,7 @@ async def test_warn10_separate_per_person_world_and_day(
     fake_talk: FakeTalkRooms,
     fake_bot: FakeBot,
 ) -> None:
-    """Positivkontrolle: Andere Person, andere Welt und der nächste Tag bekommen je einen Hinweis."""
+    """Positive control: another person, another world and the next day each get a notice."""
     store.apply_world_access(W2, {"lena": VERIFIER})
     store.insert_talk_room(W2, "room-w2", "admin", "2026-10-21T10:00:00+00:00")
     store.add_outbox(W1, "warn10", "lena", _epoch(17, 0))
@@ -323,7 +323,7 @@ async def test_pause_start_with_broken_detail_sends_nothing(
     assert store.outbox_batch() == []
 
 
-# Ohne Raum, ohne Talk
+# Without room, without Talk
 
 
 async def test_world_without_room_sends_nothing_and_row_is_removed(

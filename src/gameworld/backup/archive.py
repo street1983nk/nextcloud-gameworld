@@ -1,21 +1,21 @@
-"""Archiv-Kern für Sicherung und Wiederherstellung, ohne I/O außer den übergebenen Datei-Objekten.
+"""Archive core for backup and restore, no I/O apart from the file objects passed in.
 
-Sicherung (BACKUP-01): Docker liefert den Weltordner des gestoppten Containers
-als Tar-Strom mit Präfix ``world/``. :func:`write_snapshot` übersetzt ihn
-gestreamt in ein tar.gz mit dem Manifest ``gameworld-backup.json`` an der
-Wurzel und den Weltdaten unter ``world/``. Laufzeitdateien der eigenen Mods und
-``worldmods/`` bleiben draußen (D-03); sie werden nach einem Restore frisch
-provisioniert. SQLite-Journale bleiben drin: Nach einem harten Stopp gehört ein
-heißes Journal als Paar zur Datenbank (Pitfall 1).
+Backup (BACKUP-01): Docker delivers the world folder of the stopped container
+as a tar stream with the prefix ``world/``. :func:`write_snapshot` translates it
+by streaming into a tar.gz with the manifest ``gameworld-backup.json`` at the
+root and the world data under ``world/``. Runtime files of the own mods and
+``worldmods/`` stay out (D-03); they are provisioned fresh after a restore.
+SQLite journals stay in: after a hard stop, a hot journal belongs
+to the database as a pair (pitfall 1).
 
-Wiederherstellung (BACKUP-02): Der Inhalt einer Sicherung in Nextcloud Files
-ist nicht vertrauenswürdig. :func:`prepare_restore` prüft jeden Eintrag
-(Pfade, Typen, Grenzen, Manifest) und baut daraus ein Restore-Tar mit Namen
-relativ zum Weltordner; Code (``.lua``, ``worldmods/``, ``mods/``, ``game/``),
-``world.mt`` und ``gameworld_*``-Dateien werden verworfen. Unsichere Einträge
-brechen ab, sie werden nie still übersprungen.
+Restore (BACKUP-02): the content of a backup in Nextcloud Files
+is not trustworthy. :func:`prepare_restore` checks every entry
+(paths, types, limits, manifest) and builds a restore tar from it with names
+relative to the world folder; code (``.lua``, ``worldmods/``, ``mods/``, ``game/``),
+``world.mt`` and ``gameworld_*`` files are discarded. Unsafe entries
+abort, they are never silently skipped.
 
-Ins Log kommen nur Zählwerte und Fehlertypen, nie Namen aus einem Archiv.
+Only counts and error types go into the log, never names from an archive.
 """
 
 from __future__ import annotations
@@ -57,15 +57,15 @@ COMPRESS_LEVEL = 6
 READ_BUFFER = 1024 * 1024
 HASH_BLOCK = 1024 * 1024
 
-# Grenzen gegen Tar- und gzip-Bomben (T-05-03).
+# Limits against tar and gzip bombs (T-05-03).
 MAX_RESTORE_BYTES = 8 * 1024 * 1024 * 1024
 MAX_RESTORE_ENTRIES = 200_000
 MAX_RATIO = 50
-# Unter dieser entpackten Summe greift MAX_RATIO nicht: leere SQLite-Seiten
-# packen weit über 50:1, kleine echte Welten dürfen daran nicht scheitern.
+# Below this unpacked sum MAX_RATIO does not apply: empty SQLite pages
+# pack far beyond 50:1, small real worlds must not fail because of it.
 RATIO_FLOOR = 256 * 1024 * 1024
 
-# Sicherung: Laufzeitdateien der eigenen Mods, Namen nur aus deren Konstanten (D-03).
+# Backup: runtime files of the own mods, names only from their constants (D-03).
 BACKUP_EXCLUDED_FILES = frozenset(
     {
         access_mod.ACCESS_FILE_NAME,
@@ -78,7 +78,7 @@ BACKUP_EXCLUDED_FILES = frozenset(
 )
 BACKUP_EXCLUDED_DIRS = frozenset({"worldmods"})
 
-# Wiederherstellung: alles, was Code ist oder frisch provisioniert wird (T-05-02).
+# Restore: everything that is code or is provisioned fresh (T-05-02).
 RESTORE_DROP_FILES = frozenset({"world.mt"})
 RESTORE_DROP_DIRS = frozenset({"worldmods", "mods", "game"})
 RESTORE_DROP_SUFFIX = ".lua"
@@ -86,11 +86,11 @@ RESTORE_DROP_PREFIX = "gameworld_"
 
 
 class BackupError(Exception):
-    """Sicherung oder Wiederherstellung gescheitert; der Text ist fest und deutsch."""
+    """Backup or restore failed; the text is fixed and German."""
 
 
 class RestoreRejected(BackupError):
-    """Die Sicherung ist ungültig, manipuliert oder gehört zu einer anderen Welt."""
+    """The backup is invalid, tampered with or belongs to another world."""
 
 
 @dataclass(frozen=True)
@@ -107,7 +107,7 @@ class RestoreInfo:
 
 
 class IterStream(io.RawIOBase):
-    """Datei-Objekt über einen Chunk-Iterator (Docker-Strom), ohne den Strom zu sammeln."""
+    """File object over a chunk iterator (Docker stream), without collecting the stream."""
 
     def __init__(self, chunks: Iterator[bytes]) -> None:
         super().__init__()
@@ -131,7 +131,7 @@ class IterStream(io.RawIOBase):
 
 
 class HashingWriter(io.RawIOBase):
-    """Reicht Bytes an ``sink`` durch, zählt sie und rechnet SHA-256 mit."""
+    """Passes bytes through to ``sink``, counts them and computes SHA-256 along the way."""
 
     def __init__(self, sink: BinaryIO) -> None:
         super().__init__()
@@ -154,7 +154,7 @@ class HashingWriter(io.RawIOBase):
 
 
 class _DiscardSink(io.RawIOBase):
-    """Senke für den Probelauf von :func:`verify_snapshot`: verwirft alles."""
+    """Sink for the dry run of :func:`verify_snapshot`: discards everything."""
 
     def writable(self) -> bool:
         return True
@@ -164,7 +164,7 @@ class _DiscardSink(io.RawIOBase):
 
 
 def build_manifest(world_id: str, preset: str, luanti_version: str, created_at: str, kind: str) -> bytes:
-    """Manifest an der Tar-Wurzel (JSON, sortierte Schlüssel)."""
+    """Manifest at the tar root (JSON, sorted keys)."""
     return json.dumps(
         {
             "format": MANIFEST_FORMAT,
@@ -179,7 +179,7 @@ def build_manifest(world_id: str, preset: str, luanti_version: str, created_at: 
 
 
 def world_relative(name: str) -> str | None:
-    """``world/x`` als ``x`` (geprüft über safe_relative), sonst None."""
+    """``world/x`` as ``x`` (checked via safe_relative), otherwise None."""
     prefix = f"{WORLD_PREFIX}/"
     if not name.startswith(prefix):
         return None
@@ -191,7 +191,7 @@ def _is_world_root(member: tarfile.TarInfo) -> bool:
 
 
 def _normalized(member: tarfile.TarInfo, name: str) -> tarfile.TarInfo:
-    """Kopie mit festem Besitzer und Modus; mtime aus dem Archiv (nie negativ)."""
+    """Copy with fixed owner and mode; mtime from the archive (never negative)."""
     info = tarfile.TarInfo(name)
     info.uid = info.gid = LUANTI_UID
     info.uname = info.gname = ""
@@ -225,15 +225,15 @@ def _no_space(exc: OSError) -> BackupError | None:
 
 
 def write_snapshot(chunks: Iterator[bytes], sink: BinaryIO, manifest: bytes) -> SnapshotInfo:
-    """Docker-Tar-Strom (Präfix ``world/``) gefiltert als tar.gz nach ``sink``.
+    """Docker tar stream (prefix ``world/``) filtered as tar.gz into ``sink``.
 
-    Speicher bleibt konstant (Chunk- und Lesepuffer); Größe und SHA-256 entstehen
-    beim Schreiben. Symlinks, Hardlinks, Geräte und unsichere Namen werden
-    übersprungen und gezählt. Kam ``world/map.sqlite`` nicht als reguläre Datei,
-    wirft die Funktion nach dem vollständigen Lesen BackupError(MSG_NO_MAP): eine
-    nie gestartete Welt oder ein an einer Member-Grenze abgerissener Strom darf
-    keine scheinbar gültige Sicherung ergeben (T-05-49). Transportfehler aus
-    ``chunks`` bleiben unverändert, damit der Provisioner sie abbildet.
+    Memory stays constant (chunk and read buffer); size and SHA-256 arise
+    while writing. Symlinks, hardlinks, devices and unsafe names are
+    skipped and counted. If ``world/map.sqlite`` did not arrive as a regular file,
+    the function raises BackupError(MSG_NO_MAP) after reading completely: a
+    never-started world or a stream cut off at a member boundary must not
+    yield a seemingly valid backup (T-05-49). Transport errors from
+    ``chunks`` stay unchanged, so that the provisioner maps them.
     """
     hasher = HashingWriter(sink)
     skipped = 0
@@ -265,21 +265,21 @@ def write_snapshot(chunks: Iterator[bytes], sink: BinaryIO, manifest: bytes) -> 
                     else:
                         out.addfile(info)
                     written += 1
-            # Tar endet an der Endmarke; Docker füllt danach auf. Den Strom ganz
-            # lesen, damit auch ein Abbruch am Ende als Transportfehler ankommt.
+            # The tar ends at the end marker; Docker pads after it. Read the whole stream,
+            # so that an abort at the end also arrives as a transport error.
             while source.read(READ_BUFFER):
                 pass
             if not has_map:
                 raise BackupError(MSG_NO_MAP)
     except (tarfile.TarError, EOFError) as exc:
-        LOG.warning("Snapshot-Strom nicht lesbar: %s", type(exc).__name__)
+        LOG.warning("Snapshot stream unreadable: %s", type(exc).__name__)
         raise BackupError(MSG_BROKEN_STREAM) from exc
     except OSError as exc:
         mapped = _no_space(exc)
         if mapped is None:
             raise
         raise mapped from exc
-    LOG.info("Snapshot geschrieben: %d Einträge, %d übersprungen, %d Bytes", written, skipped, hasher.count)
+    LOG.info("Snapshot written: %d entries, %d skipped, %d bytes", written, skipped, hasher.count)
     return SnapshotInfo(size=hasher.count, sha256=hasher.hexdigest(), skipped=skipped)
 
 
@@ -310,7 +310,7 @@ def _packed_size(source: BinaryIO) -> int:
 
 
 class _Limits:
-    """Zählt Einträge und entpackte Bytes und bricht bei einer Grenze ab (T-05-03)."""
+    """Counts entries and unpacked bytes and aborts at a limit (T-05-03)."""
 
     def __init__(self, packed: int) -> None:
         self._packed = packed
@@ -347,7 +347,7 @@ def _restore_pass(source: BinaryIO, *, world_id: str, preset: str, sink: BinaryI
                 _check_manifest(handle.read(MANIFEST_MAX), world_id=world_id, preset=preset)
                 manifest_seen = True
                 continue
-            # Typ vor allem anderen: Links und Geräte brechen auch in verworfenen Ordnern ab.
+            # Type before everything else: links and devices abort even in discarded folders.
             if not (member.isfile() or member.isdir()):
                 raise RestoreRejected(MSG_BAD_ENTRY)
             if _is_world_root(member):
@@ -373,36 +373,36 @@ def _restore_pass(source: BinaryIO, *, world_id: str, preset: str, sink: BinaryI
 
 
 def prepare_restore(source: BinaryIO, *, world_id: str, preset: str, sink: BinaryIO) -> RestoreInfo:
-    """Prüft eine Sicherung in einem Durchlauf und schreibt das Restore-Tar (gzip) nach ``sink``.
+    """Checks a backup in one pass and writes the restore tar (gzip) to ``sink``.
 
-    Das Restore-Tar hat Namen relativ zum Weltordner (ohne ``world/``) und wird
-    per ``put_archive`` nach ``WORLD_PATH`` eingespielt; Docker nimmt dort auch
-    gzip an. Besitzer 30000, Modus 0644/0755, mtime aus dem Archiv. Wirft
-    RestoreRejected bei jedem unsicheren Eintrag, fehlendem oder fremdem
-    Manifest, fehlender map.sqlite und überschrittenen Grenzen; dann ist der
-    Inhalt von ``sink`` unbrauchbar und gehört verworfen.
+    The restore tar has names relative to the world folder (without ``world/``) and is
+    put into place via ``put_archive`` to ``WORLD_PATH``; Docker accepts
+    gzip there as well. Owner 30000, mode 0644/0755, mtime from the archive. Raises
+    RestoreRejected on every unsafe entry, missing or foreign
+    manifest, missing map.sqlite and exceeded limits; then the
+    content of ``sink`` is unusable and must be discarded.
     """
     try:
         info = _restore_pass(source, world_id=world_id, preset=preset, sink=sink)
     except RestoreRejected as exc:
-        LOG.warning("Sicherung abgelehnt: %s", exc)
+        LOG.warning("Backup rejected: %s", exc)
         raise
     except (tarfile.TarError, EOFError, zlib.error, gzip.BadGzipFile) as exc:
-        LOG.warning("Sicherung nicht lesbar: %s", type(exc).__name__)
+        LOG.warning("Backup unreadable: %s", type(exc).__name__)
         raise RestoreRejected(MSG_BAD_ENTRY) from exc
     except OSError as exc:
         mapped = _no_space(exc)
         if mapped is None:
             raise
         raise mapped from exc
-    LOG.info("Restore vorbereitet: %d Einträge, %d Bytes entpackt", info.entries, info.unpacked_size)
+    LOG.info("Restore prepared: %d entries, %d bytes unpacked", info.entries, info.unpacked_size)
     return info
 
 
 def verify_snapshot(source: BinaryIO, *, world_id: str, preset: str) -> RestoreInfo:
-    """Probelauf mit der Restore-Logik über ein fertiges tar.gz, ohne etwas zu schreiben.
+    """Dry run with the restore logic over a finished tar.gz, without writing anything.
 
-    Setzt die Position vorher und nachher auf 0 (Upload liest danach von vorn).
+    Sets the position to 0 before and after (the upload then reads from the start).
     """
     source.seek(0)
     try:
@@ -412,7 +412,7 @@ def verify_snapshot(source: BinaryIO, *, world_id: str, preset: str) -> RestoreI
 
 
 def ledger_tar(ledger: bytes) -> bytes:
-    """Unkomprimiertes Tar mit genau dem bewahrten Zählbuch (D-06), relativ zum Weltordner."""
+    """Uncompressed tar with exactly the preserved ledger (D-06), relative to the world folder."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
         _add_bytes(tar, time_mod.LEDGER_FILE_NAME, ledger, mtime=int(time.time()))
@@ -420,7 +420,7 @@ def ledger_tar(ledger: bytes) -> bytes:
 
 
 def sha256_of(fp: BinaryIO) -> str:
-    """SHA-256 über den ganzen Inhalt in Blöcken; Position danach auf 0."""
+    """SHA-256 over the whole content in blocks; position afterwards at 0."""
     fp.seek(0)
     digest = hashlib.sha256()
     while block := fp.read(HASH_BLOCK):

@@ -1,10 +1,10 @@
-"""Ereignisdatei ``gameworld_events.txt`` lesen und neue Ereignisse bestimmen (rein, ohne I/O).
+"""Read the event file ``gameworld_events.txt`` and determine new events (pure, no I/O).
 
-Die Datei schreibt der Zugangs-Mod (Plan 04.1-01) und ist damit vom Lua-Prozess
-beschreibbar, also unvertrauenswürdig (T-04.1-06): Jede Zeile muss exakt passen,
-Art aus der Allowlist, Name wie PLAYER_NAME, Zahlen höchstens 12 Ziffern.
-Ungültige Zeilen fallen weg; fehlt Kopf oder Schlusszeile, gilt die Datei als
-nicht lesbar (None).
+The file is written by the access mod (plan 04.1-01) and is therefore writable by the
+Lua process, hence untrustworthy (T-04.1-06): every line must match exactly,
+kind from the allowlist, name like PLAYER_NAME, numbers at most 12 digits.
+Invalid lines are dropped; if the head or closing line is missing, the file counts as
+unreadable (None).
 """
 
 from __future__ import annotations
@@ -15,10 +15,10 @@ from dataclasses import dataclass
 from gameworld.provisioner.access_mod import EVENT_KINDS, EVENTS_HEADER
 from gameworld.provisioner.status_mod import PLAYER_NAME
 
-# Erstkontakt: Eine Datei, deren Ereignisse alle höchstens so alt sind (Sekunden)
-# und die bei Sequenz 1 beginnt, stammt von einer gerade gestarteten Welt.
+# First contact: a file whose events are all at most this old (seconds)
+# and which starts at sequence 1 comes from a world that has just started.
 FIRST_CONTACT_MAX_AGE = 120
-# Glaubhafte Zeitpunkte (IN-10): ein Tag zurück (ExApp lange aus), 5 Minuten voraus (Uhrenabweichung).
+# Plausible timestamps (IN-10): one day back (ExApp off for a long time), 5 minutes ahead (clock drift).
 MAX_AGE = 86400
 MAX_AHEAD = 300
 
@@ -28,7 +28,7 @@ _LINE = re.compile(r"([0-9]{1,12}) ([0-9]{1,12}) ([a-z0-9]{1,12}) (\S{1,20})")
 
 @dataclass(frozen=True)
 class Event:
-    """Eine Zeile der Ereignisdatei: Sequenz, Epoch-Sekunden, Art, Spielername."""
+    """One line of the event file: sequence, epoch seconds, kind, player name."""
 
     seq: int
     at: int
@@ -37,7 +37,7 @@ class Event:
 
 
 def parse_events(content: bytes) -> tuple[int, list[Event]] | None:
-    """Letzte Sequenz und gültige Ereignisse, oder None ohne Kopf, Version oder Schlusszeile."""
+    """Last sequence and valid events, or None without head, version or closing line."""
     lines = content.decode("ascii", "replace").split("\n")
     if lines and lines[-1] == "":
         lines.pop()
@@ -56,24 +56,24 @@ def parse_events(content: bytes) -> tuple[int, list[Event]] | None:
 
 
 def plausible(events: list[Event], *, now: int) -> list[Event]:
-    """Nur Ereignisse mit glaubhaftem Zeitpunkt: höchstens MAX_AGE alt, höchstens MAX_AHEAD in der Zukunft (IN-10).
+    """Only events with a plausible timestamp: at most MAX_AGE old, at most MAX_AHEAD in the future (IN-10).
 
-    Die Datei ist unvertrauenswürdig: Ein manipulierter Lua-Prozess könnte sonst
-    Fremdversuche mit Zukunftsdatum anlegen, die nie unter die Löschfrist fallen.
+    The file is untrustworthy: a tampered Lua process could otherwise create
+    foreign attempts with a future date that never fall under the deletion period.
     """
     return [event for event in events if now - MAX_AGE <= event.at <= now + MAX_AHEAD]
 
 
 def new_events(cursor: int | None, last_seq: int, events: list[Event], *, now: int) -> tuple[list[Event], int]:
-    """Noch nicht gemeldete Ereignisse und der neue Cursor.
+    """Events not yet reported and the new cursor.
 
-    Reihenfolge der Regeln (Pitfall 6, T-04.1-09):
-    1. Rücksprung der Sequenz (Restore, neues Volume): nur verankern.
-    2. Bekannter Cursor: alles mit höherer Sequenz.
-    3. Erstkontakt mit frischer Datei (beginnt bei 1, alles höchstens
-       FIRST_CONTACT_MAX_AGE alt): Anker 0, also alle Ereignisse.
-    4. Sonst Erstkontakt mit alter Datei: nur verankern, keine Flut nach dem Update.
-    ``now`` kommt vom Aufrufer (Epoch-Sekunden), damit die Funktion rein bleibt.
+    Order of the rules (pitfall 6, T-04.1-09):
+    1. Sequence going backwards (restore, new volume): only anchor.
+    2. Known cursor: everything with a higher sequence.
+    3. First contact with a fresh file (starts at 1, everything at most
+       FIRST_CONTACT_MAX_AGE old): anchor 0, i.e. all events.
+    4. Otherwise first contact with an old file: only anchor, no flood after the update.
+    ``now`` comes from the caller (epoch seconds), so that the function stays pure.
     """
     if cursor is not None and last_seq < cursor:
         return [], last_seq

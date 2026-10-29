@@ -1,4 +1,4 @@
-"""Files-Adapter der Sicherungen (05-02): eigener Client je Vorgang, eindeutiger Name, Größennachweis."""
+"""Files adapter of the backups (05-02): own client per operation, unique name, size proof."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _node(path: str, size: int, file_id: int, *, is_dir: bool = False) -> Simple
 
 
 class FakeDav:
-    """files-API von nc_py_api im Speicher: Pfad auf Größe; fehlende Pfade wie Nextcloud als 404."""
+    """nc_py_api files API in memory: path to size; missing paths as 404 like Nextcloud."""
 
     def __init__(self) -> None:
         self.sizes: dict[str, int] = {}
@@ -55,8 +55,8 @@ class FakeDav:
         self.short_by = 0
         self.mkdirs: list[str] = []
         self.upload_exc: Exception | None = None
-        # WR-03: Diese Pfade entstehen "gleichzeitig" durch einen externen Schreiber,
-        # je einer direkt vor dem nächsten PUT bzw. MOVE (TOCTOU-Fenster).
+        # WR-03: these paths appear "simultaneously" through an external writer,
+        # one right before the next PUT or MOVE (TOCTOU window).
         self.race_on_upload: list[str] = []
         self.race_on_move: list[str] = []
         self._next = 500
@@ -67,7 +67,7 @@ class FakeDav:
         self.ids[path] = self._next
 
     async def mkdir(self, path: str) -> None:
-        # Wie WebDAV: Pfade nur mit "/", vorhandener Ordner 405, fehlende Elternstufe 409.
+        # Like WebDAV: paths only with "/", existing folder 405, missing parent level 409.
         assert "\\" not in path
         self.mkdirs.append(path)
         if path + "/" in self.sizes:
@@ -89,7 +89,7 @@ class FakeDav:
         data = fp.read()
         self.uploaded.append((path, len(data)))
         if self.upload_exc is not None:
-            # Wie ein MOVE, der serverseitig trotzdem ankam (Pitfall 6).
+            # Like a MOVE that arrived on the server anyway (pitfall 6).
             self.add(path, len(data))
             raise self.upload_exc
         self.add(path, len(data) - self.short_by)
@@ -100,7 +100,7 @@ class FakeDav:
         self.sizes.pop(path, None)
 
     async def move(self, src: str, dest: str, overwrite: bool = False) -> Any:
-        # Wie WebDAV MOVE: "Overwrite: F" lehnt ein vorhandenes Ziel mit 412 ab.
+        # Like WebDAV MOVE: "Overwrite: F" rejects an existing target with 412.
         assert not overwrite
         if self.race_on_move:
             self.add(self.race_on_move.pop(0), 1)
@@ -142,7 +142,7 @@ def dav(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[FakeDav, NcReco
 
 def _spool(size: int = 1234) -> io.BytesIO:
     spool = io.BytesIO(b"g" * size)
-    spool.seek(size)  # Upload muss selbst zurückspulen.
+    spool.seek(size)  # upload must rewind itself.
     return spool
 
 
@@ -158,11 +158,11 @@ async def test_upload_uses_backup_client_options_and_proves_size(dav: tuple[Fake
 
 
 async def test_upload_creates_folder_stages_with_slashes_only(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
-    # nc_py_api makedirs setzt Stufen mit os.path.join zusammen (Backslash unter Windows, 400).
+    # nc_py_api makedirs composes levels with os.path.join (backslash on Windows, 400).
     fake, _recorder, _app = dav
     await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert fake.mkdirs == ["Gameworld", "Gameworld/Sicherungen", "Gameworld/Sicherungen/Burg"]
-    # Zweiter Upload: alle Stufen gibt es schon (405), das ist kein Fehler.
+    # Second upload: all levels already exist (405), that is not an error.
     fake.mkdirs.clear()
     entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert entry.name == "Burg-2026-10-23-1405-2.tar.gz"
@@ -184,7 +184,7 @@ async def test_upload_picks_free_suffix_and_never_deletes_existing(dav: tuple[Fa
 async def test_upload_streams_to_temp_name_then_moves_without_overwrite(
     dav: tuple[FakeDav, NcRecorder, MagicMock],
 ) -> None:
-    """WR-03: PUT auf einen eigenen, eindeutigen Temp-Namen, dann MOVE mit "Overwrite: F" auf den Zielnamen."""
+    """WR-03: PUT to an own, unique temp name, then MOVE with "Overwrite: F" to the target name."""
     fake, _recorder, _app = dav
     entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     temp, size = fake.uploaded[0]
@@ -197,18 +197,18 @@ async def test_upload_streams_to_temp_name_then_moves_without_overwrite(
 
 
 async def test_race_file_at_target_survives_upload(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
-    """WR-03/D-08: Entsteht im TOCTOU-Fenster eine gleichnamige Datei, wird sie nie überschrieben oder gelöscht."""
+    """WR-03/D-08: if a file of the same name appears in the TOCTOU window, it is never overwritten or deleted."""
     fake, _recorder, _app = dav
     fake.race_on_upload = [f"{FOLDER}/{BASE}"]
     entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert entry.name == "Burg-2026-10-23-1405-2.tar.gz"
-    # Die fremde Datei liegt unverändert am ursprünglichen Zielnamen.
+    # The foreign file lies unchanged at the original target name.
     assert fake.sizes[f"{FOLDER}/{BASE}"] == 1
     assert fake.deleted == []
 
 
 async def test_race_file_at_move_target_is_not_overwritten(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
-    """WR-03: 412 beim MOVE (Ziel entstand nach der Namensprüfung) führt zum nächsten Suffix, nie zum Überschreiben."""
+    """WR-03: 412 on MOVE (target appeared after the name check) leads to the next suffix, never to overwriting."""
     fake, _recorder, _app = dav
     fake.race_on_move = [f"{FOLDER}/{BASE}"]
     entry = await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
@@ -225,7 +225,7 @@ async def test_size_mismatch_deletes_only_own_target(dav: tuple[FakeDav, NcRecor
     with pytest.raises(FilesError) as caught:
         await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert str(caught.value) == MSG_UPLOAD_INCOMPLETE
-    # Aufgeräumt wird nur die eigene Temp-Datei; ein Zielname ist nie entstanden.
+    # Only the own temp file is cleaned up; a target name never came into being.
     temp = fake.uploaded[0][0]
     assert fake.deleted == [temp]
     assert fake.moves == []
@@ -247,7 +247,7 @@ async def test_quota_507_is_fixed_text_and_cleans_target(
     assert temp not in fake.sizes
     assert f"{FOLDER}/{BASE}" not in fake.sizes
     assert_closed(app, times=1)
-    # T-05-12: keine Pfade, Dateinamen oder Konten im Log.
+    # T-05-12: no paths, file names or accounts in the log.
     assert "Burg" not in caplog.text
     assert "admin" not in caplog.text
     assert "507" in caplog.text
@@ -268,7 +268,7 @@ async def test_client_closed_when_mkdir_fails(dav: tuple[FakeDav, NcRecorder, Ma
     with pytest.raises(FilesError) as caught:
         await NcBackupFiles().upload("admin", FOLDER, BASE, _spool(), 1234, with_suffix)
     assert str(caught.value) == MSG_FILES_FAILED
-    # Vor der Namenswahl gibt es nichts Eigenes zu löschen.
+    # Before the name choice there is nothing of our own to delete.
     assert fake.deleted == []
     assert recorder.options == [{"npa_timeout_dav": DAV_TIMEOUT, "chunked_upload_v2": False}]
     assert_closed(app, times=1)
@@ -304,7 +304,7 @@ async def test_stat_and_download(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> 
 
 
 async def test_download_passes_sink_errors_through_unchanged(dav: tuple[FakeDav, NcRecorder, MagicMock]) -> None:
-    """WR-01: Ein Fehler des Schreibziels (Größen-Deckel des Restores) wird nicht zu MSG_FILES_FAILED umgedeutet."""
+    """WR-01: an error of the write target (size cap of the restore) is not reinterpreted as MSG_FILES_FAILED."""
     fake, _recorder, app = dav
     fake.add(f"{FOLDER}/{BASE}", 7)
 

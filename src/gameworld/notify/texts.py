@@ -27,16 +27,16 @@ SUMMARY_MESSAGE = "Heute gab es weitere Beitrittsversuche, siehe Gameworld."
 REVIEW_SUBJECT = "Tagesrückblick"
 REVIEW_MESSAGE = "Heute gespielt: {kids}"
 REVIEW_LIMIT_SUFFIX = " (Limit erreicht)"
-# Sicherung und Wiederherstellen (Phase 5, D-16): nur Fehler, nur an den auslösenden Verwalter.
+# Backup and restore (phase 5, D-16): errors only, only to the triggering manager.
 BACKUP_FAILED_SUBJECT = "Sicherung von {world} fehlgeschlagen"
 RESTORE_FAILED_SUBJECT = "Wiederherstellen von {world} fehlgeschlagen"
 
 MAX_PLAYER = 20
-# Grund eines fehlgeschlagenen Auftrags (fester Text, trotzdem bereinigt und gekappt).
+# Reason of a failed job (fixed text, still cleaned and capped).
 MAX_REASON = 300
 MAX_WORLD = 40
 MAX_DISPLAY = 64
-# Die Rückblick-Zeile selbst (viele Kinder) bleibt unter dieser Länge.
+# The review line itself (many children) stays below this length.
 MAX_KIDS_LINE = 400
 
 _FORMAT_CHARS = frozenset("%|{}")
@@ -51,7 +51,7 @@ class NotifyText(NamedTuple):
 
 
 def clean_value(value: str, limit: int) -> str:
-    """Entfernt Format- und Steuerzeichen, kappt auf ``limit``; leer wird "?"."""
+    """Removes format and control characters, caps at ``limit``; empty becomes "?"."""
     kept = "".join(
         char for char in value if char not in _FORMAT_CHARS and unicodedata.category(char) not in {"Cc", "Cf"}
     )
@@ -60,7 +60,7 @@ def clean_value(value: str, limit: int) -> str:
 
 
 def highlight(param_id: str, name: str) -> dict[str, str]:
-    """Rich-Parameter vom Typ highlight (OCP RichObjectStrings Definitions)."""
+    """Rich parameter of type highlight (OCP RichObjectStrings definitions)."""
     return {"type": "highlight", "id": param_id, "name": name}
 
 
@@ -146,10 +146,10 @@ def attempt_message(world_id: str, world_name: str, player: str, clock: str, *, 
 
 
 def job_failed_message(subject: str, world_id: str, world_name: str, reason: str) -> NotifyText:
-    """Fehler eines Sicherungs- oder Wiederherstellungsauftrags; Weltname nur als Parameter.
+    """Error of a backup or restore job; world name only as a parameter.
 
-    Der Grund ist ein fester Text des Ablaufs; er wird trotzdem von Format- und
-    Steuerzeichen befreit, weil Docker-Meldungen darin vorkommen können.
+    The reason is a fixed text of the flow; it is still stripped of format and
+    control characters, because Docker messages may appear in it.
     """
     params = {"world": highlight(world_id, clean_value(world_name, MAX_WORLD))}
     return NotifyText(subject, clean_value(reason, MAX_REASON), params)
@@ -171,9 +171,9 @@ def review_message(kids_text: str, *, language: str = "de") -> NotifyText:
     )
 
 
-# Texte des Gameworld-Bots im Talk-Raum (TALK-02, D-21 bis D-24). Kurz, deutsch,
-# ohne Gründe und ohne Namen der Eltern. Bot-Nachrichten sind kein Rich-Format:
-# Platzhalter werden per str.format nur mit bereinigten, escapten Werten gefüllt.
+# Texts of the Gameworld bot in the Talk room (TALK-02, D-21 to D-24). Short, German,
+# without reasons and without names of the parents. Bot messages are not rich format:
+# placeholders are filled via str.format only with cleaned, escaped values.
 BOT_JOIN = "{name} ist jetzt in der Welt."
 BOT_LEAVE = "{name} hat die Welt verlassen."
 BOT_START = "Die Welt ist gestartet."
@@ -235,29 +235,29 @@ def bot_text(key: str, language: str, **values: str) -> str:
     return template.format(**values) if values else template
 
 
-# Zeichen, die Talk im Chat als Markdown deuten könnte (04.1-RESEARCH.md, Annahme A3).
+# Characters that Talk might interpret as Markdown in chat (04.1-RESEARCH.md, assumption A3).
 _MD_SPECIAL = frozenset("\\`*_{}[]()#+-.!|>~<")
 
 
 def md_escape(value: str) -> str:
-    """Maskiert Markdown-Zeichen mit Backslash (T-04.1-31)."""
+    """Masks Markdown characters with a backslash (T-04.1-31)."""
     return "".join("\\" + char if char in _MD_SPECIAL else char for char in value)
 
 
-# Talk wertet "@" in Bot-Nachrichten als Erwähnung aus (spreed ChatManager::sendMessage
-# ruft notifyMentionedUsers auch für Bots, am Quelltext von Talk 24.0.6 im Dev-Stack
-# geprüft). Ein Anzeigename wie "@all" oder '@"papa"' würde sonst alle oder einzelne
-# Mitglieder anpingen (WR-07). Das Vollbreiten-@ sieht gleich aus und erwähnt niemanden.
+# Talk evaluates "@" in bot messages as a mention (spreed ChatManager::sendMessage
+# calls notifyMentionedUsers for bots too, checked in the Talk 24.0.6 source on the dev stack).
+# A display name like "@all" or '@"papa"' would otherwise ping everyone or single
+# members (WR-07). The full-width @ looks the same and mentions nobody.
 _MENTION = "@"
 MENTION_SAFE = chr(0xFF20)
 
 
 def bot_name(value: str) -> str:
-    """Name für den Bot-Text: bereinigt, auf 64 Zeichen gekappt, ohne Erwähnung, dann escaped."""
+    """Name for the bot text: cleaned, capped at 64 characters, without mention, then escaped."""
     return md_escape(clean_value(value, MAX_DISPLAY).replace(_MENTION, MENTION_SAFE))
 
 
 def bot_clock(epoch: int, tz: ZoneInfo) -> str:
-    """Uhrzeit H:MM in der Haushalts-Zeitzone, immer mit Minuten (etwa 19:00)."""
+    """Time H:MM in the household time zone, always with minutes (e.g. 19:00)."""
     local = datetime.fromtimestamp(epoch, tz)
     return f"{local.hour}:{local.minute:02d}"

@@ -1,18 +1,18 @@
-"""Absolute Deep Links auf die Handy-Seiten (rein, 04.1-RESEARCH.md Pattern 9).
+"""Absolute deep links to the phone pages (pure, 04.1-RESEARCH.md pattern 9).
 
-Pfad statt ``#``: Beim Login-Umweg geht ein Fragment verloren, der Pfad bleibt
-in ``redirect_url`` erhalten. Absolut, weil die Android-App den Link im Browser
-öffnet. Die Basis-URL meldet der Browser eines Verwalters: Origin plus Webroot
-der Nextcloud (``@nextcloud/router`` getRootUrl, etwa ``/nextcloud`` bei einer
-Installation im Unterordner, WR-04). ``clean_origin`` lässt nur
-``http(s)://host[:port]`` mit einem streng geprüften Pfad zu, ohne Zugangsdaten,
-Query, Fragment oder Punkt-Segmente (T-04.1-19). ``page_link`` setzt
-Basis-URL plus ``EMBED_PATH`` zusammen.
+Path instead of ``#``: on the login detour a fragment is lost, the path is kept
+in ``redirect_url``. Absolute, because the Android app opens the link in the
+browser. The base URL is reported by the browser of a manager: origin plus webroot
+of Nextcloud (``@nextcloud/router`` getRootUrl, e.g. ``/nextcloud`` for an
+installation in a subfolder, WR-04). ``clean_origin`` allows only
+``http(s)://host[:port]`` with a strictly checked path, without credentials,
+query, fragment or dot segments (T-04.1-19). ``page_link`` composes
+base URL plus ``EMBED_PATH``.
 
-Welche Basis-URL gilt, entscheidet ``decide_origin`` (Owner-Entscheid
-22.10.2026, "Erste merken, Wechsel nur bestätigt"): Die erste gemeldete Adresse
-wird gespeichert, eine abweichende nur nach Bestätigung, und eine https-Adresse
-wird nie durch eine http-Adresse ersetzt.
+Which base URL applies is decided by ``decide_origin`` (owner decision
+22.10.2026, "remember the first, change only when confirmed"): the first reported address
+is stored, a differing one only after confirmation, and an https address
+is never replaced by an http address.
 """
 
 from __future__ import annotations
@@ -57,10 +57,10 @@ def _valid_host(host: str) -> bool:
 
 
 def clean_origin(value: str) -> str:
-    """Basis-URL ``http(s)://host[:port][/webroot]``; alles andere wirft ValueError.
+    """Base URL ``http(s)://host[:port][/webroot]``; anything else raises ValueError.
 
-    Der Webroot besteht nur aus Segmenten ``[A-Za-z0-9._~-]+``, ohne ``.`` und
-    ``..``, ohne abschließenden Schrägstrich.
+    The webroot consists only of segments ``[A-Za-z0-9._~-]+``, without ``.`` and
+    ``..``, without a trailing slash.
     """
     if not value or len(value) > MAX_BASE or any(unicodedata.category(char) in {"Cc", "Cf", "Zs"} for char in value):
         raise ValueError(MSG_INVALID_ORIGIN)
@@ -76,7 +76,7 @@ def clean_origin(value: str) -> str:
 
 
 def join_base(origin: str, webroot: str) -> str:
-    """Origin des Browsers (ohne Pfad) plus Webroot zu einer geprüften Basis-URL (ValueError bei Ungültigem)."""
+    """Origin of the browser (without path) plus webroot into a checked base URL (ValueError if invalid)."""
     match = _ORIGIN.fullmatch(clean_origin(origin))
     if match is None or match.group(4):
         raise ValueError(MSG_INVALID_ORIGIN)
@@ -86,7 +86,7 @@ def join_base(origin: str, webroot: str) -> str:
 
 
 def page_link(origin: str, page: str, params: dict[str, str]) -> str:
-    """Absoluter Link auf eine Handy-Seite; unbekannte Seite oder zu lang wirft ValueError."""
+    """Absolute link to a phone page; an unknown page or one that is too long raises ValueError."""
     if page not in PAGES:
         raise ValueError(f"Unbekannte Seite: {page}")
     link = f"{origin}{EMBED_PATH}/{page}"
@@ -98,25 +98,25 @@ def page_link(origin: str, page: str, params: dict[str, str]) -> str:
 
 
 def app_link(origin: str) -> str:
-    """Absoluter Link auf die Übersicht der Gameworld-Seite (Welten, Sicherungen)."""
+    """Absolute link to the overview of the Gameworld page (worlds, backups)."""
     return f"{origin}{EMBED_PATH}"
 
 
 @dataclass(frozen=True)
 class OriginDecision:
-    """Ergebnis von decide_origin: speichern ja/nein, Rückfrage nötig ja/nein."""
+    """Result of decide_origin: store yes/no, confirmation prompt needed yes/no."""
 
     store: bool
     confirm_needed: bool
 
 
 def decide_origin(current: str | None, proposed: str, *, confirm: bool) -> OriginDecision:
-    """Erste Adresse merken, Wechsel nur bestätigt, nie von https auf http (WR-04, Owner 22.10.2026).
+    """Remember the first address, change only when confirmed, never from https to http (WR-04, owner 22.10.2026).
 
-    ``current`` ist die gespeicherte, gültige Basis-URL oder None, ``proposed`` die
-    eben gemeldete (schon geprüft). Ohne gespeicherte Adresse wird gespeichert.
-    Gleiche Adresse: nichts zu tun. https durch http: nie, auch nicht bestätigt,
-    und ohne Rückfrage. Sonst nur mit ``confirm``, ohne kommt die Rückfrage.
+    ``current`` is the stored, valid base URL or None, ``proposed`` the one
+    just reported (already checked). Without a stored address it is stored.
+    Same address: nothing to do. https replaced by http: never, not even when confirmed,
+    and without a prompt. Otherwise only with ``confirm``, without it the prompt comes.
     """
     if current is None:
         return OriginDecision(store=True, confirm_needed=False)

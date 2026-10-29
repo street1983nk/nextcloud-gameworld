@@ -1,21 +1,21 @@
-"""Ablage der Sicherungen in Nextcloud Files im Namen des auslösenden Verwalters (D-01, D-13).
+"""Storage of backups in Nextcloud Files on behalf of the triggering manager (D-01, D-13).
 
-Je Vorgang ein eigener, kurzlebiger Client ``nc_as(uid, ...)`` mit großzügigem
-WebDAV-Timeout (600 s, Pitfall 6) und Upload v1 (``chunked_upload_v2=False``);
-nie ein geteilter Client, Sessions werden immer geschlossen (WR-05, T-05-07).
+One own short-lived client ``nc_as(uid, ...)`` per operation with a generous
+WebDAV timeout (600 s, pitfall 6) and upload v1 (``chunked_upload_v2=False``);
+never a shared client, sessions are always closed (WR-05, T-05-07).
 
-Ein Upload gilt erst als gelungen, wenn ``by_path`` die Datei mit exakt der
-lokalen Größe zeigt (T-05-09). Weil WebDAV-PUT still überschreibt, läuft der
-Upload erst auf einen eigenen, eindeutigen Temp-Namen; den Zielnamen (``-2``,
-``-3`` ..., Pitfall 5) vergibt danach ein MOVE mit ``Overwrite: F``. Eine im
-TOCTOU-Fenster entstandene gleichnamige Datei bleibt so unberührt (412, nächster
-Suffix). Im Fehlerfall wird nur die eigene Temp- bzw. frisch verschobene Datei
-gelöscht, nie eine vorhandene (T-05-08, D-08, WR-03).
+An upload counts as successful only when ``by_path`` shows the file with exactly the
+local size (T-05-09). Because WebDAV PUT silently overwrites, the
+upload first goes to an own, unique temp name; the target name (``-2``,
+``-3`` ..., pitfall 5) is then assigned by a MOVE with ``Overwrite: F``. A file of
+the same name that appeared in the TOCTOU window stays untouched (412, next
+suffix). On failure only the own temp or freshly moved file is
+deleted, never an existing one (T-05-08, D-08, WR-03).
 
-Ordnerpfade baut immer der Aufrufer (``naming.folder_path``), dieses Modul setzt
-nichts aus Weltnamen zusammen. Ins Log kommen nur Fehlertyp und Statuscode, nie
-Pfade, Dateinamen oder Konten (T-05-12). Fehler erscheinen als ``FilesError`` mit
-festem deutschem Text; der Ablauf (Plan 05) behandelt ihn wie ``BackupError``.
+Folder paths are always built by the caller (``naming.folder_path``), this module composes
+nothing from world names. Only the error type and status code go into the log, never
+paths, file names or accounts (T-05-12). Errors appear as ``FilesError`` with
+a fixed German text; the flow (plan 05) treats it like ``BackupError``.
 """
 
 from __future__ import annotations
@@ -39,15 +39,15 @@ LOG = logging.getLogger(__name__)
 DAV_TIMEOUT = 600
 UPLOAD_CHUNK = 10 * 1024 * 1024
 MAX_SUFFIX = 99
-# Höchstens so lange wird nach einem Fehler oder Abbruch aufgeräumt (eigene Zieldatei).
+# Cleanup after an error or abort takes at most this long (own target file).
 CLEANUP_TIMEOUT = 30
 STATUS_NOT_FOUND = 404
-# MKCOL auf einen vorhandenen Ordner antwortet 405 Method Not Allowed.
+# MKCOL on an existing folder answers 405 Method Not Allowed.
 STATUS_EXISTS = 405
-# MOVE mit "Overwrite: F" auf ein vorhandenes Ziel antwortet 412 Precondition Failed.
+# MOVE with "Overwrite: F" onto an existing target answers 412 Precondition Failed.
 STATUS_TARGET_EXISTS = 412
 STATUS_QUOTA = 507
-# Temp-Endung des Uploads; ".part" ist in Nextcloud für interne Teil-Uploads reserviert.
+# Temp suffix of the upload; ".part" is reserved in Nextcloud for internal partial uploads.
 TEMP_SUFFIX = ".gwtmp"
 
 MSG_QUOTA = "Nicht genug Speicherplatz in deinen Nextcloud-Dateien."
@@ -58,7 +58,7 @@ MSG_NAME_EXHAUSTED = "Zu viele Sicherungen mit gleichem Namen. Bitte versuche es
 
 
 class FilesError(Exception):
-    """Fehler der Files-Ablage; ``str(exc)`` ist immer ein fester deutscher Text."""
+    """Error of the Files storage; ``str(exc)`` is always a fixed German text."""
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ class FilesEntry:
     modified: datetime | None = None
 
 
-# suffix(name, n) ist naming.with_suffix: n 1 lässt den Namen unverändert.
+# suffix(name, n) is naming.with_suffix: n 1 leaves the name unchanged.
 SuffixFn = Callable[[str, int], str]
 
 
@@ -78,23 +78,23 @@ class BackupFiles(Protocol):
     async def upload(
         self, uid: str, folder_path: str, base_name: str, spool: BinaryIO, size: int, suffix: SuffixFn
     ) -> FilesEntry:
-        """Lädt ``spool`` unter einem freien Namen in ``folder_path`` und weist die Größe nach."""
+        """Uploads ``spool`` under a free name into ``folder_path`` and proves the size."""
         ...
 
     async def listdir(self, uid: str, folder_path: str) -> list[FilesEntry]:
-        """Dateien im Ordner; ein fehlender Ordner ergibt eine leere Liste."""
+        """Files in the folder; a missing folder gives an empty list."""
         ...
 
     async def stat(self, uid: str, path: str) -> FilesEntry | None:
-        """Datei unter ``path`` oder None."""
+        """File at ``path`` or None."""
         ...
 
     async def download_to(self, uid: str, path: str, fp: BinaryIO) -> None:
-        """Streamt die Datei nach ``fp``; fehlt sie, FilesError(MSG_FILE_GONE)."""
+        """Streams the file to ``fp``; if it is missing, FilesError(MSG_FILE_GONE)."""
         ...
 
     async def delete_own(self, uid: str, path: str) -> None:
-        """Löscht eine eigene Zieldatei; fehlt sie, passiert nichts."""
+        """Deletes an own target file; if it is missing, nothing happens."""
         ...
 
 
@@ -110,15 +110,15 @@ def _entry(node: Any) -> FilesEntry:
 
 
 def _map_error(exc: Exception, action: str) -> FilesError:
-    """Fester Text zu einer Ausnahme; geloggt werden nur Typ und Statuscode."""
+    """Fixed text for an exception; only type and status code are logged."""
     if isinstance(exc, FilesError):
         return exc
     if isinstance(exc, NextcloudException):
-        LOG.warning("Nextcloud-Dateien: %s gescheitert, Status %s", action, exc.status_code)
+        LOG.warning("Nextcloud files: %s failed, status %s", action, exc.status_code)
         if exc.status_code == STATUS_QUOTA:
             return FilesError(MSG_QUOTA)
         return FilesError(MSG_FILES_FAILED)
-    LOG.warning("Nextcloud-Dateien: %s gescheitert: %s", action, type(exc).__name__)
+    LOG.warning("Nextcloud files: %s failed: %s", action, type(exc).__name__)
     return FilesError(MSG_FILES_FAILED)
 
 
@@ -132,12 +132,12 @@ async def _by_path(nc: Any, path: str) -> Any | None:
 
 
 async def _makedirs(nc: Any, folder_path: str) -> None:
-    """Legt ``folder_path`` Stufe für Stufe an; vorhandene Stufen (405) sind in Ordnung.
+    """Creates ``folder_path`` level by level; existing levels (405) are fine.
 
-    Bewusst nicht ``nc.files.makedirs``: Es setzt die Stufen mit ``os.path.join``
-    zusammen, unter Windows entsteht so ``Gameworld\\Sicherungen`` und Nextcloud
-    lehnt den Backslash mit 400 ab (am Dev-Stack belegt). WebDAV-Pfade trennt
-    immer ``/``.
+    Deliberately not ``nc.files.makedirs``: it composes the levels with ``os.path.join``,
+    on Windows this yields ``Gameworld\\Sicherungen`` and Nextcloud
+    rejects the backslash with 400 (proven on the dev stack). WebDAV paths are always
+    separated by ``/``.
     """
     parts = [part for part in folder_path.split("/") if part]
     for depth in range(1, len(parts) + 1):
@@ -153,7 +153,7 @@ def _client(uid: str) -> contextlib.AbstractAsyncContextManager[Any]:
 
 
 class NcBackupFiles:
-    """Echte Ablage über nc_py_api ``files`` (WebDAV) im Namen von ``uid``."""
+    """Real storage via nc_py_api ``files`` (WebDAV) on behalf of ``uid``."""
 
     async def upload(
         self, uid: str, folder_path: str, base_name: str, spool: BinaryIO, size: int, suffix: SuffixFn
@@ -161,8 +161,8 @@ class NcBackupFiles:
         try:
             async with _client(uid) as nc:
                 await _makedirs(nc, folder_path)
-                # WR-03: PUT überschreibt still; darum erst auf einen eigenen, eindeutigen
-                # Temp-Namen hochladen und dann per MOVE mit "Overwrite: F" umbenennen.
+                # WR-03: PUT overwrites silently; therefore first upload to an own, unique
+                # temp name and then rename by MOVE with "Overwrite: F".
                 created = f"{folder_path}/.{base_name}.{uuid4().hex}{TEMP_SUFFIX}"
                 try:
                     spool.seek(0)
@@ -176,7 +176,7 @@ class NcBackupFiles:
                         raise FilesError(MSG_UPLOAD_INCOMPLETE)
                     return _entry(node)
                 except BaseException:
-                    # Nur die eigene Temp- bzw. frisch verschobene Datei; auch bei Abbruch, zeitlich begrenzt.
+                    # Only the own temp or freshly moved file; also on abort, time-limited.
                     with anyio.move_on_after(CLEANUP_TIMEOUT, shield=True), contextlib.suppress(Exception):
                         await nc.files.delete(created, not_fail=True)
                     raise
@@ -185,7 +185,7 @@ class NcBackupFiles:
 
     @staticmethod
     async def _move_to_free_target(nc: Any, folder_path: str, base_name: str, suffix: SuffixFn, temp: str) -> str:
-        """MOVE mit "Overwrite: F" auf den ersten freien Namen; ein im Fenster entstandenes Ziel bleibt unberührt."""
+        """MOVE with "Overwrite: F" to the first free name; a target that appeared in the window stays untouched."""
         for n in range(1, MAX_SUFFIX + 1):
             target = f"{folder_path}/{suffix(base_name, n)}"
             if await _by_path(nc, target) is not None:
@@ -224,7 +224,7 @@ class NcBackupFiles:
             async with _client(uid) as nc:
                 await nc.files.download2stream(path, fp, chunk_size=UPLOAD_CHUNK)
         except BackupError:
-            # Vom Schreibziel selbst (z. B. Größen-Deckel des Restores): unverändert durchreichen.
+            # From the write target itself (e.g. size cap of the restore): pass through unchanged.
             raise
         except NextcloudException as exc:
             if exc.status_code == STATUS_NOT_FOUND:
@@ -245,7 +245,7 @@ _files: BackupFiles | None = None
 
 
 def get_backup_files() -> BackupFiles:
-    """Modulweites Singleton; Tests setzen ein Fake ein."""
+    """Module-wide singleton; tests inject a fake."""
     global _files
     if _files is None:
         _files = NcBackupFiles()

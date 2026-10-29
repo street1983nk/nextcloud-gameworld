@@ -1,12 +1,12 @@
-"""Ordner- und Dateinamen der Sicherungen in Nextcloud Files (D-01, D-02, D-05), rein und ohne I/O.
+"""Folder and file names of the backups in Nextcloud Files (D-01, D-02, D-05), pure and without I/O.
 
-Weltnamen erlauben Punkte (``normalize_world_name``), ``..`` oder ``.`` würden
-als Ordnername aus ``Gameworld/Sicherungen`` ausbrechen; Nextcloud mit
-Windows-kompatiblen Dateinamen lehnt Punkt oder Leerzeichen am Ende und
-reservierte Namen ab (Pitfall 4). Unbrauchbare Namen werden deshalb durch
-``Welt-<id6>`` ersetzt. Die Zugehörigkeit einer Sicherung kommt nie aus dem
-Ordnernamen, sondern aus dem DB-Eintrag. Die Haushalts-Zeitzone übergibt der
-Aufrufer (TimeEngine.zone()).
+World names allow dots (``normalize_world_name``), ``..`` or ``.`` would break out
+of ``Gameworld/Sicherungen`` as a folder name; Nextcloud with
+Windows-compatible file names rejects a trailing dot or space and
+reserved names (pitfall 4). Unusable names are therefore replaced by
+``Welt-<id6>``. The affiliation of a backup never comes from the
+folder name, but from the DB entry. The caller passes the household time zone
+(TimeEngine.zone()).
 """
 
 from __future__ import annotations
@@ -24,15 +24,15 @@ MAX_PART_LENGTH = 64
 RESERVED_NAMES = frozenset(
     {"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10))}
 )
-# Alles außer Buchstaben, Ziffern, Leerzeichen, Punkt, Bindestrich und Unterstrich
-# (Schrägstriche, Doppelpunkt, Steuerzeichen, Windows-Sonderzeichen) wird zu "-".
+# Everything except letters, digits, space, dot, hyphen and underscore
+# (slashes, colon, control characters, Windows special characters) becomes "-".
 _DISALLOWED = re.compile(r"[^\w .\-]")
 _WHITESPACE = re.compile(r"\s+")
 _EDGES = " ."
 
 
 def _clean(world_name: str) -> str | None:
-    """Bereinigter Namensteil oder None, wenn er als Pfadteil unbrauchbar ist."""
+    """Cleaned name part or None if it is unusable as a path part."""
     name = _DISALLOWED.sub("-", _WHITESPACE.sub(" ", world_name))
     name = name[:MAX_PART_LENGTH].strip(_EDGES)
     if not name or name.strip("-") == "":
@@ -43,7 +43,7 @@ def _clean(world_name: str) -> str | None:
 
 
 def folder_name(world_name: str, world_id: str) -> str:
-    """Ordner der Welt unter BACKUPS_ROOT; nie leer, ``.``, ``..``, reserviert oder mit Schrägstrich."""
+    """Folder of the world under BACKUPS_ROOT; never empty, ``.``, ``..``, reserved or with a slash."""
     return _clean(world_name) or f"{FALLBACK_PREFIX}{world_id[:6]}"
 
 
@@ -52,10 +52,10 @@ def folder_path(folder: str) -> str:
 
 
 def backup_file_name(world_name: str, when: datetime, kind: str, *, zone: tzinfo | None = None) -> str:
-    """``<weltname>-JJJJ-MM-TT-HHMM.tar.gz`` (D-02), bei ``vor-restore`` mit Zusatz (D-05).
+    """``<worldname>-YYYY-MM-DD-HHMM.tar.gz`` (D-02), with a suffix for ``vor-restore`` (D-05).
 
-    ``when`` muss eine Zeitzone tragen; ``zone`` rechnet den Zeitstempel in die
-    Haushalts-Zeitzone um.
+    ``when`` must carry a time zone; ``zone`` converts the timestamp into the
+    household time zone.
     """
     if when.tzinfo is None:
         raise ValueError("Zeitpunkt ohne Zeitzone")
@@ -69,7 +69,7 @@ def backup_file_name(world_name: str, when: datetime, kind: str, *, zone: tzinfo
 
 
 def with_suffix(name: str, n: int) -> str:
-    """Kollisionsname: ``-2``, ``-3`` ... vor ``.tar.gz``; ``n`` 1 lässt den Namen unverändert (Pitfall 5)."""
+    """Collision name: ``-2``, ``-3`` ... before ``.tar.gz``; ``n`` 1 leaves the name unchanged (pitfall 5)."""
     if n <= 1:
         return name
     if name.endswith(ARCHIVE_SUFFIX):

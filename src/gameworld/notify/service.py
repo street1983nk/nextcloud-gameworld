@@ -1,10 +1,10 @@
-"""Versand von Nextcloud-Benachrichtigungen über AppAPI (04.1-RESEARCH.md Pattern 4).
+"""Sending Nextcloud notifications via AppAPI (04.1-RESEARCH.md pattern 4).
 
-Je Empfänger ein eigener, kurzlebiger Client im Namen des Empfängers
-(``gameworld.nc.nc_as``, schließt seine Sessions, WR-05): AppAPI stellt die
-Benachrichtigung dem Nutzer aus ``authorization-app-api`` zu. Ein Fehler wird
-nie wiederholt (404 heißt: notifications-App aus) und nur mit Statuscode oder
-Typname geloggt, nie mit Empfänger oder Inhalt (T-04.1-21).
+One own short-lived client per recipient on behalf of the recipient
+(``gameworld.nc.nc_as``, closes its sessions, WR-05): AppAPI delivers the
+notification to the user from ``authorization-app-api``. An error is
+never retried (404 means: notifications app off) and logged only with status code or
+type name, never with recipient or content (T-04.1-21).
 """
 
 from __future__ import annotations
@@ -23,12 +23,12 @@ Params = dict[str, dict[str, str]]
 
 class Notifier(Protocol):
     async def notify(self, uid: str, subject: str, message: str, params: Params, link: str) -> bool:
-        """Benachrichtigung an ``uid``; True, wenn Nextcloud sie angenommen hat."""
+        """Notification to ``uid``; True if Nextcloud accepted it."""
         ...
 
 
 class NcNotifier:
-    """Echter Versand über ``notifications.create`` im Namen des Empfängers."""
+    """Real sending via ``notifications.create`` on behalf of the recipient."""
 
     async def notify(self, uid: str, subject: str, message: str, params: Params, link: str) -> bool:
         try:
@@ -36,12 +36,12 @@ class NcNotifier:
                 await nc.notifications.create(subject, message, subject_params=params, message_params=params, link=link)
         except NextcloudException as exc:
             if exc.status_code == 404:
-                LOG.warning("Benachrichtigung nicht zustellbar (notifications-App aus?): Status 404")
+                LOG.warning("Notification not deliverable (notifications app off?): status 404")
             else:
-                LOG.warning("Benachrichtigung gescheitert: Status %s", exc.status_code)
+                LOG.warning("Notification failed: status %s", exc.status_code)
             return False
         except Exception as exc:
-            LOG.warning("Benachrichtigung gescheitert: %s", type(exc).__name__)
+            LOG.warning("Notification failed: %s", type(exc).__name__)
             return False
         return True
 
@@ -50,7 +50,7 @@ _notifier: Notifier | None = None
 
 
 def get_notifier() -> Notifier:
-    """Modulweites Singleton; Tests setzen ein Fake ein."""
+    """Module-wide singleton; tests inject a fake."""
     global _notifier
     if _notifier is None:
         _notifier = NcNotifier()

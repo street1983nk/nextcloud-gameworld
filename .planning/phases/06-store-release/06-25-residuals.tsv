@@ -1,0 +1,2 @@
+Datei	Zeile	Grund
+src/gameworld/backup/naming.py	7	Bezeichner: Wert der Konstante FALLBACK_PREFIX = "Welt-" (Ordnername, nicht übersetzbar)

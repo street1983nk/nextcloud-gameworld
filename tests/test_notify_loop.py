@@ -1,4 +1,4 @@
-"""Benachrichtigungs-Loop: Fremdversuche, Rückblick, Wartung und NcNotifier (04.1-04)."""
+"""Notification loop: foreign attempts, review, maintenance and NcNotifier (04.1-04)."""
 
 from __future__ import annotations
 
@@ -150,7 +150,7 @@ async def test_missing_origin_does_not_use_up_daily_hints(
     fake_directory: FakeDirectory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """IN-05: Ohne Link-Adresse bleiben die 5 Einzelhinweise des Tages erhalten."""
+    """IN-05: without a link address the 5 single notices of the day are preserved."""
     store.set_meta(META_LINK_ORIGIN, "")
     monkeypatch.delenv("NEXTCLOUD_URL")
     for index in range(6):
@@ -171,7 +171,7 @@ async def test_nextcloud_url_with_webroot_gives_working_links(
     fake_directory: FakeDirectory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """WR-04: NEXTCLOUD_URL mit Unterordner (und /index.php) fällt nicht mehr weg."""
+    """WR-04: NEXTCLOUD_URL with a subfolder (and /index.php) no longer drops out."""
     store.set_meta(META_LINK_ORIGIN, "")
     monkeypatch.setenv("NEXTCLOUD_URL", "https://example.org/nextcloud/index.php/")
     store.add_outbox(W1, "deny", "Fremder", _epoch(18, 5))
@@ -217,7 +217,7 @@ async def test_review_once_per_admin_and_day_even_after_restart(
     assert params["kids"]["name"] == "Kind (Dev) 45 Min."
     assert link == f"{EMBED}/rueckblick?tag=2026-10-21"
     await _run(service, fake_notifier, fake_directory, _epoch(20, 5))
-    # Neustart: neuer Dienst, frischer Loop-Zustand, gleiche Datenbank.
+    # Restart: new service, fresh loop state, same database.
     loop.LOOP_STATE = loop.LoopState()
     restarted = WorldService(store, cast(DockerProvisioner, FakeProvisioner()), load_settings())
     await _run(restarted, fake_notifier, fake_directory, _epoch(21, 0))
@@ -227,7 +227,7 @@ async def test_review_once_per_admin_and_day_even_after_restart(
 async def test_review_notification_never_names_guest_without_rules(
     service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
 ) -> None:
-    """IN-03: Gastkind ohne Regeln erscheint in der Abend-Benachrichtigung nicht mit Minuten."""
+    """IN-03: guest child without rules does not appear with minutes in the evening notification."""
     store.set_meta(META_TIME_ADMINS, json.dumps(["admin"]))
     store.insert_player(PlayerRow(nc_user="gast-kind", player_name="Gast", rotation=0))
     fake_directory.users["gast-kind"] = ("Gast Kind", True)
@@ -248,21 +248,21 @@ async def test_review_with_only_guest_play_sends_nothing(
 async def test_verified_maintenance_drops_review_prefs_of_former_admins(
     service: WorldService, store: WorldStore, fake_directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """IN-03: Rückblick-Einstellungen früherer Verwalter bleiben nicht unbegrenzt liegen."""
+    """IN-03: review settings of earlier managers do not linger indefinitely."""
     monkeypatch.setattr(loop, "MAINTENANCE", [])
     store.set_meta(META_TIME_ADMINS, json.dumps(["admin", "anna"]))
     store.set_review_pref("anna", enabled=True, minute=600)
     store.set_review_pref("admin", enabled=False, minute=1200)
     fake_directory.groups["admin"] = ["admin"]
     await maintain_once(service, fake_directory)
-    assert store.review_pref("anna") == (True, 1200)  # Vorgabe: Zeile weg
+    assert store.review_pref("anna") == (True, 1200)  # default: row gone
     assert store.review_pref("admin") == (False, 1200)
 
 
 async def test_outage_keeps_review_prefs(
     service: WorldService, store: WorldStore, fake_directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gegenprobe: Ohne bestätigten Stand wird nichts gelöscht."""
+    """Cross-check: without a confirmed state nothing is deleted."""
     monkeypatch.setattr(loop, "MAINTENANCE", [])
     store.set_review_pref("mama", enabled=False, minute=600)
     fake_directory.error = DirectoryUnavailableError("weg")
@@ -273,12 +273,12 @@ async def test_outage_keeps_review_prefs(
 async def test_review_without_play_sends_nothing_but_marks_day_done(
     service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
 ) -> None:
-    """WR-03: Ohne Spielzeit bis zur Uhrzeit keine Nachricht, und spätes Spielen löst keine mehr aus."""
+    """WR-03: without playtime until the time of day no message, and late play triggers none any more."""
     await _run(service, fake_notifier, fake_directory, _epoch(20, 0))
     assert fake_notifier.calls == []
     assert store.review_was_sent("admin", DAY)
     assert store.review_was_sent("mama", DAY)
-    # Ein Kind fängt um 20:10 an (noch im Fenster): kein "Heute gespielt: Lena 1 Min." mit Teildaten.
+    # A child starts at 20:10 (still in the window): no "Heute gespielt: Lena 1 Min." with partial data.
     store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 60})
     await _run(service, fake_notifier, fake_directory, _epoch(20, 10))
     assert fake_notifier.calls == []
@@ -287,7 +287,7 @@ async def test_review_without_play_sends_nothing_but_marks_day_done(
 async def test_review_not_sent_after_window_when_play_starts_late(
     service: WorldService, store: WorldStore, fake_notifier: FakeNotifier, fake_directory: FakeDirectory
 ) -> None:
-    """WR-03, Beispiel aus dem Review: Vorgabe 20:00, ExApp lief bis 21:30 nicht, Spiel ab 21:30."""
+    """WR-03, example from the review: default 20:00, ExApp was down until 21:30, play from 21:30."""
     store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 60})
     await _run(service, fake_notifier, fake_directory, _epoch(21, 30))
     assert fake_notifier.calls == []
@@ -302,7 +302,7 @@ async def test_early_review_time_does_not_fire_in_the_morning(
     store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 600})
     await _run(service, fake_notifier, fake_directory, _epoch(9, 0))
     assert fake_notifier.calls == []
-    # Positivkontrolle: im Fenster nach 0:15 kommt er.
+    # Positive control: in the window after 0:15 it comes.
     await _run(service, fake_notifier, fake_directory, _epoch(0, 20))
     assert [call[1] for call in fake_notifier.calls] == ["Tagesrückblick"]
 
@@ -369,8 +369,8 @@ async def test_notify_forever_survives_errors(service: WorldService, monkeypatch
 
     monkeypatch.setattr(loop, "run_once", failing)
     task = asyncio.create_task(loop.notify_forever(service, interval_seconds=0.01))
-    # Auf das Ereignis warten statt auf eine feste Zeit: Die erste Wartung (Prüfung des
-    # Schnappschusses vor dem ersten Versand) dauert auf langsamen Rechnern länger.
+    # Wait for the event instead of a fixed time: the first maintenance (check of the
+    # snapshot before the first send) takes longer on slow machines.
     for _ in range(500):
         if len(calls) >= 2:
             break
@@ -419,7 +419,7 @@ async def test_maintenance_runs_as_own_task_and_does_not_block_sending(
     fake_directory: FakeDirectory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """IN-06: Ein hängender Talk-Abgleich verzögert keine Fremdversuch-Hinweise; Beenden bricht ihn ab."""
+    """IN-06: a hanging Talk reconciliation delays no foreign-attempt notices; shutdown cancels it."""
     fake_directory.groups["admin"] = ["admin", "mama"]
     hook_started = asyncio.Event()
     hook_cancelled: list[bool] = []

@@ -1,8 +1,8 @@
-"""Drosselung der Fremdversuch-Hinweise (rein, D-08, D-29).
+"""Throttling of the foreign-attempt notices (pure, D-08, D-29).
 
-Höchstens ein Hinweis je Spielername, Welt und lokalem Tag; insgesamt höchstens
-``limit`` Einzelhinweise am Tag, danach genau eine Sammelnachricht. Die Zählung
-selbst steht atomar im Store (``WorldStore.claim_attempt``), hier nur die Regel.
+At most one notice per player name, world and local day; in total at most
+``limit`` single notices per day, after that exactly one collective message. The counting
+itself is atomic in the store (``WorldStore.claim_attempt``), only the rule is here.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ ATTEMPT_LIMIT = 5
 
 
 def decide(is_new: bool, notified_today: int, summary_claimed: bool, limit: int) -> Decision:
-    """Einzelhinweis, Sammelnachricht oder nichts für einen Fremdversuch."""
+    """Single notice, collective message or nothing for a foreign attempt."""
     if not is_new:
         return "none"
     if notified_today < limit:
@@ -25,6 +25,6 @@ def decide(is_new: bool, notified_today: int, summary_claimed: bool, limit: int)
 
 
 def is_case_variant(name: str, invited_names: Iterable[str]) -> bool:
-    """Groß/Klein-Variante eines Eingeladenen (wird nie gemeldet, D-29)."""
+    """Case variant of an invitee (is never reported, D-29)."""
     folded = name.casefold()
     return any(folded == invited.casefold() for invited in invited_names)
