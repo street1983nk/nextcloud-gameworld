@@ -1,16 +1,16 @@
-"""Verwalter-API für die Pause aller Welten (ELTERN-01, D-01 bis D-06, D-25).
+"""Manager API for the pause of all worlds (ELTERN-01, D-01 to D-06, D-25).
 
-Nur Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (require_verwalter
-routerweit, T-04.1-11). Der Körper beim Start trägt nur ``minutes`` mit genau
-15, 30 oder 60 (strikt: "30" als Text, 30.0 oder true sind 422, T-04.1-12),
-Zusatzfelder sind 422. "Weiter" (``/end``) und "Für heute Schluss"
-(``/schluss``) haben keinen Körper.
+Management only: second lock next to the AppAPI route ADMIN (require_verwalter
+router-wide, T-04.1-11). The body on start carries only ``minutes`` with exactly
+15, 30 or 60 (strict: "30" as text, 30.0 or true are 422, T-04.1-12),
+extra fields are 422. "Weiter" (``/end``) and "Für heute Schluss"
+(``/schluss``) have no body.
 
-Die Antwort nennt Zustand, Epochs, die Uhrzeit des Endes in der
-Haushalts-Zeitzone (H:MM, für Seite und Bot; Kindertexte bleiben ohne Uhrzeit)
-und je Welt, ob die Regeldatei angekommen ist und ob die Welt neu gestartet
-wurde, damit die Pause sicher greift. Wer pausiert hat, steht nur in der
-Datenbank (T-04.1-15). Nur GET und POST, wie api/playtime.py.
+The answer names the state, epochs, the time of day of the end in the
+household time zone (H:MM, for the page and bot; child texts stay without a time of day)
+and per world whether the rules file arrived and whether the world was restarted,
+so that the pause reliably takes hold. Who paused is stored only in the
+database (T-04.1-15). GET and POST only, like api/playtime.py.
 """
 
 from __future__ import annotations
@@ -26,15 +26,15 @@ from gameworld.api.worlds import ServiceDep, refresh_snapshot
 from gameworld.playtime.pause import MSG_BAD_MINUTES, PauseResult, PauseService, clock_text
 from gameworld.provisioner.client import ProvisionerError
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-04.1-11). Jeder
-# Aufruf frischt den Verwalter-Schnappschuss auf (CR-01), erst nach der Sperre.
+# Every route is management: second lock next to the AppAPI route ADMIN (T-04.1-11). Every
+# call refreshes the manager snapshot (CR-01), only after the lock.
 router = APIRouter(prefix="/api/pause", dependencies=[Depends(require_verwalter), Depends(refresh_snapshot)])
 
 MSG_UNAVAILABLE = "Die Pause konnte gerade nicht gespeichert werden. Bitte gleich noch einmal versuchen."
 
 
 def _whole_number(value: object) -> object:
-    """Nur echte JSON-Ganzzahlen: 30.0, true oder "30" sind 422 (T-04.1-12)."""
+    """Only real JSON integers: 30.0, true or "30" are 422 (T-04.1-12)."""
     if type(value) is not int:
         raise ValueError(MSG_BAD_MINUTES)
     return value
@@ -63,7 +63,7 @@ class PauseOut(BaseModel):
 
 
 def get_pause_service(worlds: ServiceDep) -> PauseService:
-    """Je Anfrage gebaut; der Zustand liegt in der Datenbank des Welt-Dienstes."""
+    """Built per request; the state lives in the database of the world service."""
     return PauseService(worlds)
 
 

@@ -1,1 +1,1 @@
-"""HTTP-Router der ExApp."""
+"""HTTP routers of the ExApp."""

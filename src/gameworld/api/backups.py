@@ -1,18 +1,18 @@
-"""Verwalter-API für Sicherungen (BACKUP-01, D-07 bis D-09, D-12, D-13).
+"""Manager API for backups (BACKUP-01, D-07 to D-09, D-12, D-13).
 
-Nur Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (require_verwalter
-routerweit, T-05-20). Das handelnde Konto kommt ausschließlich aus der
-Abhängigkeit, nie aus dem Körper. Der Körper ist streng (T-05-21): nur
-``confirm_disconnect`` als echtes JSON-Bool, Zusatzfelder sind 422.
+Management only: second lock next to the AppAPI route ADMIN (require_verwalter
+router-wide, T-05-20). The acting account comes solely from the
+dependency, never from the body. The body is strict (T-05-21): only
+``confirm_disconnect`` as a real JSON bool, extra fields are 422.
 
-``POST /api/worlds/{id}/backups`` antwortet sofort 202 mit der Weltansicht
-(``backup_job`` running); der Ablauf läuft im Hintergrund, die Oberfläche
-fragt die Weltenliste ab. ``GET`` liefert nur Sicherungen in den eigenen Files
-mit eigenem Nachweis (D-13).
+``POST /api/worlds/{id}/backups`` answers 202 at once with the world view
+(``backup_job`` running); the flow runs in the background, the UI
+polls the world list. ``GET`` returns only backups in the own files
+with an own record (D-13).
 
-``POST /api/worlds/{id}/restore`` nimmt nur ``file_id`` (echte Ganzzahl),
-``confirm`` und ``confirm_disconnect``; ohne ``confirm`` 409, fremde oder
-unbekannte Sicherung 404 (BACKUP-02, D-04, D-13), sonst 202 mit Status
+``POST /api/worlds/{id}/restore`` takes only ``file_id`` (real integer),
+``confirm`` and ``confirm_disconnect``; without ``confirm`` 409, a foreign or
+unknown backup 404 (BACKUP-02, D-04, D-13), otherwise 202 with status
 ``restoring``.
 """
 
@@ -37,24 +37,24 @@ from gameworld.backup.service import (
 from gameworld.provisioner.client import ProvisionerError, WorldNotFoundError
 from gameworld.worlds.service import NOT_FOUND
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-05-20).
+# Every route is management: second lock next to the AppAPI route ADMIN (T-05-20).
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 
 class BackupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    # D-09: Spielen Kinder, trennt die Sicherung sie erst nach Bestätigung.
+    # D-09: if children are playing, the backup disconnects them only after confirmation.
     confirm_disconnect: bool = False
 
 
-# SQLite speichert Ganzzahlen mit 64 Bit; größere Werte wären ein Fehler 500 statt 422.
+# SQLite stores integers with 64 bits; larger values would be a 500 error instead of 422.
 MAX_FILE_ID = 2**63 - 1
 MSG_BAD_FILE_ID = "file_id muss eine positive ganze Zahl sein."
 
 
 def _whole_number(value: object) -> object:
-    """Nur echte JSON-Ganzzahlen: "7", 7.0 oder true sind 422 (Muster aus api/pause.py)."""
+    """Only real JSON integers: "7", 7.0 or true are 422 (pattern from api/pause.py)."""
     if type(value) is not int:
         raise ValueError(MSG_BAD_FILE_ID)
     return value
@@ -63,16 +63,16 @@ def _whole_number(value: object) -> object:
 class RestoreRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    # Nur die Datei-ID aus der eigenen Liste; Pfad und Konto kommen nie aus dem Körper (T-05-28).
+    # Only the file ID from the own list; path and account never come from the body (T-05-28).
     file_id: Annotated[int, BeforeValidator(_whole_number), Field(ge=1, le=MAX_FILE_ID)]
-    # D-04: Ohne ausdrückliche Bestätigung wird nichts wiederhergestellt (409).
+    # D-04: without explicit confirmation nothing is restored (409).
     confirm: bool = False
-    # D-09: Spielen Kinder, trennt das Wiederherstellen sie erst nach Bestätigung.
+    # D-09: if children are playing, restoring disconnects them only after confirmation.
     confirm_disconnect: bool = False
 
 
 class BackupOut(BaseModel):
-    """Eine gültige Sicherung; ohne Pfad, nur der Dateiname in den eigenen Files."""
+    """A valid backup; without a path, only the file name in the own files."""
 
     file_id: int
     name: str
@@ -123,9 +123,9 @@ async def start_restore(
     uid: VerwalterDep,
     language: LangDep,
 ) -> WorldOut:
-    """Eigene Sicherung dieser Welt wiederherstellen (BACKUP-02); 202, der Ablauf läuft im Hintergrund.
+    """Restore an own backup of this world (BACKUP-02); 202, the flow runs in the background.
 
-    Auch eine Welt, die sonst nur noch gelöscht werden kann, ist erlaubt (D-15).
+    Even a world that can otherwise only be deleted is allowed (D-15).
     """
     try:
         await backups.start_restore(
@@ -141,7 +141,7 @@ async def start_restore(
 
 
 async def _current(worlds: ServiceDep, world_id: str, language: str) -> WorldOut:
-    """Aktuelle Ansicht, damit backup_job und der Busy-Status sofort sichtbar sind."""
+    """Current view, so that backup_job and the busy status are visible immediately."""
     for view in await worlds.list_worlds():
         if view.id == world_id:
             return _out(view, language)

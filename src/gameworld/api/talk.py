@@ -1,7 +1,7 @@
-"""Talk-API für Verwalter: Stand der Räume, Nur-lesen-Schalter, Raum neu anlegen (TALK-01, D-17, D-19).
+"""Talk API for managers: state of the rooms, read-only switch, recreate room (TALK-01, D-17, D-19).
 
-Nur GET, POST und DELETE (kein PUT, wie api/playtime.py): "nur lesen" an ist
-POST, aus ist DELETE. Ohne Talk antwortet GET mit ``available: false``.
+GET, POST and DELETE only (no PUT, like api/playtime.py): "read-only" on is
+POST, off is DELETE. Without Talk, GET answers with ``available: false``.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from gameworld.talk.rooms import TalkUnavailableError
 from gameworld.talk.service import TalkWorldStatus, get_talk_service
 from gameworld.worlds.service import NOT_FOUND
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-04.1-28).
+# Every route is management: second lock next to the AppAPI route ADMIN (T-04.1-28).
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 MSG_NO_ROOM = "Diese Welt hat noch keinen Talk-Raum. Er entsteht beim nächsten Abgleich, sobald Talk bereit ist."
@@ -32,13 +32,13 @@ class TalkWorldOut(BaseModel):
     world_name: str
     has_room: bool
     read_only: bool
-    # Raum-Owner ist kein Verwalter mehr (D-27): er bleibt im Raum, die Weltseite zeigt einen Hinweis.
+    # Room owner is no longer a manager (D-27): he stays in the room, the world page shows a hint.
     owner_not_admin: bool
-    # Raum-Token für den Link "Talk-Raum öffnen" (nur Verwaltern sichtbar, T-04.1-42); None ohne Raum.
+    # Room token for the link "Open Talk room" (visible to managers only, T-04.1-42); None without a room.
     token: str | None
-    # Konto des früheren Verwalters, nur bei owner_not_admin; die Oberfläche gibt es nur als Text aus.
+    # Account of the former manager, only for owner_not_admin; the UI outputs it only as text.
     owner_display: str | None
-    # Alter Raum ohne Moderator (Sperrfall, D-16) für den occ-Hinweis; sonst None.
+    # Old room without a moderator (locked case, D-16) for the occ hint; otherwise None.
     orphaned_token: str | None
 
 
@@ -51,7 +51,7 @@ class TalkStatusOut(BaseModel):
 class TalkReadOnlyOut(BaseModel):
     world_id: str
     read_only: bool
-    # False: gemerkt, Talk übernimmt es spätestens beim nächsten Abgleich.
+    # False: noted, Talk picks it up at the next reconciliation at the latest.
     applied: bool
 
 
@@ -100,7 +100,7 @@ async def talk_read_only_off(world_id: WorldId, service: ServiceDep) -> TalkRead
 
 @router.post("/worlds/{world_id}/talk/recreate")
 async def talk_recreate(world_id: WorldId, service: ServiceDep, uid: VerwalterDep) -> TalkWorldOut:
-    """Raum neu anlegen (D-19); die Oberfläche fragt vorher nach, der alte Verlauf geht verloren."""
+    """Recreate the room (D-19); the UI asks beforehand, the old history is lost."""
     store = service.store
     if await anyio.to_thread.run_sync(store.get_world, world_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)

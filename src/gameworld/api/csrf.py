@@ -1,24 +1,24 @@
-"""Schutz der zustandsändernden Routen gegen Cross-Site-Anfragen (IN-08).
+"""Protection of state-changing routes against cross-site requests (IN-08).
 
-Im Dev-Stack belegt (22.10.2026, Nextcloud 34.0.3, AppAPI-Proxy): Der Proxy
-``/apps/app_api/proxy/gameworld/...`` ist ``#[NoCSRFRequired]``; ein POST nur
-mit dem Sitzungs-Cookie, ohne requesttoken und mit fremdem ``Origin`` erreicht
-den Handler (``POST /api/pause/end`` als admin: 200). Im Browser hält heute vor
-allem ``SameSite=Lax`` des Sitzungs-Cookies einen Angriff von einer fremden
-Seite ab; eine Seite derselben Site (anderer Host derselben Domain) oder ein
-älterer Browser wäre davon nicht gedeckt.
+Proven on the dev stack (22.10.2026, Nextcloud 34.0.3, AppAPI proxy): the proxy
+``/apps/app_api/proxy/gameworld/...`` is ``#[NoCSRFRequired]``; a POST with only
+the session cookie, without requesttoken and with a foreign ``Origin`` reaches
+the handler (``POST /api/pause/end`` as admin: 200). In the browser, today it is
+mainly ``SameSite=Lax`` of the session cookie that holds off an attack from a foreign
+site; a page of the same site (another host of the same domain) or an
+older browser would not be covered by it.
 
-Darum verlangt Gameworld selbst für jede Anfrage mit Nutzer, die etwas ändert
+Therefore Gameworld itself demands for every request with a user that changes something
 (POST, PUT, PATCH, DELETE):
 
-- ``Content-Type: application/json``: Ein HTML-Formular kann das nicht senden,
-  ``fetch`` von einer fremden Seite nur nach einer CORS-Vorabfrage, die der Proxy
-  nicht beantwortet.
-- kein ``Sec-Fetch-Site: cross-site`` oder ``same-site``: Moderne Browser melden
-  so, dass die Anfrage nicht von der Nextcloud-Seite selbst kommt.
+- ``Content-Type: application/json``: an HTML form cannot send that,
+  ``fetch`` from a foreign page only after a CORS preflight, which the proxy
+  does not answer.
+- no ``Sec-Fetch-Site: cross-site`` or ``same-site``: modern browsers report
+  this way that the request does not come from the Nextcloud page itself.
 
-Anfragen ohne Nutzer (AppAPI selbst: ``/init``, ``/enabled``, Talk-Webhook) sind
-ausgenommen; sie tragen keine Sitzung eines Browsers.
+Requests without a user (AppAPI itself: ``/init``, ``/enabled``, Talk webhook) are
+exempt; they carry no browser session.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _media_type(value: str) -> str:
 
 
 def refusal(scope: Scope) -> str | None:
-    """Grund für die Ablehnung oder None; rein, damit die Regel ohne Server prüfbar ist."""
+    """Reason for the refusal or None; pure, so that the rule can be checked without a server."""
     if scope.get("type") != "http" or scope.get("method", "").upper() not in CHANGING_METHODS:
         return None
     if not scope.get("username"):
@@ -58,7 +58,7 @@ def refusal(scope: Scope) -> str | None:
 
 
 class JsonOnlyChangesMiddleware:
-    """Pure-ASGI-Middleware; muss innerhalb von AppAPIAuthMiddleware laufen (scope["username"])."""
+    """Pure ASGI middleware; must run inside AppAPIAuthMiddleware (scope["username"])."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

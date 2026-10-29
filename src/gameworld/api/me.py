@@ -1,17 +1,17 @@
-"""Routen für alle angemeldeten Konten: Selbstauskunft und eigene Welten.
+"""Routes for all signed-in accounts: self-lookup and own worlds.
 
-Keine Verwalter-Sperre: AppAPI-Routen ^/api/me$ und ^/api/my/.* stehen in
-info.xml auf USER. Jede Antwort enthält darum nur Daten des anfragenden
-Kontos; die UID kommt aus der signierten AppAPI-Anfrage, nie aus dem Browser
-(ROLLE-01, Pitfall 7).
+No manager lock: the AppAPI routes ^/api/me$ and ^/api/my/.* are set to USER
+in info.xml. Every answer therefore contains only data of the requesting
+account; the UID comes from the signed AppAPI request, never from the browser
+(ROLLE-01, pitfall 7).
 
-Seit 06-02 liefert /api/me für Verwalter auch nc_admin und invite_groups
-(eigene Gruppen plus Subadmin-Gruppen, der Einladungs-Umfang nach D-01); Spieler
-bekommen nc_admin false und eine leere Liste (kein Gruppen-Leck an Kinder).
+Since 06-02, /api/me also returns nc_admin and invite_groups for managers
+(own groups plus subadmin groups, the invitation scope per D-01); players
+get nc_admin false and an empty list (no group leak to children).
 
-Seit 04-07 auch die eigene Restzeit (/api/my/playtime) und je Welt der
-Fensterstatus: nur heutiger Rest, nächste Spielzeit und das aktuelle oder
-nächste Öffnungsfenster, nie Pläne, Verbrauchshistorie oder Werte anderer Kinder.
+Since 04-07 also the own remaining time (/api/my/playtime) and per world the
+window status: only today's remainder, next playtime and the current or
+next opening window, never plans, usage history or values of other children.
 """
 
 from __future__ import annotations
@@ -39,13 +39,13 @@ from gameworld.worlds.status import BACKING_UP, RESTORING
 
 router = APIRouter(prefix="/api")
 
-# AR-24 (T-03-39): Bei op_state "failed" ist status_text der gespeicherte
-# last_error und kann Docker-Interna tragen (Containername mit Instanz-ID,
-# Port). Die Kind-Ansicht bekommt stattdessen diesen festen Text; die
-# Verwalter-Ansicht (/api/worlds) behält last_error unverändert.
+# AR-24 (T-03-39): for op_state "failed", status_text is the stored
+# last_error and may carry Docker internals (container name with instance ID,
+# port). The child view gets this fixed text instead; the
+# manager view (/api/worlds) keeps last_error unchanged.
 TEXT_WELT_PROBLEM = "Diese Welt hat gerade ein Problem. Sag deinen Eltern Bescheid."
-# D-10: Während Sicherung oder Wiederherstellung sehen Kinder nur diesen festen
-# Text; Auftrag, Dateinamen und Fehlergründe bleiben in der Verwalter-Ansicht (T-05-17).
+# D-10: during backup or restore, children see only this fixed
+# text; job, file names and failure reasons stay in the manager view (T-05-17).
 TEXT_WELT_PAUSE = "Die Welt macht kurz Pause"
 _BUSY_STATUS = frozenset({BACKING_UP, RESTORING})
 
@@ -54,7 +54,7 @@ class MeOut(BaseModel):
     user_id: str
     display_name: str
     role: str
-    # Nur Komfort für die Oberfläche; die Sperre sitzt in require_nc_admin.
+    # Convenience for the UI only; the lock sits in require_nc_admin.
     nc_admin: bool = False
     invite_groups: list[str] = Field(default_factory=list[str])
     # Nextcloud account language (de, en or fr; fallback en), D-25.
@@ -62,32 +62,32 @@ class MeOut(BaseModel):
 
 
 class WindowOut(BaseModel):
-    """Ein Öffnungsfenster einer Welt: ISO-Wochentag, Minuten (Ende 1440 = Tagesende) und Tage ab heute."""
+    """One opening window of a world: ISO weekday, minutes (end 1440 = end of day) and days from today."""
 
     weekday: int = Field(ge=1, le=7)
     start: int = Field(ge=0, le=1439)
     end: int = Field(ge=1, le=1440)
-    # 0 = heute (auch beim offenen Fenster), 7 = gleicher Wochentag in einer Woche.
+    # 0 = today (also for the open window), 7 = same weekday in a week.
     days_ahead: int = Field(ge=0, le=7)
 
 
 class MyWorldOut(BaseModel):
-    """Eine eigene Welt mit Verbindungsdaten; bewusst ohne Spielerliste, Container oder RAM."""
+    """One own world with connection data; deliberately without player list, container or RAM."""
 
     id: str
     name: str
-    # running | starting | stopped | error | unknown (aus Docker), backing_up | restoring (Phase 5)
+    # running | starting | stopped | error | unknown (from Docker), backing_up | restoring (phase 5)
     status: str
     status_text: str
-    # Spieler-Adresse aus der Verwalter-Einstellung; None heißt: Hostname des Browsers.
+    # Player address from the manager setting; None means: hostname of the browser.
     host: str | None
     port: int
     player_name: str
-    # Nur das eigene Passwort, pro Anfrage aus dem Geheimnis abgeleitet.
+    # Only the own password, derived per request from the secret.
     password: str
-    # Zeitfenster der Welt (ZEIT-05): None = kein Fenster, sonst jetzt offen ja/nein.
+    # Time window of the world (ZEIT-05): None = no window, otherwise open now yes/no.
     window_open: bool | None = None
-    # Aktuelles (offen) oder nächstes Öffnungsfenster, nie der ganze Wochenplan.
+    # Current (open) or next opening window, never the whole weekly plan.
     window_next: WindowOut | None = None
 
 
@@ -98,18 +98,18 @@ class MyWorldsOut(BaseModel):
 class NextTimeOut(BaseModel):
     weekday: int = Field(ge=1, le=7)
     minute: int = Field(ge=0, le=1439)
-    # 0 = heute, 7 = gleicher Wochentag in einer Woche (für "heute" in der Anzeige).
+    # 0 = today, 7 = same weekday in a week (for "today" in the display).
     days_ahead: int = Field(ge=0, le=7)
 
 
 class MyPlaytimeOut(BaseModel):
-    """Nur heutiger Rest und nächste Spielzeit (T-04-39): keine Pläne, kein Verbrauch, keine Sitzungen."""
+    """Only today's remainder and next playtime (T-04-39): no plans, no usage, no sessions."""
 
     limited: bool
-    # ok | aufgebraucht | fenster | tag; None ohne Regeln
+    # ok | aufgebraucht | fenster | tag; None without rules
     state: str | None
     remaining_minutes: int | None
-    # Lokal, Minuten ab 00:00; None heißt Tagesende.
+    # Local, minutes from 00:00; None means end of day.
     until_minute: int | None
     next: NextTimeOut | None
 
@@ -178,8 +178,8 @@ async def my_worlds(
         view = views.get(entry.world_id)
         if view is None:
             continue
-        # Nur bei failed fließt last_error in status_text (worlds/status.py);
-        # dieser eine Pfad bekommt hier den festen Kindertext (AR-24).
+        # Only for failed does last_error flow into status_text (worlds/status.py);
+        # this one path gets the fixed child text here (AR-24).
         if view.op_state == "failed":
             status_text = TEXT_WELT_PROBLEM
         elif view.status in _BUSY_STATUS:
@@ -206,7 +206,7 @@ async def my_worlds(
 
 @router.get("/my/playtime")
 async def my_playtime(uid: UserDep, roles: RolesDep, playtime: TimeDep) -> MyPlaytimeOut:
-    """Eigene Restzeit heute; nur Anzeige, durchgesetzt wird allein im Welt-Mod (T-04-40)."""
+    """Own remaining time today; display only, enforced solely in the world mod (T-04-40)."""
     try:
         profile = await roles.profile(uid)
         verwalter = role_of(profile, await roles.verwalter_groups()) == ROLE_VERWALTER

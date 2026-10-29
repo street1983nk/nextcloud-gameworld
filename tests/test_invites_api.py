@@ -1,4 +1,4 @@
-"""Invites-API über ASGI: Rechte, Validierung, Fehlercodes und keine Lecks in Logs oder Fehlern."""
+"""Invites API via ASGI: rights, validation, error codes and no leaks in logs or errors."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from gameworld.worlds.store import WorldRow, WorldStore
 from tests.conftest import TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers, fake_lookup
 from tests.test_service_lifecycle import FakeProvisioner
 
-# Fester Zusatz neuer Spielerzeilen, damit die Passwörter hier vorab berechenbar sind.
+# Fixed salt of new player rows, so that the passwords here can be computed in advance.
 pytestmark = pytest.mark.usefixtures("fixed_salt")
 
 W1 = "aaaaaaaaaaa1"
@@ -186,11 +186,11 @@ async def test_nextcloud_or_secret_down_is_503(
 async def test_secret_change_with_busy_lock_hides_player_passwords(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_secret: StaticSecret
 ) -> None:
-    """AR-25 (wie WR-02): Neues Geheimnis bei belegter Sperre: 503 statt noch nicht gültiger Passwörter.
+    """AR-25 (like WR-02): new secret with a busy lock: 503 instead of not yet valid passwords.
 
-    Die Welten tragen noch die alten Verifier; ein Passwort aus dem neuen
-    Geheimnis liefe in die Fehlversuch-Sperre des Welt-Mods. Nach Freigabe
-    der Sperre provisioniert der nächste Abruf neu und zeigt das gültige.
+    The worlds still carry the old verifiers; a password from the new
+    secret would run into the failed-attempt lock of the world mod. After the lock
+    is released, the next call provisions anew and shows the valid one.
     """
     del service
     from gameworld.access.secret import fingerprint
@@ -205,15 +205,15 @@ async def test_secret_change_with_busy_lock_hides_player_passwords(
     try:
         with anyio.fail_after(5):
             response = await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())
-        # Keine Passwörter, solange die Verifier nicht zum Geheimnis passen.
+        # No passwords as long as the verifiers do not match the secret.
         assert response.status_code == 503
         assert new_password not in response.text
         assert PASSWORD not in response.text
-        # Nichts neu provisioniert: alter Fingerabdruck, alte Verifier.
+        # Nothing re-provisioned: old fingerprint, old verifiers.
         assert store.get_meta("secret_fingerprint") == fingerprint(TEST_SECRET)
     finally:
         lock.release()
-    # Sperre frei: Neuprovisionierung läuft, die Verwalteransicht zeigt das gültige Passwort.
+    # Lock free: re-provisioning runs, the manager view shows the valid password.
     response = await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())
     assert response.status_code == 200
     [player] = response.json()["players"]
@@ -236,14 +236,14 @@ async def test_nothing_secret_leaks_into_logs_or_errors(
     error_bodies: list[str] = []
     verifiers: set[str] = set()
 
-    # Erfolgspfade: Einladen, Auflisten, Entfernen, erneut Einladen.
+    # Success paths: invite, list, remove, invite again.
     assert (await _invite(client)).status_code == 200
     verifiers |= set(store.world_access(W1).values())
     assert (await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())).status_code == 200
     removed = await client.post(f"/api/worlds/{W1}/invites/remove", json=INVITE, headers=appapi_headers())
     assert removed.status_code == 200
 
-    # Fehlerpfade.
+    # Error paths.
     for target in ("fremd", "gw-aus"):
         response = await _invite(client, {"kind": "user", "target": target})
         assert response.status_code == 422
@@ -272,16 +272,16 @@ async def test_nothing_secret_leaks_into_logs_or_errors(
 
     assert verifiers
     forbidden = [PASSWORD, TEST_SECRET.hex(), repr(TEST_SECRET), *verifiers]
-    # Auch Teile des Verifiers (Salz, v) dürfen nicht auftauchen.
+    # Parts of the verifier (salt, v) must not show up either.
     forbidden += [part for verifier in verifiers for part in verifier.split("#") if len(part) > 8]
     for needle in forbidden:
         assert needle not in caplog.text
         for body in error_bodies:
             assert needle not in body
-    assert caplog.records, "Ohne Log-Einträge wäre der Test wertlos"
+    assert caplog.records, "Without log entries the test would be worthless"
 
 
-# 03-04: Gruppen, Passwort neu, Umbenennen, Abgleich beim Verwalter-Besuch
+# 03-04: groups, new password, rename, reconciliation on a manager visit
 
 
 async def test_admin_invites_group(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
@@ -423,7 +423,7 @@ async def test_world_list_survives_sync_failure(
     fake_secret.error = SecretUnavailableError("weg")
     response = await client.get("/api/worlds", headers=appapi_headers())
     assert response.status_code == 200
-    assert "Abgleich" in caplog.text
+    assert "Invitation reconciliation" in caplog.text
 
 
 async def test_rotation_rename_and_groups_leak_nothing(
@@ -442,7 +442,7 @@ async def test_rotation_rename_and_groups_leak_nothing(
     verifiers: set[str] = set()
     fake_directory.users["gw-mia"] = ("Mia", True)
 
-    # Erfolgspfade: Gruppe, direkt, Passwort neu (zweimal), Umbenennen, Abgleich.
+    # Success paths: group, direct, new password (twice), rename, reconciliation.
     assert (await _invite(client, GROUP)).status_code == 200
     assert (await _invite(client, {"kind": "user", "target": "gw-mia"})).status_code == 200
     verifiers |= set(store.world_access(W1).values())
@@ -454,7 +454,7 @@ async def test_rotation_rename_and_groups_leak_nothing(
     verifiers |= set(store.world_access(W1).values())
     assert (await client.get("/api/worlds", headers=appapi_headers())).status_code == 200
 
-    # Fehlerpfade mit Body.
+    # Error paths with body.
     for path, body, code in [
         ("/api/players/name", {"nc_user": "gw-kind", "player_name": "mia"}, 409),
         ("/api/players/name", {"nc_user": "gw-kind", "player_name": "singleplayer"}, 422),
@@ -492,22 +492,22 @@ async def test_rotation_rename_and_groups_leak_nothing(
     passwords = [PASSWORD, PASSWORD_1, PASSWORD_2, derive_password(TEST_SECRET, "gw-kind", 3, TEST_SALT)]
     passwords.append(derive_password(TEST_SECRET, "gw-mia", 0, TEST_SALT))
     forbidden = [*passwords, TEST_SECRET.hex(), repr(TEST_SECRET), *verifiers]
-    # Auch Teile der Verifier (Salz, v) dürfen nicht auftauchen.
+    # Parts of the verifiers (salt, v) must not show up either.
     forbidden += [part for verifier in verifiers for part in verifier.split("#") if len(part) > 8]
     assert len(verifiers) >= 4
     for needle in forbidden:
         assert needle not in caplog.text
         for body in error_bodies:
             assert needle not in body
-    assert caplog.records, "Ohne Log-Einträge wäre der Test wertlos"
+    assert caplog.records, "Without log entries the test would be worthless"
 
 
-# Gruppen-Verwalter über die API (06-02, D-01). Gegenprobe roh per sqlite3.
+# Group managers via the API (06-02, D-01). Cross-check raw via sqlite3.
 
 
 @pytest.fixture
 def teachers(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """lehrkraefte ist Verwalter-Gruppe; gw-lehrer verwaltet damit, ohne NC-Admin zu sein."""
+    """lehrkraefte is a manager group; gw-lehrer manages with it without being an NC admin."""
     del app_env
     from gameworld.access import roles
 
@@ -561,7 +561,7 @@ async def test_teacher_invites_own_class_member(
 async def test_teacher_world_list_sync_removes_nothing(
     client: httpx.AsyncClient, service: WorldService, fake_directory: FakeDirectory, app_env: Path
 ) -> None:
-    """Dashboard als Lehrer: Nextcloud antwortet auf jedes Einzelkonto mit 404, kein Zugang fällt weg."""
+    """Dashboard as teacher: Nextcloud answers every single account with 404, no access is lost."""
     del service
     assert (await _invite(client, {"kind": "user", "target": "gw-kind-out"})).status_code == 200
     assert (await _invite(client, {"kind": "group", "target": "klasse"})).status_code == 200
@@ -572,14 +572,14 @@ async def test_teacher_world_list_sync_removes_nothing(
     fake_directory.users.clear()
     response = await client.get("/api/worlds", headers=appapi_headers("gw-lehrer"))
     assert response.status_code == 200
-    assert access_service.SYNC_STATE.last is not None  # der Abgleich lief wirklich
+    assert access_service.SYNC_STATE.last is not None  # the reconciliation really ran
     assert _raw_rows(app_env) == before
 
 
 async def test_actor_lookup_failure_is_503(
     client: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Rolle aus dem Cache, Profil danach nicht lesbar: 503 statt Einladung ohne Umfang."""
+    """Role from the cache, profile unreadable afterwards: 503 instead of an invitation without scope."""
     del service
     from gameworld.access import roles
     from gameworld.access.roles import RoleService, RoleUnavailableError

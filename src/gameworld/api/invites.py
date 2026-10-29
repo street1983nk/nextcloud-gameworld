@@ -1,11 +1,11 @@
-"""Einladungen und Spieler (Verwaltung, ZUGANG-02, ROLLE-02).
+"""Invitations and players (management, ZUGANG-02, ROLLE-02).
 
-Der Browser liefert nur Konto- und Gruppen-IDs; das Backend lädt nur ein, was
-Nextcloud dem Verwalter als vorhandenes, aktives Konto oder als Gruppe
-bestätigt. Entfernen läuft als POST mit Body, weil Konto- und Gruppen-IDs
-Sonderzeichen enthalten dürfen. Passwort neu und Umbenennen gelten für alle
-Welten eines Kontos (A2). Der Erwachsen-Schalter (ROLLE-04) liegt bewusst hier
-im Verwalter-Router: Nur Verwalter setzen ihn (D-06), nie ein Kind über /api/my/.
+The browser supplies only account and group IDs; the backend invites only what
+Nextcloud confirms to the manager as an existing, active account or as a group.
+Removal runs as POST with a body, because account and group IDs
+may contain special characters. New password and rename apply to all
+worlds of an account (A2). The adult switch (ROLLE-04) deliberately lives here
+in the manager router: only managers set it (D-06), never a child via /api/my/.
 """
 
 from __future__ import annotations
@@ -46,26 +46,26 @@ from gameworld.worlds.store import WorldStore
 
 LOG = logging.getLogger(__name__)
 
-# Jede Route ist Verwaltung: routerweite Sperre require_verwalter (T-03-22, ROLLE-03).
+# Every route is management: router-wide lock require_verwalter (T-03-22, ROLLE-03).
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
 MSG_INVALID_TARGET = "Ungültige Konto- oder Gruppen-ID."
 MSG_INVALID_HOST = "Bitte nur einen Rechnernamen oder eine IP-Adresse eintragen, ohne http:// und ohne Port."
-# Spieler-Adresse (Pattern 7): leer heißt Hostname des Browsers.
+# Player address (pattern 7): empty means hostname of the browser.
 JOIN_HOST_KEY = "join_host"
 _HOST_LABEL = re.compile(r"[A-Za-z0-9-]{1,63}")
 
 
 def _clean_target(value: str) -> str:
-    """Keine leeren Werte, keine Steuer- oder Formatzeichen (T-03-18)."""
+    """No empty values, no control or format characters (T-03-18)."""
     if not value.strip() or any(unicodedata.category(char) in {"Cc", "Cf"} for char in value):
         raise ValueError(MSG_INVALID_TARGET)
     return value
 
 
 def _clean_host(value: str) -> str:
-    """Spieler-Adresse: leer, Hostname oder IP-Literal; kein Schema, Pfad, Port (T-03-42)."""
+    """Player address: empty, hostname or IP literal; no scheme, path, port (T-03-42)."""
     if not value:
         return value
     if len(value) > 253 or any(unicodedata.category(char) in {"Cc", "Cf"} for char in value):
@@ -78,7 +78,7 @@ def _clean_host(value: str) -> str:
         address = None
     if address is not None:
         return value
-    # Ein Doppelpunkt ist nur in IPv6-Literalen erlaubt (oben schon angenommen).
+    # A colon is only allowed in IPv6 literals (already accepted above).
     if ":" in value:
         raise ValueError(MSG_INVALID_HOST)
     for label in value.split("."):
@@ -111,12 +111,12 @@ class PlayerRef(BaseModel):
 
 
 class RenameRequest(PlayerRef):
-    # Die Luanti-Regel prüft der Dienst (validate_player_name, 422 mit deutscher Meldung).
+    # The service checks the Luanti rule (validate_player_name, 422 with a message in German source text).
     player_name: Annotated[str, Field(max_length=20)]
 
 
 class AdultIn(PlayerRef):
-    """Erwachsen-Schalter eines Kontos (ROLLE-04); extra="forbid" wie PlayerRef."""
+    """Adult switch of an account (ROLLE-04); extra="forbid" like PlayerRef."""
 
     adult: bool
 
@@ -124,7 +124,7 @@ class AdultIn(PlayerRef):
 class AdultOut(BaseModel):
     nc_user: str
     adult: bool
-    # Tragen alle Welten des Kontos die neue Regeldatei schon?
+    # Do all worlds of the account already carry the new rules file?
     applied: bool
 
 
@@ -134,14 +134,14 @@ class PlayerOut(BaseModel):
     player_name: str
     password: str
     via: str
-    # Erwachsen-Schalter, Verwalter-Konto, Spielzeitregeln (Chips der Spielerliste, 06-05).
+    # Adult switch, manager account, playtime rules (chips of the player list, 06-05).
     adult: bool = False
     verwalter: bool = False
     has_rules: bool = False
 
 
 class PlayerChangeOut(BaseModel):
-    """Spieler nach Passwort neu oder Umbenennen; applied: in allen Welten schon wirksam."""
+    """Player after new password or rename; applied: already effective in all worlds."""
 
     nc_user: str
     display_name: str
@@ -160,7 +160,7 @@ class InviteOut(BaseModel):
 class PlayersOut(BaseModel):
     players: list[PlayerOut]
     invites: list[InviteOut]
-    # Nur bei Änderungen: Liegt die neue Zugangsdatei schon in der Welt?
+    # Only on changes: is the new access file already in the world?
     applied: bool | None = None
 
 
@@ -169,7 +169,7 @@ def get_access_service(
     directory: Annotated[Directory, Depends(get_directory)],
     secret: Annotated[PlayerSecret, Depends(get_player_secret)],
 ) -> AccessService:
-    """Zustandslos bis auf die Singletons dahinter; je Anfrage gebaut."""
+    """Stateless apart from the singletons behind it; built per request."""
     return AccessService(worlds.store, worlds, directory, secret)
 
 
@@ -180,7 +180,7 @@ def get_time_service(
     worlds: ServiceDep,
     directory: Annotated[Directory, Depends(get_directory)],
 ) -> TimeService:
-    """Wie api.playtime.get_time_service (dort nicht importierbar: api.playtime importiert dieses Modul)."""
+    """Like api.playtime.get_time_service (cannot be imported there: api.playtime imports this module)."""
     return TimeService(worlds, directory)
 
 
@@ -188,7 +188,7 @@ TimeDep = Annotated[TimeService, Depends(get_time_service)]
 
 
 def _player_flags(store: WorldStore) -> tuple[set[str], frozenset[str], set[str]]:
-    """Erwachsene, Verwalter-Vereinigung und Konten mit Regeln aus dem Store (Worker-Thread)."""
+    """Adults, manager union and accounts with rules from the store (worker thread)."""
     return store.adults(), parse_admins(store.get_meta(META_TIME_ADMINS)), set(store.child_plans())
 
 
@@ -221,7 +221,7 @@ async def _players(
 
 
 def _http_error(exc: Exception) -> HTTPException:
-    """Feste deutsche Meldungen; nie Ausnahmetexte mit Daten aus Nextcloud."""
+    """Fixed German messages; never exception texts with data from Nextcloud."""
     if isinstance(exc, WorldNotFoundError):
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     if isinstance(exc, PlayerNotFoundError):
@@ -229,10 +229,10 @@ def _http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, PlayerNameTakenError):
         return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, InviteScopeError):
-        # Nur die festen Texte MSG_*_OUT_OF_SCOPE (D-01), nie Nextcloud-Daten.
+        # Only the fixed texts MSG_*_OUT_OF_SCOPE (D-01), never Nextcloud data.
         return HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
     if isinstance(exc, (InviteTargetError, ValueError)):
-        # Nur eigene, feste Meldungen (MSG_UNKNOWN_*, MSG_INVALID_NAME).
+        # Only own, fixed messages (MSG_UNKNOWN_*, MSG_INVALID_NAME).
         return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE)
 
@@ -244,13 +244,13 @@ _ERRORS = (
     DirectoryUnavailableError,
     SecretUnavailableError,
 )
-# Passwort neu und Umbenennen: dazu Spieler fehlt, Name vergeben, Name ungültig.
+# New password and rename: in addition player missing, name taken, name invalid.
 _PLAYER_ERRORS = (*_ERRORS, PlayerNotFoundError, PlayerNameTakenError, ValueError)
 VerwalterDep = Annotated[str, Depends(require_verwalter)]
 
 
 async def current_actor(uid: VerwalterDep, roles: RolesDep) -> Actor:
-    """Handelnder Verwalter aus seiner Selbstauskunft (Gruppen, Subadmin-Gruppen, D-01)."""
+    """Acting manager from his self-lookup (groups, subadmin groups, D-01)."""
     try:
         profile = await roles.profile(uid)
     except RoleUnavailableError:
@@ -280,7 +280,7 @@ async def invite(
             result = await access.invite_user(world_id, actor, body.target)
     except _ERRORS as exc:
         raise _http_error(exc) from None
-    # Talk-Raum folgt world_access (D-16), best effort und nie blockierend (D-20).
+    # Talk room follows world_access (D-16), best effort and never blocking (D-20).
     _talk_hook(lambda: get_talk_service(service.store).schedule_sync(world_id))
     try:
         return await _players(access, service.store, world_id, actor, result)
@@ -304,11 +304,11 @@ async def remove_invite(
 
 
 def _talk_hook(start: Callable[[], None]) -> None:
-    """Startet den Talk-Abgleich als verfolgten Task; ein Fehler dabei erreicht die Route nie (D-20)."""
+    """Starts the Talk reconciliation as a tracked task; an error there never reaches the route (D-20)."""
     try:
         start()
     except Exception as exc:
-        LOG.warning("Talk-Abgleich nicht gestartet: %s", type(exc).__name__)
+        LOG.warning("Talk reconciliation not started: %s", type(exc).__name__)
 
 
 def _change_out(change: PlayerChange) -> PlayerChangeOut:
@@ -323,7 +323,7 @@ def _change_out(change: PlayerChange) -> PlayerChangeOut:
 
 @router.post("/players/password")
 async def reset_password(body: PlayerRef, access: AccessDep, uid: VerwalterDep) -> PlayerChangeOut:
-    """Passwort neu (T-03-29): Das alte gilt sofort nicht mehr, in allen Welten, ohne Neustart."""
+    """New password (T-03-29): the old one stops working at once, in all worlds, without restart."""
     try:
         return _change_out(await access.rotate_password(uid, body.nc_user))
     except _PLAYER_ERRORS as exc:
@@ -332,7 +332,7 @@ async def reset_password(body: PlayerRef, access: AccessDep, uid: VerwalterDep) 
 
 @router.post("/players/adult")
 async def set_adult(body: AdultIn, playtime: TimeDep, uid: VerwalterDep) -> AdultOut:
-    """Erwachsen-Schalter (ROLLE-04): wirkt sofort in allen Welten des Kontos, nur auf die Zeitregeln."""
+    """Adult switch (ROLLE-04): takes effect immediately in all worlds of the account, on the time rules only."""
     try:
         applied = await playtime.set_adult(uid, body.nc_user, adult=body.adult)
     except ValueError as exc:

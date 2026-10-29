@@ -1,25 +1,25 @@
-"""Verwalter-API für Spielzeit-Regeln je Kind, Ferien, Zeitzone und Welt-Fenster (ZEIT-01, ZEIT-03..05).
+"""Manager API for playtime rules per child, holidays, time zone and world windows (ZEIT-01, ZEIT-03..05).
 
-Nur Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (require_verwalter
-routerweit, T-04-15, T-04-24). Der Körper eines Kindes trägt den Wochenplan
-"normal" (genau 7 Wochentage) und optional den Ferienplan "holiday" (null heißt:
-in den Ferien gilt der Normalplan). Ein Tag mit Limit und ohne Fenster bildet
-"maximal 2 Stunden" ab, mit Fenster "nur bis 19 Uhr".
+Management only: second lock next to the AppAPI route ADMIN (require_verwalter
+router-wide, T-04-15, T-04-24). The body of a child carries the weekly plan
+"normal" (exactly 7 weekdays) and optionally the holiday plan "holiday" (null means:
+during holidays the normal plan applies). A day with a limit and without a window represents
+"at most 2 hours", with a window "only until 7 pm".
 
-Ferienzeiträume gelten für den ganzen Haushalt (O-08): ISO-Datum, von <= bis,
-höchstens 366 Tage, Bezeichnung höchstens 60 Zeichen ohne Steuerzeichen,
-höchstens 50 Zeiträume (T-04-23). Die Zeitzone hat eine eigene Route, damit der
-Vertrag von /api/settings unverändert bleibt; angenommen werden nur Namen aus
-zoneinfo.available_timezones() (nie ein Pfad, T-04-22).
+Holiday periods apply to the whole household (O-08): ISO date, from <= to,
+at most 366 days, label at most 60 characters without control characters,
+at most 50 periods (T-04-23). The time zone has its own route, so that the
+contract of /api/settings stays unchanged; only names from
+zoneinfo.available_timezones() are accepted (never a path, T-04-22).
 
-Das Zeitfenster einer Welt (ZEIT-05) kommt als genau sieben Wochentage mit
-"open" und Fenster in Minuten; ein geschlossener Tag hat kein Fenster. Die Welt
-läuft weiter (O-05): Nur Kinder werden außerhalb abgewiesen bzw. am Fensterende
-getrennt, Verwalter sind freigestellt (A4).
+The time window of a world (ZEIT-05) arrives as exactly seven weekdays with
+"open" and window in minutes; a closed day has no window. The world
+keeps running (O-05): only children are turned away outside it or disconnected
+at the end of the window, managers are exempt (A4).
 
-Setzen läuft über POST, Entfernen über DELETE (info.xml ^/api/.* ADMIN deckt GET,
-POST, DELETE; eine neue HTTP-Methode wird nicht eingeführt). Ungültige Eingaben
-weist schon das Pydantic-Modell bzw. die Plan-Validierung mit 422 ab (T-04-16).
+Setting runs via POST, removal via DELETE (info.xml ^/api/.* ADMIN covers GET,
+POST, DELETE; no new HTTP method is introduced). Invalid input
+is rejected with 422 already by the Pydantic model or the plan validation (T-04-16).
 """
 
 from __future__ import annotations
@@ -59,13 +59,13 @@ from gameworld.playtime.service import (
 from gameworld.provisioner.client import WorldNotFoundError
 from gameworld.worlds.service import NOT_FOUND
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN (T-04-15).
+# Every route is management: second lock next to the AppAPI route ADMIN (T-04-15).
 router = APIRouter(prefix="/api/playtime", dependencies=[Depends(require_verwalter)])
 
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
-# Ohne Zusatz (Token "-") steht in der Antwort null.
+# Without a hint (token "-") the answer has null.
 _NO_HINT = "-"
-# Einmal beim Import: die gültigen IANA-Namen (tzdata). Alles andere ist 422 (T-04-22).
+# Once at import: the valid IANA names (tzdata). Anything else is 422 (T-04-22).
 _TIME_ZONES = frozenset(available_timezones())
 MAX_HOLIDAY_DAYS = 366
 MAX_LABEL_LENGTH = 60
@@ -82,14 +82,14 @@ MSG_OPEN_DAY_NEEDS_TIMES = "Ein offener Tag braucht Anfang und Ende des Zeitfens
 
 
 def _printable_label(value: str) -> str:
-    """Bezeichnung ohne Steuerzeichen und Zeilenumbrüche (T-04-23)."""
+    """Label without control characters and line breaks (T-04-23)."""
     if not value.isprintable():
         raise ValueError(MSG_PLAYTIME_LABEL_CONTROL)
     return value.strip()
 
 
 def _known_zone(value: str) -> str:
-    """Nur IANA-Namen aus available_timezones(), nie ein Pfad (T-04-22)."""
+    """Only IANA names from available_timezones(), never a path (T-04-22)."""
     if value not in _TIME_ZONES:
         raise ValueError(MSG_PLAYTIME_UNKNOWN_ZONE)
     return value
@@ -100,7 +100,7 @@ class DayIn(BaseModel):
 
     weekday: int = Field(ge=1, le=7)
     allowed: bool
-    # Bereiche prüft die Plan-Validierung (DayRule): Limit 1..1440, Fenster 0..1439 bzw. 1..1440.
+    # Ranges are checked by the plan validation (DayRule): limit 1..1440, window 0..1439 or 1..1440.
     limit_minutes: int | None = None
     window_start: int | None = None
     window_end: int | None = None
@@ -109,9 +109,9 @@ class DayIn(BaseModel):
 class ChildPlanIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Genau die sieben Wochentage; Dubletten und fehlende Tage weist WeekPlan mit ValueError ab.
+    # Exactly the seven weekdays; duplicates and missing days are rejected by WeekPlan with ValueError.
     normal: list[DayIn]
-    # Ferienplan, gleiche Prüfung; null heißt: in den Ferien gilt der Normalplan.
+    # Holiday plan, same check; null means: during holidays the normal plan applies.
     holiday: list[DayIn] | None = None
 
 
@@ -119,7 +119,7 @@ class HolidayIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: Annotated[str, AfterValidator(_printable_label)] = Field(default="", max_length=MAX_LABEL_LENGTH)
-    # ISO JJJJ-MM-TT; ein ungültiges Datum (etwa 2026-02-30) weist Pydantic ab.
+    # ISO YYYY-MM-DD; an invalid date (e.g. 2026-02-30) is rejected by Pydantic.
     start_date: date
     end_date: date
 
@@ -143,7 +143,7 @@ class WindowDayIn(BaseModel):
 
     weekday: int = Field(ge=1, le=7)
     open: bool
-    # Bereiche prüft check_world_window (wie DayRule): Anfang 0..1439, Ende 1..1440, Anfang vor Ende.
+    # Ranges are checked by check_world_window (like DayRule): start 0..1439, end 1..1440, start before end.
     window_start: int | None = None
     window_end: int | None = None
 
@@ -191,9 +191,9 @@ class ChildOut(BaseModel):
     holiday: list[DayOut] | None
     used_today_s: int
     state: StateOut | None
-    # Erwachsen-Schalter (ROLLE-04): Plan ruht, Konto spielt ohne Regeln.
+    # Adult switch (ROLLE-04): plan rests, the account plays without rules.
     adult: bool = False
-    # Nur bei POST/DELETE gesetzt: Tragen die Welten die Regeln schon?
+    # Set only on POST/DELETE: do the worlds already carry the rules?
     applied: bool | None = None
 
 
@@ -203,7 +203,7 @@ class HolidayOut(BaseModel):
     start_date: date
     end_date: date
     active: bool
-    # Nur bei POST/DELETE gesetzt: Tragen alle Welten den neuen Stand schon?
+    # Set only on POST/DELETE: do all worlds already carry the new state?
     applied: bool | None = None
 
 
@@ -222,7 +222,7 @@ def get_time_service(
     worlds: ServiceDep,
     directory: Annotated[Directory, Depends(get_directory)],
 ) -> TimeService:
-    """Je Anfrage gebaut, wie get_access_service; Zustand liegt in Store und Welt-Dienst."""
+    """Built per request, like get_access_service; state lives in store and world service."""
     return TimeService(worlds, directory)
 
 
@@ -232,8 +232,8 @@ NcUser = Annotated[str, Path(max_length=64)]
 
 
 def _to_week(days: list[DayIn]) -> WeekPlan:
-    """Tage in einen WeekPlan; jede ungültige Regel wirft ValueError (422)."""
-    # Das dict unten schluckte Dubletten (der letzte Eintrag gewänne), daher jeder Tag nur einmal (AR-4-07).
+    """Days into a WeekPlan; any invalid rule raises ValueError (422)."""
+    # The dict below swallowed duplicates (the last entry would win), hence each day only once (AR-4-07).
     if len(days) != len({day.weekday for day in days}):
         raise ValueError(MSG_WEEKDAY_TWICE)
     return WeekPlan(
@@ -242,7 +242,7 @@ def _to_week(days: list[DayIn]) -> WeekPlan:
 
 
 def _to_windows(days: list[WindowDayIn]) -> dict[int, tuple[int, int]]:
-    """Offene Tage auf ihr Fenster; jede ungültige Angabe wirft ValueError (422)."""
+    """Open days onto their window; any invalid entry raises ValueError (422)."""
     windows: dict[int, tuple[int, int]] = {}
     for day in days:
         if not day.open:

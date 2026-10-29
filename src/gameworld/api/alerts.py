@@ -1,16 +1,16 @@
-"""Verwalter-API für die Handy-Seiten hinter den Benachrichtigungen (ELTERN-02, ELTERN-03).
+"""Manager API for the phone pages behind the notifications (ELTERN-02, ELTERN-03).
 
-- ``GET /api/attempts?day=&world=``: Fremdversuche eines Tages (Seite versuch, D-09)
-- ``GET /api/review?day=``: Minuten je Kind und Welt (Seite rueckblick, D-13)
-- ``GET``/``POST /api/review/prefs``: Rückblick an/aus und Uhrzeit, je Verwalter (D-12, D-15)
-- ``POST /api/origin``: Basis-URL der Links aus dem Browser (Pattern 9, T-04.1-19); die
-  erste wird gespeichert, ein Wechsel nur mit ``confirm`` (WR-04)
+- ``GET /api/attempts?day=&world=``: foreign attempts of a day (page versuch, D-09)
+- ``GET /api/review?day=``: minutes per child and world (page rueckblick, D-13)
+- ``GET``/``POST /api/review/prefs``: review on/off and time of day, per manager (D-12, D-15)
+- ``POST /api/origin``: base URL of the links from the browser (pattern 9, T-04.1-19); the
+  first one is stored, a change only with ``confirm`` (WR-04)
 
-Alles nur für Verwalter (require_verwalter routerweit, T-04.1-18). ``day`` ist
-ein Datum, ``world`` eine Welt-ID; Deep-Link-Parameter wirken nur als Filter
-(T-04.1-22). Fehlt ``day``, gilt der heutige Tag der Haushalts-Zeitzone; die
-Antwort nennt ihn als ``today`` (IN-04). Verwalter erscheinen im Rückblick
-nicht. Nur GET und POST.
+For managers only (require_verwalter router-wide, T-04.1-18). ``day`` is
+a date, ``world`` a world ID; deep link parameters act only as filters
+(T-04.1-22). If ``day`` is missing, today of the household time zone applies; the
+answer names it as ``today`` (IN-04). Managers do not appear in the
+review. Only GET and POST.
 """
 
 from __future__ import annotations
@@ -36,16 +36,16 @@ from gameworld.playtime.pause import clock_text
 from gameworld.playtime.plan import local_day
 from gameworld.worlds.service import WorldService
 
-# Jede Route ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN. Jeder Aufruf
-# frischt den Verwalter-Schnappschuss auf (CR-01), erst nach der Sperre.
+# Every route is management: second lock next to the AppAPI route ADMIN. Every call
+# refreshes the manager snapshot (CR-01), only after the lock.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter), Depends(refresh_snapshot)])
 
-# Spielzeit einer heute gelöschten Welt bleibt im Rückblick (Abnahme 04.1-09).
+# Playtime of a world deleted today stays in the review (acceptance 04.1-09).
 DELETED_WORLD = "gelöschte Welt"
 MSG_UNAVAILABLE = "Die Daten sind gerade nicht lesbar. Bitte gleich noch einmal versuchen."
 
 VerwalterDep = Annotated[str, Depends(require_verwalter)]
-# Ohne day gilt der heutige Tag der Haushalts-Zeitzone, nie die Uhr des Handys (IN-04).
+# Without day, today of the household time zone applies, never the clock of the phone (IN-04).
 DayQuery = Annotated[date | None, Query()]
 WorldQuery = Annotated[str | None, Query(pattern="^[0-9a-f]{12}$")]
 
@@ -60,7 +60,7 @@ class AttemptOut(BaseModel):
 
 class AttemptsOut(BaseModel):
     day: date
-    # Heutiger Tag der Haushalts-Zeitzone, damit die Seite "Heute" richtig benennt (IN-04).
+    # Today in the household time zone, so that the page names "today" correctly (IN-04).
     today: date
     attempts: list[AttemptOut]
 
@@ -93,7 +93,7 @@ class ReviewPrefs(BaseModel):
 
 
 class OriginIn(BaseModel):
-    """Origin und Webroot aus dem Browser des Verwalters; ``confirm`` nur nach der Rückfrage (WR-04)."""
+    """Origin and webroot from the manager's browser; ``confirm`` only after the confirmation prompt (WR-04)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -108,7 +108,7 @@ class OriginIn(BaseModel):
 
 
 class OriginOut(BaseModel):
-    """``origin``: danach gespeicherte Basis-URL (None: keine). ``confirm_needed``: Rückfrage zeigen."""
+    """``origin``: base URL stored afterwards (None: none). ``confirm_needed``: show the prompt."""
 
     origin: str | None
     proposed: str
@@ -121,7 +121,7 @@ def _unavailable() -> HTTPException:
 
 
 def _household_today(service: WorldService) -> date:
-    """Heutiger Tag in der Haushalts-Zeitzone (meta time_zone), nicht in der des Geräts."""
+    """Today in the household time zone (meta time_zone), not in that of the device."""
     return local_day(service.time.now(), service.time.zone())
 
 
@@ -158,7 +158,7 @@ def _review_sync(service: WorldService, day: date) -> tuple[dict[str, dict[str, 
     play = collect_play(store, day, admins)
     names = {row.id: row.name for row in store.list_worlds()}
     today = local_day(service.time.now(), service.time.zone())
-    # "Limit erreicht" kennt nur der heutige Tag (Auswertung mit der aktuellen Uhr).
+    # "Limit reached" is known only for today (evaluation with the current clock).
     reached = limits_reached(service, list(play)) if day == today else set()
     return play, names, reached
 
@@ -175,7 +175,7 @@ async def get_review(service: ServiceDep, uid: VerwalterDep, language: LangDep, 
     deleted_world = translate(DELETED_WORLD, language)
     kids: list[ReviewKidOut] = []
     for nc_user, worlds in sorted(play.items()):
-        # Alle heute gelöschten Welten zählen als eine Zeile "gelöschte Welt" (leere world_id).
+        # All worlds deleted today count as one row "deleted world" (empty world_id).
         merged: dict[str, int] = {}
         for world_id, seconds in worlds.items():
             key = world_id if world_id in names else ""
@@ -232,12 +232,12 @@ def _stored_origin(raw: str | None) -> str | None:
         return None
 
 
-# Wie oft ein gleichzeitiger Schreiber das Speichern wiederholen lässt (compare_and_set).
+# How often to retry saving when a concurrent writer interferes (compare_and_set).
 _ORIGIN_ATTEMPTS = 3
 
 
 def _save_origin_sync(service: WorldService, proposed: str, *, confirm: bool) -> OriginOut:
-    """Erste Adresse merken, Wechsel nur bestätigt, nie https durch http (decide_origin)."""
+    """Remember the first address, change only when confirmed, never https by http (decide_origin)."""
     store = service.store
     for _attempt in range(_ORIGIN_ATTEMPTS):
         raw = store.get_meta(META_LINK_ORIGIN)
@@ -252,11 +252,11 @@ def _save_origin_sync(service: WorldService, proposed: str, *, confirm: bool) ->
 
 @router.post("/origin")
 async def save_origin(body: OriginIn, service: ServiceDep) -> OriginOut:
-    """Basis-URL der Links: speichert nur die erste, eine abweichende nur mit ``confirm`` (WR-04).
+    """Base URL of the links: stores only the first, a differing one only with ``confirm`` (WR-04).
 
-    Die Bestätigung erzwingt der Server: Ohne ``confirm`` wird eine vorhandene
-    Adresse nie ersetzt, die Antwort sagt dann ``confirm_needed``. Eine
-    https-Adresse ersetzt nie eine http-Adresse, auch nicht bestätigt.
+    The server enforces the confirmation: without ``confirm`` an existing
+    address is never replaced, the answer then says ``confirm_needed``. An
+    https address never replaces an http address, not even when confirmed.
     """
     proposed = join_base(body.origin, body.webroot)
     try:

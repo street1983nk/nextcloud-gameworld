@@ -1,6 +1,6 @@
-"""Setup-Check-API: meldet fehlenden, zu engen oder zu weiten Docker-Proxy.
+"""Setup check API: reports a missing, too narrow or too wide Docker proxy.
 
-Antwortet immer mit HTTP 200; das Ergebnis selbst sagt, ob Gameworld startklar ist.
+Always answers with HTTP 200; the result itself says whether Gameworld is ready to start.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from gameworld.config import load_settings
 from gameworld.i18n import translate
 from gameworld.provisioner.setup_check import run_setup_check
 
-# Jede Route dieses Routers ist Verwaltung: zweite Sperre neben AppAPI-Route ADMIN.
+# Every route of this router is management: second lock next to the AppAPI route ADMIN.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_verwalter)])
 
 
@@ -39,7 +39,7 @@ async def setup_check(language: LangDep) -> SetupCheckOut:
     try:
         docker_url = load_settings().docker_url
     except ValueError as exc:
-        # Ungültige Umgebung (z. B. GAMEWORLD_PORT_RANGE) als Befund statt 500.
+        # Invalid environment (e.g. GAMEWORLD_PORT_RANGE) as a finding instead of 500.
         message = translate(str(exc), language)
         return SetupCheckOut(ok=False, items=[CheckItemOut(id="config", ok=False, severity="error", message=message)])
     result = await anyio.to_thread.run_sync(run_setup_check, docker_url)

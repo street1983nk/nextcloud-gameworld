@@ -1,17 +1,17 @@
-"""Admin-Abschnitt: Verwalter-Gruppen einstellen und Gruppen suchen (ROLLE-03, D-02).
+"""Admin section: set manager groups and search groups (ROLLE-03, D-02).
 
-Nur echte Nextcloud-Admins (Mitglieder der Gruppe admin). Die Sperre sitzt
-serverseitig am ganzen Router (``require_nc_admin``, fragt Nextcloud bei jedem
-Aufruf frisch); die Weiche in der Oberfläche ist nur Komfort. Die Gruppe admin
-verwaltet Gameworld immer, steht darum nie in der gespeicherten Liste und ist
-nicht entfernbar. Jede Änderung wirkt sofort: Der Rollen-Cache wird verworfen,
-und der Verwalter-Stand (frei-Zeilen, Benachrichtigungs-Empfänger,
-Talk-Moderatoren) wird ohne Drossel neu gelesen.
+Real Nextcloud admins only (members of the group admin). The lock sits
+server-side on the whole router (``require_nc_admin``, asks Nextcloud fresh on every
+call); the switch in the UI is only a convenience. The group admin
+always manages Gameworld, therefore is never in the stored list and
+cannot be removed. Every change takes effect immediately: the role cache is dropped,
+and the manager state (free rows, notification recipients,
+Talk moderators) is re-read without throttle.
 
-Dazu die Reste früherer oder fremder Installationen (06-08, ROADMAP Kriterium 3):
-Welt-Container anderer Gameworld-Instanzen und gameworld-Volumes ohne eigene
-Welt, nur lesend gelistet und einzeln entfernbar. Eigene Welten sind
-ausgeschlossen; Docker-Fehlertexte gehen nie an den Client (T-06-38).
+In addition the leftovers of earlier or foreign installations (06-08, ROADMAP criterion 3):
+world containers of other Gameworld instances and gameworld volumes without an own
+world, listed read-only and removable individually. Own worlds are
+excluded; Docker error texts never go to the client (T-06-38).
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ class GroupIn(BaseModel):
 
 
 class GroupsOut(BaseModel):
-    """Zusätzliche Verwalter-Gruppen, sortiert; admin steht nie darin (die Oberfläche stellt es fest voran)."""
+    """Additional manager groups, sorted; admin is never in it (the UI puts it first by default)."""
 
     groups: list[str]
 
@@ -119,11 +119,11 @@ class OrphanVolumeIn(BaseModel):
 
 
 def _owned_volumes(service: WorldService) -> set[str]:
-    """Volume-Namen aller eigenen Weltzeilen (auch gestoppter oder halb gelöschter Welten)."""
+    """Volume names of all own world rows (also of stopped or half-deleted worlds)."""
     instance = service.store.instance_id()
     owned: set[str] = set()
     for row in service.store.list_worlds():
-        # Beides: das Namensschema und der gespeicherte Name (doppelt hält besser).
+        # Both: the naming scheme and the stored name (belt and braces).
         owned.add(resource_name(instance, row.id))
         if row.volume_name:
             owned.add(row.volume_name)
@@ -138,14 +138,14 @@ def _orphans_out(orphans: Orphans) -> OrphansOut:
 
 
 def _orphan_http_error(exc: ProvisionerError) -> HTTPException:
-    """Feste deutsche Texte; ins Log nur der Typname (T-06-38)."""
+    """Fixed German texts; only the type name goes into the log (T-06-38)."""
     if isinstance(exc, OrphanRefusedError):
         return HTTPException(status.HTTP_409_CONFLICT, detail=MSG_ORPHAN_REFUSED)
     if isinstance(exc, OrphanInUseError):
         return HTTPException(status.HTTP_409_CONFLICT, detail=MSG_ORPHAN_IN_USE)
     if isinstance(exc, DockerUnavailableError):
         return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_DOCKER_UNAVAILABLE)
-    LOG.warning("Rest nicht entfernt: %s", type(exc).__name__)
+    LOG.warning("Leftover not removed: %s", type(exc).__name__)
     return HTTPException(status.HTTP_502_BAD_GATEWAY, detail=MSG_ORPHAN_FAILED)
 
 
@@ -166,9 +166,9 @@ def _extra_groups(raw: str | None) -> list[str]:
 
 
 async def _change(store: WorldStore, edit: set[str], *, add: bool) -> tuple[list[str], bool]:
-    """Liest, ändert und schreibt per compare_and_set_meta; ein Konflikt wird einmal neu versucht.
+    """Reads, changes and writes via compare_and_set_meta; a conflict is retried once.
 
-    Gibt die neue Liste und ob sich etwas geändert hat zurück; 409 nach zweitem Konflikt.
+    Returns the new list and whether anything changed; 409 after a second conflict.
     """
     for _attempt in range(2):
         raw = await anyio.to_thread.run_sync(store.get_meta, META_VERWALTER_GROUPS)
@@ -183,12 +183,12 @@ async def _change(store: WorldStore, edit: set[str], *, add: bool) -> tuple[list
 
 
 async def _follow(uid: str, roles: RolesDep, service: ServiceDep, directory: Directory) -> None:
-    """Wirkung sofort: Rollen-Cache weg, Verwalter-Stand ohne Drossel neu (best effort)."""
+    """Effect is immediate: role cache gone, manager state re-read without throttle (best effort)."""
     roles.invalidate()
     try:
         await TimeService(service, directory).refresh_admins(uid, force=True)
     except Exception as exc:
-        LOG.warning("Verwalter-Stand nach Gruppenänderung nicht aufgefrischt: %s", type(exc).__name__)
+        LOG.warning("Manager state not refreshed after group change: %s", type(exc).__name__)
 
 
 @router.get("/verwalter-groups")
@@ -211,7 +211,7 @@ async def add_verwalter_group(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=MSG_UNKNOWN_GROUP)
     groups, changed = await _change(service.store, {body.gid}, add=True)
     if changed:
-        LOG.info("Verwalter-Gruppe ergänzt")
+        LOG.info("Manager group added")
         await _follow(uid, roles, service, directory)
     return GroupsOut(groups=groups)
 
@@ -224,7 +224,7 @@ async def remove_verwalter_group(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=MSG_ADMIN_FIXED)
     groups, changed = await _change(service.store, {body.gid}, add=False)
     if changed:
-        LOG.info("Verwalter-Gruppe entfernt")
+        LOG.info("Manager group removed")
         await _follow(uid, roles, service, directory)
     return GroupsOut(groups=groups)
 
@@ -251,12 +251,12 @@ async def remove_orphan_container(body: OrphanContainerIn, service: ServiceDep) 
         await anyio.to_thread.run_sync(service.provisioner.remove_orphan_container, body.id)
     except ProvisionerError as exc:
         raise _orphan_http_error(exc) from None
-    LOG.info("Fremder Welt-Container entfernt")
+    LOG.info("Foreign world container removed")
     return await _current_orphans(service)
 
 
 def _remove_volume_sync(service: WorldService, name: str) -> None:
-    # Eigene Volumes frisch aus der Datenbank, im selben Thread direkt vor dem Entfernen.
+    # Own volumes fresh from the database, in the same thread right before removal.
     service.provisioner.remove_orphan_volume(name, _owned_volumes(service))
 
 
@@ -266,5 +266,5 @@ async def remove_orphan_volume(body: OrphanVolumeIn, service: ServiceDep) -> Orp
         await anyio.to_thread.run_sync(_remove_volume_sync, service, body.name)
     except ProvisionerError as exc:
         raise _orphan_http_error(exc) from None
-    LOG.info("Verwaistes Volume entfernt")
+    LOG.info("Orphaned volume removed")
     return await _current_orphans(service)
