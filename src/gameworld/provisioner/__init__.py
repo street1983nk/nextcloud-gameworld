@@ -1,1 +1,1 @@
-"""Einzige Stelle mit Docker-Zugriff: Spec, Konfiguration, Archiv und Client."""
+"""The only place with Docker access: spec, configuration, archive and client."""

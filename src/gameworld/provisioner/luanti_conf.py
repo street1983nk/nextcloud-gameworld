@@ -1,4 +1,4 @@
-"""minetest.conf und world.mt einer Welt (ZUGANG-01: privat per Default)."""
+"""minetest.conf and world.mt of a world (ZUGANG-01: private by default)."""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ _WHITESPACE = re.compile(r"\s+")
 
 
 def normalize_world_name(raw: str) -> str:
-    """Bringt einen Weltnamen auf eine sichere Zeile oder wirft ValueError.
+    """Bring a world name to a safe line or raise ValueError.
 
-    Steuerzeichen werden vor dem Zusammenfassen der Leerzeichen geprüft: ein
-    Zeilenumbruch im Rohwert ist ein Fehler, keine Normalisierung. Sonst könnte
-    ein Name mit Zeilenumbruch einen zweiten Key wie server_announce einschleusen.
+    Control characters are checked before the spaces are collapsed: a
+    line break in the raw value is an error, not a normalization. Otherwise
+    a name with a line break could smuggle in a second key like server_announce.
     """
     if any(unicodedata.category(char).startswith("C") for char in raw):
         raise ValueError(NAME_ERROR)
@@ -32,11 +32,11 @@ def normalize_world_name(raw: str) -> str:
 
 
 def render_minetest_conf(world_name: str, world_key: str, preset: Preset) -> str:
-    """Gehärtete Server-Konfiguration; Keys gegen Luanti 5.17.0 geprüft.
+    """Hardened server configuration; keys checked against Luanti 5.17.0.
 
-    Bewusst ohne ``name``: sonst bekäme ein Spieler automatisch alle Rechte.
-    Das Preset liefert genau eine default_privs-Zeile und hängt seine
-    fest kodierten Schalter ans Ende an; Basis-Keys setzt es nie.
+    Deliberately without ``name``: otherwise a player would automatically get all rights.
+    The preset supplies exactly one default_privs line and appends its
+    hard-coded switches at the end; it never sets base keys.
     """
     lines = [
         f"server_name = {world_name}",
@@ -61,7 +61,7 @@ def render_minetest_conf(world_name: str, world_key: str, preset: Preset) -> str
 
 
 def render_world_mt(preset: Preset) -> str:
-    """Welt-Metadaten mit dem Spiel des Presets und SQLite für alle Backends."""
+    """World metadata with the game of the preset and SQLite for all backends."""
     lines = [
         f"gameid = {preset.gameid}",
         "backend = sqlite3",

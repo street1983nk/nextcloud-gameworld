@@ -12,9 +12,10 @@ from gameworld import i18n
 from gameworld.provisioner import access_mod, archive, time_mod
 from gameworld.provisioner.access_mod import _lua_string  # pyright: ignore[reportPrivateUsage]
 
-# Measured on the base commit 83c0730 before the change (06-22 Task 1).
-GOLDEN_ACCESS_DE = "fc1e5327a9efc09f576a9acf7579a46b5b51f0822bc98aed86e03f55a5ae9c01"
-GOLDEN_TIME_DE = "5039a65470185799667ff9e3190048bd3bcbbb7fb73455221bba7f89ece259ad"
+# Re-pinned after D-26 comment translation (06-26): only Lua comment lines changed, see 06-26-SUMMARY.
+# Previously measured on the base commit 83c0730 before 06-22 (access fc1e5327..., time 5039a654...).
+GOLDEN_ACCESS_DE = "d2aecfe0ca5b60566a215753c420521093f13699291321d76c9d7a53c6b8dca2"
+GOLDEN_TIME_DE = "d88731c9485f0cc4cf95ada37dc741adce88a34e286564490ddb93eba27d0eb5"
 
 LANGUAGES = ("de", "en", "fr")
 NBSP = chr(0x00A0)

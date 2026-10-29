@@ -1,29 +1,29 @@
-"""Das Tar, das beim Erzeugen einer Welt in ihr Volume geschrieben wird.
+"""The tar that is written into the volume of a world when it is created.
 
-Inhalt: ``minetest.conf`` (root-eigen, 0444, der Server kann sie lesen, aber
-nicht umschreiben), die Welt-Metadaten, die Welt-Mods gameworld_status,
-gameworld_access und gameworld_time, Zugangs- und Regeldatei (root-eigen, 0444)
-und das Spiel des Presets. Das Zählbuch des Zeit-Mods steht nie im Tar: Es
-gehört dem Mod und überlebt so jeden Neustart.
+Contents: ``minetest.conf`` (root-owned, 0444, the server can read it but
+not rewrite it), the world metadata, the world mods gameworld_status,
+gameworld_access and gameworld_time, access and rule file (root-owned, 0444)
+and the game of the preset. The ledger of the time mod is never in the tar: it
+belongs to the mod and thus survives every restart.
 
-Rechte (AR-23, 06-07, gegen echtes Luanti belegt in
-tests/e2e/test_world_dir_hardening_e2e.py): Der Weltordner gehört root mit
-Gruppe 30000 und Modus 1775. Luanti legt darin eigene Dateien an und benennt
-sie um (map.sqlite, env_meta.txt, Zählbuch per Temp-Datei), kann wegen des
-Sticky-Bits aber root-eigene Dateien (Zugangs- und Regeldatei) weder löschen
-noch umbenennen. ``worldmods`` mit allen Mods gehört root (Ordner 0755,
-Dateien 0644), Luanti liest die Mods nur. Alles andere (world.mt, Spiel,
-übrige Ordner) gehört dem Luanti-Nutzer 30000.
+Permissions (AR-23, 06-07, proven against real Luanti in
+tests/e2e/test_world_dir_hardening_e2e.py): the world folder belongs to root with
+group 30000 and mode 1775. Luanti creates its own files in it and renames
+them (map.sqlite, env_meta.txt, ledger via temp file), but because of the
+sticky bit it can neither delete nor rename root-owned files (access and
+rule file). ``worldmods`` with all mods belongs to root (folders 0755,
+files 0644), Luanti only reads the mods. Everything else (world.mt, game,
+other folders) belongs to the Luanti user 30000.
 
-Dazu kommen drei kleine Tars relativ zum Weltordner: ``build_world_files``
-(alle Mods, Zugangs- und Regeldatei, vor jedem Start), ``build_access_tar``
-(nur die Zugangsdatei, bei Einladungsänderungen in die laufende Welt) und
-``build_time_tar`` (nur die Regeldatei).
+In addition there are three small tars relative to the world folder: ``build_world_files``
+(all mods, access and rule file, before every start), ``build_access_tar``
+(only the access file, on invitation changes into the running world) and
+``build_time_tar`` (only the rule file).
 
-Das Spiel-Zip wird vor jeder Nutzung per SHA256 gegen die Konstante im Preset
-geprüft. Die Spieldateien werden einzeln ins Tar gestreamt, das Tar liegt bis
-8 MiB im Speicher und darüber in einer temporären Datei: VoxeLibre (84 MB Zip,
-rund 110 MB Tar) soll den ExApp-Prozess nicht um 200 MB anwachsen lassen.
+The game zip is checked by SHA256 against the constant in the preset before every use.
+The game files are streamed into the tar one by one, the tar stays in memory up to
+8 MiB and above that in a temporary file: VoxeLibre (84 MB zip,
+about 110 MB tar) should not make the ExApp process grow by 200 MB.
 """
 
 from __future__ import annotations
@@ -72,10 +72,10 @@ def world_mods(language: str = "de") -> tuple[tuple[str, str, str], ...]:
     )
 
 
-# Die Welt-Mods (Inhalt von init.lua und mod.conf), Verzeichnisse relativ zu /var/lib/minetest.
+# The world mods (content of init.lua and mod.conf), directories relative to /var/lib/minetest.
 WORLD_MODS = world_mods("de")
 ACCESS_FILE_MODE = 0o444
-# AR-23: Weltordner root:30000 mit Sticky-Bit, root-eigene Ordner (worldmods) 0755.
+# AR-23: world folder root:30000 with sticky bit, root-owned folders (worldmods) 0755.
 WORLD_DIR_MODE = 0o1775
 ROOT_DIR_MODE = 0o755
 LUANTI_DIR_MODE = 0o755
@@ -83,7 +83,7 @@ FILE_MODE = 0o644
 
 
 def _verified_zip(preset: Preset) -> pathlib.Path:
-    """Pfad des Spiel-Zips, nur wenn der Hash zur Konstante im Preset passt."""
+    """Path of the game zip, only if the hash matches the constant in the preset."""
     path = GAMES_DIR / preset.game_zip
     try:
         with path.open("rb") as handle:
@@ -96,9 +96,9 @@ def _verified_zip(preset: Preset) -> pathlib.Path:
 
 
 def safe_relative(name: str) -> str | None:
-    """Normalisierter relativer Pfad oder None, wenn er aus dem Ziel ausbrechen würde.
+    """Normalized relative path or None if it would escape from the target.
 
-    Öffentlich, weil auch die Restore-Prüfung (backup/archive.py) sie nutzt.
+    Public because the restore check (backup/archive.py) uses it too.
     """
     if not name or name.startswith(("/", "\\")) or "\\" in name or ":" in name:
         return None
@@ -110,12 +110,12 @@ def safe_relative(name: str) -> str | None:
     return cleaned
 
 
-# Alter Name, bestehende Aufrufer und Tests bleiben unverändert.
+# Old name, existing callers and tests stay unchanged.
 _safe_relative = safe_relative
 
 
 def _game_entries(zipped: zipfile.ZipFile) -> list[tuple[str, zipfile.ZipInfo]]:
-    """Dateien des Spiels relativ zum Verzeichnis, das ``game.conf`` enthält (ohne Inhalt)."""
+    """Files of the game relative to the directory containing ``game.conf`` (without content)."""
     entries: list[tuple[str, zipfile.ZipInfo]] = []
     for info in zipped.infolist():
         if info.is_dir():
@@ -151,12 +151,12 @@ def _add_dir(
 
 
 def _add_root_dir(tar: tarfile.TarFile, name: str) -> None:
-    """Ordner, den Luanti nur liest (worldmods und die Mods darin)."""
+    """Folder that Luanti only reads (worldmods and the mods in it)."""
     _add_dir(tar, name, uid=ROOT_UID, gid=ROOT_UID, mode=ROOT_DIR_MODE)
 
 
 def _add_mod_files(tar: tarfile.TarFile, mod_dir: str, init_lua: str, mod_conf: str) -> None:
-    """init.lua und mod.conf eines Welt-Mods, root-eigen und nur für root schreibbar."""
+    """init.lua and mod.conf of a world mod, root-owned and writable only for root."""
     _add_file(tar, f"{mod_dir}/init.lua", init_lua.encode("utf-8"), uid=ROOT_UID, mode=FILE_MODE)
     _add_file(tar, f"{mod_dir}/mod.conf", mod_conf.encode("utf-8"), uid=ROOT_UID, mode=FILE_MODE)
 
@@ -183,12 +183,12 @@ def _add_file(
 
 
 def _add_access_file(tar: tarfile.TarFile, name: str, access_file: bytes) -> None:
-    """Zugangsdatei root-eigen und nur lesbar; aktuelle mtime, damit Docker sie sicher ersetzt."""
+    """Access file root-owned and read-only; current mtime, so that Docker replaces it reliably."""
     _add_file(tar, name, access_file, uid=ROOT_UID, mode=ACCESS_FILE_MODE, mtime=int(time.time()))
 
 
 def _relative_to_world(path: str) -> str:
-    """Pfad unter dem Weltordner relativ zu ihm (``worldmods/...``)."""
+    """Path under the world folder relative to it (``worldmods/...``)."""
     prefix = f"{WORLD_DIR}/"
     if not path.startswith(prefix):
         raise ValueError(f"Pfad liegt nicht im Weltordner: {path}")
@@ -196,17 +196,17 @@ def _relative_to_world(path: str) -> str:
 
 
 def build_world_files(access_file: bytes, time_file: bytes | None = None, *, language: str = "de") -> bytes:
-    """Unkomprimiertes Tar für ``put_archive`` in den Weltordner: alle Mods, Zugangs- und Regeldatei.
+    """Uncompressed tar for ``put_archive`` into the world folder: all mods, access and rule file.
 
-    Läuft vor jedem Start (``_launch``): aktualisiert den Mod-Code nach
-    App-Updates und rüstet Welten ohne Zugangs- oder Zeit-Mod nach. Alle Namen
-    sind relativ zum Weltordner, ohne ``..`` und ohne absoluten Pfad.
-    ``worldmods`` und die Mods darin sind root-eigen (AR-23); den Weltordner
-    selbst setzt nur ``build_world_payload``, denn einen Eintrag für ``.``
-    übergeht Docker beim Einspielen. Bestehende Welten behalten deshalb ihren
-    Weltordner, bekommen aber beim nächsten Start ein root-eigenes worldmods.
-    ``time_file`` None lässt die Regeldatei weg (nur für ältere Testaufrufe;
-    ``_launch`` übergibt sie immer). ``language``: world language of the mod texts (D-27).
+    Runs before every start (``_launch``): updates the mod code after
+    app updates and retrofits worlds without an access or time mod. All names
+    are relative to the world folder, without ``..`` and without an absolute path.
+    ``worldmods`` and the mods in it are root-owned (AR-23); the world folder
+    itself is set only by ``build_world_payload``, because Docker ignores an
+    entry for ``.`` when installing. Existing worlds therefore keep their
+    world folder, but get a root-owned worldmods at the next start.
+    ``time_file`` None omits the rule file (only for older test calls;
+    ``_launch`` always passes it). ``language``: world language of the mod texts (D-27).
     """
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
@@ -222,7 +222,7 @@ def build_world_files(access_file: bytes, time_file: bytes | None = None, *, lan
 
 
 def build_access_tar(access_file: bytes) -> bytes:
-    """Tar mit genau der Zugangsdatei, relativ zum Weltordner (für laufende Welten)."""
+    """Tar with exactly the access file, relative to the world folder (for running worlds)."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
         _add_access_file(tar, access_mod.ACCESS_FILE_NAME, access_file)
@@ -230,7 +230,7 @@ def build_access_tar(access_file: bytes) -> bytes:
 
 
 def build_time_tar(time_file: bytes) -> bytes:
-    """Tar mit genau der Regeldatei, relativ zum Weltordner (für laufende Welten)."""
+    """Tar with exactly the rule file, relative to the world folder (for running worlds)."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
         _add_access_file(tar, time_mod.RULES_FILE_NAME, time_file)
@@ -246,14 +246,14 @@ def build_world_payload(
     *,
     language: str = "de",
 ) -> WorldPayload:
-    """Unkomprimiertes Tar für ``put_archive`` nach ``/var/lib/minetest``.
+    """Uncompressed tar for ``put_archive`` to ``/var/lib/minetest``.
 
-    Der Aufrufer schließt ``archive`` nach ``put_archive`` (gibt die temporäre
-    Datei frei). Die Spielerliste des Status-Mods steht nie im Payload: Der Mod legt
-    die Datei erst beim Start an, sonst wäre die Bereitschaftsprüfung falsch. Das
-    gilt auch für die State-Datei des Zugangs-Mods und das Zählbuch des
-    Zeit-Mods. ``access_file`` ist die Zugangsdatei (bei neuen Welten: Kopf und
-    Schlusszeile, niemand eingeladen), ``time_file`` die Regeldatei (None: keine).
+    The caller closes ``archive`` after ``put_archive`` (releases the temporary
+    file). The player list of the status mod is never in the payload: the mod creates
+    the file only at start, otherwise the readiness check would be wrong. The
+    same holds for the state file of the access mod and the ledger of the
+    time mod. ``access_file`` is the access file (for new worlds: head and
+    closing line, nobody invited), ``time_file`` the rule file (None: none).
     ``language``: world language of the mod texts (D-27).
     """
     mods = world_mods(language)
@@ -263,7 +263,7 @@ def build_world_payload(
     try:
         with zipfile.ZipFile(zip_path) as zipped:
             game = _game_entries(zipped)
-            # Luanti-eigene Ordner; Weltordner und worldmods kommen gesondert (AR-23).
+            # Luanti's own folders; world folder and worldmods come separately (AR-23).
             root_dirs = [f"{WORLD_DIR}/worldmods", *(mod_dir for mod_dir, _, _ in mods)]
             directories = {".minetest", ".minetest/worlds", ".minetest/games", game_root}
             for name, _ in game:
@@ -278,8 +278,8 @@ def build_world_payload(
                 _add_dir(tar, WORLD_DIR, uid=ROOT_UID, gid=LUANTI_UID, mode=WORLD_DIR_MODE)
                 for directory in root_dirs:
                     _add_root_dir(tar, directory)
-                # world.mt bleibt Luanti: Im e2e-Lauf schreibt Luanti sie nicht neu (mtime bleibt 0),
-                # müsste es aber (etwa beim Speichern geänderter Welteinstellungen), ginge das nur so.
+                # world.mt stays with Luanti: in the e2e run Luanti does not rewrite it (mtime stays 0),
+                # but it would have to (e.g. when saving changed world settings), that only works this way.
                 _add_file(tar, f"{WORLD_DIR}/world.mt", world_mt.encode("utf-8"))
                 for mod_dir, init_lua, mod_conf in mods:
                     _add_mod_files(tar, mod_dir, init_lua, mod_conf)

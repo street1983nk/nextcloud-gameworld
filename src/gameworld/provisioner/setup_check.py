@@ -1,9 +1,9 @@
-"""Setup-Check: prüft Erreichbarkeit und Scope des Docker-Proxys ohne Nebenwirkungen.
+"""Setup check: verifies reachability and scope of the Docker proxy without side effects.
 
-Schreibende Anfragen gehen nur an die nicht existierende Ressource
-``gameworld-probe-nonexistent``; ein korrekt gescopter Proxy reicht sie an den
-Daemon durch, der mit 404 antwortet. Erwartete Statuscodes: 01-RESEARCH.md
-Pattern 5 (im Spike gegen tecnativa/docker-socket-proxy v0.5.0 gemessen).
+Writing requests go only to the non-existent resource
+``gameworld-probe-nonexistent``; a correctly scoped proxy passes them on to the
+daemon, which answers with 404. Expected status codes: 01-RESEARCH.md
+pattern 5 (measured in the spike against tecnativa/docker-socket-proxy v0.5.0).
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ class _Probe:
     expected: int
     severity: Severity
     ok_message: str
-    # Meldung für den bekannten Abweichungs-Code (403 bzw. 404/200).
+    # Message for the known deviation code (403 or 404/200).
     known_code: int
     known_message: str
     params: dict[str, str] | None = None
@@ -181,8 +181,8 @@ def _http_base(docker_url: str) -> str:
     return base
 
 
-# Private Netze, in denen ein gescopter Docker-Proxy liegen darf. Bewusst nicht
-# ``ipaddress.is_private``: das zählt auch Dokumentationsnetze wie 203.0.113.0/24 dazu.
+# Private networks in which a scoped Docker proxy may live. Deliberately not
+# ``ipaddress.is_private``: that also counts documentation networks like 203.0.113.0/24.
 _PRIVATE_NETS = tuple(
     ipaddress.ip_network(net)
     for net in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7")
@@ -192,7 +192,7 @@ _MAX_CAUSE_DEPTH = 10
 
 
 def _host_port(docker_url: str) -> tuple[str, int]:
-    """Host und Port aus der eigenen Konfiguration, nie aus Ausnahmetexten (T-06-40)."""
+    """Host and port from the own configuration, never from exception texts (T-06-40)."""
     try:
         parts = urlsplit(docker_url)
         host = parts.hostname or "gameworld-docker-proxy"
@@ -203,7 +203,7 @@ def _host_port(docker_url: str) -> tuple[str, int]:
 
 
 def _causes(exc: BaseException) -> list[BaseException]:
-    """Kette über __cause__, __context__ und urllib3-``reason``, höchstens zehn Glieder."""
+    """Chain via __cause__, __context__ and urllib3 ``reason``, at most ten links."""
     seen: list[BaseException] = []
     todo: list[BaseException] = [exc]
     while todo and len(seen) < _MAX_CAUSE_DEPTH:
@@ -222,7 +222,7 @@ def _has_cause(exc: BaseException, kind: type[BaseException]) -> bool:
 
 
 def check_docker_url(docker_url: str) -> CheckItem | None:
-    """Warnt vor rohem Docker-Socket und vor Proxy-Adressen außerhalb privater Netze (T-06-39)."""
+    """Warns about a raw Docker socket and about proxy addresses outside private networks (T-06-39)."""
     try:
         parts = urlsplit(docker_url.strip())
         host = parts.hostname
@@ -240,7 +240,7 @@ def check_docker_url(docker_url: str) -> CheckItem | None:
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
-        # Hostname, etwa gameworld-docker-proxy: im Docker-Netz aufgelöst, kein Befund.
+        # Hostname, e.g. gameworld-docker-proxy: resolved in the Docker network, no finding.
         return None
     if any(address in net for net in _PRIVATE_NETS):
         return None
@@ -267,14 +267,14 @@ class _Checker:
         self.base = _http_base(docker_url)
         self.timeout = timeout
         self.session = requests.Session()
-        # Keine Proxy-Variablen der Umgebung: der Docker-Proxy liegt im lokalen Netz.
+        # No proxy variables from the environment: the Docker proxy is in the local network.
         self.session.trust_env = False
 
     def request(self, method: str, path: str, params: dict[str, str] | None = None) -> requests.Response:
         return self.session.request(method, self.base + path, params=params, timeout=self.timeout)
 
     def unreachable(self, exc: BaseException | None = None) -> CheckItem:
-        """Ursache getrennt melden; Texte fest, Host und Port nur aus der eigenen URL."""
+        """Report the cause separately; texts fixed, host and port only from the own URL."""
         host, port = _host_port(self.docker_url)
         if exc is not None and _has_cause(exc, socket.gaierror):
             return CheckItem(
@@ -376,8 +376,8 @@ class _Checker:
         if post.ok:
             items += [self.probe(_VOLUMES), self.probe(_EXEC)]
         else:
-            # Mit POST=0 sperrt tecnativa jede nicht lesende Methode; die Ergebnisse
-            # wären Folgefehler (VOLUMES fälschlich fehlend, EXEC fälschlich gesperrt).
+            # With POST=0 tecnativa blocks every non-reading method; the results
+            # would be follow-up errors (VOLUMES wrongly missing, EXEC wrongly blocked).
             items += [
                 CheckItem(id=probe.id, ok=False, severity="warning", message=MSG_NOT_CHECKED)
                 for probe in (_VOLUMES, _EXEC)
@@ -387,12 +387,12 @@ class _Checker:
 
 
 def run_setup_check(docker_url: str, timeout: float = 3.0) -> SetupCheckResult:
-    """Führt alle Probes aus; keine Ausnahme verlässt diese Funktion."""
+    """Runs all probes; no exception leaves this function."""
     checker = _Checker(docker_url, timeout)
     try:
         items = checker.run()
     except Exception:
-        # Letzte Absicherung: ein Programmfehler darf die Seite nicht mit 500 beenden.
+        # Last safeguard: a programming error must not end the page with a 500.
         items = [checker.unreachable()]
     finally:
         checker.session.close()

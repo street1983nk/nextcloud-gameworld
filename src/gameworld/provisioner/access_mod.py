@@ -1,51 +1,51 @@
-"""Der Welt-Mod gameworld_access und die Zugangsdatei, als Konstanten im Code.
+"""The world mod gameworld_access and the access file, as constants in the code.
 
-Die Durchsetzung "nur Eingeladene" sitzt im Spielserver (ZUGANG-03): Der Mod
-liest bei jedem Join-Versuch und alle 5 s die Datei ``gameworld_access.txt`` im
-Weltordner, die nur die ExApp per ``put_archive`` schreibt (root, 0444).
+The enforcement "invited only" sits in the game server (ZUGANG-03): the mod
+reads the file ``gameworld_access.txt`` in the world folder on every join attempt and every 5 s,
+which only the ExApp writes via ``put_archive`` (root, 0444).
 
-Format der Zugangsdatei (ASCII, Zeilen sortiert, deterministisch)::
+Format of the access file (ASCII, lines sorted, deterministic)::
 
-    gameworld-access 1 <Generation>
-    <Spielername> #1#<Salz>#<Verifier>
+    gameworld-access 1 <generation>
+    <player name> #1#<salt>#<verifier>
     end
 
-Der Mod lehnt nicht eingeladene Namen im Prejoin ab, also vor der
-Authentifizierung, und setzt für eingeladene Namen im selben Callback den
-SRP-Verifier per ``core.set_player_password``. Fehlt die Datei oder fehlen Kopf
-oder Schlusszeile (halb geschrieben), bleibt der zuletzt gültige Stand; beim
-Serverstart ohne gültige Datei darf niemand hinein. Nach erfolgreichem Laden
-schreibt der Mod die Generation nach ``gameworld_access_state.txt``.
+The mod rejects names that are not invited in the prejoin, i.e. before
+authentication, and for invited names sets the
+SRP verifier in the same callback via ``core.set_player_password``. If the file is missing or head
+or closing line are missing (half written), the last valid state stays; on
+server start without a valid file nobody gets in. After a successful load
+the mod writes the generation to ``gameworld_access_state.txt``.
 
-Fünf falsche Passwörter sperren einen Namen für zehn Minuten (nur im Speicher).
-Spieler, deren Einladung endet, trennt der Mod im 5-s-Takt per
-``core.disconnect_player`` (ohne "Kicked: " vor dem Text). Ein Eingeladener,
-der unter seinem Namen noch verbunden ist oder vor weniger als 2 s gegangen
-ist, wird im Prejoin mit einem Wartetext abgelehnt (Wiederbeitritts-Sperre
-gegen den Rejoin-Absturz von Luanti 5.17.0, 04-RESEARCH.md Pitfall 1). Der Mod schreibt
-nie IP-Adressen und braucht weder ``secure.trusted_mods`` noch
-``secure.http_mods``. Der Lua-Quelltext bleibt reines ASCII: Die Texte an die
-Kinder stehen hier als Python-Konstanten mit Umlauten und gehen als
-Lua-Dezimal-Escapes (UTF-8-Bytes) in den Mod.
+Five wrong passwords block a name for ten minutes (in memory only).
+Players whose invitation ends are disconnected by the mod in the 5 s tick via
+``core.disconnect_player`` (without "Kicked: " before the text). An invitee
+who is still connected under his name or left less than 2 s ago
+is rejected in the prejoin with a waiting text (rejoin block
+against the rejoin crash of Luanti 5.17.0, 04-RESEARCH.md pitfall 1). The mod writes
+no IP addresses and needs neither ``secure.trusted_mods`` nor
+``secure.http_mods``. The Lua source stays pure ASCII: the texts for the
+children are here as Python constants with umlauts and go into the mod as
+Lua decimal escapes (UTF-8 bytes).
 
-Seit Phase 4.1 schreibt der Mod zusätzlich die Ereignisdatei
-``gameworld_events.txt`` (uid 30000, per ``core.safe_file_write`` atomar), den
-einzigen Weg von der Welt zur ExApp (04.1-RESEARCH.md Pattern 1, kein neuer
-Port)::
+Since phase 4.1 the mod additionally writes the event file
+``gameworld_events.txt`` (uid 30000, atomic via ``core.safe_file_write``), the
+only way from the world to the ExApp (04.1-RESEARCH.md pattern 1, no new
+port)::
 
-    gameworld-events 1 <letzte Sequenz>
-    <Sequenz> <Epoch> <Art> <Spielername>
+    gameworld-events 1 <last sequence>
+    <sequence> <epoch> <kind> <player name>
     end
 
-Arten: ``deny`` (fremder Name, nur im Zweig vor dem Ablehnungstext, nie bei
-Groß/Klein-Variante, Sperre oder Wartezeit; gedrosselt auf ein ``deny`` je Name
-und Minute und 30 je Minute), ``join``, ``leave`` und ``warn10`` (vom Zeit-Mod
-über die globale Tabelle ``gameworld_access.event``). Höchstens 200
-Ereigniszeilen, die ältesten fallen heraus; die Sequenz läuft über Neustarts
-weiter, weil der Mod die alte Datei beim Start einliest. Beim Laden schreibt er
-die Datei sofort einmal: Das zeigt der ExApp, dass der laufende Mod Ereignisse
-und Pause kann (Pattern 3). Die Datei enthält nur Sequenz, Epoch, Art und Name,
-nie IP-Adressen oder Passwörter.
+Kinds: ``deny`` (foreign name, only in the branch before the rejection text, never for a
+case variant, block or waiting time; throttled to one ``deny`` per name
+and minute and 30 per minute), ``join``, ``leave`` and ``warn10`` (from the time mod
+via the global table ``gameworld_access.event``). At most 200
+event lines, the oldest drop out; the sequence continues across restarts,
+because the mod reads in the old file at start. On loading it writes
+the file once immediately: that shows the ExApp that the running mod can do events
+and pause (pattern 3). The file contains only sequence, epoch, kind and name,
+never IP addresses or passwords.
 """
 
 from __future__ import annotations
@@ -61,26 +61,26 @@ MOD_DIR = f".minetest/worlds/world/worldmods/{MOD_NAME}"
 
 ACCESS_FILE_NAME = "gameworld_access.txt"
 STATE_FILE_NAME = "gameworld_access_state.txt"
-# Pfade im Container; die ExApp schreibt ACCESS_FILE und liest STATE_FILE (03-05).
+# Paths in the container; the ExApp writes ACCESS_FILE and reads STATE_FILE (03-05).
 ACCESS_FILE = f"{DATA_DIR}/.minetest/worlds/world/{ACCESS_FILE_NAME}"
 STATE_FILE = f"{DATA_DIR}/.minetest/worlds/world/{STATE_FILE_NAME}"
 ACCESS_HEADER = "gameworld-access 1"
-# Ereignisdatei (Phase 4.1): schreibt nur der Mod, die ExApp liest sie im Takt.
+# Event file (phase 4.1): only the mod writes it, the ExApp reads it in the tick.
 EVENTS_FILE_NAME = "gameworld_events.txt"
 EVENTS_FILE = f"{DATA_DIR}/.minetest/worlds/world/{EVENTS_FILE_NAME}"
 EVENTS_HEADER = "gameworld-events 1"
 EVENTS_MAX_LINES = 200
 EVENT_KINDS = frozenset({"deny", "join", "leave", "warn10"})
-# Drossel gegen deny-Flut (T-04.1-01), nur im Speicher des Mods.
+# Throttle against a deny flood (T-04.1-01), in the mod's memory only.
 DENY_PER_NAME_SECONDS = 60
 DENY_PER_MINUTE = 30
 
-# Texte an die Kinder (Luanti zeigt sie beim abgelehnten Join oder beim Trennen).
+# Texts for the children (Luanti shows them on a rejected join or on disconnect).
 TEXT_DENY = "Du bist in diese Welt nicht eingeladen. Frag deine Eltern."
 TEXT_KICK = "Deine Einladung für diese Welt wurde beendet."
 TEXT_LOCKED = "Zu viele falsche Passwörter. Bitte in 10 Minuten nochmal versuchen."
-# Ohne den eingeladenen Namen (IN-07): Wer den UDP-Port erreicht, erführe sonst die
-# genaue Schreibweise des Spielernamens eines eingeladenen Kindes.
+# Without the invited name (IN-07): whoever reaches the UDP port would otherwise learn the
+# exact spelling of an invited child's player name.
 TEXT_CASE_HINT = "Achte auf Groß- und Kleinschreibung bei deinem Spielernamen."
 TEXT_WAIT = "Bitte einen Moment warten und dann nochmal beitreten."
 
@@ -119,7 +119,7 @@ VERIFIER = re.compile(r"#1#[A-Za-z0-9+/=]+#[A-Za-z0-9+/=]+")
 
 
 def _lua_string(text: str) -> str:
-    """Lua-Stringliteral in reinem ASCII; Nicht-ASCII als Dezimal-Escapes der UTF-8-Bytes."""
+    """Lua string literal in pure ASCII; non-ASCII as decimal escapes of the UTF-8 bytes."""
     parts: list[str] = []
     for byte in text.encode("utf-8"):
         char = chr(byte)
@@ -147,8 +147,8 @@ def mod_init_lua(language: object = "de") -> str:
     """
     texts = mod_texts(language)
     return f"""\
--- gameworld_access: Nur Eingeladene betreten diese Welt.
--- Die Zugangsdatei schreibt nur Gameworld. Der Mod schreibt keine IP-Adressen.
+-- gameworld_access: only invitees enter this world.
+-- Only Gameworld writes the access file. The mod writes no IP addresses.
 local world = core.get_worldpath()
 local access_path = world .. "/{ACCESS_FILE_NAME}"
 local state_path = world .. "/{STATE_FILE_NAME}"
@@ -161,9 +161,9 @@ local WAIT = {_lua_string(texts.wait)}
 local FAIL_LIMIT = 5
 local LOCK_SECONDS = 600
 local TICK_SECONDS = 5
--- Wiederbeitritts-Sperre: Ein Join unter demselben Namen binnen weniger als
--- 0,5 s nach dem Verlassen bringt Luanti 5.17.0 zum Absturz (on_joinplayer der
--- Spiele bekommt nil, 04-RESEARCH.md Pitfall 1). 2 s Abstand verhindern das.
+-- Rejoin block: a join under the same name within less than
+-- 0.5 s after leaving crashes Luanti 5.17.0 (the games' on_joinplayer
+-- gets nil, 04-RESEARCH.md pitfall 1). A gap of 2 s prevents that.
 local COOLDOWN = 2
 local EVENTS_MAX = {EVENTS_MAX_LINES}
 local DENY_NAME_SECONDS = {DENY_PER_NAME_SECONDS}
@@ -176,8 +176,8 @@ local function now()
   return core.get_us_time() / 1e6
 end
 
--- Ereignisdatei: Ringpuffer mit fortlaufender Sequenz, neustartfest im Weltordner.
--- Nur Sequenz, Epoch (os.time), Art und Name; keine IP-Adressen, keine Passwoerter.
+-- Event file: ring buffer with a running sequence, restart-proof in the world folder.
+-- Only sequence, epoch (os.time), kind and name; no IP addresses, no passwords.
 local seq, event_lines = 0, {{}}
 do
   local f = io.open(events_path, "rb")
@@ -187,7 +187,7 @@ do
     local lines = content:split("\\n")
     local head = (lines[1] or ""):match("^gameworld%-events 1 (%d+)$")
     if head then
-      -- Kaputte Datei ohne Schlusszeile: keine Zeilen, aber die Sequenz laeuft weiter.
+      -- Broken file without a closing line: no lines, but the sequence keeps running.
       seq = tonumber(head)
       if lines[#lines] == "end" then
         for i = 2, #lines - 1 do
@@ -217,8 +217,8 @@ local function event(kind, name)
   write_events()
 end
 
--- Drossel fuer deny: je Name eins pro DENY_NAME_SECONDS, insgesamt DENY_PER_MINUTE
--- je gleitender Minute. Beide Tabellen bleiben klein (nur gemeldete Versuche).
+-- Throttle for deny: one per name per DENY_NAME_SECONDS, DENY_PER_MINUTE in total
+-- per sliding minute. Both tables stay small (reported attempts only).
 local deny_last, deny_recent = {{}}, {{}}
 
 local function deny_allowed(name)
@@ -237,8 +237,8 @@ local function deny_allowed(name)
   return true
 end
 
--- Fehlt die Datei oder ist sie nicht komplett (etwa mitten im Schreiben),
--- bleibt der alte Stand. Beim Start ist der alte Stand: niemand.
+-- If the file is missing or not complete (e.g. in the middle of writing),
+-- the old state stays. At start the old state is: nobody.
 local function load()
   local f = io.open(access_path, "rb")
   if not f then return end
@@ -257,7 +257,7 @@ local function load()
   core.safe_file_write(state_path, generation)
 end
 
--- Nur ob es eine andere Schreibweise gibt; der Name selbst geht nie an den Client (IN-07).
+-- Only whether another spelling exists; the name itself never goes to the client (IN-07).
 local function case_variant(name)
   local lower = name:lower()
   for allowed_name in pairs(allowed) do
@@ -265,7 +265,7 @@ local function case_variant(name)
   end
 end
 
--- Sperre nach Fehlversuchen, nur im Speicher.
+-- Block after failed attempts, in memory only.
 local fails = {{}}
 
 local function locked(name)
@@ -289,7 +289,7 @@ core.register_on_authplayer(function(name, _ip, ok)
   fails[name] = f
 end)
 
--- Zeitpunkt des Verlassens je Name (nur im Speicher, nur Eingeladene).
+-- Time of leaving per name (in memory only, invitees only).
 local left_at = {{}}
 
 core.register_on_joinplayer(function(player)
@@ -318,22 +318,22 @@ core.register_on_prejoinplayer(function(name)
   if not hash then
     local variant = case_variant(name)
     if variant then return CASE_HINT end
-    -- Nur ein fremder Name wird gemeldet (D-10, D-29), gedrosselt.
+    -- Only a foreign name is reported (D-10, D-29), throttled.
     if deny_allowed(name) then event("deny", name) end
     return DENY
   end
-  -- Noch verbunden oder gerade erst gegangen: kurz warten lassen.
+  -- Still connected or just left: make them wait briefly.
   if too_soon(name) then return WAIT end
-  -- Vor der Anmeldung: legt das Konto an oder setzt das Passwort neu.
+  -- Before login: creates the account or sets the password anew.
   local auth = core.get_auth_handler().get_auth(name)
   if not auth or auth.password ~= hash then
     core.set_player_password(name, hash)
   end
 end)
 
--- builtin/game/auth.lua prueft vor allen Mods, ob es den Namen in anderer Schreibweise
--- schon gibt, und nennt dann den registrierten Namen (IN-07). Diese Pruefung laeuft
--- deshalb zuerst: Von mehreren Ablehnungen gilt die erste (RUN_CALLBACKS_MODE_OR).
+-- builtin/game/auth.lua checks before all mods whether the name already exists in another spelling
+-- and then names the registered name (IN-07). This check therefore runs first:
+-- of several rejections the first one counts (RUN_CALLBACKS_MODE_OR).
 do
   local callbacks = core.registered_on_prejoinplayers
   table.insert(callbacks, 1, table.remove(callbacks))
@@ -343,19 +343,19 @@ local function tick()
   load()
   for _, player in ipairs(core.get_connected_players()) do
     local name = player:get_player_name()
-    -- disconnect_player: kein "Kicked: " vor dem Kindertext.
+    -- disconnect_player: no "Kicked: " before the child text.
     if not allowed[name] then core.disconnect_player(name, KICK) end
   end
   core.after(TICK_SECONDS, tick)
 end
 
--- Einmal beim Start schreiben: Merker fuer die ExApp, dass dieser Mod Ereignisse kann.
+-- Write once at start: marker for the ExApp that this mod can do events.
 core.register_on_mods_loaded(function()
   write_events()
   core.after(0, tick)
 end)
 
--- Luanti-Konvention: Global mit Modnamen; gameworld_time meldet darueber warn10.
+-- Luanti convention: global with the mod name; gameworld_time reports warn10 through it.
 gameworld_access = {{ event = event }}
 """
 
@@ -369,10 +369,10 @@ description = Nur von Gameworld eingeladene Spieler betreten die Welt
 
 
 def render_access_file(generation: int, entries: dict[str, str]) -> bytes:
-    """Zugangsdatei aus Spielername -> Verifier, sortiert und deterministisch.
+    """Access file from player name -> verifier, sorted and deterministic.
 
-    Jeder ungültige Eintrag wirft ValueError, nie wird still übersprungen: Ein
-    Zeilenumbruch im Namen oder Verifier könnte sonst fremde Zeilen einschleusen.
+    Every invalid entry raises ValueError, nothing is silently skipped: a
+    line break in the name or verifier could otherwise smuggle in foreign lines.
     """
     if generation < 0:
         raise ValueError("Die Generation der Zugangsliste darf nicht negativ sein.")

@@ -1,4 +1,4 @@
-"""Fehlervertrag des Provisioners ohne Docker: Transportfehler werden immer zu 503-Kandidaten."""
+"""Error contract of the provisioner without Docker: transport errors always become 503 candidates."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ class FakeContainer:
 
 
 class FakeClient:
-    """Steht für docker.DockerClient; die Methoden der Collections setzt jeder Test selbst."""
+    """Stands for docker.DockerClient; each test sets the methods of the collections itself."""
 
     def __init__(self) -> None:
         self.containers = SimpleNamespace()
@@ -88,8 +88,8 @@ def fake() -> FakeClient:
 @pytest.fixture
 def prov(fake: FakeClient, monkeypatch: pytest.MonkeyPatch) -> DockerProvisioner:
     provisioner = DockerProvisioner("tcp://127.0.0.1:23750", INSTANCE)
-    provisioner._client = cast("docker.DockerClient", fake)  # schon "gecachter" Client
-    # Auch ein "frischer" Client nach einem Transportfehler ist der Fake, nie der echte Proxy.
+    provisioner._client = cast("docker.DockerClient", fake)  # already "cached" client
+    # Even a "fresh" client after a transport error is the fake, never the real proxy.
     monkeypatch.setattr(provisioner, "_docker", lambda: fake)
     return provisioner
 
@@ -123,7 +123,7 @@ def test_protocol_error_on_create(prov: DockerProvisioner, fake: FakeClient) -> 
 
 
 def test_create_uses_payload_preset_and_stream(prov: DockerProvisioner, fake: FakeClient) -> None:
-    """Spec aus payload.preset, das Datei-Objekt geht unverändert an put_archive (Pitfall 2, A5)."""
+    """Spec from payload.preset, the file object goes unchanged to put_archive (pitfall 2, A5)."""
     created: dict[str, Any] = {}
     uploads: list[tuple[str, object]] = []
 
@@ -175,7 +175,7 @@ def test_port_conflict_on_start(prov: DockerProvisioner, fake: FakeClient) -> No
 
 
 def test_vanished_container_on_start_is_not_found(prov: DockerProvisioner, fake: FakeClient) -> None:
-    """NotFound zwischen _owned() und start() bleibt WorldNotFoundError (404), kein 500 (WR-02)."""
+    """NotFound between _owned() and start() stays WorldNotFoundError (404), no 500 (WR-02)."""
     container = FakeContainer(start_error=docker.errors.NotFound("weg"))
     fake.containers.list = _listing(container)
     with pytest.raises(WorldNotFoundError):
@@ -195,7 +195,7 @@ def test_other_api_error_on_start(prov: DockerProvisioner, fake: FakeClient) -> 
     [("gameworld.instance", "fremd000"), ("gameworld.managed", "false"), ("gameworld.world_id", "ffffffffffff")],
 )
 def test_foreign_container_is_never_touched(prov: DockerProvisioner, fake: FakeClient, label: str, value: str) -> None:
-    """Auch wenn der Proxy einen Filter ignorierte, prüft der Provisioner die Labels selbst."""
+    """Even if the proxy ignored a filter, the provisioner checks the labels itself."""
     container = FakeContainer()
     container.labels[label] = value
     fake.containers.list = _listing(container)
@@ -235,7 +235,7 @@ def test_unreachable_server_without_cached_client() -> None:
 
 
 class Flaky:
-    """Liefert erst die Fehler aus ``errors``, danach ``result``; zählt jeden Aufruf."""
+    """Yields the errors from ``errors`` first, then ``result``; counts every call."""
 
     def __init__(self, errors: list[BaseException], result: object) -> None:
         self.errors = errors
@@ -257,7 +257,7 @@ class Flaky:
 def test_read_is_retried_once_after_keep_alive_drop(
     prov: DockerProvisioner, fake: FakeClient, error: BaseException
 ) -> None:
-    """HAProxy schließt Keep-Alive nach 10 s (Pitfall 4): ein zweiter Versuch, dann Erfolg."""
+    """HAProxy closes keep-alive after 10 s (pitfall 4): a second attempt, then success."""
     listing = Flaky([error], [FakeContainer()])
     fake.containers.list = listing
     assert set(prov.list_managed()) == {WORLD}
@@ -276,7 +276,7 @@ def test_read_fails_after_second_drop(prov: DockerProvisioner, fake: FakeClient)
     "error",
     [
         requests.exceptions.ReadTimeout("langsam"),
-        # MRO-Falle (WR-03): ConnectTimeout ist auch ein ConnectionError.
+        # MRO trap (WR-03): ConnectTimeout is also a ConnectionError.
         requests.exceptions.ConnectTimeout("schwarzes Loch"),
         requests.exceptions.Timeout("allgemein"),
     ],
@@ -290,7 +290,7 @@ def test_timeout_on_read_is_not_retried(prov: DockerProvisioner, fake: FakeClien
 
 
 def test_connect_timeout_is_a_connection_error() -> None:
-    """Gegenprobe zur MRO-Falle: Ohne die Timeout-Prüfung wäre ConnectTimeout wiederholbar."""
+    """Control for the MRO trap: without the timeout check ConnectTimeout would be repeatable."""
     assert issubclass(requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError)
     assert issubclass(requests.exceptions.ConnectTimeout, requests.exceptions.Timeout)
 
@@ -303,7 +303,7 @@ def test_used_host_ports_is_retried(prov: DockerProvisioner, fake: FakeClient) -
 
 
 def test_start_is_never_retried(prov: DockerProvisioner, fake: FakeClient) -> None:
-    """Schreibende Aufrufe werden nie wiederholt (T-02-21)."""
+    """Writing calls are never repeated (T-02-21)."""
     listing = Flaky([requests.exceptions.ConnectionError("weg")], [FakeContainer()])
     fake.containers.list = listing
     with pytest.raises(DockerUnavailableError):
@@ -384,7 +384,7 @@ def test_read_status_file_missing_is_none(prov: DockerProvisioner, fake: FakeCli
 
 
 def test_read_status_file_is_capped(prov: DockerProvisioner, fake: FakeClient) -> None:
-    """Ein fremder Mod könnte eine riesige Datei schreiben: höchstens 4096 Bytes (T-02-18)."""
+    """A foreign mod could write a huge file: at most 4096 bytes (T-02-18)."""
     fake.containers.list = _listing(ArchiveContainer(_tar(b"x" * 10_240)))
     status = prov.read_status_file(WORLD)
     assert status is not None
@@ -410,12 +410,12 @@ def test_read_status_file_is_retried(prov: DockerProvisioner, fake: FakeClient) 
 
 
 def _truncated_tar() -> bytes:
-    """Kopf verspricht 2000 Bytes, der Strom bricht nach 700 ab."""
+    """The head promises 2000 bytes, the stream breaks off after 700."""
     return _tar(b"x" * 2000)[:700]
 
 
 def _oversized_pax_head() -> bytes:
-    """Riesiger PAX-Kopf: Nach dem Kappen auf 64 KiB fehlt der eigentliche Eintrag."""
+    """Huge PAX head: after truncating to 64 KiB the actual entry is missing."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
         member = tarfile.TarInfo("gameworld_players.txt")
@@ -435,7 +435,7 @@ def _oversized_pax_head() -> bytes:
     ],
 )
 def test_broken_status_archive_is_provisioner_error(prov: DockerProvisioner, fake: FakeClient, archive: bytes) -> None:
-    """WR-04: Tar-Fehler kommen als ProvisionerError an (pro Welt isoliert), nie roh und nie wiederholt."""
+    """WR-04: Tar errors arrive as ProvisionerError (isolated per world), never raw and never repeated."""
     container = ArchiveContainer(archive)
     fake.containers.list = _listing(container)
     with pytest.raises(ProvisionerError, match="Status-Datei") as info:
@@ -450,7 +450,7 @@ def _big_ledger(names: int) -> bytes:
 
 
 def test_read_time_ledger_with_many_names_is_complete(prov: DockerProvisioner, fake: FakeClient) -> None:
-    """WR-03: 500 Namen (rund 15 KiB) kommen vollständig an, die Schlusszeile fehlt nicht."""
+    """WR-03: 500 names (about 15 KiB) arrive completely, the closing line is not missing."""
     from gameworld.provisioner.time_mod import LEDGER_FILE, parse_ledger
 
     content = _big_ledger(500)
@@ -469,7 +469,7 @@ def test_read_time_ledger_with_many_names_is_complete(prov: DockerProvisioner, f
 def test_read_time_ledger_over_cap_logs_warning(
     prov: DockerProvisioner, fake: FakeClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """WR-03: Über der Kappung nie still: eine Warnung (ohne Inhalt) im Log."""
+    """WR-03: Above the truncation never silently: a warning (without content) in the log."""
     from gameworld.provisioner.client import LEDGER_FILE_MAX
 
     content = _big_ledger(LEDGER_FILE_MAX // 31 + 500)
@@ -478,14 +478,14 @@ def test_read_time_ledger_over_cap_logs_warning(
         ledger_file = prov.read_time_ledger(WORLD)
     assert ledger_file is not None
     assert len(ledger_file.content) == LEDGER_FILE_MAX
-    assert "gekappt" in caplog.text
+    assert "truncated" in caplog.text
     assert "Spieler_" not in caplog.text
 
 
 def test_read_events_reads_event_file_with_own_cap(
     prov: DockerProvisioner, fake: FakeClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """T-04.1-07/08: Ereignisdatei über get_archive, eigene Kappung, Warnung ohne Inhalt."""
+    """T-04.1-07/08: Event file via get_archive, own truncation, warning without content."""
     from gameworld.provisioner.access_mod import EVENTS_FILE
     from gameworld.provisioner.client import EVENTS_FILE_MAX
 
@@ -502,22 +502,22 @@ def test_read_events_reads_event_file_with_own_cap(
         events_file = prov.read_events(WORLD)
     assert events_file is not None
     assert len(events_file.content) == EVENTS_FILE_MAX
-    assert "gekappt" in caplog.text
+    assert "truncated" in caplog.text
     assert "Fremder_geheim" not in caplog.text
 
 
 def test_read_status_file_cap_stays_silent(
     prov: DockerProvisioner, fake: FakeClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Die Status-Datei bleibt bei 4096 Bytes und ohne Logzeile je Abfrage."""
+    """The status file stays at 4096 bytes and without a log line per query."""
     fake.containers.list = _listing(ArchiveContainer(_tar(b"x" * 10_240)))
     with caplog.at_level("WARNING"):
         prov.read_status_file(WORLD)
-    assert "gekappt" not in caplog.text
+    assert "truncated" not in caplog.text
 
 
 def test_read_access_state(prov: DockerProvisioner, fake: FakeClient) -> None:
-    """03-05: Die State-Datei des Zugangs-Mods kommt über denselben gekappten Leser."""
+    """03-05: The state file of the access mod comes through the same truncating reader."""
     from gameworld.provisioner.access_mod import STATE_FILE
 
     container = ArchiveContainer(_tar(b"7"))
@@ -538,7 +538,7 @@ def test_broken_access_state_is_provisioner_error(prov: DockerProvisioner, fake:
     assert not isinstance(info.value, DockerUnavailableError)
 
 
-# Phase 5: Snapshot am gestoppten Container und Einspielen als Datei-Objekt (T-05-04)
+# Phase 5: snapshot of the stopped container and installing as a file object (T-05-04)
 
 
 class SnapshotContainer(FakeContainer):
@@ -568,7 +568,7 @@ class SnapshotContainer(FakeContainer):
                 yield chunk
 
         class Stream:
-            """Wie der Generator von docker-py: iterierbar und schließbar."""
+            """Like the generator of docker-py: iterable and closable."""
 
             def __init__(self) -> None:
                 self._inner = chunks()

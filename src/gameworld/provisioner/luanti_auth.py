@@ -1,15 +1,15 @@
-"""Passwort-Verifier für Luanti-Konten (SRP-6a), rein und nur mit der Standardbibliothek.
+"""Password verifier for Luanti accounts (SRP-6a), pure and with the standard library only.
 
-Luanti speichert Passwörter als ``#1#<base64 Salz>#<base64 v>``: SRP-6a mit
-SHA-256, der 2048-Bit-Gruppe aus RFC 5054 und ``g = 2``. Es gilt
-``x = SHA256(Salz || SHA256(klein(Name) ":" Passwort))`` und ``v = g^x mod N``,
-``v`` als Big-Endian ohne führende Nullen. Quellen: luanti-org/luanti, Tag 5.17.0,
-``src/util/auth.cpp`` (gen_srp_v) und ``src/util/srp.cpp`` (calculate_x,
-srp_create_salted_verification_key, NG_2048). Abgesichert durch einen Golden
-Vector, den ein echter Luanti-5.17.0-Server per SRP-Login akzeptiert hat.
+Luanti stores passwords as ``#1#<base64 salt>#<base64 v>``: SRP-6a with
+SHA-256, the 2048-bit group from RFC 5054 and ``g = 2``. It holds
+``x = SHA256(salt || SHA256(lower(name) ":" password))`` and ``v = g^x mod N``,
+``v`` as big-endian without leading zeros. Sources: luanti-org/luanti, tag 5.17.0,
+``src/util/auth.cpp`` (gen_srp_v) and ``src/util/srp.cpp`` (calculate_x,
+srp_create_salted_verification_key, NG_2048). Secured by a golden
+vector that a real Luanti 5.17.0 server accepted on an SRP login.
 
-Nur der Verifier gelangt ins Welt-Volume, nie ein Klartextpasswort: Die ExApp
-rechnet ihn selbst, der Welt-Mod setzt ihn per ``core.set_player_password``.
+Only the verifier reaches the world volume, never a plaintext password: the ExApp
+computes it itself, the world mod sets it via ``core.set_player_password``.
 """
 
 from __future__ import annotations
@@ -27,20 +27,20 @@ N = int(
     16,
 )
 G = 2
-# Luanti erzeugt 16 Byte Zufallssalz pro Verifier.
+# Luanti generates 16 bytes of random salt per verifier.
 SALT_BYTES = 16
 
 
 def _bin(n: int) -> bytes:
-    """Wie mpz_to_bin in srp.cpp: Big-Endian, minimale Länge, ohne führende Nullen."""
+    """Like mpz_to_bin in srp.cpp: big-endian, minimal length, without leading zeros."""
     return n.to_bytes((n.bit_length() + 7) // 8, "big")
 
 
 def make_verifier(name: str, password: str, salt: bytes | None = None) -> str:
-    """Verifier im Luanti-Format ``#1#<Salz>#<v>``; ohne Salz mit frischem Zufallssalz.
+    """Verifier in the Luanti format ``#1#<salt>#<v>``; without a salt with a fresh random salt.
 
-    Der Name geht kleingeschrieben ein: ``Mia`` und ``mia`` ergeben bei gleichem
-    Salz denselben Verifier, wie in Luanti.
+    The name enters lower-cased: ``Mia`` and ``mia`` yield the same verifier
+    with the same salt, as in Luanti.
     """
     salt = secrets.token_bytes(SALT_BYTES) if salt is None else salt
     inner = hashlib.sha256(name.lower().encode("utf-8") + b":" + password.encode("utf-8")).digest()

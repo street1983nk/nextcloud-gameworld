@@ -1,10 +1,10 @@
-"""Der einzige Docker-Client von Gameworld.
+"""The only Docker client of Gameworld.
 
-Alle Methoden sind synchron; Aufrufer kapseln sie mit ``anyio.to_thread.run_sync``.
-Jede öffentliche Methode läuft durch :meth:`DockerProvisioner._guarded`, damit
-Verbindungs- und Transportfehler immer als :class:`DockerUnavailableError`
-ankommen, auch wenn der Client schon einmal verbunden war und der Proxy erst
-später wegbricht. Aufrufer sehen nie rohe requests- oder urllib3-Ausnahmen.
+All methods are synchronous; callers wrap them with ``anyio.to_thread.run_sync``.
+Every public method runs through :meth:`DockerProvisioner._guarded`, so that
+connection and transport errors always arrive as :class:`DockerUnavailableError`,
+even if the client was connected once and the proxy only breaks away
+later. Callers never see raw requests or urllib3 exceptions.
 """
 
 from __future__ import annotations
@@ -35,26 +35,26 @@ PORT_CONFLICT_MARKERS = ("port is already allocated", "Bind for", "address alrea
 CLIENT_TIMEOUT = 60
 STOP_TIMEOUT = 30
 NOT_FOUND_MESSAGE = "Diese Welt gibt es nicht (mehr)."
-# Weltordner im Container; Ziel für Mods und Zugangsdatei (write_world_files).
+# World folder in the container; target for mods and access file (write_world_files).
 WORLD_PATH = f"{DATA_DIR}/.minetest/worlds/world"
-# Höchstens so viele Bytes Inhalt aus der Status-Datei (T-02-18); der Welt-Mod
-# schreibt nur Spielernamen, fremder Lua-Code könnte aber beliebig viel schreiben.
+# At most this many bytes of content from the status file (T-02-18); the world mod
+# writes only player names, but foreign Lua code could write arbitrarily much.
 STATUS_FILE_MAX = 4096
-# Höchstens so viele Bytes Tar-Strom (Kopfblöcke, auch PAX, plus gekappter Inhalt).
+# At most this many bytes of tar stream (head blocks, also PAX, plus truncated content).
 STATUS_ARCHIVE_MAX = 64 * 1024
-# Das Zählbuch wächst mit jedem je eingeladenen Namen (bis 32 Bytes je Zeile) und
-# verliert nie einen: 4 KiB reichten nur für rund 125 Namen, danach fehlte die
-# Schlusszeile und die Verbuchung stand still (WR-03). 256 KiB tragen rund 8000.
+# The ledger grows with every name ever invited (up to 32 bytes per line) and
+# never loses one: 4 KiB sufficed for only about 125 names, after that the
+# closing line was missing and booking stood still (WR-03). 256 KiB carry about 8000.
 LEDGER_FILE_MAX = 256 * 1024
 LEDGER_ARCHIVE_MAX = LEDGER_FILE_MAX + STATUS_ARCHIVE_MAX
-# Die Ereignisdatei ist ein Ringpuffer mit 200 Zeilen (je bis rund 50 Bytes);
-# 16 KiB reichen mit Reserve, mehr schreibt nur fremder Lua-Code (T-04.1-07).
+# The event file is a ring buffer with 200 lines (each up to about 50 bytes);
+# 16 KiB suffice with reserve, more is written only by foreign Lua code (T-04.1-07).
 EVENTS_FILE_MAX = 16 * 1024
 EVENTS_ARCHIVE_MAX = EVENTS_FILE_MAX + STATUS_ARCHIVE_MAX
-# Docker-Strom des Weltordners in Stücken dieser Größe (Speicher bleibt konstant).
+# Docker stream of the world folder in chunks of this size (memory stays constant).
 SNAPSHOT_CHUNK = 2 * 1024 * 1024
-# Nur in diesen Zuständen ist map.sqlite konsistent: Der Server-Prozess läuft
-# nicht und ist auch nicht eingefroren oder im Neustart (Erfolgskriterium 2).
+# Only in these states is map.sqlite consistent: the server process does
+# not run and is neither frozen nor restarting (success criterion 2).
 SNAPSHOT_SAFE_STATES = frozenset({"created", "exited", "dead"})
 SNAPSHOT_RUNNING = "Die Welt läuft noch; eine Sicherung braucht eine gestoppte Welt."
 # Templates of Docker errors (D-25). Docker's own explanation, the proxy URL and the
@@ -79,28 +79,28 @@ MSG_STATUS_FILE_UNREADABLE = "Die Status-Datei der Welt ist nicht lesbar."
 MSG_ACCESS_STATE_UNREADABLE = "Der Zugangsstand der Welt ist nicht lesbar."
 MSG_LEDGER_UNREADABLE = "Das Spielzeit-Zählbuch der Welt ist nicht lesbar."
 MSG_EVENTS_UNREADABLE = "Die Ereignisdatei der Welt ist nicht lesbar."
-# Nur diese Transportfehler sind der seltene Keep-Alive-Abbruch, den ein zweiter
-# Leseversuch heilt (Pitfall 4). Timeouts werden nie wiederholt; Achtung:
-# ConnectTimeout erbt von ConnectionError UND Timeout, deshalb prüft _read
-# Timeout zusätzlich (WR-03), sonst verdoppelte ein schwarzes Loch die Wartezeit.
+# Only these transport errors are the rare keep-alive abort that a second
+# read attempt heals (pitfall 4). Timeouts are never repeated; note:
+# ConnectTimeout inherits from ConnectionError AND Timeout, therefore _read
+# additionally checks Timeout (WR-03), otherwise a black hole would double the wait.
 RETRYABLE_ERRORS = (requests.exceptions.ConnectionError, urllib3.exceptions.ProtocolError)
-# Reste fremder oder früherer Installationen (06-08, ROADMAP Kriterium 3): nur
-# Volumes nach dem Namensschema resource_name, nie Compose-Volumes mit Unterstrich
-# (etwa die des Dev-Stacks) und nie Namen, die nur mit "gameworld" beginnen.
+# Leftovers of foreign or earlier installations (06-08, ROADMAP criterion 3): only
+# volumes by the naming scheme resource_name, never compose volumes with an underscore
+# (e.g. those of the dev stack) and never names that merely begin with "gameworld".
 ORPHAN_VOLUME_PATTERN = re.compile(r"^gameworld-[a-z0-9-]{1,120}$")
 ORPHAN_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")
 
 
 class ProvisionerError(Exception):
-    """Docker hat eine Operation abgelehnt oder sie ist gescheitert."""
+    """Docker refused an operation or it failed."""
 
 
 class DockerUnavailableError(ProvisionerError):
-    """Der Docker-Proxy ist nicht erreichbar."""
+    """The Docker proxy is not reachable."""
 
 
 class PortInUseError(ProvisionerError):
-    """Der Host-Port der Welt ist schon belegt."""
+    """The host port of the world is already taken."""
 
     def __init__(self, port: int) -> None:
         super().__init__(TEXT_PORT_IN_USE.format(port=port))
@@ -108,20 +108,20 @@ class PortInUseError(ProvisionerError):
 
 
 class WorldNotFoundError(ProvisionerError):
-    """Der Container existiert nicht oder gehört nicht zu dieser Instanz."""
+    """The container does not exist or does not belong to this instance."""
 
 
 class OrphanRefusedError(ProvisionerError):
-    """Das Objekt gehört zu dieser Installation oder nicht zu Gameworld; es wird nie entfernt."""
+    """The object belongs to this installation or not to Gameworld; it is never removed."""
 
 
 class OrphanInUseError(ProvisionerError):
-    """Das Volume wird noch von einem Container benutzt (Docker 409)."""
+    """The volume is still used by a container (Docker 409)."""
 
 
 @dataclass(frozen=True)
 class OrphanContainer:
-    """Welt-Container einer fremden oder früheren Gameworld-Instanz."""
+    """World container of a foreign or earlier Gameworld instance."""
 
     id: str
     name: str
@@ -132,7 +132,7 @@ class OrphanContainer:
 
 @dataclass(frozen=True)
 class OrphanVolume:
-    """Volume nach dem Gameworld-Namensschema ohne eigene Weltzeile."""
+    """Volume following the Gameworld naming scheme without a world row of its own."""
 
     name: str
     created: str
@@ -151,8 +151,8 @@ class ContainerInfo:
     world_id: str
     status: str
     port: int
-    # Aus docker inspect (State) und dem Label gameworld.schema; die Defaults
-    # halten positionale Konstruktionen (Fakes, ältere Aufrufer) gültig.
+    # From docker inspect (State) and the label gameworld.schema; the defaults
+    # keep positional constructions (fakes, older callers) valid.
     exit_code: int = 0
     oom_killed: bool = False
     started_at: str = ""
@@ -161,7 +161,7 @@ class ContainerInfo:
 
 @dataclass(frozen=True)
 class StatusFile:
-    """Status-Datei des Welt-Mods: mtime aus dem Archiv-Stat, Inhalt gekappt."""
+    """Status file of the world mod: mtime from the archive stat, content truncated."""
 
     mtime: str
     content: bytes
@@ -169,7 +169,7 @@ class StatusFile:
 
 @dataclass(frozen=True)
 class MemoryUsage:
-    """Arbeitsspeicher einer laufenden Welt in Bytes, wie docker stats ihn zeigt."""
+    """Memory of a running world in bytes, as docker stats shows it."""
 
     used: int
     limit: int
@@ -183,10 +183,10 @@ def _int_field(source: dict[str, Any], key: str) -> int | None:
 
 
 def memory_from_stats(stats: dict[str, Any]) -> tuple[int, int] | None:
-    """(belegt, Limit) aus ``container.stats``; fehlende Felder ergeben None.
+    """(used, limit) from ``container.stats``; missing fields yield None.
 
-    Formel wie die docker CLI: usage minus inactive_file (cgroup v2), Fallback
-    total_inactive_file (cgroup v1). Nie negativ.
+    Formula like the docker CLI: usage minus inactive_file (cgroup v2), fallback
+    total_inactive_file (cgroup v1). Never negative.
     """
     memory = stats.get("memory_stats")
     if not isinstance(memory, dict):
@@ -205,7 +205,7 @@ def memory_from_stats(stats: dict[str, Any]) -> tuple[int, int] | None:
 
 
 def _read_capped(stream: Iterator[bytes], limit: int = STATUS_ARCHIVE_MAX) -> bytes:
-    """Liest höchstens ``limit`` Bytes und gibt den Rest des Stroms auf."""
+    """Reads at most ``limit`` bytes and gives up the rest of the stream."""
     raw = bytearray()
     try:
         for chunk in stream:
@@ -220,9 +220,9 @@ def _read_capped(stream: Iterator[bytes], limit: int = STATUS_ARCHIVE_MAX) -> by
 
 
 def _first_member_content(raw: bytes, limit: int = STATUS_FILE_MAX) -> tuple[bytes, bool]:
-    """Inhalt des ersten Tar-Eintrags, höchstens ``limit`` Bytes, und ob er gekappt ist.
+    """Content of the first tar entry, at most ``limit`` bytes, and whether it is truncated.
 
-    Strom-Modus ("r|"), damit ein gekapptes Archiv beim Öffnen nicht scheitert.
+    Stream mode ("r|"), so that a truncated archive does not fail on opening.
     """
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r|") as tar:
         member = tar.next()
@@ -239,7 +239,7 @@ def _explanation(exc: docker.errors.APIError) -> str:
 
 
 def _host_ports(raw: str, lo: int, hi: int) -> set[int]:
-    """HostPort-Wert ("30015" oder "30015-30017") als Ports im Bereich."""
+    """HostPort value ("30015" or "30015-30017") as ports in the range."""
     first, _, last = raw.partition("-")
     try:
         start = int(first)
@@ -262,7 +262,7 @@ class DockerProvisioner:
         self._instance_id = instance_id
         self._client: docker.DockerClient | None = None
 
-    # Interne Helfer
+    # Internal helpers
 
     def _docker(self) -> docker.DockerClient:
         if self._client is None:
@@ -271,12 +271,12 @@ class DockerProvisioner:
 
     @contextlib.contextmanager
     def _guarded(self) -> Iterator[None]:
-        """Bildet jeden Transportfehler auf DockerUnavailableError ab.
+        """Map every transport error to DockerUnavailableError.
 
-        Antworten des Docker-Daemons (APIError) sind keine Verbindungsfehler: Sie
-        werden zu WorldNotFoundError bzw. ProvisionerError mit deutscher Meldung,
-        nie zu DockerUnavailableError. Die Reihenfolge der Zweige ist deshalb
-        wichtig: APIError erbt selbst von DockerException.
+        Answers of the Docker daemon (APIError) are no connection errors: they
+        become WorldNotFoundError or ProvisionerError with a German message,
+        never DockerUnavailableError. The order of the branches is therefore
+        important: APIError itself inherits from DockerException.
         """
         try:
             yield
@@ -296,13 +296,13 @@ class DockerProvisioner:
             raise DockerUnavailableError(TEXT_DOCKER_UNREACHABLE.format(docker_url=self._docker_url)) from exc
 
     def _read[T](self, operation: Callable[[], T]) -> T:
-        """Lesender Aufruf mit genau einem zweiten Versuch nach einem Verbindungsabbruch.
+        """Reading call with exactly one second attempt after a connection abort.
 
-        Der HAProxy im tecnativa-Proxy schließt Keep-Alive-Verbindungen nach
-        ``timeout http-keep-alive 10s``; trifft ein Request genau diese Lücke,
-        endet er mit "Remote end closed connection" (Pitfall 4). _guarded hat den
-        Client dann schon verworfen, der zweite Versuch läuft mit frischer
-        Verbindung. Nur für lesende Aufrufe: Mutationen werden nie wiederholt.
+        The HAProxy in the tecnativa proxy closes keep-alive connections after
+        ``timeout http-keep-alive 10s``; if a request hits exactly this gap,
+        it ends with "Remote end closed connection" (pitfall 4). _guarded has
+        discarded the client by then, the second attempt runs with a fresh
+        connection. Only for reading calls: mutations are never repeated.
         """
         try:
             with self._guarded():
@@ -311,12 +311,12 @@ class DockerProvisioner:
             cause = exc.__cause__
             if not isinstance(cause, RETRYABLE_ERRORS) or isinstance(cause, requests.exceptions.Timeout):
                 raise
-            LOG.info("Verbindung zum Docker-Proxy abgebrochen, zweiter Leseversuch")
+            LOG.info("Connection to the Docker proxy aborted, second read attempt")
         with self._guarded():
             return operation()
 
     def _is_owned(self, container: Container, world_id: str) -> bool:
-        """Zweite Prüfung am Ergebnis, falls ein Filter des Proxys ignoriert würde."""
+        """Second check on the result, in case a filter of the proxy were ignored."""
         labels = container.labels or {}
         return (
             labels.get("gameworld.managed") == "true"
@@ -325,11 +325,11 @@ class DockerProvisioner:
         )
 
     def _owned(self, world_id: str) -> Container:
-        """Der Container dieser Welt, nur mit eigenem Label und eigener Instanz.
+        """The container of this world, only with the own label and own instance.
 
-        Jede Mutation löst den Container hierüber auf, nie über einen Namen oder
-        eine ID von außen: Über den pfadbasierten Proxy dürfen nie fremde
-        Container (Nextcloud, Findling, andere Gameworld-Instanzen) angefasst werden.
+        Every mutation resolves the container through this, never via a name or
+        an ID from outside: through the path-based proxy, foreign containers
+        (Nextcloud, Findling, other Gameworld instances) must never be touched.
         """
         containers = self._docker().containers.list(
             all=True,
@@ -346,7 +346,7 @@ class DockerProvisioner:
             raise WorldNotFoundError(NOT_FOUND_MESSAGE)
         return owned[0]
 
-    # Öffentliche Operationen
+    # Public operations
 
     def ensure_image(self) -> None:
         with self._guarded():
@@ -359,15 +359,15 @@ class DockerProvisioner:
     def create_world_container(
         self, world_id: str, host_port: int, payload: WorldPayload, *, reuse_volume: bool = False
     ) -> str:
-        """Erzeugt den Container der Welt und spielt die Weltdateien ein.
+        """Create the container of the world and install the world files.
 
-        Spec (Speicherlimit, Labels) und Inhalt kommen beide aus ``payload``,
-        damit eine Neuerzeugung nie ein anderes Spiel oder Limit bekommt. Das
-        Tar geht als Datei-Objekt an ``put_archive``; schließen muss es der Aufrufer.
+        Spec (memory limit, labels) and content both come from ``payload``,
+        so that a re-creation never gets a different game or limit. The
+        tar goes to ``put_archive`` as a file object; the caller must close it.
 
-        ``reuse_volume`` steht für eine Neuerzeugung mit vorhandenem Volume (etwa
-        nach einer Port-Kollision): Scheitert dann das Einspielen, bleibt das
-        Volume mit den Weltdaten erhalten und nur der Container wird entfernt.
+        ``reuse_volume`` stands for a re-creation with an existing volume (e.g.
+        after a port collision): if installing then fails, the volume
+        with the world data is kept and only the container is removed.
         """
         with self._guarded():
             api = self._docker()
@@ -377,7 +377,7 @@ class DockerProvisioner:
                 if not container.put_archive(DATA_DIR, payload.archive):
                     raise ProvisionerError(MSG_PAYLOAD_REJECTED)
             except Exception:
-                # Halb erzeugte Welt nicht liegen lassen; der Aufrufer kennt die ID noch nicht.
+                # Do not leave a half-created world behind; the caller does not know the ID yet.
                 with contextlib.suppress(Exception):
                     container.remove(force=True, v=False)
                 if not reuse_volume:
@@ -392,10 +392,10 @@ class DockerProvisioner:
             try:
                 container.start()
             except docker.errors.NotFound:
-                # Container zwischen _owned() und start() verschwunden (Race mit
-                # Löschen/Prune): _guarded bildet das auf WorldNotFoundError ab,
-                # nicht auf einen 500er. NotFound erbt von APIError, der Zweig
-                # muss deshalb vor dem APIError-Zweig stehen.
+                # Container vanished between _owned() and start() (race with
+                # delete/prune): _guarded maps that to WorldNotFoundError,
+                # not to a 500. NotFound inherits from APIError, so the branch
+                # must come before the APIError branch.
                 raise
             except docker.errors.APIError as exc:
                 explanation = _explanation(exc)
@@ -404,12 +404,12 @@ class DockerProvisioner:
                 raise ProvisionerError(TEXT_START_REJECTED.format(explanation=explanation)) from exc
 
     def write_world_files(self, world_id: str, archive: bytes) -> None:
-        """Spielt ein Tar (Pfade relativ zum Weltordner) in die Welt ein, laufend oder gestoppt.
+        """Install a tar (paths relative to the world folder) into the world, running or stopped.
 
-        Für Welt-Mods und Zugangsdatei. Nur ``put_archive`` über _owned, kein
-        exec: ``PUT /containers/{id}/archive`` fällt beim tecnativa-Proxy unter
-        CONTAINERS=1 und POST=1, eine neue Freigabe braucht es nicht. Das Ziel
-        liegt im Volume, das read-only Root-Dateisystem stört deshalb nicht.
+        For world mods and access file. Only ``put_archive`` via _owned, no
+        exec: ``PUT /containers/{id}/archive`` falls under CONTAINERS=1 and
+        POST=1 of the tecnativa proxy, a new permission is not needed. The target
+        is in the volume, so the read-only root file system does not interfere.
         """
         with self._guarded():
             container = self._owned(world_id)
@@ -417,14 +417,14 @@ class DockerProvisioner:
                 raise ProvisionerError(MSG_ACCESS_LIST_REJECTED)
 
     def snapshot_to[T](self, world_id: str, write: Callable[[Iterator[bytes]], T]) -> T:
-        """Reicht den Tar-Strom des Weltordners an ``write`` und gibt dessen Ergebnis zurück.
+        """Hand the tar stream of the world folder to ``write`` and return its result.
 
-        Nur bei gestopptem Container (nach ``reload``): Aus einer laufenden Welt
-        wäre map.sqlite inkonsistent (T-05-04), get_archive wird dann nie
-        aufgerufen. Gelesen wird innerhalb desselben _guarded-Blocks, damit auch
-        ein Abbruch mitten im Strom als DockerUnavailableError ankommt
-        (Pitfall 8); kein _read und kein zweiter Versuch, ein halb gelesener
-        Strom darf nie still neu beginnen. Der Strom wird immer geschlossen.
+        Only with a stopped container (after ``reload``): from a running world
+        map.sqlite would be inconsistent (T-05-04), get_archive is then never
+        called. Reading happens inside the same _guarded block, so that even
+        an abort in the middle of the stream arrives as DockerUnavailableError
+        (pitfall 8); no _read and no second attempt, a half-read
+        stream must never silently start over. The stream is always closed.
         """
         with self._guarded():
             container = self._owned(world_id)
@@ -440,9 +440,9 @@ class DockerProvisioner:
                     close()
 
     def put_world_archive(self, world_id: str, archive: BinaryIO) -> None:
-        """Spielt ein Restore-Tar (Datei-Objekt, auch gzip) in den Weltordner ein.
+        """Install a restore tar (file object, also gzip) into the world folder.
 
-        Namen im Tar sind relativ zum Weltordner. Schließen muss der Aufrufer.
+        Names in the tar are relative to the world folder. The caller must close it.
         """
         with self._guarded():
             container = self._owned(world_id)
@@ -450,30 +450,30 @@ class DockerProvisioner:
                 raise ProvisionerError(MSG_BACKUP_REJECTED)
 
     def stop(self, world_id: str, *, timeout: int = STOP_TIMEOUT) -> None:
-        """Stoppt die Welt; ``timeout`` kürzer nur beim Aufräumen unter Frist (teardown_all)."""
+        """Stops the world; ``timeout`` shorter only for cleanup under a deadline (teardown_all)."""
         with self._guarded():
-            # Client-Timeout (60 s) liegt über dem Stop-Timeout, Luanti speichert vorher.
+            # Client timeout (60 s) is above the stop timeout, Luanti saves beforehand.
             self._owned(world_id).stop(timeout=timeout)
 
     def remove_world(self, world_id: str, *, keep_volume: bool) -> None:
-        """Entfernt den Container der Welt und auf Wunsch ihr Volume.
+        """Remove the container of the world and, on request, its volume.
 
-        Fehlt der Container schon, ist das kein Fehler: Löschen soll auch eine
-        Welt mit verschwundenem Container aufräumen. Das Volume trägt immer das
-        Präfix der eigenen Instanz, ein fremdes Volume kann so nicht getroffen werden.
+        If the container is already missing, that is no error: deleting should also clean up
+        a world with a vanished container. The volume always carries the
+        prefix of the own instance, so a foreign volume cannot be hit.
         """
         with self._guarded():
             api = self._docker()
             try:
                 self._owned(world_id).remove(force=True, v=False)
             except (WorldNotFoundError, docker.errors.NotFound):
-                LOG.info("Welt %s hat keinen eigenen Container mehr", world_id)
+                LOG.info("World %s has no own container anymore", world_id)
             if not keep_volume:
                 with contextlib.suppress(docker.errors.NotFound):
                     api.volumes.get(resource_name(self._instance_id, world_id)).remove()
 
     def volume_exists(self, world_id: str) -> bool:
-        """Gibt es das Volume der Welt (Weltdaten) noch? Name immer mit eigenem Instanz-Präfix."""
+        """Does the volume of the world (world data) still exist? Name always with the own instance prefix."""
         return self._read(lambda: self._volume_exists(world_id))
 
     def _volume_exists(self, world_id: str) -> bool:
@@ -484,7 +484,7 @@ class DockerProvisioner:
         return True
 
     def used_host_ports(self, lo: int, hi: int) -> set[int]:
-        """Host-Ports im Bereich, die irgendein Container des Hosts bindet (auch fremde)."""
+        """Host ports in the range that any container of the host binds (also foreign ones)."""
         return self._read(lambda: self._used_host_ports(lo, hi))
 
     def _used_host_ports(self, lo: int, hi: int) -> set[int]:
@@ -497,11 +497,11 @@ class DockerProvisioner:
         return used
 
     def list_managed(self) -> dict[str, ContainerInfo]:
-        """Eigene Welt-Container mit Zustand aus docker inspect.
+        """Own world containers with state from docker inspect.
 
-        docker-py liefert bei ``containers.list`` (nicht sparse) volle
-        Inspect-Daten in ``container.attrs``; daraus kommen ExitCode, OOMKilled
-        und StartedAt für das Statusmodell.
+        docker-py returns full inspect data in ``container.attrs`` for
+        ``containers.list`` (not sparse); ExitCode, OOMKilled
+        and StartedAt for the status model come from there.
         """
         return self._read(self._list_managed)
 
@@ -531,18 +531,18 @@ class DockerProvisioner:
         return result
 
     def _is_foreign(self, container: Container) -> bool:
-        """Gameworld-Welt-Container (Label managed), aber nicht von dieser Instanz."""
+        """Gameworld world containers (label managed), but not from this instance."""
         labels = container.labels or {}
         return labels.get("gameworld.managed") == "true" and labels.get("gameworld.instance") != self._instance_id
 
     def list_orphans(self, owned_volumes: set[str]) -> Orphans:
-        """Reste anderer Installationen: fremde Welt-Container und Volumes ohne eigene Welt.
+        """Leftovers of other installations: foreign world containers and volumes without a world.
 
-        Nur lesend. ``owned_volumes`` sind die Volume-Namen aller eigenen
-        Weltzeilen (der Provisioner kennt die Datenbank nicht); sie erscheinen
-        nie. Container ohne Label gameworld.managed=true erscheinen nie, auch
-        wenn ihr Name mit gameworld beginnt. Filter des Proxys werden am Ergebnis
-        ein zweites Mal geprüft.
+        Read only. ``owned_volumes`` are the volume names of all own
+        world rows (the provisioner does not know the database); they never
+        appear. Containers without the label gameworld.managed=true never appear, even
+        if their name begins with gameworld. Filters of the proxy are checked
+        a second time on the result.
         """
         return self._read(lambda: self._list_orphans(owned_volumes))
 
@@ -569,11 +569,11 @@ class DockerProvisioner:
         return Orphans(containers=containers, volumes=volumes)
 
     def remove_orphan_container(self, container_id: str) -> None:
-        """Entfernt einen fremden Welt-Container; Volume bleibt (v=False).
+        """Remove a foreign world container; the volume stays (v=False).
 
-        Der Container wird frisch geholt und am Objekt geprüft (Label managed,
-        fremde Instanz, ID passt), nie über eine ungeprüfte ID entfernt. Fehlt
-        er schon, ist das kein Fehler.
+        The container is fetched fresh and checked on the object (label managed,
+        foreign instance, ID matches), never removed via an unchecked ID. If
+        it is already missing, that is no error.
         """
         if not ORPHAN_ID_PATTERN.fullmatch(container_id):
             raise OrphanRefusedError(MSG_ORPHAN_BAD_ID)
@@ -590,11 +590,11 @@ class DockerProvisioner:
                 return
 
     def remove_orphan_volume(self, name: str, owned_volumes: set[str]) -> None:
-        """Entfernt ein Gameworld-Volume ohne eigene Welt; in Benutzung -> OrphanInUseError.
+        """Remove a Gameworld volume without a world of its own; in use -> OrphanInUseError.
 
-        Name nach ORPHAN_VOLUME_PATTERN und nicht in ``owned_volumes``, sonst
-        OrphanRefusedError, noch bevor Docker gefragt wird. Fehlt es schon, ist
-        das kein Fehler.
+        Name per ORPHAN_VOLUME_PATTERN and not in ``owned_volumes``, otherwise
+        OrphanRefusedError, before Docker is even asked. If it is already
+        missing, that is no error.
         """
         if not ORPHAN_VOLUME_PATTERN.fullmatch(name) or name in owned_volumes:
             raise OrphanRefusedError(MSG_ORPHAN_VOLUME_REFUSED)
@@ -615,32 +615,32 @@ class DockerProvisioner:
                 raise
 
     def read_status_file(self, world_id: str) -> StatusFile | None:
-        """Status-Datei des Welt-Mods (mtime und gekappter Inhalt) oder None.
+        """Status file of the world mod (mtime and truncated content) or None.
 
-        None heißt: Docker kennt die Datei nicht, der Server hat sie in diesem
-        Volume noch nie geschrieben. Den Container löst _owned auf, fremde
-        Container sind ausgeschlossen. Kein Follow-Stream (Pitfall 8).
+        None means: Docker does not know the file, the server has never written it
+        in this volume. _owned resolves the container, foreign containers
+        are excluded. No follow stream (pitfall 8).
         """
         return self._read(lambda: self._read_world_file(world_id, PLAYERS_FILE, MSG_STATUS_FILE_UNREADABLE))
 
     def read_access_state(self, world_id: str) -> StatusFile | None:
-        """State-Datei des Zugangs-Mods (mtime und gekappter Inhalt) oder None.
+        """State file of the access mod (mtime and truncated content) or None.
 
-        Der Mod schreibt sie, sobald er eine Zugangsdatei geladen hat. Fehlt sie
-        oder ist sie älter als der Start des Containers, läuft die Welt noch ohne
-        geladenen Zugangsschutz (03-RESEARCH.md Pitfall 4). Gleiche Kappung und
-        Fehlerabbildung wie bei der Status-Datei.
+        The mod writes it as soon as it has loaded an access file. If it is missing
+        or older than the start of the container, the world still runs without
+        loaded access protection (03-RESEARCH.md pitfall 4). Same truncation and
+        error mapping as for the status file.
         """
         return self._read(lambda: self._read_world_file(world_id, STATE_FILE, MSG_ACCESS_STATE_UNREADABLE))
 
     def read_time_ledger(self, world_id: str) -> StatusFile | None:
-        """Zählbuch des Zeit-Mods (mtime und gekappter Inhalt) oder None.
+        """Ledger of the time mod (mtime and truncated content) or None.
 
-        Der Mod schreibt es beim Start, im Takt bei verbundenen Spielern und beim
-        Verlassen. Über get_archive, deshalb auch bei gestoppter Welt lesbar; kein
-        exec. Gleiche Fehlerabbildung wie bei der Status-Datei, aber eine eigene,
-        größere Kappung (LEDGER_FILE_MAX, WR-03); wird sie trotzdem erreicht, steht
-        eine Warnung im Log statt eines stillen Stillstands der Verbuchung.
+        The mod writes it at start, in the tick with connected players and on
+        leaving. Via get_archive, therefore readable even with a stopped world; no
+        exec. Same error mapping as for the status file, but its own,
+        larger truncation (LEDGER_FILE_MAX, WR-03); if it is reached anyway, there is
+        a warning in the log instead of a silent standstill of booking.
         """
         return self._read(
             lambda: self._read_world_file(
@@ -654,11 +654,11 @@ class DockerProvisioner:
         )
 
     def read_events(self, world_id: str) -> StatusFile | None:
-        """Ereignisdatei des Zugangs-Mods (mtime und gekappter Inhalt) oder None.
+        """Event file of the access mod (mtime and truncated content) or None.
 
-        None heißt: Der Mod hat die Datei in diesem Volume noch nie geschrieben
-        (alter Mod ohne Ereignisse). Eigene Kappung EVENTS_FILE_MAX (T-04.1-07);
-        der Inhalt kommt nie ins Log, nur Welt-ID und Größe.
+        None means: the mod has never written the file in this volume
+        (old mod without events). Own truncation EVENTS_FILE_MAX (T-04.1-07);
+        the content never goes into the log, only world ID and size.
         """
         return self._read(
             lambda: self._read_world_file(
@@ -689,21 +689,21 @@ class DockerProvisioner:
         try:
             content, truncated = _first_member_content(_read_capped(stream, archive_max), file_max)
         except (tarfile.TarError, EOFError) as exc:
-            # Gekappter oder abgebrochener Strom, Datei mitten im Umbenennen: Der
-            # Inhalt stammt aus von Lua beschreibbarer Datei. Als ProvisionerError
-            # bleibt der Fehler an dieser einen Welt (WR-04), ohne zweiten Versuch.
+            # Truncated or aborted stream, file in the middle of a rename: the
+            # content comes from a file writable by Lua. As a ProvisionerError
+            # the error stays with this one world (WR-04), without a second attempt.
             raise ProvisionerError(unreadable) from exc
         if truncated and warn_truncated:
-            # Nur Größe und Grenze ins Log, nie den Inhalt.
-            LOG.warning("Welt %s: %s ist größer als %d Bytes und wurde gekappt", world_id, path, file_max)
+            # Only size and limit into the log, never the content.
+            LOG.warning("World %s: %s is larger than %d bytes and was truncated", world_id, path, file_max)
         return StatusFile(mtime=str((stat or {}).get("mtime") or ""), content=content)
 
     def memory_bytes(self, world_id: str) -> MemoryUsage | None:
-        """RAM der Welt oder None, wenn der Container nicht läuft.
+        """RAM of the world or None if the container is not running.
 
-        ``one_shot`` liefert die Werte ohne die Sekunde Wartezeit für die
-        CPU-Vorwerte (7 bis 13 ms laut Spike). Den Container löst _owned auf,
-        fremde Container sind ausgeschlossen (T-02-26).
+        ``one_shot`` returns the values without the second of waiting for the
+        CPU previous values (7 to 13 ms per the spike). _owned resolves the container,
+        foreign containers are excluded (T-02-26).
         """
         return self._read(lambda: self._memory_bytes(world_id))
 

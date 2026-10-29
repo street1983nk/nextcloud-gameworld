@@ -1,9 +1,9 @@
-"""Spielarten (Presets) einer Welt, rein und ohne Docker.
+"""Game types (presets) of a world, pure and without Docker.
 
-Die Schalter je Preset stammen aus der settingtypes.txt des jeweiligen
-Spiel-Zips. Kein Nutzerwert erreicht minetest.conf oder die Container-Spec:
-Die API nimmt nur eine Preset-ID aus dieser Registry an, alle Zeilen und
-Limits sind hier fest kodiert.
+The switches per preset come from the settingtypes.txt of the respective
+game zip. No user value reaches minetest.conf or the container spec:
+the API accepts only a preset ID from this registry, all lines and
+limits are hard-coded here.
 """
 
 from __future__ import annotations
@@ -44,10 +44,10 @@ MTG_KREATIV = Preset(
     ),
 )
 
-# Schalter aus der settingtypes.txt von VoxeLibre 0.92.4. Speicher: Der
-# RESEARCH-Spike maß beim Generieren der Karte bis 501 MiB, deshalb 1 GiB ohne
-# Swap (512 MiB wie beim Kreativ-Preset würden beim Erkunden zum OOM führen).
-# Hunger bleibt an, dafür steht bewusst keine Zeile hier.
+# Switches from the settingtypes.txt of VoxeLibre 0.92.4. Memory: the
+# RESEARCH spike measured up to 501 MiB while generating the map, hence 1 GiB without
+# swap (512 MiB as with the creative preset would lead to OOM when exploring).
+# Hunger stays on, therefore deliberately no line here.
 VOXELIBRE_SANFT = Preset(
     id="voxelibre_sanft",
     title="Abenteuer (sanft)",
@@ -71,7 +71,7 @@ VOXELIBRE_SANFT = Preset(
     ),
 )
 
-# Reihenfolge = Anzeigereihenfolge im Dashboard.
+# Order = display order in the dashboard.
 PRESETS: dict[str, Preset] = {preset.id: preset for preset in (MTG_KREATIV, VOXELIBRE_SANFT)}
 DEFAULT_PRESET_ID = MTG_KREATIV.id
 
@@ -90,7 +90,7 @@ def _unknown_message() -> str:
 
 
 def get_preset(preset_id: str) -> Preset:
-    """Preset zur ID oder ValueError mit deutscher Meldung."""
+    """Preset for the ID or ValueError with a German message."""
     preset = PRESETS.get(preset_id)
     if preset is None:
         raise ValueError(_unknown_message())
@@ -98,6 +98,6 @@ def get_preset(preset_id: str) -> Preset:
 
 
 def validate_preset_id(value: str) -> str:
-    """Pydantic-AfterValidator: lässt nur Registry-IDs durch."""
+    """Pydantic AfterValidator: lets only registry IDs through."""
     get_preset(value)
     return value

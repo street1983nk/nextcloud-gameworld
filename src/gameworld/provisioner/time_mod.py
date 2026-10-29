@@ -1,101 +1,101 @@
-"""Der Welt-Mod gameworld_time, die Regeldatei und das Zählbuch, als Konstanten im Code.
+"""The world mod gameworld_time, the rule file and the ledger, as constants in the code.
 
-Die Spielzeit setzt der Spielserver durch (ZEIT-02, Owner-Entscheid O-01): Der
-Mod liest bei jedem Join-Versuch und alle 5 s die Regeldatei
-``gameworld_time.txt`` im Weltordner, die nur die ExApp per ``put_archive``
-schreibt (root, 0444). Er zählt die Online-Zeit je Spieler in einem eigenen
-Zählbuch ``gameworld_time_used.txt`` (uid 30000, per ``core.safe_file_write``),
-das im Welt-Volume bleibt und beim Start wieder eingelesen wird. Ein
-Welt-Neustart setzt die Zeit deshalb nicht zurück.
+The game server enforces the playtime (ZEIT-02, owner decision O-01): the
+mod reads the rule file ``gameworld_time.txt`` in the world folder on every join attempt
+and every 5 s, which only the ExApp writes via ``put_archive``
+(root, 0444). It counts the online time per player in its own
+ledger ``gameworld_time_used.txt`` (uid 30000, via ``core.safe_file_write``),
+which stays in the world volume and is read in again at start. A
+world restart therefore does not reset the time.
 
-Format der Regeldatei (ASCII, Zeilen sortiert, deterministisch)::
+Format of the rule file (ASCII, lines sorted, deterministic)::
 
-    gameworld-time 1 <Generation> <ausgestellt, Epoch>
-    welt <from> <until> <grund> <naechste>              (nur mit Welt-Zeitfenster)
-    <Spielername> <cap> <from> <until> <grund> <naechste>
+    gameworld-time 1 <generation> <issued, epoch>
+    welt <from> <until> <reason> <next>                (only with a world time window)
+    <player name> <cap> <from> <until> <reason> <next>
     end
 
-``cap`` ist der Zählbuch-Stand in Sekunden, ab dem der Spieler getrennt wird
-(-1 = kein Tageslimit), ``from`` und ``until`` sind absolute Epoch-Sekunden des
-erlaubten Fensters (Container laufen in UTC, lokale Zeit rechnet nur die
-ExApp). ``grund`` ist ok, tag, fenster, limit oder frei (Verwalter: Welt-Fenster
-und eigene Grenzen gelten nicht, Zeile ``-1 -1 -1 frei -``); die Welt-Zeile
-kennt ok und welt. ``naechste`` ist ein Token wie ``Sa-10:00``, ``-`` heißt:
-keine nächste Spielzeit. Der neue Mod zeigt das Token nicht mehr an; es bleibt
-nur für Mods in laufenden Containern stehen, die vor dem Update gestartet sind.
+``cap`` is the ledger state in seconds from which the player is disconnected
+(-1 = no daily limit), ``from`` and ``until`` are absolute epoch seconds of the
+allowed window (containers run in UTC, only the ExApp computes local time).
+The reason is ok, tag, fenster, limit or frei (managers: world window
+and own limits do not apply, line ``-1 -1 -1 frei -``); the world line
+knows ok and welt. The next token is like ``Sa-10:00``, ``-`` means:
+no next playtime. The new mod no longer displays the token; it stays
+only for mods in running containers that were started before the update.
 
-Seit Quick 261021-481 (Owner-Entscheid 21.10.2026: Kindertexte ohne "0 Uhr" und
-"Mitternacht") kommen zwei Zeilentypen dazu, beide mit ``@`` am Anfang::
+Since quick 261021-481 (owner decision 21.10.2026: child texts without "0 Uhr" and
+"Mitternacht") two more line types are added, both with ``@`` at the start::
 
-    @tage <wd0> <d0> <d1> ... <d8>               (direkt nach dem Kopf)
-    @start <Spielername|welt> <Epoch> <Minute>   (direkt nach der Zeile davon)
+    @tage <wd0> <d0> <d1> ... <d8>               (directly after the head)
+    @start <player name|welt> <epoch> <minute>   (directly after the line it belongs to)
 
-``@tage`` nennt den ISO-Wochentag (1..7) des lokalen Tages ``d0`` (heute beim
-Schreiben) und die neun Epoch-Anfänge der lokalen Tage heute bis heute+8 (aus
-zoneinfo, also auch an 23-h- und 25-h-Tagen richtig). ``@start`` nennt den
-Epoch der nächsten Fensteröffnung und ihre lokale Minute 0..1439; der Mod zeigt
-eine Uhrzeit nur bei Minute > 0 (eine echte Startzeit der Eltern). Den
-Tagesbezug ("Heute", "Morgen", "Am Samstag", "Nächsten Samstag") bildet der Mod
-selbst gegen die eigene Uhr: So stimmt er auch nach Mitternacht, bevor die
-ExApp neu schreibt. Kompatibilität: Alte Mods lesen nur Zeilen, die mit
-``[%w_%-]`` beginnen, und überspringen ``@``-Zeilen (``@`` kommt in
-Spielernamen nie vor, kein Fail-open); der neue Mod liest Dateien ohne
-``@``-Zeilen und zeigt dann den Grundsatz ohne Zeitangabe.
+``@tage`` gives the ISO weekday (1..7) of the local day ``d0`` (today when
+writing) and the nine epoch starts of the local days today to today+8 (from
+zoneinfo, so also correct on 23 h and 25 h days). ``@start`` gives the
+epoch of the next window opening and its local minute 0..1439; the mod shows
+a clock time only for minute > 0 (a real start time set by the parents). The
+day reference ("Heute", "Morgen", "Am Samstag", "Nächsten Samstag") is formed by the mod
+itself against its own clock: so it is also right after midnight, before the
+ExApp writes anew. Compatibility: old mods read only lines that begin with
+``[%w_%-]`` and skip ``@`` lines (``@`` never occurs in
+player names, no fail-open); the new mod reads files without
+``@`` lines and then shows the base sentence without a time.
 
-Seit WR-06 (Review Phase 4) folgt einer Zeile mit Deckel (``cap`` >= 0) noch::
+Since WR-06 (review phase 4) a line with a cap (``cap`` >= 0) is followed by::
 
-    @base <Spielername> <Sekunden>
+    @base <player name> <seconds>
 
-``base`` ist der Zählbuch-Stand, gegen den die ExApp den Deckel gerechnet hat
-(``cap - base`` = Rest beim Ausstellen). Liegt das Zählbuch des Mods beim Laden
-darunter (Zählbuch gelöscht, Sicherung zurückgespielt), verschiebt der Mod den
-Deckel um den Unterschied: Er gewährt dann nie mehr als den Rest beim Ausstellen,
-auch wenn die ExApp bis zum Fensterende nicht neu schreibt. Im Normalfall ist
-der Mod-Stand mindestens ``base`` und nichts ändert sich. ``base`` wechselt nur
-mit dem Deckel, nicht in jedem Takt (Pitfall 6). Alte Mods überspringen die Zeile.
+``base`` is the ledger state against which the ExApp computed the cap
+(``cap - base`` = rest at issuing). If the mod's ledger is below it on loading
+(ledger deleted, backup restored), the mod shifts the
+cap by the difference: it then never grants more than the rest at issuing,
+even if the ExApp does not rewrite until the window end. Normally the mod state
+is at least ``base`` and nothing changes. ``base`` changes only
+with the cap, not on every tick (pitfall 6). Old mods skip the line.
 
-Seit Phase 4.1 (Pause vom Handy, D-03 bis D-05, D-26) kommen zwei weitere
-``@``-Zeilen dazu::
+Since phase 4.1 (pause from the phone, D-03 to D-05, D-26) two more
+``@`` lines are added::
 
-    @pause <ab> <bis> <art>          (direkt nach @tage bzw. nach dem Kopf)
-    @morgen <Spielername> <Minute>   (nur bei art schluss, direkt danach, sortiert)
+    @pause <ab> <bis> <art>          (directly after @tage or after the head)
+    @morgen <player name> <minute>   (only with art schluss, directly after, sorted)
 
-``ab`` ist der Epoch des Trennens (Auslösung + 30 s), ``bis`` das Ende, ``art``
-ist ``pause`` oder ``schluss``. Ab ``ab`` - 30 s lässt der Mod niemanden außer
-``frei`` hinein, auch Namen ohne Regelzeile nicht; Verbundene bekommen einmal
-"In 30 Sekunden ist Pause." und werden ab ``ab`` mit dem Pausentext getrennt.
-``@morgen`` nennt die lokale Startminute des nächsten Tages für den Schluss-Text
-(-1 = morgen kein Spieltag). Getrennte Kinder verbrauchen nichts (D-05), das
-Zählbuch bleibt unverändert. Alte Mods überspringen beide Zeilen still; ob der
-laufende Mod sie kann, zeigt der ExApp die Ereignisdatei des Zugangs-Mods
-(gleicher Neustart, kein Fail-open, 04.1-RESEARCH.md Pitfall 1 und Pattern 3).
+``ab`` is the epoch of the disconnect (trigger + 30 s), ``bis`` the end, ``art``
+is ``pause`` or ``schluss``. From ``ab`` - 30 s the mod lets nobody in except
+``frei``, not even names without a rule line; connected players once get
+"In 30 Sekunden ist Pause." and are disconnected from ``ab`` with the pause text.
+``@morgen`` gives the local start minute of the next day for the closing text
+(-1 = tomorrow is not a play day). Disconnected children use up nothing (D-05), the
+ledger stays unchanged. Old mods skip both lines silently; whether the
+running mod can do them is shown to the ExApp by the event file of the access mod
+(same restart, no fail-open, 04.1-RESEARCH.md pitfall 1 and pattern 3).
 
-Seit Phase 5 (Chat-Hinweis vor dem Cold-Backup, D-09) kommt als letzte
-``@``-Zeile vor ``end`` dazu::
+Since phase 5 (chat notice before the cold backup, D-09) the last
+``@`` line before ``end`` is added::
 
     @halt <ab>
 
-``ab`` ist der Epoch, ab dem der Spielserver gleich stoppt (Sicherung). Sieht der
-Mod die Zeile, sendet er genau einmal je ``ab`` an alle "Die Welt macht gleich
-eine kurze Pause.", lässt ab dann niemanden mehr hinein (auch ``frei`` nicht,
-der Server stoppt gleich) und trennt ab ``ab`` alle Verbundenen mit "Die Welt
-macht kurz Pause. Gleich geht es weiter.". Den Halt hält die ExApp nur im
-Speicher; nach dem Snapshot schreibt der Neustart die Datei ohne ``@halt``.
-Alte Mods überspringen die Zeile still, dann gibt es keinen Hinweis, der Ablauf
-bleibt korrekt (05-RESEARCH.md Pattern 6).
+``ab`` is the epoch from which the game server stops shortly (backup). If the
+mod sees the line, it sends exactly once per ``ab`` to everyone "Die Welt macht gleich
+eine kurze Pause.", lets nobody in from then on (not even ``frei``,
+the server stops shortly) and disconnects all connected players from ``ab`` with "Die Welt
+macht kurz Pause. Gleich geht es weiter.". The ExApp keeps the halt in memory
+only; after the snapshot the restart writes the file without ``@halt``.
+Old mods skip the line silently, then there is no notice, the flow
+stays correct (05-RESEARCH.md pattern 6).
 
-Format des Zählbuchs (schreibt nur der Mod)::
+Format of the ledger (written only by the mod)::
 
-    gameworld-time-used 1 <os.time beim Schreiben> <geladene Generation>
-    <Spielername> <Sekunden gesamt>
+    gameworld-time-used 1 <os.time when writing> <loaded generation>
+    <player name> <seconds total>
     end
 
-Fehlt die Regeldatei, gibt es keine Regeln. Fehlen Kopf oder Schlusszeile (halb
-geschrieben), bleibt der zuletzt gültige Stand; liegt beim Start nur eine
-ungültige Datei vor, kommt niemand hinein (fail closed, O-04). Vorwarnung per
-Chat bei 10, 5 und 1 Minute Rest (O-06), AFK zählt als Spielzeit (O-09). Der
-Mod schreibt keine IP-Adressen und keine Sitzungszeitpunkte; der Lua-Quelltext
-bleibt reines ASCII, die Kindertexte gehen als Lua-Dezimal-Escapes hinein.
+If the rule file is missing, there are no rules. If head or closing line are missing (half
+written), the last valid state stays; if at start only an
+invalid file exists, nobody gets in (fail closed, O-04). Advance warning via
+chat at 10, 5 and 1 minute rest (O-06), AFK counts as playtime (O-09). The
+mod writes no IP addresses and no session times; the Lua source
+stays pure ASCII, the child texts go in as Lua decimal escapes.
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ MOD_DIR = f".minetest/worlds/world/worldmods/{MOD_NAME}"
 
 RULES_FILE_NAME = "gameworld_time.txt"
 LEDGER_FILE_NAME = "gameworld_time_used.txt"
-# Pfade im Container; die ExApp schreibt RULES_FILE und liest LEDGER_FILE.
+# Paths in the container; the ExApp writes RULES_FILE and reads LEDGER_FILE.
 RULES_FILE = f"{DATA_DIR}/.minetest/worlds/world/{RULES_FILE_NAME}"
 LEDGER_FILE = f"{DATA_DIR}/.minetest/worlds/world/{LEDGER_FILE_NAME}"
 TIME_HEADER = "gameworld-time 1"
@@ -123,19 +123,19 @@ LEDGER_HEADER = "gameworld-time-used 1"
 
 REASONS = frozenset({"ok", "tag", "fenster", "limit", "frei"})
 WORLD_REASONS = frozenset({"ok", "welt"})
-# Namen der Schlüsselzeilen; ein Spieler darf nicht so heißen (case-insensitiv).
+# Names of the key lines; a player must not have such a name (case-insensitive).
 RESERVED_NAMES = frozenset({"welt", "end"})
 TOKEN = re.compile(r"[A-Za-z0-9:-]{1,16}")
-# Höchstwert einer Zählbuch-Zeile; alles darüber ist kaputt oder fremd.
+# Maximum value of a ledger line; anything above is broken or foreign.
 LEDGER_MAX_SECONDS = 10**9
 
 _LEDGER_HEAD = re.compile(r"gameworld-time-used 1 ([0-9]+) ([0-9]+)")
 _LEDGER_LINE = re.compile(r"(\S+) ([0-9]+)")
 
-# Texte an die Kinder (beim abgelehnten Join, beim Trennen, als Chat-Vorwarnung).
-# Owner-Entscheid 21.10.2026: nie "0 Uhr", "Mitternacht", ein Datum oder eine
-# Kurzform wie "Mi 00:00"; Tagesbezug und Uhrzeit setzt kid_text (Python) bzw.
-# text() im Lua aus den Bausteinen zusammen.
+# Texts for the children (on a rejected join, on disconnect, as a chat advance warning).
+# Owner decision 21.10.2026: never "0 Uhr", "Mitternacht", a date or a
+# short form like "Mi 00:00"; day reference and clock time are assembled by kid_text (Python) or
+# text() in Lua from the building blocks.
 TEXT_LIMIT = "Deine Spielzeit für heute ist vorbei."
 TEXT_FENSTER = "Jetzt ist keine Spielzeit."
 TEXT_FENSTER_EARLY = "Jetzt ist noch keine Spielzeit."
@@ -155,11 +155,11 @@ DAY_NEXT = "Nächsten "
 CLOCK_FROM = " ab "
 CLOCK_UNIT = " Uhr"
 WEEKDAY_NAMES = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
-# Owner-Entscheid D-03, D-04 und D-26 vom 21.10.2026 (Pause vom Handy, Phase 4.1).
+# Owner decisions D-03, D-04 and D-26 of 21.10.2026 (pause from the phone, phase 4.1).
 TEXT_PAUSE = "Kurze Pause! Deine Eltern brauchen dich gerade. Danach kannst du weiterspielen."
 TEXT_PAUSE_SOON = "In 30 Sekunden ist Pause."
 TEXT_SCHLUSS = "Für heute ist Schluss."
-# Chat-Hinweis vor dem Cold-Backup (D-09, Phase 5).
+# Chat notice before the cold backup (D-09, phase 5).
 TEXT_HALT_SOON = "Die Welt macht gleich eine kurze Pause."
 TEXT_HALT = "Die Welt macht kurz Pause. Gleich geht es weiter."
 TEXTS = (
@@ -315,11 +315,11 @@ def mod_texts(language: object) -> TimeTexts:
 
 
 PAUSE_ARTS = frozenset({"pause", "schluss"})
-# Vorlauf der Pause: so lange vor dem Trennen gilt die Beitrittssperre und kommt die Vorwarnung.
+# Lead time of the pause: for this long before the disconnect the join block applies and the advance warning comes.
 PAUSE_LEAD_SECONDS = 30
-# @morgen -1: morgen ist laut Plan kein Spieltag.
+# @morgen -1: tomorrow is not a play day according to the plan.
 NO_TOMORROW = -1
-# Neun Tagesanfänge (heute bis heute+8) in der Zeile @tage; mehr als 7 Tage voraus zeigt niemand.
+# Nine day starts (today to today+8) in the line @tage; nobody shows more than 7 days ahead.
 DAY_COUNT = 9
 MAX_DAYS_AHEAD = 7
 _DAY_MINUTES = 1440
@@ -353,15 +353,15 @@ def kid_text(
     reached: bool = False,
     language: object = "de",
 ) -> str:
-    """Kindertext zu Grund und nächstem Start; spiegelt text() im Lua-Mod exakt.
+    """Child text for reason and next start; mirrors text() in the Lua mod exactly.
 
-    ``days_ahead`` 0..7 (0 = heute), ``weekday`` ISO 1..7, ``minute`` 0..1439
-    lokal. Fehlt eine Angabe oder liegt sie außerhalb, steht nur der Grundsatz da.
-    Eine Uhrzeit erscheint nur bei ``minute`` > 0 (echte Startzeit der Eltern).
-    ``reached``: Der nächste Start ist schon erreicht, die Regeldatei also älter als
-    der Tageswechsel (ganzer Tag ohne Limit, am Tagesende getrennt). Dann gilt
-    TEXT_START statt "Jetzt ist noch keine Spielzeit. Heute kannst du spielen.",
-    das sich widerspräche (WR-07); die ExApp schreibt binnen 15 s neu.
+    ``days_ahead`` 0..7 (0 = today), ``weekday`` ISO 1..7, ``minute`` 0..1439
+    local. If a value is missing or out of range, only the base sentence stands.
+    A clock time appears only for ``minute`` > 0 (real start time of the parents).
+    ``reached``: the next start has already been reached, i.e. the rule file is older than
+    the change of day (whole day without a limit, disconnected at the end of day). Then
+    TEXT_START applies instead of "Jetzt ist noch keine Spielzeit. Heute kannst du spielen.",
+    which would contradict itself (WR-07); the ExApp rewrites within 15 s.
     ``language``: world language (D-27); unsupported values give German.
     """
     texts = mod_texts(language)
@@ -396,12 +396,12 @@ def kid_text(
 
 
 def pause_text(art: str, morgen_minute: int | None, *, language: object = "de") -> str:
-    """Kindertext beim Trennen und Ablehnen in der Pause; spiegelt pause_text() im Lua-Mod.
+    """Child text on disconnect and rejection during the pause; mirrors pause_text() in the Lua mod.
 
     ``pause``: TEXT_PAUSE. ``schluss``: "Für heute ist Schluss. Morgen kannst du
-    wieder spielen.", mit Uhrzeit nur bei Minute > 0 (echte Startzeit, nie "0 Uhr").
-    Minute -1 (morgen laut Plan kein Spieltag) ergibt nur TEXT_SCHLUSS, damit der
-    Text nichts Falsches verspricht. ``language``: world language (D-27).
+    wieder spielen.", with a clock time only for minute > 0 (real start time, never "0 Uhr").
+    Minute -1 (tomorrow is not a play day according to the plan) yields only TEXT_SCHLUSS, so that the
+    text promises nothing false. ``language``: world language (D-27).
     """
     texts = mod_texts(language)
     if art != "schluss":
@@ -421,11 +421,11 @@ def mod_init_lua(language: object = "de") -> str:
     """
     t = mod_texts(language)
     return f"""\
--- gameworld_time: Spielzeiten und Zeitfenster von Gameworld durchsetzen.
--- Die Regeldatei schreibt nur Gameworld. Der Mod zaehlt die Online-Zeit je
--- Spieler im Zaehlbuch, das im Welt-Volume bleibt und Neustarts ueberlebt.
--- Alle Grenzen sind absolute Epoch-Sekunden (os.time), nie lokale Uhrzeit.
--- Keine IP-Adressen, keine Sitzungszeitpunkte.
+-- gameworld_time: enforce playtimes and time windows of Gameworld.
+-- Only Gameworld writes the rule file. The mod counts the online time per
+-- player in the ledger, which stays in the world volume and survives restarts.
+-- All boundaries are absolute epoch seconds (os.time), never local clock time.
+-- No IP addresses, no session times.
 local world = core.get_worldpath()
 local rules_path = world .. "/{RULES_FILE_NAME}"
 local ledger_path = world .. "/{LEDGER_FILE_NAME}"
@@ -462,30 +462,30 @@ local PAUSE_LEAD = {PAUSE_LEAD_SECONDS}
 local HALT_SOON_TEXT = {_lua_string(t.halt_soon)}
 local HALT_TEXT = {_lua_string(t.halt)}
 
--- valid: nil = noch nie geladen, "missing" = keine Datei (keine Regeln),
--- "broken" = beim Start nur eine ungueltige Datei (alle zu), "ok" = Regeln da.
+-- valid: nil = never loaded, "missing" = no file (no rules),
+-- "broken" = at start only an invalid file (everyone closed), "ok" = rules present.
 local rules, world_rule, last, valid, generation = {{}}, nil, nil, nil, 0
--- days: Wochentag von Tag 0 und 9 Tagesanfaenge (Zeile @tage); starts: je Schluessel
--- (Spielername oder "welt") Epoch und lokale Minute der naechsten Oeffnung (@start).
+-- days: weekday of day 0 and 9 day starts (line @tage); starts: per key
+-- (player name or "welt") epoch and local minute of the next opening (@start).
 local days, starts = nil, {{}}
--- shifts: je Name, um wie viel das Zaehlbuch beim Laden unter @base lag (WR-06).
+-- shifts: per name, by how much the ledger was below @base on loading (WR-06).
 local shifts = {{}}
-local used = {{}}    -- Sekunden je Name, monoton ueber alle Neustarts
-local since = {{}}   -- get_us_time, bis zu dem die Zeit gutgeschrieben ist
-local warned = {{}}  -- je Name die schon gesendeten Vorwarnungen dieser Sitzung
--- pause: nil oder {{ ab, bis, art }} aus @pause; morgen: je Name die Startminute
--- des naechsten Tages (@morgen, -1 = kein Spieltag); pause_warned: je Name das ab
--- der Pause, fuer die "In 30 Sekunden ist Pause." schon gesendet ist.
+local used = {{}}    -- seconds per name, monotonic across all restarts
+local since = {{}}   -- get_us_time up to which the time is credited
+local warned = {{}}  -- per name the advance warnings already sent in this session
+-- pause: nil or {{ ab, bis, art }} from @pause; morgen: per name the start minute
+-- of the next day (@morgen, -1 = no play day); pause_warned: per name the ab
+-- of the pause for which "In 30 Sekunden ist Pause." has already been sent.
 local pause, morgen, pause_warned = nil, {{}}, {{}}
--- halt: nil oder der Epoch aus @halt, ab dem der Server zur Sicherung stoppt;
--- halt_warned: das halt, fuer das der Chat-Hinweis an alle schon gesendet ist.
+-- halt: nil or the epoch from @halt from which the server stops for the backup;
+-- halt_warned: the halt for which the chat notice to everyone has already been sent.
 local halt, halt_warned = nil, nil
 
 local function now()
   return os.time()
 end
 
--- Zaehlbuch vom letzten Lauf uebernehmen (nur mit Kopf und Schlusszeile).
+-- Take over the ledger from the last run (only with head and closing line).
 do
   local f = io.open(ledger_path, "rb")
   if f then
@@ -537,7 +537,7 @@ local function load()
     local hab = line:match("^@halt (%d+)$")
     local wf, wu, wr, wn = line:match("^welt (%-?%d+) (%-?%d+) (%a+) ([%w:%-]+)$")
     if line:match("^@tage ") then
-      -- Genau 10 Zahlen, Wochentag 1..7, Anfaenge streng steigend; sonst Zeile ignorieren.
+      -- Exactly 10 numbers, weekday 1..7, starts strictly increasing; otherwise ignore the line.
       local nums = {{}}
       if line:match("^@tage [%d ]+$") then
         for num in line:gmatch("%d+") do nums[#nums + 1] = tonumber(num) end
@@ -557,7 +557,7 @@ local function load()
     elseif bname then
       if #bname <= 20 then new_bases[bname] = tonumber(bsecs) end
     elseif pab then
-      -- Nur bekannte Arten und ein echtes Zeitfenster; sonst Zeile ignorieren.
+      -- Only known kinds and a real time window; otherwise ignore the line.
       local ab, bis = tonumber(pab), tonumber(pbis)
       if (part == "pause" or part == "schluss") and bis > ab then
         new_pause = {{ ab = ab, bis = bis, art = part }}
@@ -578,7 +578,7 @@ local function load()
       end
     end
   end
-  -- Zaehlbuch unter dem Stand, gegen den der Deckel gerechnet ist: Deckel verschieben (WR-06).
+  -- Ledger below the state against which the cap was computed: shift the cap (WR-06).
   local new_shifts = {{}}
   for name, base in pairs(new_bases) do
     local behind = base - (used[name] or 0)
@@ -590,8 +590,8 @@ local function load()
   halt = new_halt
 end
 
--- Restzeit in Sekunden, Grund und Schluessel des naechsten Starts ("welt" oder
--- der Spielername, siehe starts); nil = unbegrenzt.
+-- Remaining time in seconds, reason and key of the next start ("welt" or
+-- the player name, see starts); nil = unlimited.
 local function left(name)
   if valid == "broken" then return 0, "start", nil end
   local t = now()
@@ -616,7 +616,7 @@ local function left(name)
   return best, why, key
 end
 
--- Index 0..7 des lokalen Tages, in dem Epoch t liegt (Tag k = [s[k], s[k+1])), sonst nil.
+-- Index 0..7 of the local day in which epoch t lies (day k = [s[k], s[k+1])), otherwise nil.
 local function day_index(t)
   if not days then return nil end
   for k = 0, 7 do
@@ -625,14 +625,14 @@ local function day_index(t)
   return nil
 end
 
--- Uhrzeit wie _clock in time_mod.py: "9 Uhr" oder "9:30" (ohne "Uhr").
+-- Clock time like _clock in time_mod.py: "9 Uhr" or "9:30" (without "Uhr").
 local function clock(minute)
   local h = math.floor(minute / 60)
   local m = minute % 60
   return m == 0 and (tostring(h) .. CLOCK_UNIT) or string.format("%d:%02d", h, m)
 end
 
--- Tagesbezug mit Uhrzeit, z. B. "Morgen ab 9 Uhr", und Tage ab heute; nil, wenn etwas fehlt.
+-- Day reference with clock time, e.g. "Morgen ab 9 Uhr", and days from today; nil if something is missing.
 local function day_phrase(key)
   local st = key and starts[key]
   if not st then return nil end
@@ -656,12 +656,12 @@ local function day_phrase(key)
   return s, ahead
 end
 
--- Satz fuer das Kind; spiegelt kid_text in time_mod.py exakt.
+-- Sentence for the child; mirrors kid_text in time_mod.py exactly.
 local function text(why, key)
   local s = TEXT[why] or TEXT.fenster
   if why == "start" then return s end
-  -- Naechster Start schon erreicht: Die Regeldatei ist aelter als der Tageswechsel,
-  -- die ExApp schreibt gleich neu; nie "Heute kannst du spielen" beim Trennen (WR-07).
+  -- Next start already reached: the rule file is older than the change of day,
+  -- the ExApp rewrites shortly; never "Heute kannst du spielen" on disconnect (WR-07).
   local st = key and starts[key]
   if st and st.at <= now() then return TEXT.start end
   local phrase, ahead = day_phrase(key)
@@ -678,7 +678,7 @@ local function text(why, key)
   return s .. " " .. phrase .. tail
 end
 
--- Pausentext fuer das Kind; spiegelt pause_text in time_mod.py exakt.
+-- Pause text for the child; mirrors pause_text in time_mod.py exactly.
 local function pause_text(name)
   if pause.art ~= "schluss" then return PAUSE_TEXT end
   local m = morgen[name]
@@ -688,8 +688,8 @@ local function pause_text(name)
   return s .. PLAY_AGAIN
 end
 
--- Pause gilt fuer alle ausser "frei", auch fuer Namen ohne Regelzeile (D-05).
--- Ab PAUSE_LEAD Sekunden vor dem Trennen kommt niemand mehr hinein.
+-- Pause applies to everyone except "frei", also to names without a rule line (D-05).
+-- From PAUSE_LEAD seconds before the disconnect nobody gets in anymore.
 local function paused(name)
   if not pause then return false end
   local r = rules[name]
@@ -698,8 +698,8 @@ local function paused(name)
   return t >= pause.ab - PAUSE_LEAD and t < pause.bis
 end
 
--- Nur die kleinste gerade unterschrittene Schwelle senden, alle groesseren
--- gelten dann als gesendet (Beitritt mit 4 min Rest: nur "Noch 5 Minuten.").
+-- Send only the smallest threshold just crossed, all larger ones
+-- then count as sent (join with 4 min rest: only "Noch 5 Minuten.").
 local function warn(name, l)
   local marks = warned[name]
   if not marks then
@@ -712,7 +712,7 @@ local function warn(name, l)
   end
   if hit and not marks[hit] then
     core.chat_send_player(name, WARN_TEXT[hit])
-    -- 10-Minuten-Warnung als Ereignis fuer die ExApp (Talk-Bot, TALK-02).
+    -- 10-minute warning as an event for the ExApp (Talk bot, TALK-02).
     if hit == 600 and gameworld_access and gameworld_access.event then
       gameworld_access.event("warn10", name)
     end
@@ -722,7 +722,7 @@ local function warn(name, l)
   end
 end
 
--- Gutschrift ab Beitritt bzw. letztem Takt, nie pauschal je Takt.
+-- Credit from join or last tick, never a flat amount per tick.
 local function credit(name, now_us)
   local t = since[name]
   if not t then return end
@@ -733,7 +733,7 @@ end
 
 core.register_on_prejoinplayer(function(name)
   load()
-  -- Der Server stoppt gleich zur Sicherung: niemand mehr hinein, auch frei nicht.
+  -- The server stops shortly for the backup: nobody gets in anymore, not even frei.
   if halt then return HALT_TEXT end
   if paused(name) then return pause_text(name) end
   local l, why, key = left(name)
@@ -758,20 +758,20 @@ local function tick()
   local now_us = core.get_us_time()
   local players = core.get_connected_players()
   if halt and halt_warned ~= halt then
-    -- Einmal je Halt an alle, bevor der Server zur Sicherung stoppt (D-09).
+    -- Once per halt to everyone, before the server stops for the backup (D-09).
     halt_warned = halt
     core.chat_send_all(HALT_SOON_TEXT)
   end
   for _, player in ipairs(players) do
     local name = player:get_player_name()
     if since[name] then credit(name, now_us) else since[name] = now_us end
-    -- Ab dem Halt alle trennen, auch frei: der Server stoppt gleich zur Sicherung.
+    -- From the halt on disconnect everyone, also frei: the server stops shortly for the backup.
     local cut = halt and now() >= halt
     local p = not cut and paused(name)
     if cut then
       core.disconnect_player(name, HALT_TEXT)
     elseif p and now() >= pause.ab then
-      -- Trennen zaehlt nichts mehr: getrennte Kinder verbrauchen keine Zeit (D-05).
+      -- Disconnecting counts nothing anymore: disconnected children use up no time (D-05).
       core.disconnect_player(name, pause_text(name))
     else
       if p and pause_warned[name] ~= pause.ab then
@@ -798,7 +798,7 @@ core.register_on_shutdown(function()
   write_ledger()
 end)
 
--- Einmal beim Start schreiben: Der Kopf zeigt der ExApp, welche Generation geladen ist.
+-- Write once at start: the head shows the ExApp which generation is loaded.
 core.register_on_mods_loaded(function()
   load()
   write_ledger()
@@ -818,12 +818,12 @@ depends = {ACCESS_MOD_NAME}
 
 @dataclass(frozen=True)
 class TimeLine:
-    """Eine Zeile der Regeldatei; ``cap`` -1 = kein Tageslimit, ``frei``-Zeilen -1 -1 -1.
+    """A line of the rule file; ``cap`` -1 = no daily limit, ``frei`` lines -1 -1 -1.
 
-    ``next_at`` und ``next_minute`` (Epoch und lokale Minute der nächsten
-    Fensteröffnung) ergeben die Zeile ``@start``; -1 und -1 heißt: keine.
-    ``base`` (Zählbuch-Stand, gegen den ``cap`` gerechnet ist) ergibt die Zeile
-    ``@base``; -1 heißt: keine (WR-06).
+    ``next_at`` and ``next_minute`` (epoch and local minute of the next
+    window opening) yield the line ``@start``; -1 and -1 means: none.
+    ``base`` (ledger state against which ``cap`` is computed) yields the line
+    ``@base``; -1 means: none (WR-06).
     """
 
     cap: int
@@ -838,7 +838,7 @@ class TimeLine:
 
 @dataclass(frozen=True)
 class DayGrid:
-    """Zeile ``@tage``: ISO-Wochentag von heute und neun Epoch-Tagesanfänge (heute bis heute+8)."""
+    """Line ``@tage``: ISO weekday of today and nine epoch day starts (today to today+8)."""
 
     weekday: int
     starts: tuple[int, ...]
@@ -846,7 +846,7 @@ class DayGrid:
 
 @dataclass(frozen=True)
 class PauseLine:
-    """Zeile ``@pause``: Epoch des Trennens (``ab``), Ende (``bis``), Art pause oder schluss."""
+    """Line ``@pause``: epoch of the disconnect (``ab``), end (``bis``), kind pause or schluss."""
 
     ab: int
     bis: int
@@ -855,7 +855,7 @@ class PauseLine:
 
 @dataclass(frozen=True)
 class Ledger:
-    """Zählbuch einer Welt: Schreibzeitpunkt (Epoch), geladene Generation, Sekunden je Name."""
+    """Ledger of a world: time of writing (epoch), loaded generation, seconds per name."""
 
     written_at: int
     generation: int
@@ -879,7 +879,7 @@ def _check_hint(line: TimeLine) -> None:
 
 
 def _start_line(key: str, line: TimeLine) -> str | None:
-    """Zeile ``@start`` oder None, wenn die Zeile keinen nächsten Start trägt."""
+    """Line ``@start`` or None if the line carries no next start."""
     at, minute = line.next_at, line.next_minute
     if not (_is_int(at) and _is_int(minute)):
         raise ValueError("Ungültiger nächster Start in der Regeldatei: nur ganze Zahlen.")
@@ -893,7 +893,7 @@ def _start_line(key: str, line: TimeLine) -> str | None:
 
 
 def _base_line(key: str, line: TimeLine) -> str | None:
-    """Zeile ``@base`` oder None ohne Anker; nur zu einer Zeile mit Deckel (cap >= 0)."""
+    """Line ``@base`` or None without an anchor; only for a line with a cap (cap >= 0)."""
     if not _is_int(line.base):
         raise ValueError("Ungültiger Zählbuch-Anker in der Regeldatei: nur ganze Zahlen.")
     if line.base == -1:
@@ -925,7 +925,7 @@ def _pause_line(pause: PauseLine) -> str:
 
 
 def _halt_line(ab: int) -> str:
-    """Zeile ``@halt``: Epoch, ab dem der Server zur Sicherung stoppt (D-09, T-05-13)."""
+    """Line ``@halt``: epoch from which the server stops for the backup (D-09, T-05-13)."""
     if not _is_int(ab) or ab < 0:
         raise ValueError("Ungültiger Halt in der Regeldatei: nur ganze Zahlen, nie negativ.")
     return f"@halt {ab}"
@@ -971,17 +971,17 @@ def render_time_file(
     morgen: dict[str, int] | None = None,
     halt: int | None = None,
 ) -> bytes:
-    """Regeldatei der Welt, sortiert und deterministisch.
+    """Rule file of the world, sorted and deterministic.
 
-    Reihenfolge: Kopf, ``@tage``, ``@pause``, ``@morgen`` (sortiert, nur bei Art
-    schluss), Welt-Zeile, ``@start welt``, je Spieler (sortiert) seine Zeile und
-    direkt danach ``@start <name>`` und ``@base <name>``, dann ``@halt`` (nur
-    vor einer Sicherung), zuletzt ``end``. Ohne ``days``, ``pause``, ``halt``,
-    nächste Starts und Anker sind die Bytes dieselben wie vor den ``@``-Zeilen;
-    alte Mods überspringen ``@pause``, ``@morgen`` und ``@halt`` still
-    (Pitfall 1: ob der Mod die Pause kann, zeigt die Ereignisdatei).
-    Jeder ungültige Eintrag wirft ValueError, nie wird still übersprungen: Ein
-    Zeilenumbruch im Namen oder Token könnte sonst fremde Zeilen einschleusen.
+    Order: head, ``@tage``, ``@pause``, ``@morgen`` (sorted, only for kind
+    schluss), world line, ``@start welt``, per player (sorted) its line and
+    directly after it ``@start <name>`` and ``@base <name>``, then ``@halt`` (only
+    before a backup), finally ``end``. Without ``days``, ``pause``, ``halt``,
+    next starts and anchors the bytes are the same as before the ``@`` lines;
+    old mods skip ``@pause``, ``@morgen`` and ``@halt`` silently
+    (pitfall 1: whether the mod can do the pause is shown by the event file).
+    Every invalid entry raises ValueError, nothing is silently skipped: a
+    line break in the name or token could otherwise smuggle in foreign lines.
     """
     if not _is_int(generation) or generation < 0:
         raise ValueError("Die Generation der Regeldatei darf nicht negativ sein.")
@@ -990,7 +990,7 @@ def render_time_file(
     lines = [f"{TIME_HEADER} {generation} {issued_at}"]
     if days is not None:
         lines.append(_days_line(days))
-    # Morgen-Zeilen immer prüfen, schreiben nur zur Schluss-Pause.
+    # Always check the morgen lines, write them only for the closing pause.
     morgen_lines = _morgen_lines(morgen) if morgen is not None else []
     if pause is not None:
         lines.append(_pause_line(pause))
@@ -1016,11 +1016,11 @@ def render_time_file(
 
 
 def parse_ledger(content: bytes) -> Ledger | None:
-    """Zählbuch einer Welt oder None, wenn Kopf oder Schlusszeile fehlen.
+    """Ledger of a world or None if head or closing line are missing.
 
-    Der Inhalt stammt aus einer vom Lua-Prozess beschreibbaren Datei: Zeilen mit
-    ungültigem Namen, negativen, nicht ganzzahligen oder übergroßen Sekunden
-    werden übersprungen.
+    The content comes from a file writable by the Lua process: lines with
+    an invalid name, negative, non-integer or oversized seconds
+    are skipped.
     """
     try:
         text = content.decode("ascii")
