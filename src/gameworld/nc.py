@@ -1,21 +1,21 @@
-"""Kurzlebige Nextcloud-Clients, die ihre Verbindungen immer schließen (WR-05).
+"""Short-lived Nextcloud clients that always close their connections (WR-05).
 
-Jede ``AsyncNextcloudApp`` baut zwei niquests-Sessions (``adapter`` für OCS,
-``adapter_dav`` für WebDAV) mit Keep-Alive-Pool. nc_py_api bietet kein
-öffentliches ``close``; ohne Schließen räumt erst der GC die Verbindungen ab,
-auch in fremden Threads (.planning/debug/resolved/backend-windows-invalidstate.md).
+Every ``AsyncNextcloudApp`` builds two niquests sessions (``adapter`` for OCS,
+``adapter_dav`` for WebDAV) with a keep-alive pool. nc_py_api offers no
+public ``close``; without closing, only the GC cleans up the connections,
+also in foreign threads (.planning/debug/resolved/backend-windows-invalidstate.md).
 
-Darum gibt es Clients nur noch als Kontextmanager:
+Therefore clients exist only as context managers:
 
-- ``nc_as(uid)``: im Namen eines Kontos. Das Konto geht direkt in den
-  Konstruktor statt über ``set_user``; so entfällt der Capabilities-Request, den
-  ``set_user`` jedes Mal auslöst. Braucht ein Aufruf Capabilities (Talk,
-  Benachrichtigungen), lädt nc_py_api sie bei Bedarf als dieses Konto nach.
-- ``nc_app()``: im App-Kontext ohne Nutzer (Bot-Registrierung, App-Konfiguration).
+- ``nc_as(uid)``: on behalf of an account. The account goes straight into the
+  constructor instead of via ``set_user``; this avoids the capabilities request that
+  ``set_user`` triggers every time. If a call needs capabilities (Talk,
+  notifications), nc_py_api loads them on demand as this account.
+- ``nc_app()``: in the app context without a user (bot registration, app configuration).
 
-Je Aufruf ein eigener Client, nie ein geteilter über ``set_user``: nc_py_api liest
-das Konto erst beim Request (``_add_auth``), gleichzeitige Coroutinen würden sich
-die Identität sonst gegenseitig umschalten.
+One client per call, never one shared via ``set_user``: nc_py_api reads the
+account only at request time (``_add_auth``), so concurrent coroutines would
+otherwise switch the identity under each other.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ MSG_NO_USER = "Ein Nextcloud-Client im Namen eines Kontos braucht eine Konto-ID.
 
 
 async def close_nc(nc: object) -> None:
-    """Schließt beide Sessions eines Clients; Fehler beim Schließen stören nie (nur Typname im Log)."""
+    """Close both sessions of a client; errors while closing never disturb (only the type name in the log)."""
     session = getattr(nc, "_session", None)
     for name in _ADAPTERS:
         adapter = getattr(session, name, None)
@@ -45,16 +45,16 @@ async def close_nc(nc: object) -> None:
         try:
             await close()
         except Exception as exc:
-            LOG.debug("Nextcloud-Session nicht geschlossen: %s", type(exc).__name__)
+            LOG.debug("Nextcloud session not closed: %s", type(exc).__name__)
 
 
 @asynccontextmanager
 async def nc_as(uid: str, **options: Any) -> AsyncIterator[AsyncNextcloudApp]:
-    """Client im Namen von ``uid``; schließt seine Sessions auch im Fehlerfall.
+    """Client on behalf of ``uid``; closes its sessions also in the error case.
 
-    ``options`` gehen unverändert an ``AsyncNextcloudApp``. Backup-Clients setzen
-    ``npa_timeout_dav=600`` (MOVE großer Dateien) und ``chunked_upload_v2=False``
-    (Upload v1, backup/files.py).
+    ``options`` go unchanged to ``AsyncNextcloudApp``. Backup clients set
+    ``npa_timeout_dav=600`` (MOVE of large files) and ``chunked_upload_v2=False``
+    (upload v1, backup/files.py).
     """
     if not uid:
         raise ValueError(MSG_NO_USER)
@@ -67,7 +67,7 @@ async def nc_as(uid: str, **options: Any) -> AsyncIterator[AsyncNextcloudApp]:
 
 @asynccontextmanager
 async def nc_app() -> AsyncIterator[AsyncNextcloudApp]:
-    """Client im App-Kontext ohne Nutzer; schließt seine Sessions auch im Fehlerfall."""
+    """Client in the app context without a user; closes its sessions also in the error case."""
     nc = AsyncNextcloudApp()
     try:
         yield nc

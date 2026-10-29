@@ -1,4 +1,4 @@
-"""Einstieg der ExApp: FastAPI, AppAPI-Handler und Auth-Middleware."""
+"""ExApp entry point: FastAPI, AppAPI handlers and auth middleware."""
 
 from __future__ import annotations
 
@@ -28,20 +28,20 @@ from gameworld.playtime.ticker import time_forever
 from gameworld.talk.service import shutdown_talk
 from gameworld.worlds.reconciler import reconcile_forever
 
-# nc_py_api tippt den Handler als Union aus Sync- und Async-Client. Eine
-# Coroutine-Funktion bekommt aber immer AsyncNextcloudApp (integration_fastapi.py),
-# darum der enge Typ in lifecycle.py und hier die Anpassung an die Signatur.
+# nc_py_api types the handler as a union of sync and async client. A
+# coroutine function always gets AsyncNextcloudApp though (integration_fastapi.py),
+# hence the narrow type in lifecycle.py and the adaptation to the signature here.
 _EnabledHandler = Callable[[bool, AsyncNextcloudApp | NextcloudApp], Awaitable[str]]
 
 LOG = logging.getLogger(__name__)
 
 
 def _setup_logging() -> None:
-    """Hebt den gameworld-Logger auf INFO und haengt einen Handler an.
+    """Raise the gameworld logger to INFO and attach a handler.
 
-    uvicorns log_level betrifft nur die uvicorn-Logger. Ohne eigenen Handler
-    kaemen Reconciler-Aktionen (T-02-32) nie im Log an, weil der effektive
-    Level auf WARNING steht.
+    The uvicorn log_level only affects the uvicorn loggers. Without its own handler,
+    reconciler actions (T-02-32) would never show up in the log, because the effective
+    level is WARNING.
     """
     logger = logging.getLogger("gameworld")
     logger.setLevel(logging.INFO)
@@ -52,37 +52,37 @@ def _setup_logging() -> None:
 
 
 _setup_logging()
-# T-04.2-36: Kein WebSocket-Ticket aus /play/ws?t=... in den uvicorn-Logzeilen.
+# T-04.2-36: no WebSocket ticket from /play/ws?t=... in the uvicorn log lines.
 install_ws_query_redaction()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # map_app_static=True (Default) mountet js/ und img/ relativ zum Arbeitsverzeichnis,
-    # deshalb startet der Prozess mit cwd = Repo-Root (scripts/dev/register-exapp.sh).
+    # map_app_static=True (default) mounts js/ and img/ relative to the working directory,
+    # which is why the process starts with cwd = repo root (scripts/dev/register-exapp.sh).
     set_handlers(app, cast(_EnabledHandler, enabled_handler))
-    # Baut den Dienst und migriert dabei das SQLite-Schema. Eine ungültige
-    # Umgebung darf den Start nicht verhindern: Nur ein laufender Prozess kann
-    # den Befund "config" über /api/setup-check melden (WR-01).
+    # Builds the service and migrates the SQLite schema along the way. An invalid
+    # environment must not prevent the start: only a running process can
+    # report the finding "config" via /api/setup-check (WR-01).
     tasks: list[asyncio.Task[None]] = []
     try:
         service = await anyio.to_thread.run_sync(worlds.get_service)
     except HTTPException:
-        LOG.exception("Ungültige Konfiguration; /api/setup-check zeigt den Befund")
+        LOG.exception("Invalid configuration; /api/setup-check shows the finding")
     else:
-        # Aufträge, die beim letzten Lauf mittendrin endeten, sichtbar beenden (D-11). Vor
-        # yield, also bevor ein Request einen neuen Auftrag starten kann; den Busy-Zustand
-        # der Welt räumt der Boot-Abgleich im Task (CLEAR_BUSY).
+        # Make jobs that ended midway in the last run visibly finished (D-11). Before
+        # yield, i.e. before a request can start a new job; the busy state
+        # of the world is cleared by the boot reconciliation in the task (CLEAR_BUSY).
         try:
             await anyio.to_thread.run_sync(get_backup_service(service).recover_jobs)
         except Exception as exc:
-            LOG.warning("Unterbrochene Sicherungsaufträge nicht beendet: %s", type(exc).__name__)
-        # Als Tasks, nie synchron: AppAPI wartet auf /heartbeat, und der
-        # Docker-Proxy ist nach einem Reboot evtl. noch nicht oben (PLATT-02).
-        # Zweiter Task: der 15-s-Zeittakt hält die Regeldateien aktuell (O-03).
+            LOG.warning("Interrupted backup jobs not finished: %s", type(exc).__name__)
+        # As tasks, never synchronously: AppAPI waits for /heartbeat, and the
+        # Docker proxy may not be up yet after a reboot (PLATT-02).
+        # Second task: the 15 s time tick keeps the rule files current (O-03).
         tasks.append(asyncio.create_task(reconcile_forever(service)))
         tasks.append(asyncio.create_task(time_forever(service)))
-        # Dritter Task: Outbox an Verwalter senden, Rückblick, 5-min-Wartung (04.1-04).
+        # Third task: send outbox to administrators, review, 5-minute maintenance (04.1-04).
         tasks.append(asyncio.create_task(notify_forever(service)))
     try:
         yield
@@ -92,32 +92,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        # Talk-Hooks der Eltern-Requests (Anlegen, Abgleich, Löschen) nicht verwaisen lassen (IN-06).
+        # Do not orphan the Talk hooks of the parent requests (create, reconcile, delete) (IN-06).
         try:
             cancelled = await shutdown_talk()
         except Exception as exc:
-            LOG.warning("Talk-Hooks beim Beenden nicht abgeschlossen: %s", type(exc).__name__)
+            LOG.warning("Talk hooks not finished on shutdown: %s", type(exc).__name__)
         else:
             if cancelled:
-                LOG.info("Beim Beenden %d offene Talk-Hooks abgebrochen", cancelled)
-        # Laufende Sicherungen: kurz warten, sonst abbrechen (die Welt startet abgeschirmt neu).
+                LOG.info("%d open Talk hooks cancelled on shutdown", cancelled)
+        # Running backups: wait briefly, otherwise cancel (the world restarts shielded).
         try:
             cancelled = await shutdown_backups()
         except Exception as exc:
-            LOG.warning("Sicherungsaufträge beim Beenden nicht abgeschlossen: %s", type(exc).__name__)
+            LOG.warning("Backup jobs not finished on shutdown: %s", type(exc).__name__)
         else:
             if cancelled:
-                LOG.info("Beim Beenden %d laufende Sicherungsaufträge abgebrochen", cancelled)
+                LOG.info("%d running backup jobs cancelled on shutdown", cancelled)
 
 
 APP = FastAPI(lifespan=lifespan)
 # Error texts in the account language (D-25): German stays the source, en/fr are translated.
 install_language_handlers(APP)
-# Reihenfolge zählt: Zuerst hinzugefügt heißt innen. Die JSON-Pflicht für Änderungen
-# (IN-08) läuft so nach AppAPIAuthMiddleware, die scope["username"] setzt.
+# Order matters: added first means innermost. The JSON requirement for changes
+# (IN-08) thus runs after AppAPIAuthMiddleware, which sets scope["username"].
 APP.add_middleware(JsonOnlyChangesMiddleware)
-# Browser-Spike 04.2: Der Modus wird beim Start gelesen. Nur dev (Dev-Stack, PHP-Proxy
-# ohne WebSocket-Upgrade) nimmt play und play/* aus; api/* bleibt immer geschützt.
+# Browser spike 04.2: the mode is read at start. Only dev (dev stack, PHP proxy
+# without WebSocket upgrade) exempts play and play/*; api/* always stays protected.
 APP.add_middleware(AppAPIAuthMiddleware, disable_for=play_disable_for(play_mode()))
 APP.include_router(me.router)
 APP.include_router(worlds.router)
@@ -134,16 +134,16 @@ install_play(APP)
 
 
 def _uvicorn_loop() -> str:
-    """Event-Loop für uvicorn: unter Windows der Selector-Loop, sonst uvicorns Vorgabe.
+    """Event loop for uvicorn: the selector loop on Windows, otherwise the uvicorn default.
 
-    Betrifft nur den Windows-Dev-Host (manual-install, Host-Prozess). Mit dem
-    Proactor-Loop stirbt der Prozess sporadisch: Der GC räumt nicht geschlossene
-    niquests-Verbindungen auch in anyio-Worker-Threads ab, StreamWriter.__del__
-    cancelt dort die laufende overlapped Recv-Future am Loop vorbei, und
-    IocpProactor._poll endet mit InvalidStateError
-    (.planning/debug/resolved/backend-windows-invalidstate.md). Der Selector-Loop
-    kennt keine overlapped Futures. asyncio-Subprozesse, die er unter Windows nicht
-    kann, braucht der Code nicht. Im Linux-Container bleibt es bei "auto" (uvloop).
+    Concerns only the Windows dev host (manual-install, host process). With the
+    proactor loop the process dies sporadically: the GC cleans up unclosed
+    niquests connections also in anyio worker threads, StreamWriter.__del__
+    cancels the running overlapped recv future there bypassing the loop, and
+    IocpProactor._poll ends with InvalidStateError
+    (.planning/debug/resolved/backend-windows-invalidstate.md). The selector loop
+    knows no overlapped futures. The code does not need asyncio subprocesses, which it
+    cannot do on Windows. In the Linux container it stays at "auto" (uvloop).
     """
     return "asyncio:SelectorEventLoop" if sys.platform == "win32" else "auto"
 

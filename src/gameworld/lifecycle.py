@@ -1,4 +1,4 @@
-"""Lifecycle der ExApp: Top-Menü, Skript und Initial State beim Aktivieren registrieren."""
+"""ExApp lifecycle: register the top menu entry, script and initial state on activation."""
 
 from __future__ import annotations
 
@@ -19,15 +19,15 @@ CONFIG_KEY = "gameworld_config"
 
 LOG = logging.getLogger(__name__)
 
-# Starke Referenzen auf angestoßene Boot-Abgleiche, sonst sammelt der GC die Task ein.
+# Strong references to kicked-off boot reconciliations, otherwise the GC collects the task.
 _BACKGROUND: set[asyncio.Task[bool]] = set()
 
 
 def api_base() -> str:
-    """Basis-URL der ExApp-API aus Sicht des Browsers.
+    """Base URL of the ExApp API as seen from the browser.
 
-    Unter manual-install läuft alles über den AppAPI-Proxy von Nextcloud, unter HaRP
-    (erkennbar an HP_SHARED_KEY) über den Pfad /exapps/.
+    Under manual-install everything goes through the Nextcloud AppAPI proxy, under HaRP
+    (recognizable by HP_SHARED_KEY) through the /exapps/ path.
     """
     if os.environ.get("HP_SHARED_KEY"):
         return f"/exapps/{APP_ID}"
@@ -35,60 +35,60 @@ def api_base() -> str:
 
 
 async def enabled_handler(enabled: bool, nc: AsyncNextcloudApp) -> str:
-    """Leerer String heißt Erfolg, jeder andere Text wird von AppAPI als Fehler angezeigt.
+    """An empty string means success, any other text is shown by AppAPI as an error.
 
-    Als Coroutine-Funktion bekommt der Handler von nc_py_api immer AsyncNextcloudApp
-    (Pitfall 7: keine Sync-Handler mehr).
+    As a coroutine function, the handler always gets AsyncNextcloudApp from nc_py_api
+    (pitfall 7: no more sync handlers).
     """
     try:
         if enabled:
             await nc.ui.resources.set_initial_state("top_menu", MENU_NAME, CONFIG_KEY, {"apiBase": api_base()})
             await nc.ui.resources.set_script("top_menu", MENU_NAME, SCRIPT_PATH)
-            # Kinder brauchen die Seite (sonst 404 aus TopMenuController). Die
-            # Verwaltung bleibt durch require_verwalter gesperrt (keine AppAPI-ADMIN-Stufe mehr).
+            # Children need the page (otherwise 404 from TopMenuController). The
+            # administration stays locked by require_verwalter (no AppAPI ADMIN level any more).
             await nc.ui.top_menu.register(MENU_NAME, "Gameworld", "img/app.svg", admin_required=False)
         else:
             await nc.ui.top_menu.unregister(MENU_NAME)
             await nc.ui.resources.delete_script("top_menu", MENU_NAME, SCRIPT_PATH)
     except Exception:
-        LOG.exception("Registrierung im Nextcloud-Menü fehlgeschlagen")
+        LOG.exception("Registration in the Nextcloud menu failed")
         action = "aktivieren" if enabled else "deaktivieren"
         return f"Gameworld konnte das Menü nicht {action}. Details stehen im Log der ExApp."
-    # Talk-Bot in eigenem try (Pitfall 8): ohne Talk darf das Aktivieren nicht
-    # scheitern, der 5-min-Abgleich holt die Registrierung nach. Ins Log nur der
-    # Typname, nie eine Meldung mit möglichem Geheimnis (T-04.1-32).
+    # Talk bot in its own try (pitfall 8): without Talk, activation must not
+    # fail, the 5-minute reconciliation catches up on the registration. Only the
+    # type name goes into the log, never a message that may contain a secret (T-04.1-32).
     try:
         if enabled:
             await talk_bot.register(nc)
         else:
             await talk_bot.unregister(nc)
     except Exception as exc:
-        LOG.warning("Talk-Bot nicht %s: %s", "registriert" if enabled else "abgemeldet", type(exc).__name__)
-    # Welten in eigenem try (D-17 Option A): AppAPI unterscheidet Deaktivieren,
-    # Update und Deinstallation nicht (RESEARCH F-02), darum räumt jedes
-    # Deaktivieren alle eigenen Welt-Container ab; Volumes, Sicherungen und
-    # Soll-Zustand bleiben. Beim Aktivieren baut der Boot-Abgleich jede
-    # Soll-laufende Welt neu. Kinder werden bei einem Update kurz getrennt, das
-    # ist bewusst akzeptiert. Nie ein Fehlertext an AppAPI, ins Log nur der Typname.
+        LOG.warning("Talk bot not %s: %s", "registered" if enabled else "unregistered", type(exc).__name__)
+    # Worlds in their own try (D-17 option A): AppAPI does not distinguish deactivation,
+    # update and uninstall (RESEARCH F-02), so every
+    # deactivation removes all own world containers; volumes, backups and
+    # desired state stay. On activation the boot reconciliation rebuilds every
+    # world that should be running. Children are briefly disconnected during an update,
+    # this is accepted on purpose. Never an error text to AppAPI, only the type name in the log.
     try:
         if enabled:
             _schedule_boot_reconcile()
         else:
-            # AppAPI wartet 60 s auf /enabled (P-07), teardown_all selbst hat 45 s Gesamtfrist.
+            # AppAPI waits 60 s for /enabled (P-07), teardown_all itself has a 45 s total deadline.
             with anyio.fail_after(50):
                 errors = await get_service().teardown()
             if errors:
-                LOG.warning("Welten beim Deaktivieren nicht vollständig entfernt: %d Fehler", errors)
+                LOG.warning("Worlds not fully removed on deactivation: %d errors", errors)
     except Exception as exc:
-        LOG.warning("Welten nicht %s: %s", "abgeglichen" if enabled else "aufgeräumt", type(exc).__name__)
+        LOG.warning("Worlds not %s: %s", "reconciled" if enabled else "cleaned up", type(exc).__name__)
     return ""
 
 
 def _schedule_boot_reconcile() -> None:
-    """Stößt den Boot-Abgleich an, ohne auf ihn zu warten (Aktivieren ohne Prozessneustart).
+    """Kick off the boot reconciliation without waiting for it (activation without process restart).
 
-    Nach einem Update ruft der Prozessstart ihn ohnehin; ein gleichzeitiger
-    zweiter Lauf scheitert nur an der nicht blockierenden Sperre.
+    After an update the process start calls it anyway; a concurrent
+    second run only fails on the non-blocking lock.
     """
     task = asyncio.get_running_loop().create_task(get_service().boot_reconcile())
     _BACKGROUND.add(task)
@@ -101,4 +101,4 @@ def _boot_done(task: asyncio.Task[bool]) -> None:
         return
     exc = task.exception()
     if exc is not None:
-        LOG.warning("Boot-Abgleich nach dem Aktivieren gescheitert: %s", type(exc).__name__)
+        LOG.warning("Boot reconciliation after activation failed: %s", type(exc).__name__)

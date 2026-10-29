@@ -1,12 +1,12 @@
-"""Das Geheimnis, aus dem alle Spielpasswörter abgeleitet werden (A3).
+"""The secret from which all game passwords are derived (A3).
 
-Es liegt nur in Nextcloud, in der App-Konfiguration der ExApp (``appconfig_ex``,
-als ``sensitive`` gespeichert: verschlüsselt in der Datenbank und in Logs
-gekürzt). Nie in SQLite, nie im Repo, nie im Log, nie in einer API-Antwort.
+It lives only in Nextcloud, in the app configuration of the ExApp (``appconfig_ex``,
+stored as ``sensitive``: encrypted in the database and truncated in logs).
+Never in SQLite, never in the repo, never in the log, never in an API response.
 
-Es überlebt Updates und Neustarts der ExApp. Nur bei kompletter
-Neuinstallation entsteht ein neues Geheimnis; dann ändern sich alle
-Spielpasswörter einmalig, und 03-04 provisioniert die Welten automatisch neu.
+It survives updates and restarts of the ExApp. Only a complete
+reinstall creates a new secret; then all game passwords change once,
+and 03-04 provisions the worlds anew automatically.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from nc_py_api import AsyncNextcloudApp
 
 from gameworld.nc import close_nc
 
-SECRET_KEY = "player_password_secret"  # noqa: S105 (Schlüsselname, kein Wert)
+SECRET_KEY = "player_password_secret"  # noqa: S105 (key name, not a value)
 SECRET_BYTES = 32
 _HEX = re.compile(f"[0-9a-f]{{{2 * SECRET_BYTES}}}")
 
@@ -34,7 +34,7 @@ TEXT_UNAVAILABLE_TYPE = MSG_UNAVAILABLE + " ({type_name})"
 
 
 class SecretUnavailableError(Exception):
-    """Nextcloud antwortet nicht oder der gespeicherte Wert ist unlesbar."""
+    """Nextcloud does not answer or the stored value is unreadable."""
 
 
 class _AppConfig(Protocol):
@@ -53,11 +53,11 @@ FINGERPRINT_LENGTH = 16
 
 
 def fingerprint(secret: bytes) -> str:
-    """Kennung des Geheimnisses, um einen Wechsel (Neuinstallation) zu erkennen.
+    """Identifier of the secret, to detect a change (reinstall).
 
-    HMAC mit fester Nachricht, auf 64 Bit gekürzt: nicht umkehrbar (T-03-31).
-    Kollidiert nie mit einer Passwort-Nachricht, weil dort nach dem
-    Doppelpunkt stets eine Zahl steht.
+    HMAC with a fixed message, truncated to 64 bits: not reversible (T-03-31).
+    Never collides with a password message, because there a number always
+    follows after the colon.
     """
     return hmac.new(secret, FINGERPRINT_MESSAGE, hashlib.sha256).hexdigest()[:FINGERPRINT_LENGTH]
 
@@ -69,12 +69,12 @@ def _parse(value: str) -> bytes:
 
 
 class PlayerSecret:
-    """Lädt das Geheimnis aus Nextcloud oder erzeugt es genau einmal.
+    """Load the secret from Nextcloud or generate it exactly once.
 
-    Ein asyncio.Lock verhindert doppelte Erzeugung im Prozess. Nach dem
-    Schreiben wird zurückgelesen und der zurückgelesene Wert genutzt. Ein
-    unlesbarer Wert wird nie still überschrieben, sonst änderten sich alle
-    Spielpasswörter. Aufruf im App-Kontext, ohne set_user.
+    An asyncio.Lock prevents double generation within the process. After
+    writing, it is read back and the value read back is used. An
+    unreadable value is never silently overwritten, otherwise all
+    game passwords would change. Call in the app context, without set_user.
     """
 
     def __init__(self, nc_factory: Callable[[], _Nextcloud] = AsyncNextcloudApp) -> None:
@@ -100,12 +100,12 @@ class PlayerSecret:
                     await config.set_value(SECRET_KEY, secrets.token_hex(SECRET_BYTES), sensitive=True)
                     stored = await config.get_value(SECRET_KEY)
             finally:
-                # Sessions schließen, auch im Fehlerfall (WR-05).
+                # Close sessions, also in the error case (WR-05).
                 await close_nc(nc)
         except SecretUnavailableError:
             raise
         except Exception as exc:
-            # Nur Typ und Status, nie Werte: Die Ausnahme könnte die Anfrage enthalten.
+            # Only type and status, never values: the exception could contain the request.
             raise SecretUnavailableError(TEXT_UNAVAILABLE_TYPE.format(type_name=type(exc).__name__)) from None
         if stored is None:
             raise SecretUnavailableError(MSG_UNAVAILABLE)
@@ -116,7 +116,7 @@ _player_secret: PlayerSecret | None = None
 
 
 def get_player_secret() -> PlayerSecret:
-    """FastAPI-Dependency: modulweites Singleton, im Test ersetzbar."""
+    """FastAPI dependency: module-wide singleton, replaceable in tests."""
     global _player_secret
     if _player_secret is None:
         _player_secret = PlayerSecret()

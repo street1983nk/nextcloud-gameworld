@@ -1,1 +1,1 @@
-"""Gameworld: private, gehärtete Luanti-Welten als Nextcloud-ExApp."""
+"""Gameworld: private, hardened Luanti worlds as a Nextcloud ExApp."""

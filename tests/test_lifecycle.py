@@ -1,4 +1,4 @@
-"""Lifecycle der ExApp: Top-Menü, Skript und Initial State beim Aktivieren und Deaktivieren."""
+"""ExApp lifecycle: top menu entry, script and initial state on activation and deactivation."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from gameworld.lifecycle import api_base, enabled_handler
 
 
 class Ready:
-    """Mehrfach awaitbarer Wert (wie die awaitbaren Properties von nc_py_api)."""
+    """Value that can be awaited several times (like the awaitable properties of nc_py_api)."""
 
     def __init__(self, value: object) -> None:
         self.value = value
@@ -27,7 +27,7 @@ class Ready:
 
 def fake_nc() -> Any:
     nc = MagicMock()
-    # Ohne Talk-Bots: der Bot wird nicht registriert (04.1-06).
+    # Without Talk bots: the bot is not registered (04.1-06).
     nc.talk.bots_available = Ready(False)
     nc.ui.resources.set_initial_state = AsyncMock()
     nc.ui.resources.set_script = AsyncMock()
@@ -38,7 +38,7 @@ def fake_nc() -> Any:
 
 
 class FakeWorlds:
-    """Steht für WorldService: zählt teardown und boot_reconcile, wirft auf Wunsch."""
+    """Stands in for WorldService: counts teardown and boot_reconcile, raises on request."""
 
     def __init__(self) -> None:
         self.teardowns = 0
@@ -62,14 +62,14 @@ class FakeWorlds:
 
 @pytest.fixture(autouse=True)
 def worlds(monkeypatch: pytest.MonkeyPatch) -> FakeWorlds:
-    """Nie den echten Dienst: Der würde Docker ansprechen (Live-Umgebung)."""
+    """Never the real service: it would talk to Docker (live environment)."""
     fake = FakeWorlds()
     monkeypatch.setattr(lifecycle, "get_service", lambda: fake)
     return fake
 
 
 async def _drain() -> None:
-    """Lässt angestoßene Hintergrund-Tasks laufen."""
+    """Lets kicked-off background tasks run."""
     for _ in range(5):
         await asyncio.sleep(0)
 
@@ -132,7 +132,7 @@ async def test_disable_teardown_error_is_only_logged(worlds: FakeWorlds, caplog:
 
 
 async def test_disable_teardown_timeout_still_returns_empty(worlds: FakeWorlds) -> None:
-    # anyio.fail_after wirft TimeoutError; dieselbe Klasse aus teardown deckt den Zweig ab.
+    # anyio.fail_after raises TimeoutError; the same class from teardown covers the branch.
     worlds.teardown_error = TimeoutError()
     assert await enabled_handler(False, fake_nc()) == ""
 
@@ -140,11 +140,11 @@ async def test_disable_teardown_timeout_still_returns_empty(worlds: FakeWorlds) 
 async def test_disable_reports_partial_teardown_in_log(worlds: FakeWorlds, caplog: pytest.LogCaptureFixture) -> None:
     worlds.teardown_result = 2
     assert await enabled_handler(False, fake_nc()) == ""
-    assert "2 Fehler" in caplog.text
+    assert "2 errors" in caplog.text
 
 
 async def test_disable_menu_error_still_tears_down_nothing(worlds: FakeWorlds) -> None:
-    """Scheitert schon das Menü, meldet der Handler den Fehler (Bestand) und räumt nicht auf."""
+    """If even the menu fails, the handler reports the error (existing behavior) and does not clean up."""
     nc = fake_nc()
     nc.ui.top_menu.unregister.side_effect = RuntimeError("kaputt")
     assert await enabled_handler(False, nc) != ""

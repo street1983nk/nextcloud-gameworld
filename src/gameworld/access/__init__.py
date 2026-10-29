@@ -1,1 +1,1 @@
-"""Zugang: Rollen, Spielerkonten, Einladungen."""
+"""Access: roles, player accounts, invitations."""

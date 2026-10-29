@@ -1,15 +1,15 @@
-"""Rollen allein aus Nextcloud-Gruppen (ROLLE-02, ROLLE-03, Owner-Entscheid A1).
+"""Roles solely from Nextcloud groups (ROLLE-02, ROLLE-03, owner decision A1).
 
-Verwalter sind die Mitglieder der Verwalter-Gruppen: immer ``admin``, dazu die
-Gruppen, die ein Nextcloud-Admin in meta ``verwalter_groups`` einträgt (D-02).
-Alle anderen angemeldeten Konten sind Spieler. Gameworld speichert weder Rollen
-noch Konten; die Rolle folgt je Anfrage aus der Selbstauskunft bei Nextcloud.
+Managers are the members of the manager groups: always ``admin``, plus the
+groups that a Nextcloud admin enters in meta ``verwalter_groups`` (D-02).
+All other signed-in accounts are players. Gameworld stores neither roles
+nor accounts; the role follows per request from the self-lookup at Nextcloud.
 
-Nach Phase 6 ist ``require_verwalter`` die einzige Sperre der Verwaltungsrouten
-(die AppAPI-Stufe ADMIN in info.xml entfällt in 06-02). ``require_nc_admin``
-schützt die Admin-Abschnitte (D-02) und prüft ohne Cache. Antwortet Nextcloud
-nicht, gibt es 503 und nie Verwalterrechte (Pitfall 5); eine kaputte Gruppen-
-Konfiguration heißt: nur ``admin`` verwaltet (fail closed).
+After phase 6, ``require_verwalter`` is the only lock on the management routes
+(the AppAPI level ADMIN in info.xml is dropped in 06-02). ``require_nc_admin``
+protects the admin sections (D-02) and checks without a cache. If Nextcloud does
+not answer, the result is 503 and never manager rights (pitfall 5); a broken group
+configuration means: only ``admin`` manages (fail closed).
 """
 
 from __future__ import annotations
@@ -29,14 +29,14 @@ from gameworld.nc import nc_as
 
 LOG = logging.getLogger(__name__)
 
-# Echter Nextcloud-Admin = Mitglied der Gruppe admin; sie verwaltet Gameworld immer.
+# Real Nextcloud admin = member of the group admin; it always manages Gameworld.
 ADMIN_GROUP = "admin"
 ROLE_VERWALTER = "verwalter"
 ROLE_SPIELER = "spieler"
 CACHE_SECONDS = 30.0
-# meta-Schlüssel der zusätzlichen Verwalter-Gruppen (JSON-Liste von Gruppen-IDs).
+# meta key of the additional manager groups (JSON list of group IDs).
 META_VERWALTER_GROUPS = "verwalter_groups"
-# Nextcloud erlaubt längere Gruppen-IDs; mehr nimmt Gameworld nicht an (wie die Einladungen).
+# Nextcloud allows longer group IDs; Gameworld accepts no more (like the invitations).
 GROUP_ID_MAX = 64
 _ONLY_ADMIN = frozenset({ADMIN_GROUP})
 
@@ -51,7 +51,7 @@ class Profile:
     user_id: str
     display_name: str
     groups: tuple[str, ...]
-    # Gruppen, die das Konto als Subadmin verwaltet (Einladungs-Umfang, D-01).
+    # Groups the account manages as subadmin (invitation scope, D-01).
     subadmin: tuple[str, ...] = ()
     # Account language (D-25). The default only applies to profiles built without
     # Nextcloud (tests); nc_profile always sets the value from Nextcloud.
@@ -59,7 +59,7 @@ class Profile:
 
 
 class RoleUnavailableError(Exception):
-    """Die Selbstauskunft bei Nextcloud ist fehlgeschlagen."""
+    """The self-lookup at Nextcloud failed."""
 
 
 Lookup = Callable[[str], Awaitable[Profile]]
@@ -67,7 +67,7 @@ GroupsSource = Callable[[], Awaitable[frozenset[str]]]
 
 
 def parse_verwalter_groups(raw: str | None) -> frozenset[str]:
-    """Verwalter-Gruppen aus meta; admin ist immer dabei, kaputt oder fehlend heißt nur admin (fail closed)."""
+    """Manager groups from meta; admin is always included, broken or missing means only admin (fail closed)."""
     if not raw:
         return _ONLY_ADMIN
     try:
@@ -86,7 +86,7 @@ def role_of(profile: Profile, verwalter_groups: frozenset[str] = _ONLY_ADMIN) ->
 
 
 async def nc_profile(uid: str) -> Profile:
-    """Selbstauskunft im Namen des Nutzers (/ocs/v1.php/cloud/user); der Client schließt danach (WR-05)."""
+    """Self-lookup on behalf of the user (/ocs/v1.php/cloud/user); the client closes afterwards (WR-05)."""
     async with nc_as(uid) as nc:
         info = await nc.users.get_user()
     return Profile(
@@ -99,10 +99,10 @@ async def nc_profile(uid: str) -> Profile:
 
 
 class RoleService:
-    """Fragt die Gruppen je Nutzer ab und merkt sich nur Erfolge für 30 s.
+    """Queries the groups per user and remembers only successes for 30 s.
 
-    ``groups`` liefert die konfigurierten Verwalter-Gruppen; fehlt die Quelle
-    oder wirft sie, gilt nur ``admin``.
+    ``groups`` supplies the configured manager groups; if the source is missing
+    or raises, only ``admin`` counts.
     """
 
     def __init__(self, lookup: Lookup, groups: GroupsSource | None = None) -> None:
@@ -121,7 +121,7 @@ class RoleService:
             return cached[1]
         try:
             profile = await self._lookup(uid)
-        except Exception as exc:  # jede Störung heißt: Rolle unbekannt, nie Verwalter
+        except Exception as exc:  # any outage means: role unknown, never manager
             self._cache.pop(uid, None)
             self._failed[uid] = now
             raise RoleUnavailableError(str(exc)) from exc
@@ -157,13 +157,13 @@ class RoleService:
             return FALLBACK_LANGUAGE
 
     async def verwalter_groups(self) -> frozenset[str]:
-        """Konfigurierte Verwalter-Gruppen; jede Störung der Quelle heißt nur admin (T-06-01)."""
+        """Configured manager groups; any outage of the source means only admin (T-06-01)."""
         if self._groups is None:
             return _ONLY_ADMIN
         try:
             return (await self._groups()) | _ONLY_ADMIN
-        except Exception as exc:  # kaputte Konfiguration gibt nie mehr Rechte
-            LOG.warning("Verwalter-Gruppen nicht lesbar, nur admin verwaltet: %s", type(exc).__name__)
+        except Exception as exc:  # broken configuration never gives more permissions
+            LOG.warning("Manager groups unreadable, only admin manages: %s", type(exc).__name__)
             return _ONLY_ADMIN
 
     async def role(self, uid: str) -> str:
@@ -171,11 +171,11 @@ class RoleService:
         return role_of(profile, await self.verwalter_groups())
 
     async def nc_admin(self, uid: str) -> bool:
-        """Echter Nextcloud-Admin? Immer frisch gefragt, nie aus dem Cache (Rechteausweitung, T-06-02)."""
+        """Real Nextcloud admin? Always asked fresh, never from the cache (privilege escalation, T-06-02)."""
         now = time.monotonic()
         try:
             profile = await self._lookup(uid)
-        except Exception as exc:  # Störung heißt: kein Admin-Recht
+        except Exception as exc:  # outage means: no admin right
             self._failed[uid] = now
             raise RoleUnavailableError(str(exc)) from exc
         # Only the language is remembered, never the profile (the role cache stays untouched).
@@ -183,7 +183,7 @@ class RoleService:
         return ADMIN_GROUP in profile.groups
 
     def invalidate(self) -> None:
-        """Vergisst alle gemerkten Profile, etwa nach einer Änderung der Verwalter-Gruppen."""
+        """Forget all remembered profiles, e.g. after a change of the manager groups."""
         self._cache.clear()
 
 
@@ -191,8 +191,8 @@ _role_service: RoleService | None = None
 
 
 async def _stored_verwalter_groups() -> frozenset[str]:
-    """Verwalter-Gruppen aus dem Store des Weltdienstes, gelesen im Worker-Thread."""
-    from gameworld.api.worlds import get_service  # spät: api.worlds importiert dieses Modul
+    """Manager groups from the world service store, read in the worker thread."""
+    from gameworld.api.worlds import get_service  # late: api.worlds imports this module
 
     def read() -> str | None:
         return get_service().store.get_meta(META_VERWALTER_GROUPS)
@@ -201,7 +201,7 @@ async def _stored_verwalter_groups() -> frozenset[str]:
 
 
 def get_role_service() -> RoleService:
-    """FastAPI-Dependency: modulweites Singleton mit der echten Selbstauskunft."""
+    """FastAPI dependency: module-wide singleton with the real self-lookup."""
     global _role_service
     if _role_service is None:
         _role_service = RoleService(nc_profile, _stored_verwalter_groups)
@@ -209,7 +209,7 @@ def get_role_service() -> RoleService:
 
 
 def current_user(request: Request) -> str:
-    """Nutzer-ID, die AppAPIAuthMiddleware nach geprüfter Signatur ablegt."""
+    """User ID that AppAPIAuthMiddleware stores after the signature was checked."""
     uid = request.scope.get("username") or ""
     if not uid:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=MSG_NOT_LOGGED_IN)
@@ -221,7 +221,7 @@ RolesDep = Annotated[RoleService, Depends(get_role_service)]
 
 
 async def require_verwalter(uid: UserDep, roles: RolesDep) -> str:
-    """Sperre jeder Verwaltungsroute: 403 für Spieler, 503 bei Störung."""
+    """Lock on every management route: 403 for players, 503 on outage."""
     try:
         role = await roles.role(uid)
     except RoleUnavailableError:
@@ -232,7 +232,7 @@ async def require_verwalter(uid: UserDep, roles: RolesDep) -> str:
 
 
 async def require_nc_admin(uid: UserDep, roles: RolesDep) -> str:
-    """Sperre der Admin-Abschnitte (D-02): 403 auch für Verwalter ohne Gruppe admin, 503 bei Störung."""
+    """Lock on the admin sections (D-02): 403 also for managers without the group admin, 503 on outage."""
     try:
         is_admin = await roles.nc_admin(uid)
     except RoleUnavailableError:

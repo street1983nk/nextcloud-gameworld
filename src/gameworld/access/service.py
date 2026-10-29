@@ -1,46 +1,46 @@
-"""Einladungen und Spielerzugang je Welt (ZUGANG-02, ZUGANG-03, ROLLE-02).
+"""Invitations and player access per world (ZUGANG-02, ZUGANG-03, ROLLE-02).
 
-Ablauf jeder Änderung:
+Flow of every change:
 
-1. Außerhalb der Sperre (async): Welt prüfen, Konten und Gruppen bei
-   Nextcloud im Namen des Verwalters auflösen, Geheimnis laden und dessen
-   Fingerabdruck prüfen. Scheitert hier etwas, ist nichts geschrieben (T-03-24).
-2. Unter der Welt-Sperre im Worker-Thread: Einladung schreiben, effektive
-   Spieler abgleichen, bei Änderung Generation hochzählen und die Zugangsdatei
-   sofort in die Welt schreiben (``WorldService.push_access``). Im selben
-   Sperrblock schreibt push_access auch die Regeldatei des Zeit-Mods
-   (``push_time``): Ein frisch eingeladenes Kind mit Spielzeit-Regeln steht sofort
-   mit Zeile in der Regeldatei, nicht erst nach dem nächsten 15-s-Takt.
+1. Outside the lock (async): check the world, resolve accounts and groups at
+   Nextcloud on behalf of the manager, load the secret and check its
+   fingerprint. If anything fails here, nothing has been written (T-03-24).
+2. Under the world lock in the worker thread: write the invitation, reconcile the
+   effective players, on a change bump the generation and write the access file
+   into the world immediately (``WorldService.push_access``). In the same
+   lock block, push_access also writes the rules file of the time mod
+   (``push_time``): a freshly invited child with playtime rules appears
+   with a row in the rules file at once, not only after the next 15 s tick.
 
-Effektive Spieler einer Welt sind die direkt eingeladenen Konten plus die
-Mitglieder eingeladener Gruppen, jeweils nur, wenn Nextcloud sie als vorhanden
-und aktiv bestätigt. Die Mitgliedschaft kommt immer frisch aus Nextcloud
-(ROLLE-02); Gameworld speichert nur die Einladung der Gruppe.
+Effective players of a world are the directly invited accounts plus the
+members of invited groups, each only if Nextcloud confirms them as existing
+and active. Membership always comes fresh from Nextcloud
+(ROLLE-02); Gameworld stores only the invitation of the group.
 
-Pitfall 6: Gruppen löst Nextcloud nur Admins, Subadmins und Mitgliedern der
-Gruppe auf (``/cloud/groups/{gid}/users``, sonst 403). Darum laufen Auflösung und
-Abgleich nur im Verwalter-Kontext.
+Pitfall 6: Nextcloud resolves groups only for admins, subadmins and members of the
+group (``/cloud/groups/{gid}/users``, otherwise 403). Therefore resolution and
+reconciliation only run in the manager context.
 
-Seit Phase 6 (ROLLE-03, D-01) gibt es Verwalter ohne Nextcloud-Adminrecht. Für
-sie gilt die Regel "404 heißt gelöscht nur als NC-Admin" (P-01, 404-Falle):
-Nextcloud zeigt einem Gruppen-Verwalter fremde Konten als 404. Darum fragt
-Gameworld in ihrem Namen nie ``user()`` je Konto ab, entfernt nie eine direkte
-Einladung wegen einer fehlenden Antwort und bricht den Abgleich einer Welt ohne
-Änderung ab, sobald eine ihrer Gruppen für sie nicht lesbar ist. Eingeladen
-werden nur Konten und Gruppen aus den eigenen Gruppen und Subadmin-Gruppen
-(``Actor.groups``); alles andere scheitert vor jeder Store-Änderung mit
-``InviteScopeError`` (HTTP 403). Deaktivierte Konten erkennt nur der Abgleich
-eines NC-Admins. Ob ein Actor NC-Admin ist, prüft jeder ändernde Ablauf vorher
-frisch an der Gruppe admin (``_confirmed``): Ein gemerktes Profil darf nie den
-gefährlichen Pfad öffnen.
+Since phase 6 (ROLLE-03, D-01) there are managers without the Nextcloud admin right. For
+them the rule "404 means deleted only as NC admin" applies (P-01, 404 trap):
+Nextcloud shows a group manager foreign accounts as 404. Therefore
+Gameworld never queries ``user()`` per account on their behalf, never removes a direct
+invitation because of a missing answer and aborts the reconciliation of a world without
+change as soon as one of its groups is unreadable for them. Only accounts and groups
+from their own groups and subadmin groups can be invited
+(``Actor.groups``); anything else fails before any store change with
+``InviteScopeError`` (HTTP 403). Deactivated accounts are recognized only by the
+reconciliation of an NC admin. Every changing flow checks beforehand, freshly against
+the group admin, whether an actor is an NC admin (``_confirmed``): a remembered profile must never
+open the dangerous path.
 
-Sperr-Regel (Deadlock-Schutz): ``worlds._LOCK`` ist ein threading.Lock und
-nicht reentrant. ``_ensure_fingerprint`` ist ein eigener asynchroner Schritt
-direkt nach dem Laden des Geheimnisses, außerhalb von ``worlds.mutation()``.
-``reprovision_all`` nimmt die Sperre selbst und gibt sie frei, bevor die
-aufrufende Methode ihren eigenen Schritt unter der Sperre beginnt.
+Lock rule (deadlock protection): ``worlds._LOCK`` is a threading.Lock and
+not reentrant. ``_ensure_fingerprint`` is a separate asynchronous step
+right after loading the secret, outside ``worlds.mutation()``.
+``reprovision_all`` takes the lock itself and releases it before
+the calling method starts its own step under the lock.
 
-Passwörter, Geheimnis und Verifier werden nie protokolliert.
+Passwords, secret and verifiers are never logged.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ LOG = logging.getLogger(__name__)
 KIND_USER = "user"
 KIND_GROUP = "group"
 FINGERPRINT_KEY = "secret_fingerprint"
-# Abgleich beim Verwalter-Besuch höchstens so oft (pro Prozess, T-03-26).
+# Reconciliation on a manager visit at most this often (per process, T-03-26).
 SYNC_INTERVAL_SECONDS = 60
 
 MSG_UNKNOWN_ACCOUNT = "Dieses Nextcloud-Konto gibt es nicht oder es ist deaktiviert."
@@ -82,7 +82,7 @@ MSG_UNKNOWN_GROUP = "Diese Nextcloud-Gruppe gibt es nicht."
 MSG_NO_PLAYER = "Für dieses Nextcloud-Konto gibt es noch keinen Spieler."
 MSG_NAME_TAKEN = "Diesen Spielernamen hat schon jemand anderes."
 MSG_REPROVISION_PENDING = "Die Zugangsdaten werden gerade erneuert; bitte gleich noch einmal abrufen."
-# Einladungs-Umfang eines Gruppen-Verwalters (D-01, UI-SPEC B1), HTTP 403.
+# Invitation scope of a group manager (D-01, UI-SPEC B1), HTTP 403.
 MSG_ACCOUNT_OUT_OF_SCOPE = "Dieses Konto ist in keiner deiner Gruppen."
 MSG_GROUP_OUT_OF_SCOPE = "Diese Gruppe gehört nicht zu deinen Gruppen."
 
@@ -90,28 +90,28 @@ InviteKey = tuple[str, str]
 
 
 class InviteTargetError(Exception):
-    """Das Ziel einer Einladung ist kein vorhandenes, aktives Konto oder keine Gruppe (HTTP 422)."""
+    """The target of an invitation is not an existing, active account or not a group (HTTP 422)."""
 
 
 class InviteScopeError(Exception):
-    """Das Ziel liegt außerhalb der eigenen Gruppen und Subadmin-Gruppen des Verwalters (HTTP 403, D-01)."""
+    """The target is outside the manager's own groups and subadmin groups (HTTP 403, D-01)."""
 
 
 class PlayerNotFoundError(Exception):
-    """Zu diesem Konto gibt es keinen Spieler (HTTP 404)."""
+    """There is no player for this account (HTTP 404)."""
 
 
 class PlayerNameTakenError(Exception):
-    """Der Spielername gehört ohne Rücksicht auf Groß-/Kleinschreibung schon einem anderen Konto (HTTP 409)."""
+    """The player name already belongs to another account, ignoring case (HTTP 409)."""
 
 
 @dataclass(frozen=True)
 class Actor:
-    """Handelnder Verwalter einer Änderung.
+    """Acting manager of a change.
 
-    nc_admin: Mitglied der Gruppe admin laut Profil; ändernde Abläufe bestätigen
-    das vorher frisch (``AccessService._confirmed``). groups: eigene Gruppen plus
-    Subadmin-Gruppen, der Einladungs-Umfang eines Nicht-Admins (D-01).
+    nc_admin: member of the group admin according to the profile; changing flows confirm
+    this freshly beforehand (``AccessService._confirmed``). groups: own groups plus
+    subadmin groups, the invitation scope of a non-admin (D-01).
     """
 
     uid: str
@@ -120,7 +120,7 @@ class Actor:
 
 
 def actor_of(profile: Profile) -> Actor:
-    """Actor aus der Selbstauskunft des angemeldeten Kontos (nie aus Daten des Browsers)."""
+    """Actor from the self-lookup of the signed-in account (never from browser data)."""
     return Actor(
         uid=profile.user_id,
         nc_admin=ADMIN_GROUP in profile.groups,
@@ -130,10 +130,10 @@ def actor_of(profile: Profile) -> Actor:
 
 @dataclass(frozen=True)
 class AccessResult:
-    """applied: Die Zugangsdatei der Welt entspricht der Datenbank.
+    """applied: the access file of the world matches the database.
 
-    False heißt, die Welt hat (noch) keinen Container oder Docker war nicht
-    erreichbar; der nächste Start schreibt die Datei.
+    False means the world has no container (yet) or Docker was not
+    reachable; the next start writes the file.
     """
 
     applied: bool
@@ -150,7 +150,7 @@ class PlayerInfo:
 
 @dataclass(frozen=True)
 class PlayerChange:
-    """Ergebnis von Passwort neu und Umbenennen; applied wie bei AccessResult, über alle Welten."""
+    """Result of new password and rename; applied as in AccessResult, across all worlds."""
 
     nc_user: str
     display_name: str
@@ -161,7 +161,7 @@ class PlayerChange:
 
 @dataclass(frozen=True)
 class MyWorld:
-    """Zugangsdaten des anfragenden Kontos für eine Welt (nur eigene Daten, Pitfall 7)."""
+    """Access data of the requesting account for a world (own data only, pitfall 7)."""
 
     world_id: str
     player_name: str
@@ -170,7 +170,7 @@ class MyWorld:
 
 @dataclass
 class SyncState:
-    """Zeitpunkt (monotonic) des letzten Abgleichs beim Verwalter-Besuch."""
+    """Time (monotonic) of the last reconciliation on a manager visit."""
 
     last: float | None = None
 
@@ -180,12 +180,12 @@ SYNC_STATE = SyncState()
 
 @dataclass
 class _Resolution:
-    """Effektive Spieler samt der Einladungen, über die sie kommen."""
+    """Effective players together with the invitations through which they come."""
 
     effective: dict[str, DirectoryUser] = field(default_factory=dict[str, DirectoryUser])
     sources: dict[str, set[InviteKey]] = field(default_factory=dict[str, set[InviteKey]])
     resolved: set[InviteKey] = field(default_factory=set[InviteKey])
-    # Direkt eingeladene Konten, die ein Nicht-Admin nicht prüfen kann: Zugang bleibt, wie er ist.
+    # Directly invited accounts that a non-admin cannot check: access stays as it is.
     kept: set[str] = field(default_factory=set[str])
 
 
@@ -196,10 +196,10 @@ class AccessService:
         self._directory = directory
         self._secret = secret
 
-    # Öffentliche Abläufe
+    # Public flows
 
     async def invite_user(self, world_id: str, actor: Actor, uid: str) -> AccessResult:
-        """Lädt ein Konto ein; als Nicht-Admin nur aus den eigenen Gruppen (D-01), ohne Kontoabfrage."""
+        """Invite an account; as a non-admin only from the own groups (D-01), without account query."""
         await self._require_world(world_id)
         actor = await self._confirmed(actor)
         if actor.nc_admin:
@@ -221,9 +221,9 @@ class AccessService:
         return await self._apply(world_id, change, resolution, secret)
 
     async def invite_group(self, world_id: str, actor: Actor, gid: str) -> AccessResult:
-        """Lädt eine Nextcloud-Gruppe ein; ihre aktiven Mitglieder bekommen Zugang (ZUGANG-02).
+        """Invite a Nextcloud group; its active members get access (ZUGANG-02).
 
-        Ein Nicht-Admin lädt nur eigene Gruppen und Subadmin-Gruppen ein (D-01).
+        A non-admin invites only own groups and subadmin groups (D-01).
         """
         await self._require_world(world_id)
         actor = await self._confirmed(actor)
@@ -243,14 +243,14 @@ class AccessService:
         return await self._apply(world_id, change, resolution, secret)
 
     async def revoke(self, world_id: str, actor: Actor, kind: str, target: str) -> AccessResult:
-        """Entfernt eine Einladung. Löst die übrigen auf und braucht darum wie der Abgleich einen Actor (P-01)."""
+        """Remove an invitation. Resolves the rest, so it needs an actor like the reconciliation (P-01)."""
         await self._require_world(world_id)
         actor = await self._confirmed(actor)
         secret = await self._secret.get()
         await self._ensure_fingerprint(secret)
-        # Auch den widerrufenen Schlüssel auflösen: So ist unter der Sperre
-        # bekannt, wer nur über ihn Zugang hatte, und die keep-Regel kann den
-        # Widerruf nicht still rückgängig machen (siehe _apply_sync).
+        # Also resolve the revoked key: this way it is known under the lock
+        # who had access only through it, and the keep rule cannot
+        # silently undo the revocation (see _apply_sync).
         invites = await self._invite_keys(world_id) | {(kind, target)}
         resolution = await self._resolve(actor, invites, strict=False)
 
@@ -260,7 +260,7 @@ class AccessService:
         return await self._apply(world_id, change, resolution, secret, revoked=(kind, target))
 
     async def sync_world(self, world_id: str, actor: Actor) -> AccessResult:
-        """Gleicht eine Welt mit Nextcloud ab: neue Gruppenmitglieder rein, Ausgetretene raus."""
+        """Reconcile a world with Nextcloud: new group members in, departed ones out."""
         await self._require_world(world_id)
         actor = await self._confirmed(actor)
         secret = await self._secret.get()
@@ -269,12 +269,12 @@ class AccessService:
         return AccessResult(applied=True) if result is None else result
 
     async def sync_all(self, actor: Actor) -> bool:
-        """Abgleich aller Welten beim Verwalter-Besuch, höchstens alle SYNC_INTERVAL_SECONDS.
+        """Reconciliation of all worlds on a manager visit, at most every SYNC_INTERVAL_SECONDS.
 
-        Wartet nie auf die Welt-Sperre: Läuft gerade eine Aktion (etwa ein
-        Erzeugen), wird die betroffene Welt übersprungen und der nächste Besuch
-        versucht es erneut. Ein Fehler einer Welt bricht die anderen nicht ab.
-        True, wenn ein Abgleich lief.
+        Never waits for the world lock: if an action is running (e.g. a
+        creation), the affected world is skipped and the next visit
+        tries again. An error in one world does not abort the others.
+        True if a reconciliation ran.
         """
         now = monotonic()
         if SYNC_STATE.last is not None and now - SYNC_STATE.last < SYNC_INTERVAL_SECONDS:
@@ -283,8 +283,8 @@ class AccessService:
         try:
             actor = await self._confirmed(actor)
         except DirectoryUnavailableError:
-            # Ohne Bestätigung kein Abgleich; die Drossel bleibt verbraucht (keine Last bei Störung).
-            LOG.warning("Abgleich beim Verwalter-Besuch übersprungen: Nextcloud antwortet nicht")
+            # No reconciliation without confirmation; the throttle stays used up (no load during an outage).
+            LOG.warning("Reconciliation on manager visit skipped: Nextcloud does not answer")
             return False
         secret = await self._secret.get()
         if not await self._ensure_fingerprint(secret, blocking=False):
@@ -295,7 +295,7 @@ class AccessService:
             try:
                 result = await self._sync(row.id, actor, secret, blocking=False)
             except Exception as exc:
-                LOG.warning("Abgleich von Welt %s gescheitert: %s", row.id, type(exc).__name__)
+                LOG.warning("Reconciliation of world %s failed: %s", row.id, type(exc).__name__)
                 continue
             busy = busy or result is None
         if busy:
@@ -303,7 +303,7 @@ class AccessService:
         return True
 
     async def rotate_password(self, acting_uid: str, nc_user: str) -> PlayerChange:
-        """Passwort neu (T-03-29): Rotation +1, alle Verifier des Kontos neu, ohne Welt-Neustart."""
+        """New password (T-03-29): rotation +1, all verifiers of the account anew, without world restart."""
         secret = await self._secret.get()
         await self._ensure_fingerprint(secret)
 
@@ -317,10 +317,10 @@ class AccessService:
         return await self._change(acting_uid, player, secret, applied)
 
     async def rename_player(self, acting_uid: str, nc_user: str, new_name: str) -> PlayerChange:
-        """Neuer Spielername für alle Welten des Kontos.
+        """New player name for all worlds of the account.
 
-        In Luanti ist das ein neues Konto: Inventar und Rechte des alten Namens
-        bleiben in der Welt verwaist zurück.
+        In Luanti this is a new account: inventory and privileges of the old name
+        stay behind orphaned in the world.
         """
         name = validate_player_name(new_name)
         secret = await self._secret.get()
@@ -343,11 +343,11 @@ class AccessService:
     async def list_players(self, world_id: str, actor: Actor) -> list[PlayerInfo]:
         await self._require_world(world_id)
         secret = await self._secret.get()
-        # Eigener Schritt außerhalb von worlds.mutation() (Sperr-Regel, nicht
-        # reentrant). Wie WR-02 bei my_worlds (AR-25, T-03-30): Konnte nach
-        # einem Geheimniswechsel wegen belegter Sperre noch nicht neu
-        # provisioniert werden, zeigt die Verwalteransicht kein Passwort, das
-        # die Welten noch nicht kennen (503 beim Aufrufer).
+        # Separate step outside worlds.mutation() (lock rule, not
+        # reentrant). Like WR-02 at my_worlds (AR-25, T-03-30): if, after
+        # a secret change, re-provisioning was not yet possible because the lock was busy,
+        # the manager view shows no password that the worlds
+        # do not know yet (503 at the caller).
         if not await self._ensure_fingerprint(secret, blocking=False):
             raise SecretUnavailableError(MSG_REPROVISION_PENDING)
         access = await anyio.to_thread.run_sync(self._store.world_access, world_id)
@@ -381,32 +381,32 @@ class AccessService:
         return players
 
     async def my_worlds(self, profile: Profile) -> list[MyWorld]:
-        """Eigene Welten samt Zugangsdaten, nur für profile.user_id (ZUGANG-04, ROLLE-01).
+        """Own worlds together with access data, only for profile.user_id (ZUGANG-04, ROLLE-01).
 
-        Das Profil stammt aus der Selbstauskunft im Namen des angemeldeten
-        Kontos (signierte AppAPI-Anfrage), nie aus Daten des Browsers.
+        The profile comes from the self-lookup on behalf of the signed-in
+        account (signed AppAPI request), never from browser data.
 
-        Lazy Provisionierung (ZUGANG-02 ohne Verwalter-Besuch): Steht eine der
-        eigenen Gruppen in einer Gruppen-Einladung und hat das Konto dort noch
-        keinen Zugang, bekommt es ihn jetzt. Nur Hinzufügen: Entfernen braucht
-        die Gruppenauflösung im Verwalter-Kontext (Pitfall 6), siehe sync_all.
+        Lazy provisioning (ZUGANG-02 without a manager visit): if one of the
+        own groups is in a group invitation and the account has no access there
+        yet, it gets it now. Adding only: removing needs
+        the group resolution in the manager context (pitfall 6), see sync_all.
 
-        Wartet nie auf die Welt-Sperre (Polling alle 5 s darf nie hinter einem
-        Erzeugen hängen und keine Worker-Threads stapeln): Bei belegter Sperre
-        folgen Fingerabdruck-Abgleich und Provisionierung beim nächsten Abruf.
+        Never waits for the world lock (polling every 5 s must never hang behind a
+        creation and must not pile up worker threads): with a busy lock,
+        fingerprint reconciliation and provisioning follow on the next call.
 
-        Konnte nach einem Geheimniswechsel wegen belegter Sperre noch nicht neu
-        provisioniert werden, antwortet der Abruf mit SecretUnavailableError
-        (503 beim Aufrufer): Die Welten tragen dann noch die alten Verifier,
-        und ein Passwort aus dem neuen Geheimnis wäre irreführend; das Kind
-        tippte sich damit in die Fehlversuch-Sperre des Welt-Mods.
+        If, after a secret change, re-provisioning was not yet possible because the lock was busy,
+        the call answers with SecretUnavailableError
+        (503 at the caller): the worlds then still carry the old verifiers,
+        and a password from the new secret would be misleading; the child
+        would type themselves into the failed-attempt lock of the world mod.
         """
         uid = profile.user_id
         secret = await self._secret.get()
-        # Eigener Schritt außerhalb von worlds.mutation() (Sperr-Regel, nicht reentrant).
+        # Separate step outside worlds.mutation() (lock rule, not reentrant).
         if not await self._ensure_fingerprint(secret, blocking=False):
-            # Lieber kurz nicht verfügbar als ein noch nicht gültiges Passwort
-            # anzeigen; der 5-s-Poll versucht es ohnehin gleich erneut.
+            # Better briefly unavailable than showing a password that is not
+            # valid yet; the 5 s poll tries again right away anyway.
             raise SecretUnavailableError(MSG_REPROVISION_PENDING)
         groups = set(profile.groups)
         pending = await anyio.to_thread.run_sync(self._pending_group_worlds, uid, groups)
@@ -416,33 +416,33 @@ class AccessService:
         return await anyio.to_thread.run_sync(self._my_worlds_sync, uid, secret)
 
     async def purge_missing_accounts(self, acting_uid: str) -> list[str]:
-        """Vergisst Konten, die Nextcloud eindeutig als gelöscht meldet; gibt sie sortiert zurück.
+        """Forget accounts that Nextcloud unambiguously reports as deleted; returns them sorted.
 
-        Geprüft werden alle Spielerzeilen und alle direkt eingeladenen Konten, im
-        Namen des bestätigten Verwalters und außerhalb der Welt-Sperre (Sperr-Regel).
-        Vergessen wird nur bei ``None`` (Nextcloud 404/998). Ein deaktiviertes Konto
-        bleibt: Es hat ohnehin keinen Zugang und bekommt ihn beim Aktivieren zurück.
-        Jede Störung bricht den ganzen Lauf ab, bevor etwas gelöscht ist; ebenso,
-        wenn Nextcloud nicht einmal den handelnden Verwalter selbst bestätigt
-        (Positivkontrolle gegen eine Fehlkonfiguration, die alles als fehlend meldet).
+        All player rows and all directly invited accounts are checked, on behalf
+        of the confirmed manager and outside the world lock (lock rule).
+        Only ``None`` (Nextcloud 404/998) is forgotten. A deactivated account
+        stays: it has no access anyway and gets it back on activation.
+        Any outage aborts the whole run before anything is deleted; likewise
+        if Nextcloud does not even confirm the acting manager itself
+        (positive control against a misconfiguration that reports everything as missing).
 
-        Ohne diesen Schritt griffe eine alte direkte Einladung wieder, sobald ein
-        Admin ein Konto mit derselben ID neu anlegt, und die Spielerzeile mit
-        Rotation 0 gäbe ihm das Passwort des gelöschten Kontos.
+        Without this step an old direct invitation would apply again as soon as an
+        admin recreates an account with the same ID, and the player row with
+        rotation 0 would give it the password of the deleted account.
 
-        Nur im Namen eines bestätigten NC-Admins (meta nc_admins, D-01, 404-Falle):
-        Steht acting_uid dort nicht, gibt es keinen Abgleich und keine Kontoabfrage
-        (Tiefenverteidigung zu ``notify.loop.run_hooks``).
+        Only on behalf of a confirmed NC admin (meta nc_admins, D-01, 404 trap):
+        if acting_uid is not listed there, there is no reconciliation and no account query
+        (defense in depth to ``notify.loop.run_hooks``).
         """
-        from gameworld.playtime.engine import parse_admins  # spät: playtime.service importiert dieses Modul
+        from gameworld.playtime.engine import parse_admins  # late: playtime.service imports this module
         from gameworld.playtime.service import META_NC_ADMINS
 
         nc_admins = parse_admins(await anyio.to_thread.run_sync(self._store.get_meta, META_NC_ADMINS))
         if acting_uid not in nc_admins:
-            LOG.warning("Kontenabgleich abgelehnt: das handelnde Konto ist kein bestätigter Nextcloud-Admin")
+            LOG.warning("Account reconciliation refused: the acting account is not a confirmed Nextcloud admin")
             return []
         if await self._directory.user(acting_uid, acting_uid) is None:
-            LOG.warning("Nextcloud bestätigt den handelnden Verwalter nicht; gelöschte Konten bleiben vorerst")
+            LOG.warning("Nextcloud does not confirm the acting manager; deleted accounts stay for now")
             return []
         candidates = await anyio.to_thread.run_sync(self._purge_candidates)
         gone = [uid for uid in sorted(candidates) if await self._directory.user(acting_uid, uid) is None]
@@ -450,17 +450,17 @@ class AccessService:
             return []
         forgotten = await anyio.to_thread.run_sync(self._forget_sync, gone)
         if forgotten:
-            LOG.info("%d in Nextcloud gelöschte Konten vergessen", len(forgotten))
+            LOG.info("%d accounts deleted in Nextcloud forgotten", len(forgotten))
         return forgotten
 
     def list_invites(self, world_id: str) -> list[tuple[str, str, str, str]]:
-        """Einladungen als (kind, target, invited_by, created_at), für die Verwalteransicht."""
+        """Invitations as (kind, target, invited_by, created_at), for the manager view."""
         return [
             (invite.kind, invite.target, invite.invited_by, invite.created_at)
             for invite in self._store.list_invites(world_id)
         ]
 
-    # Hilfen außerhalb der Sperre
+    # Helpers outside the lock
 
     async def _require_world(self, world_id: str) -> None:
         if await anyio.to_thread.run_sync(self._store.get_world, world_id) is None:
@@ -471,12 +471,12 @@ class AccessService:
         return {(invite.kind, invite.target) for invite in invites}
 
     async def _confirmed(self, actor: Actor) -> Actor:
-        """Bestätigt nc_admin frisch an der Gruppe admin, sonst gilt der Actor als Nicht-Admin.
+        """Confirm nc_admin freshly against the group admin, otherwise the actor counts as non-admin.
 
-        Das Profil hinter dem Actor kann bis zu 30 s alt sein. Nur ein frisch
-        bestätigter NC-Admin darf den Pfad "404 heißt gelöscht" gehen (P-01):
-        Antwortet Nextcloud mit 403/404 oder fehlt das Konto in der Gruppe, folgt
-        der sichere Nicht-Admin-Pfad. Eine Störung wird weitergereicht (nichts geschrieben).
+        The profile behind the actor can be up to 30 s old. Only a freshly
+        confirmed NC admin may take the path "404 means deleted" (P-01):
+        if Nextcloud answers 403/404 or the account is missing from the group, the
+        safe non-admin path follows. An outage is passed on (nothing written).
         """
         if not actor.nc_admin:
             return actor
@@ -485,15 +485,15 @@ class AccessService:
         except DirectoryRejectedError:
             members = None
         if members is None or actor.uid not in members:
-            LOG.warning("Nextcloud bestätigt das Adminrecht nicht; es gelten die Regeln für Gruppen-Verwalter")
+            LOG.warning("Nextcloud does not confirm the admin right; the rules for group managers apply")
             return replace(actor, nc_admin=False)
         return actor
 
     async def _require_account_in_scope(self, actor: Actor, uid: str) -> None:
-        """Das Konto muss in einer eigenen Gruppe oder Subadmin-Gruppe stehen (D-01), sonst 403.
+        """The account must be in an own group or subadmin group (D-01), otherwise 403.
 
-        Gelesen wird je Gruppe im Namen des Verwalters; eine abgelehnte Gruppe
-        zählt nicht, eine Störung wird weitergereicht (503). Läuft vor jeder Store-Änderung.
+        Read per group on behalf of the manager; a refused group
+        does not count, an outage is passed on (503). Runs before any store change.
         """
         for gid in sorted(actor.groups):
             try:
@@ -512,13 +512,13 @@ class AccessService:
         *,
         strict: bool = True,
     ) -> _Resolution:
-        """Löst Einladungen bei Nextcloud auf, als handelnder Verwalter (Pitfall 6).
+        """Resolve invitations at Nextcloud as the acting manager (pitfall 6).
 
-        NC-Admin (frisch bestätigt): Eine fehlende Gruppe zählt als leer. Jedes
-        Konto wird höchstens einmal abgefragt, auch wenn es direkt und über
-        Gruppen eingeladen ist.
+        NC admin (freshly confirmed): a missing group counts as empty. Each
+        account is queried at most once, even if it is invited directly and via
+        groups.
 
-        Nicht-Admin (404-Falle, P-01): siehe ``_resolve_limited``.
+        Non-admin (404 trap, P-01): see ``_resolve_limited``.
         """
         if not actor.nc_admin:
             return await self._resolve_limited(actor, invites, known or {}, strict=strict)
@@ -540,14 +540,14 @@ class AccessService:
     async def _resolve_limited(
         self, actor: Actor, invites: set[InviteKey], known: dict[str, DirectoryUser], *, strict: bool
     ) -> _Resolution:
-        """Auflösung im Namen eines Gruppen-Verwalters ohne Adminrecht; entfernt nie wegen einer 404.
+        """Resolution on behalf of a group manager without admin right; never removes because of a 404.
 
-        Nie ``user()`` je Konto. Gruppenmitglieder gelten als aktiv, mit der
-        Konto-ID als Anzeigename. Direkt eingeladene Konten behalten ihren Zugang
-        unverändert (``kept``), außer sie stehen in ``known`` (gerade eingeladen,
-        Umfang geprüft). Ist eine Gruppe nicht lesbar (403 oder 404), bricht
-        ``strict`` (Abgleich) die Welt ohne Änderung ab; sonst bleibt die Gruppe
-        unaufgelöst, und die keep-Regel lässt ihre Zugänge stehen.
+        Never ``user()`` per account. Group members count as active, with the
+        account ID as display name. Directly invited accounts keep their access
+        unchanged (``kept``), unless they are in ``known`` (just invited,
+        scope checked). If a group is unreadable (403 or 404), ``strict``
+        (reconciliation) aborts the world without change; otherwise the group stays
+        unresolved, and the keep rule leaves its accesses in place.
         """
         resolution = _Resolution()
         for kind, target in sorted(invites):
@@ -567,7 +567,7 @@ class AccessService:
             if members is None:
                 if strict:
                     raise DirectoryRejectedError(MSG_UNAVAILABLE)
-                LOG.info("Gruppen-Einladung für den Verwalter nicht lesbar; ihre Zugänge bleiben")
+                LOG.info("Group invitation not readable for the manager; its accesses stay")
                 continue
             for uid in members:
                 user = known.get(uid) or DirectoryUser(uid=uid, display_name=uid, enabled=True)
@@ -577,7 +577,7 @@ class AccessService:
         return resolution
 
     async def _display_name(self, acting_uid: str, nc_user: str, *, lookup: bool = True) -> str:
-        """Anzeigename aus Nextcloud; ohne lookup (Nicht-Admin) die Konto-ID, ohne Abfrage."""
+        """Display name from Nextcloud; without lookup (non-admin) the account ID, without a query."""
         if not lookup:
             return nc_user
         try:
@@ -596,20 +596,20 @@ class AccessService:
         )
 
     async def _ensure_fingerprint(self, secret: bytes, *, blocking: bool = True) -> bool:
-        """Erkennt ein neues Geheimnis am Fingerabdruck (T-03-30); False nur, wenn nicht gewartet wurde.
+        """Detect a new secret by its fingerprint (T-03-30); False only if it did not wait.
 
-        Eigener Schritt außerhalb von worlds.mutation(): Nie aus Code heraus
-        aufrufen, der die Welt-Sperre hält (nicht reentrant).
+        Separate step outside worlds.mutation(): never call from code
+        that holds the world lock (not reentrant).
         """
         current = fingerprint(secret)
         stored = await anyio.to_thread.run_sync(self._store.get_meta, FINGERPRINT_KEY)
         if stored == current:
             return True
         if stored is None:
-            # Erster Lauf: Die vorhandenen Verifier stammen aus diesem Geheimnis.
+            # First run: the existing verifiers come from this secret.
             await anyio.to_thread.run_sync(self._store.set_meta, FINGERPRINT_KEY, current)
             return True
-        LOG.warning("Das Spielgeheimnis in Nextcloud hat sich geändert; alle Welten bekommen neue Zugangsdaten")
+        LOG.warning("The game secret in Nextcloud has changed; all worlds get new access data")
         return await anyio.to_thread.run_sync(self.reprovision_all, secret, blocking)
 
     async def _apply(
@@ -627,7 +627,7 @@ class AccessService:
         resolution = await self._resolve(actor, await self._invite_keys(world_id))
         return await anyio.to_thread.run_sync(self._apply_sync, world_id, None, resolution, secret, blocking)
 
-    # Unter der Sperre (Worker-Thread)
+    # Under the lock (worker thread)
 
     @contextlib.contextmanager
     def _locked(self, blocking: bool) -> Iterator[bool]:
@@ -639,12 +639,12 @@ class AccessService:
                 yield acquired
 
     def reprovision_all(self, secret: bytes, blocking: bool = True) -> bool:
-        """Neue Verifier in allen Welten nach einem Wechsel des Geheimnisses.
+        """New verifiers in all worlds after a change of the secret.
 
-        Nimmt worlds.mutation() selbst, einmal für alle Welten, speichert den
-        neuen Fingerabdruck in derselben Sperrphase und gibt die Sperre vor der
-        Rückkehr frei. Ruft nie _ensure_fingerprint. False nur ohne Warten bei
-        belegter Sperre.
+        Takes worlds.mutation() itself, once for all worlds, stores the
+        new fingerprint in the same lock phase and releases the lock before
+        returning. Never calls _ensure_fingerprint. False only without waiting
+        when the lock is busy.
         """
         current = fingerprint(secret)
         with self._locked(blocking) as acquired:
@@ -678,7 +678,7 @@ class AccessService:
         blocking: bool,
         revoked: InviteKey | None = None,
     ) -> AccessResult | None:
-        """None nur ohne Warten bei belegter Sperre."""
+        """None only without waiting when the lock is busy."""
         with self._locked(blocking) as acquired:
             if not acquired:
                 return None
@@ -692,8 +692,8 @@ class AccessService:
                 for uid, user in resolution.effective.items()
                 if resolution.sources.get(uid, set()) & current_keys
             }
-            # Parallel neu Eingeladene (nicht aufgelöst) behalten ihren Stand bis zum nächsten Abgleich.
-            # Ebenso direkte Einladungen, die ein Nicht-Admin nicht prüfen kann (404-Falle).
+            # Newly invited in parallel (not resolved) keep their state until the next reconciliation.
+            # Likewise direct invitations that a non-admin cannot check (404 trap).
             keep: set[str] = {uid for uid in resolution.kept if (KIND_USER, uid) in current_keys}
             unresolved = current_keys - resolution.resolved
             for kind, target in unresolved:
@@ -702,14 +702,14 @@ class AccessService:
                 else:
                     keep |= set(self._store.world_access(world_id))
             if unresolved:
-                # Der Blick auf die Einladungen war veraltet: Drossel aufheben,
-                # der nächste Verwalter-Besuch gleicht sofort ab.
+                # The view of the invitations was stale: lift the throttle,
+                # the next manager visit reconciles immediately.
                 SYNC_STATE.last = None
             if revoked is not None:
-                # Ein expliziter Widerruf gewinnt gegen die keep-Regel: Konten,
-                # die nur über den widerrufenen Schlüssel Zugang hatten, werden
-                # nie still zurückgeholt; der nächste Abgleich ergänzt, was eine
-                # parallele Einladung legitim hinzugefügt hat.
+                # An explicit revocation wins over the keep rule: accounts
+                # that had access only through the revoked key are
+                # never silently brought back; the next reconciliation adds what
+                # a parallel invitation legitimately added.
                 if revoked[0] == KIND_USER:
                     keep.discard(revoked[1])
                 for uid, sources in resolution.sources.items():
@@ -722,11 +722,11 @@ class AccessService:
     def _apply_effective(
         self, world_id: str, effective: dict[str, DirectoryUser], keep: set[str], secret: bytes
     ) -> bool:
-        """Gleicht world_access mit den effektiven Spielern ab; True bei Änderung.
+        """Reconcile world_access with the effective players; True on change.
 
-        Läuft unter worlds.mutation(); ruft nie _ensure_fingerprint. Fehlende
-        Spieler bekommen einen Namen; Verifier entstehen nur für neue Einträge,
-        vorhandene bleiben samt Salz stehen (deterministische Datei).
+        Runs under worlds.mutation(); never calls _ensure_fingerprint. Missing
+        players get a name; verifiers are created only for new entries,
+        existing ones stay including their salt (deterministic file).
         """
         current = self._store.world_access(world_id)
         target: dict[str, str] = {uid: current[uid] for uid in keep if uid in current}
@@ -742,7 +742,7 @@ class AccessService:
         return True
 
     def _pending_group_worlds(self, uid: str, groups: set[str]) -> list[str]:
-        """Welten mit Einladung einer eigenen Gruppe, in denen das Konto noch keinen Zugang hat."""
+        """Worlds with an invitation of an own group in which the account has no access yet."""
         return [
             world_id
             for world_id in self._store.group_invited_worlds(groups)
@@ -750,10 +750,10 @@ class AccessService:
         ]
 
     def _provision_self(self, world_ids: list[str], user: DirectoryUser, groups: set[str], secret: bytes) -> None:
-        """Ergänzt das eigene Konto in Welten seiner Gruppen-Einladungen; nur Hinzufügen.
+        """Add the own account to worlds of its group invitations; adding only.
 
-        Ohne Warten auf die Sperre; unter ihr wird jede Welt neu geprüft (Welt
-        gelöscht, Einladung entfernt, schon eingetragen). Ruft nie _ensure_fingerprint.
+        Without waiting for the lock; under it every world is checked again (world
+        deleted, invitation removed, already entered). Never calls _ensure_fingerprint.
         """
         with self._worlds.try_mutation() as acquired:
             if not acquired:
@@ -767,7 +767,7 @@ class AccessService:
                     continue
                 player = self._ensure_player(user)
                 self._store.apply_world_access(world_id, {**current, user.uid: self._verifier(player, secret)})
-                LOG.info("Welt %s: Konto über eigene Gruppen-Einladung ergänzt", world_id)
+                LOG.info("World %s: account added via own group invitation", world_id)
                 self._worlds.push_access(world_id)
 
     def _my_worlds_sync(self, uid: str, secret: bytes) -> list[MyWorld]:
@@ -781,10 +781,10 @@ class AccessService:
         ]
 
     def _rewrite_player(self, player: PlayerRow, secret: bytes) -> bool:
-        """Neuer Name oder neue Rotation: alle Verifier des Kontos neu, in einer Transaktion.
+        """New name or new rotation: all verifiers of the account anew, in one transaction.
 
-        Läuft unter worlds.mutation(); ruft nie _ensure_fingerprint. Danach
-        wird jede betroffene Welt sofort beschrieben (kein Neustart nötig).
+        Runs under worlds.mutation(); never calls _ensure_fingerprint. Afterwards
+        every affected world is written immediately (no restart needed).
         """
         world_ids = self._store.player_worlds(player.nc_user)
         verifiers = {world_id: self._verifier(player, secret) for world_id in world_ids}
@@ -796,11 +796,11 @@ class AccessService:
         return {player.nc_user for player in self._store.list_players()} | self._store.direct_invite_targets()
 
     def _forget_sync(self, gone: list[str]) -> list[str]:
-        """Vergisst die geprüften Konten unter der Welt-Sperre und schreibt betroffene Welten neu.
+        """Forget the checked accounts under the world lock and rewrite affected worlds.
 
-        Ruft nie Nextcloud und nie _ensure_fingerprint. Die Zugangsdatei jeder Welt,
-        in der ein vergessenes Konto Zugang hatte, entsteht frisch aus der Datenbank
-        (push_access, samt Regeldatei); das Konto steht dann in keiner Datei mehr.
+        Never calls Nextcloud and never _ensure_fingerprint. The access file of every world
+        in which a forgotten account had access is created fresh from the database
+        (push_access, including the rules file); the account is then in no file any more.
         """
         forgotten: list[str] = []
         affected: set[str] = set()
@@ -823,21 +823,21 @@ class AccessService:
 
     @staticmethod
     def _verifier(player: PlayerRow, secret: bytes) -> str:
-        """Frischer Verifier mit neuem Salz; Passwort nur im Speicher."""
+        """Fresh verifier with a new salt; password only in memory."""
         return make_verifier(player.player_name, _password(secret, player))
 
     def _ensure_player(self, user: DirectoryUser) -> PlayerRow:
         player = self._store.get_player(user.uid)
         if player is None:
             name = suggest_player_name(user.display_name, user.uid, self._store.player_names())
-            # Frischer Zusatz je Zeile: Ein später unter derselben ID neu angelegtes
-            # Konto bekommt nie das Passwort eines gelöschten (purge_missing_accounts).
+            # Fresh salt per row: an account created later under the same ID
+            # never gets the password of a deleted one (purge_missing_accounts).
             player = PlayerRow(nc_user=user.uid, player_name=name, rotation=0, salt=new_player_salt())
             self._store.insert_player(player)
-            LOG.info("Spielername %s für ein Nextcloud-Konto angelegt", name)
+            LOG.info("Player name %s created for a Nextcloud account", name)
         return player
 
 
 def _password(secret: bytes, player: PlayerRow) -> str:
-    """Spielpasswort aus Geheimnis und Spielerzeile (Konto, Rotation, Zusatz)."""
+    """Game password from secret and player row (account, rotation, salt)."""
     return derive_password(secret, player.nc_user, player.rotation, player.salt)

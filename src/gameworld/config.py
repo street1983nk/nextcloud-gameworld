@@ -1,4 +1,4 @@
-"""Laufzeit-Einstellungen aus der Umgebung."""
+"""Runtime settings from the environment."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class Settings:
 
 
 def parse_port_range(raw: str) -> tuple[int, int]:
-    """Liest einen Bereich der Form ``<lo>-<hi>`` und prüft die Grenzen."""
+    """Read a range of the form ``<lo>-<hi>`` and check its bounds."""
     message = TEXT_PORT_RANGE_INVALID.format(raw=raw, max_width=MAX_RANGE_WIDTH)
     parts = raw.strip().split("-")
     if len(parts) != 2:
@@ -43,10 +43,10 @@ def parse_port_range(raw: str) -> tuple[int, int]:
 
 
 def load_settings() -> Settings:
-    """Einstellungen aus der Umgebung; jede ungültige Umgebung wird zu ValueError.
+    """Settings from the environment; every invalid environment becomes a ValueError.
 
-    Aufrufer (Setup-Check, API) verlassen sich darauf, dass Konfigurationsfehler
-    immer als ValueError mit deutscher Meldung ankommen, nie als roher OSError.
+    Callers (setup check, API) rely on configuration errors always arriving
+    as a ValueError with a message (German source text, D-25), never as a raw OSError.
     """
     storage = pathlib.Path(os.environ.get("APP_PERSISTENT_STORAGE") or DEV_STORAGE)
     try:

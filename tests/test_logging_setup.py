@@ -1,16 +1,16 @@
-"""Regressionstest fuer T-02-32: Reconciler-Logs muessen ankommen.
+"""Regression test for T-02-32: reconciler logs must arrive.
 
-Bewusst ohne caplog.at_level, weil das den Level selbst setzen wuerde und
-damit genau den Fehler verdeckt, um den es geht: Unter der echten
-Startkonfiguration (Import von gameworld.main) muss der gameworld-Logger
-INFO-Meldungen tatsaechlich ausgeben.
+Deliberately without caplog.at_level, because that would set the level itself and
+thereby hide exactly the error at issue: under the real startup
+configuration (import of gameworld.main) the gameworld logger
+must actually emit INFO messages.
 """
 
 from __future__ import annotations
 
 import logging
 
-import gameworld.main  # noqa: F401  # richtet beim Import das Logging ein
+import gameworld.main  # noqa: F401  # sets up logging on import
 
 
 def test_gameworld_logger_laesst_info_durch() -> None:
@@ -34,7 +34,7 @@ def test_info_meldung_erreicht_handler() -> None:
     sammler = _Sammler(level=logging.INFO)
     log.addHandler(sammler)
     try:
-        logging.getLogger("gameworld.worlds.service").info("Abgleich Welt %s: %s", "test", "START")
+        logging.getLogger("gameworld.worlds.service").info("Reconciliation world %s: %s", "test", "START")
     finally:
         log.removeHandler(sammler)
-    assert any("Abgleich Welt" in record.getMessage() for record in aufgefangen)
+    assert any("Reconciliation world" in record.getMessage() for record in aufgefangen)

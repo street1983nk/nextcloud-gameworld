@@ -1,5 +1,5 @@
-"""AccessService ohne Docker: Einladen (Konten und Gruppen), Entfernen, Abgleich, Passwort neu,
-Umbenennen, Fingerabdruck des Geheimnisses und Schreiben der Zugangsdatei."""
+"""AccessService without Docker: invite (accounts and groups), remove, reconcile, new password,
+rename, fingerprint of the secret and writing the access file."""
 
 from __future__ import annotations
 
@@ -42,13 +42,13 @@ from gameworld.worlds.store import WorldRow, WorldStore
 from tests.conftest import ADMIN_ACTOR, LEHRER_ACTOR, TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret
 from tests.test_service_lifecycle import FakeProvisioner
 
-# Fester Zusatz neuer Spielerzeilen, damit die Passwörter hier vorab berechenbar sind.
+# Fixed salt of new player rows, so that the passwords here can be computed in advance.
 pytestmark = pytest.mark.usefixtures("fixed_salt")
 
 W1 = "aaaaaaaaaaa1"
 W2 = "aaaaaaaaaaa2"
 PASSWORD = derive_password(TEST_SECRET, "gw-kind", 0, TEST_SALT)
-# Zweiter NC-Admin für die Wettlauf-Tests (steht im Test in der Gruppe admin).
+# Second NC admin for the race tests (is in the group admin in the test).
 ADMIN_B = Actor(uid="admin-b", nc_admin=True, groups=frozenset({"admin"}))
 
 
@@ -111,7 +111,7 @@ def _written_access_file(archive: bytes) -> str:
 
 
 def _access_writes(fake: FakeProvisioner) -> list[bytes]:
-    """Nur die Zugangsdatei-Tars; push_access schreibt seit 04-03 zusätzlich die Regeldatei (push_time)."""
+    """Only the access file tars; since 04-03 push_access additionally writes the rules file (push_time)."""
     result: list[bytes] = []
     for _world_id, archive in fake.written:
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
@@ -168,7 +168,7 @@ async def test_rebuild_without_change_keeps_file(
     row = store.get_world(W1)
     assert row is not None
     first = worlds._access_file(row)  # pyright: ignore[reportPrivateUsage]
-    # Entfernen von etwas, das nie eingeladen war: Abgleich ohne Soll-Änderung.
+    # Removing something that was never invited: reconciliation without a desired change.
     await access.revoke(W1, ADMIN_ACTOR, "user", "niemand")
     assert worlds._access_file(row) == first  # pyright: ignore[reportPrivateUsage]
     assert _generation(store, W1) == 1
@@ -304,7 +304,7 @@ async def test_disabled_later_is_dropped_on_next_change(
     assert store.access_entries(W1).keys() == {"Mia"}
 
 
-# 03-04: Gruppen, Abgleich, Passwort neu, Umbenennen, Fingerabdruck
+# 03-04: groups, reconciliation, new password, rename, fingerprint
 
 
 def _verifier_ok(verifier: str, name: str, password: str) -> bool:
@@ -351,19 +351,19 @@ async def test_sync_world_follows_group_membership(
     await access.invite_group(W1, ADMIN_ACTOR, "familie")
     pushes = len(_access_writes(fake))
 
-    # Ohne Änderung: kein Push, keine neue Generation.
+    # Without a change: no push, no new generation.
     await access.sync_world(W1, ADMIN_ACTOR)
     assert len(_access_writes(fake)) == pushes
     assert _generation(store, W1) == 1
 
-    # Neues Mitglied kommt dazu.
+    # A new member joins.
     fake_directory.users["gw-mia"] = ("Mia Müller", True)
     fake_directory.groups["familie"].append("gw-mia")
     await access.sync_world(W1, ADMIN_ACTOR)
     assert set(store.world_access(W1)) == {"gw-kind", "gw-mia"}
     assert _generation(store, W1) == 2
 
-    # gw-kind tritt aus: Zugang weg, Generation +1, Push.
+    # gw-kind leaves: access gone, generation +1, push.
     fake_directory.groups["familie"].remove("gw-kind")
     result = await access.sync_world(W1, ADMIN_ACTOR)
     assert result.applied is True
@@ -371,7 +371,7 @@ async def test_sync_world_follows_group_membership(
     assert _generation(store, W1) == 3
     assert len(_access_writes(fake)) == pushes + 2
 
-    # Ein deaktiviertes Konto verliert den Zugang ebenso.
+    # A deactivated account loses access just the same.
     fake_directory.users["gw-mia"] = ("Mia Müller", False)
     await access.sync_world(W1, ADMIN_ACTOR)
     assert store.world_access(W1) == {}
@@ -395,13 +395,13 @@ async def test_sync_all_is_throttled_and_isolates_failures(
     assert store.world_access(W1) == {}
     assert store.world_access(W2) == {}
 
-    # Innerhalb von 60 s passiert nichts.
+    # Nothing happens within 60 s.
     fake_directory.groups["familie"].append("gw-kind")
     clock[0] += access_service.SYNC_INTERVAL_SECONDS - 1
     assert await access.sync_all(ADMIN_ACTOR) is False
     assert store.world_access(W1) == {}
 
-    # Danach wieder; eine kaputte Welt hält die andere nicht auf.
+    # Afterwards again; a broken world does not hold up the other.
     clock[0] += 2
     original = access._sync  # pyright: ignore[reportPrivateUsage]
 
@@ -430,7 +430,7 @@ async def test_sync_all_skips_busy_lock_and_retries(
             assert await access.sync_all(ADMIN_ACTOR) is True
     finally:
         lock.release()
-    # Nichts geändert, Drossel nicht verbraucht: Der nächste Besuch gleicht ab.
+    # Nothing changed, throttle not used up: the next visit reconciles.
     assert set(store.world_access(W1)) == {"gw-kind"}
     assert access_service.SYNC_STATE.last is None
     assert await access.sync_all(ADMIN_ACTOR) is True
@@ -493,7 +493,7 @@ async def test_rename_collision_and_validation(
             await access.rename_player("admin", "gw-kind", bad)
     with pytest.raises(PlayerNotFoundError):
         await access.rename_player("admin", "niemand", "Neu")
-    # Der eigene Name in anderer Schreibweise ist erlaubt.
+    # The own name in a different spelling is allowed.
     change = await access.rename_player("admin", "gw-kind", "KIND")
     assert change.player_name == "KIND"
     player = store.get_player("gw-kind")
@@ -508,7 +508,7 @@ async def test_fingerprint_stored_then_reprovision_on_new_secret(
     await access.invite_user(W2, ADMIN_ACTOR, "gw-kind")
     assert store.get_meta("secret_fingerprint") == fingerprint(TEST_SECRET)
 
-    # Gleicher Fingerabdruck: nichts.
+    # Same fingerprint: nothing.
     pushes = len(_access_writes(fake))
     await access.sync_world(W1, ADMIN_ACTOR)
     assert len(_access_writes(fake)) == pushes
@@ -583,21 +583,21 @@ async def test_secret_change_during_sync_all_no_deadlock(
     assert _lock_free()
 
 
-# WR-01: Ein Widerruf darf nie von der keep-Regel (parallel committete, noch
-# nicht aufgelöste Einladung) still rückgängig gemacht werden.
+# WR-01: a revocation must never be silently undone by the keep rule (a
+# concurrently committed, not yet resolved invitation).
 
 
 def _resolve_then(
     access: AccessService, monkeypatch: pytest.MonkeyPatch, parallel_commit: Callable[[], Awaitable[object]]
 ) -> None:
-    """Spielt den Wettlauf nach: access löst auf, dann committet eine parallele Aktion, dann wendet access an."""
+    """Replays the race: access resolves, then a parallel action commits, then access applies."""
     original = access._resolve  # pyright: ignore[reportPrivateUsage]
 
     async def resolve_then_commit(
         actor: Actor, invites: set[InviteKey], known: dict[str, DirectoryUser] | None = None, *, strict: bool = True
     ) -> _Resolution:
         resolution = await original(actor, invites, known, strict=strict)
-        monkeypatch.setattr(access, "_resolve", original)  # nur beim ersten Aufruf dazwischenfunken
+        monkeypatch.setattr(access, "_resolve", original)  # interfere only on the first call
         await parallel_commit()
         return resolution
 
@@ -613,7 +613,7 @@ async def test_revoke_user_wins_against_parallel_group_invite(
     fake_secret: StaticSecret,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """revoke liest die Einladungen, ein zweiter Verwalter committet invite_group, revoke wendet an."""
+    """revoke reads the invitations, a second manager commits invite_group, revoke applies."""
     from gameworld.access import service as access_service
 
     await access.invite_user(W1, ADMIN_ACTOR, "gw-kind")
@@ -624,12 +624,12 @@ async def test_revoke_user_wins_against_parallel_group_invite(
 
     result = await access.revoke(W1, ADMIN_ACTOR, "user", "gw-kind")
     assert result.applied is True
-    # Der Widerruf gilt sofort, in der Datenbank und in der Zugangsdatei.
+    # The revocation applies immediately, in the database and in the access file.
     assert "gw-kind" not in store.world_access(W1)
     assert "Kind" not in _written_access_file(_access_writes(fake)[-1])
-    # Veralteter Blick erkannt: Drossel aufgehoben, der nächste Besuch gleicht sofort ab.
+    # Stale view detected: throttle lifted, the next visit reconciles immediately.
     assert access_service.SYNC_STATE.last is None
-    # Der Abgleich holt das Gruppen-Mitglied über die parallele Einladung regulär zurück.
+    # The reconciliation regularly brings the group member back via the parallel invitation.
     assert await access.sync_all(ADMIN_ACTOR) is True
     assert set(store.world_access(W1)) == {"gw-kind"}
 
@@ -642,7 +642,7 @@ async def test_revoke_group_wins_but_keeps_parallel_invited(
     fake_secret: StaticSecret,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Gruppen-Widerruf entfernt deren Mitglieder auch dann, wenn parallel eine andere Einladung committet."""
+    """Group revocation removes its members even if another invitation commits in parallel."""
     fake_directory.users["gw-mia"] = ("Mia Müller", True)
     fake_directory.groups["freunde"] = ["gw-mia"]
     await access.invite_group(W1, ADMIN_ACTOR, "familie")
@@ -652,7 +652,7 @@ async def test_revoke_group_wins_but_keeps_parallel_invited(
 
     result = await access.revoke(W1, ADMIN_ACTOR, "group", "familie")
     assert result.applied is True
-    # Das familie-Mitglied ist raus; die parallel committete Einladung bleibt bestehen.
+    # The familie member is gone; the concurrently committed invitation stays.
     assert set(store.world_access(W1)) == {"gw-mia"}
     assert await access.sync_all(ADMIN_ACTOR) is True
     assert set(store.world_access(W1)) == {"gw-mia"}
@@ -666,7 +666,7 @@ async def test_sync_keeps_parallel_committed_invite(
     fake_secret: StaticSecret,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Die keep-Regel bleibt für Nicht-Widerrufe: Ein Abgleich wirft parallel Eingeladene nicht raus."""
+    """The keep rule stays for non-revocations: a reconciliation does not throw out parallel invitees."""
     fake_directory.users["gw-mia"] = ("Mia Müller", True)
     await access.invite_group(W1, ADMIN_ACTOR, "familie")
     parallel = AccessService(store, worlds, fake_directory, fake_secret)
@@ -678,8 +678,8 @@ async def test_sync_keeps_parallel_committed_invite(
     assert set(store.world_access(W1)) == {"gw-kind", "gw-mia"}
 
 
-# Einladungs-Umfang und 404-Falle (06-02, D-01, P-01). Gegenprobe unabhängig vom
-# Dienst: Vorher und nachher wird die Datenbankdatei roh per sqlite3 gelesen.
+# Invitation scope and 404 trap (06-02, D-01, P-01). Cross-check independent of the
+# service: before and after, the database file is read raw via sqlite3.
 
 
 @pytest.fixture
@@ -688,7 +688,7 @@ def db(app_env: Path) -> Path:
 
 
 def _raw_state(db: Path) -> dict[str, list[tuple[object, ...]]]:
-    """invites, world_access und players roh aus der Datei, ohne WorldStore-Methoden."""
+    """invites, world_access and players raw from the file, without WorldStore methods."""
     connection = sqlite3.connect(db)
     try:
         return {
@@ -716,7 +716,7 @@ def _raw_access(db: Path, world_id: str) -> set[str]:
 
 
 async def _school_world(access: AccessService) -> None:
-    """W1 wie vom NC-Admin eingerichtet: Gruppe klasse und das Einzelkonto gw-kind-out."""
+    """W1 as set up by the NC admin: group klasse and the single account gw-kind-out."""
     await access.invite_group(W1, ADMIN_ACTOR, "klasse")
     await access.invite_user(W1, ADMIN_ACTOR, "gw-kind-out")
 
@@ -733,7 +733,7 @@ async def test_teacher_invites_member_of_own_group_without_account_lookup(
 ) -> None:
     result = await access.invite_user(W1, LEHRER_ACTOR, "gw-kind-k")
     assert result.applied is True
-    # Nie user() im Namen des Lehrers (404-Falle): die Aufrufliste bleibt leer.
+    # Never user() on behalf of the teacher (404 trap): the call list stays empty.
     assert fake_directory.calls == []
     assert _raw_access(db, W1) == {"gw-kind-k"}
     players = await access.list_players(W1, LEHRER_ACTOR)
@@ -742,7 +742,7 @@ async def test_teacher_invites_member_of_own_group_without_account_lookup(
 
 
 async def test_teacher_invites_member_of_subadmin_group(access: AccessService, db: Path) -> None:
-    """Subadmin-Gruppen zählen zum Umfang, auch ohne Mitgliedschaft (D-01)."""
+    """Subadmin groups count towards the scope, even without membership (D-01)."""
     subadmin = Actor(uid="gw-lehrer", nc_admin=False, groups=frozenset({"familie"}))
     await access.invite_user(W1, subadmin, "gw-kind")
     assert _raw_access(db, W1) == {"gw-kind"}
@@ -795,11 +795,11 @@ async def test_teacher_invites_only_own_groups(
 async def test_teacher_sync_removes_nothing_when_every_account_is_404(
     access: AccessService, db: Path, fake_directory: FakeDirectory
 ) -> None:
-    """Kern der 404-Falle: Nextcloud beantwortet dem Lehrer jedes Einzelkonto mit 404."""
+    """Core of the 404 trap: Nextcloud answers the teacher with 404 for every single account."""
     await _school_world(access)
     before = _raw_state(db)
     assert _raw_access(db, W1) == {"gw-lehrer", "gw-kind-k", "gw-kind-out"}
-    fake_directory.users.clear()  # user() liefert jetzt None für jedes Konto
+    fake_directory.users.clear()  # user() now returns None for every account
     fake_directory.calls.clear()
 
     await access.sync_world(W1, LEHRER_ACTOR)
@@ -811,7 +811,7 @@ async def test_teacher_sync_removes_nothing_when_every_account_is_404(
 async def test_teacher_sync_follows_group_membership(
     access: AccessService, db: Path, fake_directory: FakeDirectory
 ) -> None:
-    """Die Mitgliederliste ist verlässlich: Wer aus klasse austritt, fällt heraus; gw-kind-out bleibt."""
+    """The member list is reliable: whoever leaves klasse drops out; gw-kind-out stays."""
     await _school_world(access)
     fake_directory.users.clear()
     fake_directory.groups["klasse"].remove("gw-kind-k")
@@ -831,7 +831,7 @@ async def test_teacher_sync_leaves_world_with_unreadable_group_untouched(
     fake_directory.groups["klasse"].remove("gw-kind-k")
 
     assert await access.sync_all(LEHRER_ACTOR) is True
-    # W1 bleibt unverändert (auch gw-kind-k), W2 wird trotzdem abgeglichen.
+    # W1 stays unchanged (also gw-kind-k), W2 is reconciled anyway.
     assert _raw_access(db, W1) == w1_before
     assert _raw_access(db, W2) == {"gw-lehrer"}
     with pytest.raises(DirectoryUnavailableError):
@@ -842,7 +842,7 @@ async def test_teacher_sync_leaves_world_with_unreadable_group_untouched(
 async def test_teacher_sync_treats_missing_group_as_unreadable(
     access: AccessService, db: Path, fake_directory: FakeDirectory
 ) -> None:
-    """Auch 404 auf eine Gruppe heißt für den Lehrer nur: nicht lesbar, nie leer."""
+    """A 404 on a group also only means for the teacher: not readable, never empty."""
     await _school_world(access)
     before = _raw_access(db, W1)
     del fake_directory.groups["klasse"]
@@ -854,7 +854,7 @@ async def test_teacher_sync_treats_missing_group_as_unreadable(
 async def test_teacher_invite_keeps_access_of_unreadable_group(
     access: AccessService, db: Path, fake_directory: FakeDirectory
 ) -> None:
-    """Einladen in eine Welt mit fremder Gruppe: deren Zugänge bleiben, das neue Konto kommt dazu."""
+    """Inviting into a world with a foreign group: its accesses stay, the new account is added."""
     await access.invite_group(W1, ADMIN_ACTOR, "familie")
     fake_directory.answers[("gw-lehrer", "familie")] = DirectoryRejectedError("403")
     fake_directory.users.clear()
@@ -865,7 +865,7 @@ async def test_teacher_invite_keeps_access_of_unreadable_group(
 async def test_stale_admin_profile_takes_the_safe_path(
     access: AccessService, db: Path, fake_directory: FakeDirectory
 ) -> None:
-    """Profil sagt noch admin (Cache), Nextcloud nicht mehr: kein Entfernen wegen 404."""
+    """Profile still says admin (cache), Nextcloud no longer: no removal because of a 404."""
     await _school_world(access)
     before = _raw_state(db)
     fake_directory.users.clear()
@@ -880,7 +880,7 @@ async def test_stale_admin_profile_takes_the_safe_path(
 async def test_admin_sync_still_removes_deleted_account(
     access: AccessService, db: Path, fake_directory: FakeDirectory
 ) -> None:
-    """Positivkontrolle: Als NC-Admin heißt 404 weiterhin gelöscht."""
+    """Positive control: as NC admin, 404 still means deleted."""
     await _school_world(access)
     del fake_directory.users["gw-kind-out"]
     await access.sync_world(W1, ADMIN_ACTOR)
@@ -907,5 +907,5 @@ async def test_purge_refuses_account_without_confirmed_admin_right(
     assert await access.purge_missing_accounts("gw-lehrer") == []
     assert fake_directory.calls == []
     assert _raw_state(db) == before
-    # Positivkontrolle: als bestätigter NC-Admin wird das gelöschte Konto vergessen.
+    # Positive control: as a confirmed NC admin the deleted account is forgotten.
     assert await access.purge_missing_accounts("admin") == ["gw-kind-out"]

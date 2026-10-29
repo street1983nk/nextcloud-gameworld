@@ -1,9 +1,9 @@
-"""Spielernamen und abgeleitete Spielpasswörter (Owner-Entscheide A2 und A3).
+"""Player names and derived game passwords (owner decisions A2 and A3).
 
-Ein Kind hat einen Luanti-Namen und ein Passwort für alle Welten (A2).
-Gespeichert wird das Passwort nirgends (A3): Es folgt jedes Mal neu aus
-HMAC-SHA256(Geheimnis, "<Nextcloud-Konto>:<Rotation>[:<Zusatz>]"). Das Geheimnis liegt
-nur in der Nextcloud-Konfiguration (access/secret.py). Rein, nur stdlib.
+A child has one Luanti name and one password for all worlds (A2).
+The password is stored nowhere (A3): it is derived anew every time from
+HMAC-SHA256(secret, "<nextcloud-account>:<rotation>[:<salt>]"). The secret lives
+only in the Nextcloud configuration (access/secret.py). Pure, stdlib only.
 """
 
 from __future__ import annotations
@@ -14,20 +14,20 @@ import re
 import secrets
 import unicodedata
 
-# Ohne die verwechselbaren i, l, o, 0 und 1; nur Kleinbuchstaben, damit auf
-# Tablet-Tastaturen keine Groß-/Kleinschreibung stört.
-PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # noqa: S105 (Alphabet, kein Passwort)
+# Without the easily confused i, l, o, 0 and 1; lower case only, so that
+# upper/lower case does not get in the way on tablet keyboards.
+PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # noqa: S105 (alphabet, not a password)
 PASSWORD_GROUPS = 3
 GROUP_LENGTH = 4
 
-# Luanti: 1 bis 20 Zeichen aus [A-Za-z0-9_-] (src/player.h, PLAYERNAME_SIZE).
+# Luanti: 1 to 20 characters from [A-Za-z0-9_-] (src/player.h, PLAYERNAME_SIZE).
 PLAYER_NAME_MAX = 20
-# Platz für eine angehängte Ziffer bei Namensgleichheit.
+# Room for an appended digit on a name collision.
 SUGGEST_MAX = 18
 FALLBACK_NAME = "Spieler"
 _FORBIDDEN_NAME = "singleplayer"
 _NOT_ALLOWED = re.compile(r"[^A-Za-z0-9_-]")
-# Umlaute als Escapes (Owner-Regel: keine Umlaute im Code).
+# Umlauts as escapes (owner rule: no umlauts in code).
 _TRANSLITERATION = str.maketrans(
     {
         "ä": "ae",
@@ -39,7 +39,7 @@ _TRANSLITERATION = str.maketrans(
         "ß": "ss",
     }
 )
-# Konto-IDs können Punkte, @ und Leerzeichen enthalten; nur der Teil davor taugt als Name.
+# Account IDs may contain dots, @ and spaces; only the part before them works as a name.
 _UID_SEPARATORS = re.compile(r"[.@ ]")
 
 
@@ -48,10 +48,10 @@ MSG_INVALID_NAME = "Der Spielername darf 1 bis 20 Zeichen haben: Buchstaben ohne
 
 
 def validate_player_name(raw: str) -> str:
-    """Spielername, den ein Verwalter vergibt; ValueError mit deutscher Meldung.
+    """Player name assigned by a manager; ValueError with a message (German source text).
 
-    Dieselbe Regel wie Luanti (1 bis 20 Zeichen aus [A-Za-z0-9_-]), dazu nie
-    ``singleplayer`` (T-03-28). Keine stille Korrektur: Der Name erscheint so im Spiel.
+    Same rule as Luanti (1 to 20 characters from [A-Za-z0-9_-]), plus never
+    ``singleplayer`` (T-03-28). No silent correction: the name appears in the game as is.
     """
     if not _VALID_NAME.fullmatch(raw) or raw.lower() == _FORBIDDEN_NAME:
         raise ValueError(MSG_INVALID_NAME)
@@ -59,23 +59,23 @@ def validate_player_name(raw: str) -> str:
 
 
 def new_player_salt() -> str:
-    """Zufälliger Zusatz je neu angelegter Spielerzeile (128 Bit, hex)."""
+    """Random salt per newly created player row (128 bit, hex)."""
     return secrets.token_hex(16)
 
 
 def derive_password(secret: bytes, nc_user: str, rotation: int, salt: str = "") -> str:
-    """Spielpasswort eines Kontos, etwa ``k7mp-q3xa-9tre``.
+    """Game password of an account, e.g. ``k7mp-q3xa-9tre``.
 
-    Zwölf Zeichen aus 31 ergeben 12 x log2(31) = 59,4 Bit. Das ist nötig, weil
-    die SRP-Verifier im Welt-Volume und später in Backups liegen: Wer eines
-    davon erbeutet, kann offline raten. Wortkombinationen mit 22 bis 30 Bit
-    wären in Stunden gefunden, 59 Bit nicht. Online begrenzt zusätzlich die
-    Sperre des Welt-Mods (5 Fehlversuche, 10 Minuten).
+    Twelve characters from 31 give 12 x log2(31) = 59.4 bits. This is necessary because
+    the SRP verifiers live in the world volume and later in backups: whoever
+    captures one of them can guess offline. Word combinations with 22 to 30 bits
+    would be found within hours, 59 bits would not. Online, the lock of the
+    world mod additionally limits attempts (5 failed attempts, 10 minutes).
 
-    ``salt`` stammt aus der Spielerzeile (Schema 6). Leer heißt: Zeile aus der
-    Zeit davor, das Passwort bleibt exakt das bisherige. Mit Zusatz bekommt ein
-    später unter derselben Konto-ID neu angelegtes Konto nie das Passwort des
-    gelöschten Kontos, auch wenn die Rotation wieder bei 0 beginnt.
+    ``salt`` comes from the player row (schema 6). Empty means: row from the time
+    before, the password stays exactly the previous one. With a salt, an account
+    created later under the same account ID never gets the password of the
+    deleted account, even if the rotation starts at 0 again.
     """
     message = f"{nc_user}:{rotation}" if not salt else f"{nc_user}:{rotation}:{salt}"
     mac = hmac.new(secret, message.encode(), hashlib.sha256).digest()
@@ -89,7 +89,7 @@ def derive_password(secret: bytes, nc_user: str, rotation: int, salt: str = "") 
 
 
 def _ascii_name(text: str) -> str:
-    """Umlaute umschreiben, Rest per NFKD auf ASCII, unerlaubte Zeichen entfernen."""
+    """Transliterate umlauts, reduce the rest to ASCII via NFKD, drop disallowed characters."""
     text = unicodedata.normalize("NFC", text).translate(_TRANSLITERATION)
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     return _NOT_ALLOWED.sub("", text)
@@ -99,7 +99,7 @@ def _base_name(display_name: str, uid: str) -> str:
     words = display_name.split()
     base = _ascii_name(words[0]) if words else ""
     if not base and not display_name.strip():
-        # Konto-ID nur ohne Anzeigenamen, und nur der Teil vor Punkt, @ oder Leerzeichen.
+        # Account ID without display name only, and only the part before a dot, @ or space.
         base = _ascii_name(_UID_SEPARATORS.split(uid.strip(), maxsplit=1)[0])
     base = base[:SUGGEST_MAX]
     if not base or base.lower() == _FORBIDDEN_NAME:
@@ -108,11 +108,11 @@ def _base_name(display_name: str, uid: str) -> str:
 
 
 def suggest_player_name(display_name: str, uid: str, taken: set[str]) -> str:
-    """Kindgerechter Luanti-Name aus dem ersten Wort des Anzeigenamens.
+    """Child-friendly Luanti name from the first word of the display name.
 
-    ``taken`` enthält vergebene Namen kleingeschrieben. Bei Gleichheit ohne
-    Rücksicht auf Groß-/Kleinschreibung wird eine Ziffer angehängt (``Mia2``),
-    weil Luanti Konten, die sich nur darin unterscheiden, ablehnt.
+    ``taken`` contains assigned names in lower case. On a match ignoring
+    case, a digit is appended (``Mia2``),
+    because Luanti rejects accounts that differ only in that.
     """
     base = _base_name(display_name, uid)
     taken_lower = {name.lower() for name in taken}

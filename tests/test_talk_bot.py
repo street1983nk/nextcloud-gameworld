@@ -312,7 +312,7 @@ async def test_enable_with_talk_error_still_succeeds(
     assert await enabled_handler(True, nc) == ""
     nc.ui.top_menu.register.assert_awaited_once()
     assert "secret-xyz" not in caplog.text
-    assert "Talk-Bot" in caplog.text
+    assert "Talk bot" in caplog.text
 
 
 async def test_enable_registers_bot(monkeypatch: pytest.MonkeyPatch) -> None:
