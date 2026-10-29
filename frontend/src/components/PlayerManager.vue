@@ -1,4 +1,4 @@
-<!-- Spieler einer Welt: Spielername, Passwort (verdeckt), Herkunft, Erwachsen-Schalter (ROLLE-04), Passwort neu, Umbenennen, Einladungen entfernen. -->
+<!-- Players of a world: player name, password (hidden), origin, adult switch (ROLLE-04), new password, rename, remove invitations. -->
 <template>
 	<NcDialog
 		v-if="!confirmAdult"
@@ -52,7 +52,7 @@
 						<span class="players__via">{{ viaText(player.via) }}</span>
 					</div>
 
-					<!-- Verwalter spielen ohnehin ohne Regeln und bekommen keinen Schalter (D-06). -->
+					<!-- Managers play without rules anyway and get no switch (D-06). -->
 					<div v-if="!player.verwalter" class="players__adult">
 						<NcCheckboxRadioSwitch
 							type="switch"
@@ -158,7 +158,7 @@
 		</template>
 	</NcDialog>
 
-	<!-- Bestätigung beim Einschalten (D-07): ersetzt den Spieler-Dialog, solange sie offen ist. -->
+	<!-- Confirmation on switching on (D-07): replaces the player dialog while it is open. -->
 	<NcDialog
 		v-else
 		:open="true"
@@ -227,13 +227,13 @@ import { t } from '../i18n/index.js'
 import { notAppliedMessage } from '../playtime.js'
 
 const props = defineProps({
-	// { id, name } der Welt; nur id geht an die API.
+	// { id, name } of the world; only id goes to the API.
 	world: { type: Object, required: true },
 })
-// changed: Einladungen oder Namen geändert, das Dashboard lädt die Liste neu.
+// changed: invitations or names changed, the dashboard reloads the list.
 const emit = defineEmits(['changed', 'close', 'invite'])
 
-// Passwörter liegen nur in diesem Dialog im Speicher, nie im Browser-Speicher.
+// Passwords live in memory in this dialog only, never in browser storage.
 const players = ref([])
 const invites = ref([])
 const loading = ref(true)
@@ -242,7 +242,7 @@ const error = ref('')
 const notice = ref('')
 const notApplied = ref(false)
 const busy = ref(false)
-// nc_user -> true, solange das Passwort sichtbar ist.
+// nc_user -> true while the password is visible.
 const revealed = reactive({})
 const copied = ref('')
 const rotating = ref('')
@@ -250,11 +250,11 @@ const renaming = ref('')
 const newName = ref('')
 const adultNotApplied = ref(false)
 const info = ref('')
-// Eigene Anzeige der Erwachsen-Schalter (nc_user -> bool), damit sie bei Fehler zurückspringen.
+// Own display of the adult switches (nc_user -> bool), so that they jump back on error.
 const adultShown = reactive({})
-// nc_user, dessen Schalter gerade speichert.
+// nc_user whose switch is currently saving.
 const adultSaving = ref('')
-// { nc_user, display_name, has_rules } solange die Bestätigung offen ist, sonst null.
+// { nc_user, display_name, has_rules } while the confirmation is open, otherwise null.
 const confirmAdult = ref(null)
 const confirmSaving = ref(false)
 const confirmError = ref('')
@@ -262,7 +262,7 @@ const confirmError = ref('')
 function apply(result) {
 	players.value = result?.players ?? []
 	invites.value = result?.invites ?? []
-	// Sofortige Wirkung sichtbar: die Schalter folgen der Serverantwort.
+	// Immediate effect visible: the switches follow the server response.
 	for (const player of players.value) {
 		if (adultSaving.value !== player.nc_user) {
 			adultShown[player.nc_user] = Boolean(player.adult)
@@ -325,7 +325,7 @@ function resetMessages() {
 	info.value = ''
 }
 
-// Fokus zurück auf die Schalterzeile der Person (UI-SPEC B2, Barrierefreiheit).
+// Focus back on the switch row of the person (UI-SPEC B2, accessibility).
 async function focusAdultRow(ncUser) {
 	await nextTick()
 	setTimeout(() => {
@@ -351,7 +351,7 @@ function toggleAdult(player, on) {
 	rotating.value = ''
 	renaming.value = ''
 	if (on) {
-		// Einschalten nur nach Bestätigung (D-07); der Schalter bleibt bis dahin aus.
+		// Switching on only after confirmation (D-07); until then the switch stays off.
 		adultShown[player.nc_user] = false
 		confirmError.value = ''
 		confirmAdult.value = {
@@ -364,7 +364,7 @@ function toggleAdult(player, on) {
 	switchOff(player)
 }
 
-// Ausschalten wirkt sofort ohne Dialog (macht die Regeln strenger).
+// Switching off takes effect at once without a dialog (makes the rules stricter).
 async function switchOff(player) {
 	adultSaving.value = player.nc_user
 	adultShown[player.nc_user] = false
@@ -421,13 +421,13 @@ async function confirmAdultOn() {
 		focusAdultRow(target.nc_user)
 	} catch (err) {
 		if (err?.response?.status === 409) {
-			// Konto wurde inzwischen Verwalter: Hinweis statt Fehler, Liste neu laden.
+			// Account became a manager in the meantime: notice instead of error, reload the list.
 			confirmAdult.value = null
 			info.value = nowVerwalterText(target.display_name)
 			await reloadPlayers()
 			emit('changed')
 		} else {
-			// Fehler im Dialog, er bleibt offen; der Schalter bleibt aus.
+			// Error in the dialog, it stays open; the switch stays off.
 			confirmError.value = errorText(err)
 		}
 	} finally {
@@ -448,7 +448,7 @@ function startRename(player) {
 	newName.value = player.player_name
 }
 
-// Passwort neu und Umbenennen gelten für das Konto in allen Welten; danach die Liste neu laden.
+// New password and rename apply to the account in all worlds; then reload the list.
 async function change(action, success) {
 	busy.value = true
 	resetMessages()

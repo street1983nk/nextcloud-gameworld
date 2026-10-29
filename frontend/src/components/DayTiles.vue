@@ -1,4 +1,4 @@
-<!-- Sieben Tages-Kacheln Mo bis So: für den Wochenplan eines Kindes, den Ferienplan und das Zeitfenster einer Welt (ohne Limit). -->
+<!-- Seven day tiles Mon to Sun: for the weekly plan of a child, the holiday plan and the time window of a world (without limit). -->
 <template>
 	<div class="day-tiles">
 		<div
@@ -84,12 +84,12 @@ import {
 } from '../playtime.js'
 
 defineProps({
-	// Mit Tageslimit (Kinder) oder ohne (Welt-Zeitfenster).
+	// With daily limit (children) or without (world time window).
 	withLimit: { type: Boolean, default: true },
 	disabled: { type: Boolean, default: false },
 })
 
-// Kacheln aus playtime.js: { weekday, allowed, limit, fullDay, start, end }.
+// Tiles from playtime.js: { weekday, allowed, limit, fullDay, start, end }.
 const days = defineModel('days', { type: Array, required: true })
 
 const limitOptions = [noLimitOption(), ...buildLimitOptions()]
@@ -103,12 +103,12 @@ function limitOption(limit) {
 	return limitOptions.find((option) => option.value === limit) ?? limitOptions[0]
 }
 
-// Immer eine neue Liste, damit der Elterndialog die Änderung sieht.
+// Always a new list, so that the parent dialog sees the change.
 function patch(weekday, changes) {
 	days.value = days.value.map((entry) => (entry.weekday === weekday ? { ...entry, ...changes } : entry))
 }
 
-// Ein geleertes Zeitfeld ändert nichts; 00:00 als Ende heißt Mitternacht.
+// An emptied time field changes nothing; 00:00 as end means midnight.
 function onTime(weekday, field, date) {
 	if (!date || Number.isNaN(date.getTime())) {
 		return
@@ -116,7 +116,7 @@ function onTime(weekday, field, date) {
 	patch(weekday, { [field]: dateToMinutes(date, field === 'end') })
 }
 
-// Montag auf Dienstag bis Freitag kopieren.
+// Copy Monday to Tuesday through Friday.
 function copyToSchoolDays() {
 	const monday = days.value.find((entry) => entry.weekday === 1)
 	if (!monday) {
@@ -147,7 +147,7 @@ function copyToSchoolDays() {
 	background: var(--color-background-hover);
 }
 
-/* NcSelect bringt eine Mindestbreite mit; in der Kachel bleibt es in deren Breite. */
+/* NcSelect brings a minimum width; in the tile it stays within the tile's width. */
 .day-tiles__tile :deep(.v-select.select) {
 	min-width: 0;
 	width: 100%;

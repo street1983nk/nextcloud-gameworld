@@ -55,18 +55,18 @@ import { t } from './i18n/index.js'
 import { originQuestion, readDismissed, rememberDismissed } from './origin.js'
 import { ROUTE_EVENT, currentPage } from './route.js'
 
-// Die Rolle kommt allein vom Backend (/api/me: Gruppe admin plus die konfigurierten
-// Verwalter-Gruppen, nc_admin für die Admin-Abschnitte). Die Weiche hier blendet nur
-// aus; gesperrt ist die Verwaltung serverseitig (403). Kinder sehen immer ihre
-// Ansicht, auch auf einem Verwalter-Pfad (T-04.1-38).
+// The role comes from the backend alone (/api/me: group admin plus the configured
+// manager groups, nc_admin for the admin sections). The switch here only hides;
+// management is locked on the server side (403). Children always see their
+// own view, even on a manager path (T-04.1-38).
 const loading = ref(true)
 const error = ref('')
 const me = ref(null)
-// Handy-Seite aus dem Pfad (route.js): "pause", "versuch", "rueckblick" oder "" (Übersicht).
+// Phone page from the path (route.js): "pause", "versuch", "rueckblick" or "" (overview).
 const page = ref(currentPage())
-// Neue Parameter (anderer Tag, andere Welt) laden die Seite neu.
+// New parameters (another day, another world) reload the page.
 const routeKey = ref(window.location.search)
-// Rückfrage zur Link-Adresse (WR-04): { current, proposed } oder null.
+// Confirmation question about the link address (WR-04): { current, proposed } or null.
 const originAsk = ref(null)
 const originSaving = ref(false)
 
@@ -83,7 +83,7 @@ async function confirmOrigin() {
 	try {
 		await reportOrigin(window.location.origin, getRootUrl(), true)
 	} catch {
-		// Best effort: Beim nächsten Besuch fragt die Seite erneut.
+		// Best effort: the page asks again on the next visit.
 	} finally {
 		originSaving.value = false
 		originAsk.value = null
@@ -97,8 +97,8 @@ function dismissOrigin() {
 	originAsk.value = null
 }
 
-// Rechte haben sich geändert (403 in einem Admin-Abschnitt): /api/me neu lesen;
-// schlägt das fehl, bleibt der alte Stand und der Server sperrt weiter.
+// Rights have changed (403 in an admin section): re-read /api/me;
+// if that fails, the old state stays and the server keeps blocking.
 async function reloadMe() {
 	try {
 		me.value = await getMe()
@@ -126,8 +126,8 @@ onMounted(async () => {
 		loading.value = false
 	}
 	if (me.value?.role === 'verwalter') {
-		// Basis-URL für absolute Links in Benachrichtigungen (Pattern 9); best effort.
-		// Der Server speichert nur die erste Adresse; eine andere erst nach "Ja".
+		// Base URL for absolute links in notifications (Pattern 9); best effort.
+		// The server stores only the first address; a different one only after "Ja".
 		reportOrigin(window.location.origin, getRootUrl())
 			.then((result) => {
 				originAsk.value = originQuestion(result, readDismissed(storage()))

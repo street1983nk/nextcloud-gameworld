@@ -1,4 +1,4 @@
-<!-- Verwalteransicht: das Dashboard der Eltern (seit 03-02 nur für die Gruppe admin). -->
+<!-- Manager view: the dashboard of the parents (since 03-02 for the group admin only). -->
 <template>
 	<div class="gameworld">
 		<h2>Gameworld</h2>
@@ -6,7 +6,7 @@
 			{{ t('parent.view.privacyHint') }}
 		</p>
 
-		<!-- Pause für alle Kinder (ELTERN-01, D-06): Einstieg zur Pause-Seite und Stand der laufenden Pause. -->
+		<!-- Pause for all children (ELTERN-01, D-06): entry to the pause page and state of the running pause. -->
 		<section class="gameworld__pause" :class="{ 'gameworld__pause--active': pause?.active }">
 			<div class="gameworld__pause-text">
 				<h3>{{ t('parent.view.pauseTitle') }}</h3>
@@ -68,7 +68,7 @@
 			{{ listError }}
 		</NcNoteCard>
 
-		<!-- Ohne Talk einmal oberhalb der Liste (D-20); die Welten laufen ohne Talk-Räume weiter. -->
+		<!-- Without Talk once above the list (D-20); the worlds keep running without Talk rooms. -->
 		<NcNoteCard v-if="talk && talk.available === false" type="info">
 			{{ talkHint(talk) }}
 		</NcNoteCard>
@@ -132,7 +132,7 @@
 						<NcNoteCard v-else-if="world.events_restart_needed" type="warning" class="gameworld__restart">
 							{{ t('parent.view.restart.events') }}
 						</NcNoteCard>
-						<!-- D-11: Ein fehlgeschlagener Auftrag bleibt stehen, bis der nächste läuft (auch nach Neuladen). -->
+						<!-- D-11: a failed job stays until the next one runs (also after reloading). -->
 						<NcNoteCard v-if="world.backup_job?.state === 'failed'" type="error" class="gameworld__restart">
 							{{ jobNote(world.backup_job) }}
 						</NcNoteCard>
@@ -155,7 +155,7 @@
 					</td>
 					<td class="gameworld__actions">
 						<NcLoadingIcon v-if="busy[world.id]" :size="20" />
-						<!-- Weltdaten fehlen oder Erstellen brach ab: Starten würde eine leere oder halbe Welt starten, nur Löschen bleibt. -->
+						<!-- World data missing or creation aborted: starting would start an empty or half world, only deleting remains. -->
 						<template v-if="!world.delete_only">
 							<template v-if="isActive(world)">
 								<NcButton
@@ -187,7 +187,7 @@
 								{{ t('parent.view.action.timeWindow') }}
 							</NcButton>
 						</template>
-						<!-- Auch bei fehlenden Weltdaten: Wiederherstellen rettet die Welt (D-15). -->
+						<!-- Also with missing world data: restoring rescues the world (D-15). -->
 						<NcButton @click="openBackups(world)">
 							{{ t('parent.view.action.backups') }}
 						</NcButton>
@@ -245,7 +245,7 @@
 			@changed="loadPlaytime" />
 		<HolidayList :holidays="playtime?.holidays ?? []" @changed="loadPlaytime" />
 
-		<!-- Hat sich ein Elternteil selbst eingeladen, steht hier die eigene Verbindungsinfo. -->
+		<!-- If a parent invited themselves, their own connection info is shown here. -->
 		<section v-if="myWorlds.length > 0" class="gameworld__mine">
 			<h3>{{ t('parent.view.myConnection') }}</h3>
 			<ConnectionCard v-for="world in myWorlds" :key="world.id" :world="world" />
@@ -309,14 +309,14 @@ import {
 } from '../api.js'
 
 defineProps({
-	// Antwort von /api/me (App.vue); nc_admin blendet die Admin-Abschnitte ein (nur Komfort,
-	// gesperrt ist serverseitig), invite_groups zeigt der Einladen-Dialog.
+	// Response of /api/me (App.vue); nc_admin shows the admin sections (convenience only,
+	// locking happens on the server), invite_groups is used by the invite dialog.
 	me: { type: Object, required: false, default: null },
 })
-// reload-me: App.vue lädt /api/me neu (Rechte inzwischen entzogen, 403).
+// reload-me: App.vue reloads /api/me (rights revoked in the meantime, 403).
 const emit = defineEmits(['reload-me'])
 
-// Verwalter-Gruppen antworteten 403: Abschnitt fällt mit dem neuen /api/me weg, der Hinweis bleibt.
+// Manager groups answered 403: the section disappears with the new /api/me, the notice stays.
 const verwalterForbidden = ref(false)
 
 function onVerwalterForbidden() {
@@ -324,7 +324,7 @@ function onVerwalterForbidden() {
 	emit('reload-me')
 }
 
-// Statuscodes kommen aus der API (worlds/status.py), die Texte ebenfalls.
+// Status codes come from the API (worlds/status.py), and so do the texts.
 const CHIP_VARIANT = {
 	running: 'success',
 	starting: 'warning',
@@ -334,49 +334,49 @@ const CHIP_VARIANT = {
 	backing_up: 'warning',
 	restoring: 'warning',
 }
-// Phase 5 (D-10): Solange gesichert oder wiederhergestellt wird, sind die Aktionen der Welt gesperrt.
+// Phase 5 (D-10): while a backup or restore is running, the actions of the world are locked.
 const BACKUP_BUSY_STATUS = new Set(['backing_up', 'restoring'])
 const POLL_MS = 5000
-// Spielzeit (Verbrauch heute) ändert sich langsam: höchstens alle 30 s neu laden.
+// Playtime (usage today) changes slowly: reload at most every 30 s.
 const PLAYTIME_POLL_MS = 30000
-// Ab diesem Anteil am Limit wird der RAM-Balken als Fehler markiert.
+// From this share of the limit on, the RAM bar is marked as an error.
 const MEMORY_WARN_PERCENT = 90
 
 const worlds = ref([])
 const loading = ref(true)
 const creating = ref(false)
-// Bis der Setup-Check bestanden ist, bleibt "Welt erstellen" gesperrt.
+// Until the setup check has passed, "Welt erstellen" stays locked.
 const setupOk = ref(false)
 const presets = ref([])
 const presetsError = ref('')
 const selectedPreset = ref('')
 const name = ref('')
-// Nach dem Erstellen: { id, name } der neuen Welt für den Hinweis "Lade jetzt Spieler ein".
+// After creating: { id, name } of the new world for the hint "Lade jetzt Spieler ein".
 const createdWorld = ref(null)
-// Offene Dialoge: { id, name } der Welt oder null.
+// Open dialogs: { id, name } of the world or null.
 const inviteWorld = ref(null)
 const playersWorld = ref(null)
-// Zeitfenster-Dialog: { id, name, time_window } beim Öffnen kopiert.
+// Time window dialog: { id, name, time_window } copied on opening.
 const windowWorld = ref(null)
-// Sicherungsbereich: nur die Welt-ID; Daten und backup_job kommen reaktiv aus der gepollten
-// Liste, sonst sähe der Bereich das Ende eines Auftrags nie (T-05-52).
+// Backup section: the world ID only; data and backup_job come reactively from the polled
+// list, otherwise the section would never see the end of a job (T-05-52).
 const backupsWorldId = ref(null)
-// Fehler einer Aktion: bleibt stehen, bis die nächste Aktion startet.
+// Error of an action: stays until the next action starts.
 const error = ref('')
-// Fehler beim Abfragen der Liste: verschwindet beim nächsten erfolgreichen Abruf.
+// Error when fetching the list: disappears on the next successful fetch.
 const listError = ref('')
-// Welt-ID -> true, solange für diese Welt eine Aktion läuft.
+// World ID -> true while an action is running for this world.
 const busy = reactive({})
 const pendingDelete = ref(null)
-// Eigene Welten, falls der Verwalter sich selbst eingeladen hat (gleiche Daten wie in der Spieleransicht).
+// Own worlds, if the manager invited themselves (same data as in the player view).
 const myWorlds = ref([])
-// Antwort von GET /api/playtime (Kinder, Ferien, Zeitzone) oder null.
+// Response of GET /api/playtime (children, holidays, time zone) or null.
 const playtime = ref(null)
 const playtimeLoading = ref(true)
 const playtimeError = ref('')
 let playtimeLoadedAt = 0
-// GET /api/pause und GET /api/talk; im Takt der Spielzeit (höchstens alle 30 s). Fehler bleiben still:
-// die Karte zeigt dann nur den Einstieg, die Talk-Zeilen bleiben leer.
+// GET /api/pause and GET /api/talk; in the playtime cycle (at most every 30 s). Errors stay silent:
+// the card then shows only the entry, the Talk rows stay empty.
 const pause = ref(null)
 const talk = ref(null)
 
@@ -388,7 +388,7 @@ const backupSource = computed(() => (backupsWorldId.value === null
 	? null
 	: worlds.value.find((world) => world.id === backupsWorldId.value) ?? null))
 
-// Nur die benötigten Felder; verschwindet die Welt aus der Liste, schließt der Bereich.
+// Only the required fields; if the world disappears from the list, the section closes.
 const backupWorld = computed(() => {
 	const world = backupSource.value
 	if (!world) {
@@ -412,7 +412,7 @@ const canCreate = computed(() => setupOk.value
 	&& selectedPreset.value !== ''
 	&& name.value.trim() !== '')
 
-// Mit Talk geht auch der Raum der Welt samt Verlauf verloren (D-19).
+// With Talk the room of the world including its history is lost as well (D-19).
 const deleteMessage = computed(() => {
 	if (!pendingDelete.value) {
 		return ''
@@ -445,7 +445,7 @@ function onDialogOpen(open) {
 	}
 }
 
-// Nur id und Name gehen an die Dialoge; die Liste darf sich beim Polling ändern.
+// Only id and name go to the dialogs; the list may change while polling.
 function openInvite(world) {
 	playersWorld.value = null
 	windowWorld.value = null
@@ -474,7 +474,7 @@ function openBackups(world) {
 	backupsWorldId.value = world.id
 }
 
-// Die Zeitzone ändert, welcher Tag heute ist: Spielzeit und Weltenliste neu laden.
+// The time zone changes which day it is today: reload playtime and world list.
 function onTimeZoneChanged() {
 	loadPlaytime()
 	refresh()
@@ -487,7 +487,7 @@ function switchToInvite() {
 	}
 }
 
-// Spielernamen kommen gefiltert aus der API ([A-Za-z0-9_-]), Ausgabe nur per Textinterpolation.
+// Player names come filtered from the API ([A-Za-z0-9_-]), output only by text interpolation.
 function invitedText(world) {
 	const invited = world.invited_players ?? []
 	return invited.length === 0 ? t('parent.view.nobodyInvited') : invited.join(', ')
@@ -497,7 +497,7 @@ function chipVariant(status) {
 	return CHIP_VARIANT[status] ?? 'warning'
 }
 
-// Namen kommen gefiltert aus der API ([A-Za-z0-9_-]) und werden nur per Textinterpolation ausgegeben.
+// Names come filtered from the API ([A-Za-z0-9_-]) and are output only by text interpolation.
 function playersText(world) {
 	const players = world.players ?? []
 	if (players.length === 0) {
@@ -515,30 +515,30 @@ function memoryText(world) {
 	return t('parent.view.memory', { used: formatBytes(world.memory_used_bytes), limit: formatBytes(world.memory_limit_bytes) })
 }
 
-// Sichern oder Wiederherstellen läuft (Status oder Auftrag aus der API, D-10).
+// A backup or restore is running (status or job from the API, D-10).
 function backupBusy(world) {
 	return BACKUP_BUSY_STATUS.has(world.status) || world.backup_job?.state === 'running'
 }
 
-// Während eines Auftrags gilt die Welt als aktiv: kein Starten-Knopf, Stoppen und Neustarten gesperrt.
+// During a job the world counts as active: no start button, stop and restart locked.
 function isActive(world) {
 	return world.status === 'running' || world.status === 'starting' || BACKUP_BUSY_STATUS.has(world.status)
 }
 
-// Ohne Docker lässt sich nichts starten oder stoppen; Löschen bleibt (eigener Dialog).
+// Without Docker nothing can be started or stopped; deleting remains (own dialog).
 function actionsLocked(world) {
 	return Boolean(busy[world.id]) || world.status === 'unknown' || backupBusy(world)
 }
 
-// Abrufe können sich überholen (Polling, Aktion, Setup-Check); nur die Antwort
-// des zuletzt gestarteten Abrufs darf die Liste setzen.
+// Fetches can overtake each other (polling, action, setup check); only the response
+// of the most recently started fetch may set the list.
 let refreshSeq = 0
 
 async function refresh() {
 	const seq = ++refreshSeq
 	try {
 		const result = await listWorlds()
-		// Nach der Verwalterliste (deren Abgleich zuerst): eigene Welten, Fehler hier nur still.
+		// After the manager list (whose sync comes first): own worlds, errors here only silent.
 		const mine = await listMyWorlds().catch(() => null)
 		if (seq === refreshSeq) {
 			worlds.value = result
@@ -556,7 +556,7 @@ async function refresh() {
 	}
 }
 
-// Nur die Antwort des zuletzt gestarteten Abrufs zählt (wie bei der Weltenliste).
+// Only the response of the most recently started fetch counts (as with the world list).
 let playtimeSeq = 0
 
 async function loadPlaytime() {
@@ -579,7 +579,7 @@ async function loadPlaytime() {
 	}
 }
 
-// Nur die Antwort des zuletzt gestarteten Abrufs zählt.
+// Only the response of the most recently started fetch counts.
 let pauseSeq = 0
 let talkSeq = 0
 
@@ -591,7 +591,7 @@ async function loadPause() {
 			pause.value = result
 		}
 	} catch {
-		// Still: der Knopf zur Pause-Seite bleibt, dort steht ein Fehler.
+		// Silent: the button to the pause page stays, an error is shown there.
 	}
 }
 
@@ -603,11 +603,11 @@ async function loadTalk() {
 			talk.value = result
 		}
 	} catch {
-		// Still: Gameworld funktioniert ohne Talk-Stand weiter (D-20).
+		// Silent: Gameworld keeps working without the Talk state (D-20).
 	}
 }
 
-// Eintrag einer Welt aus GET /api/talk plus available; null, solange nichts geladen ist.
+// Entry of a world from GET /api/talk plus available; null while nothing is loaded.
 function talkFor(world) {
 	if (!talk.value) {
 		return null
@@ -616,7 +616,7 @@ function talkFor(world) {
 	return { has_room: false, read_only: false, owner_not_admin: false, token: null, owner_display: null, ...entry, available: talk.value.available }
 }
 
-// Im Takt der Weltenliste, aber höchstens alle 30 s (Spielzeit, Pause, Talk gemeinsam).
+// In the cycle of the world list, but at most every 30 s (playtime, pause, Talk together).
 function maybeLoadPlaytime() {
 	if (Date.now() - playtimeLoadedAt >= PLAYTIME_POLL_MS) {
 		loadPlaytime()
@@ -625,9 +625,9 @@ function maybeLoadPlaytime() {
 	}
 }
 
-// Alle 5 s, nur bei sichtbarem Tab; nach jeder Aktion sofort (run, submit).
+// Every 5 s, only with a visible tab; immediately after every action (run, submit).
 let timer = null
-// Nach dem Abbau darf ein noch laufender Abruf keinen neuen Timer setzen.
+// After teardown a still running fetch must not set a new timer.
 let unmounted = false
 
 function schedule() {
@@ -660,13 +660,13 @@ async function loadPresets() {
 	}
 }
 
-// Die Weltenliste aktualisiert das Ereignis checked nach jedem Prüflauf (auch "Erneut prüfen").
+// The event checked updates the world list after every check run (also "Erneut prüfen").
 function onSetupOk(ok) {
 	setupOk.value = ok
 }
 
-// Führt eine Aktion für eine Welt aus und lädt danach die Liste neu, weil
-// der Status immer aus Docker kommt.
+// Runs an action for a world and then reloads the list, because
+// the status always comes from Docker.
 async function run(world, action) {
 	if (busy[world.id]) {
 		return

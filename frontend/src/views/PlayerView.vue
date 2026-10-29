@@ -1,4 +1,4 @@
-<!-- Spieleransicht: nur eigene Daten (/api/me, /api/my/worlds, /api/my/playtime), nie die Verwaltungs-API. -->
+<!-- Player view: own data only (/api/me, /api/my/worlds, /api/my/playtime), never the management API. -->
 <template>
 	<div class="gameworld-player">
 		<h2>{{ t('kids.player.title') }}</h2>
@@ -33,7 +33,7 @@ import PlaytimeCard from '../components/PlaytimeCard.vue'
 import { errorText, getMyPlaytime, listMyWorlds } from '../api.js'
 import { t } from '../i18n/index.js'
 
-// Antwort von /api/me: Anrede mit dem Anzeigenamen.
+// Response of /api/me: greeting with the display name.
 defineProps({
 	user: {
 		type: Object,
@@ -44,19 +44,19 @@ defineProps({
 const POLL_MS = 5000
 
 const worlds = ref([])
-// Eigene Restzeit (/api/my/playtime); null, bis der erste Abruf da ist.
+// Own remaining time (/api/my/playtime); null until the first fetch has arrived.
 const playtime = ref(null)
 const loading = ref(true)
-// Verschwindet beim nächsten erfolgreichen Abruf.
+// Disappears on the next successful fetch.
 const error = ref('')
 
-// Nur die Antwort des zuletzt gestarteten Abrufs zählt (Muster aus ParentView).
+// Only the response of the most recently started fetch counts (pattern from ParentView).
 let refreshSeq = 0
 
 async function refresh() {
 	const seq = ++refreshSeq
 	try {
-		// Welten und Restzeit im selben Takt; eine Störung der einen verdeckt die andere nicht.
+		// Worlds and remaining time in the same cycle; a disturbance of one does not hide the other.
 		const [mine, own] = await Promise.allSettled([listMyWorlds(), getMyPlaytime()])
 		if (seq !== refreshSeq) {
 			return
@@ -74,7 +74,7 @@ async function refresh() {
 	}
 }
 
-// Alle 5 s, nur bei sichtbarem Tab, damit "Läuft" ohne Neuladen sichtbar wird.
+// Every 5 s, only with a visible tab, so that "Läuft" becomes visible without reloading.
 let timer = null
 let unmounted = false
 

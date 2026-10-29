@@ -84,7 +84,7 @@ function week(rule) {
 	return Object.freeze(ISO_WEEKDAYS.map((weekday) => rule(weekday)))
 }
 
-// Voreinstellungen nach O-07 im API-Format; keine = keine Regeln (Opt-in, O-10).
+// Presets after O-07 in the API format; none = no rules (opt-in, O-10).
 export const PRESETS = Object.freeze({
 	keine: null,
 	wochenende: week((weekday) => (weekday >= 6 ? apiDay(weekday, true, 120, 540, 1140) : apiDay(weekday, false))),
@@ -94,7 +94,7 @@ export const PRESETS = Object.freeze({
 		: apiDay(weekday, true, 60, 900, 1140))),
 })
 
-// Vorschlag für die Ferien: jeden Tag 2 Std, 9 bis 20 Uhr.
+// Suggestion for the holidays: every day 2 h, 9 to 20 o'clock.
 export const HOLIDAY_PRESET = week((weekday) => apiDay(weekday, true, 120, 540, 1200))
 
 function shortName(weekday) {
@@ -213,12 +213,12 @@ export function windowSummary(days) {
 	return t('core.playtime.window.open', { days: label, range })
 }
 
-// Kachel-Modell: { weekday, allowed, limit, fullDay, start, end } (Minuten).
+// Tile model: { weekday, allowed, limit, fullDay, start, end } (minutes).
 function tile(weekday, allowed, limit, fullDay, start, end) {
 	return { weekday, allowed, limit, fullDay, start, end }
 }
 
-// API-Tage (oder null) in bearbeitbare Kacheln; immer Kopien.
+// API days (or null) into editable tiles; always copies.
 export function fromApiDays(days) {
 	return ISO_WEEKDAYS.map((weekday) => {
 		const entry = days?.find((item) => item.weekday === weekday)
@@ -237,7 +237,7 @@ export function fromApiDays(days) {
 	})
 }
 
-// Kacheln in API-Tage; ein nicht erlaubter Tag trägt weder Limit noch Fenster.
+// Tiles into API days; a day that is not allowed carries neither limit nor window.
 export function toApiDays(tiles) {
 	return [...tiles]
 		.sort((a, b) => a.weekday - b.weekday)
@@ -255,7 +255,7 @@ export function toApiDays(tiles) {
 		})
 }
 
-// Welt-Fenster (time_window oder null) in Kacheln ohne Limit.
+// World window (time_window or null) into tiles without limit.
 export function fromWindowDays(days) {
 	return ISO_WEEKDAYS.map((weekday) => {
 		const entry = days?.find((item) => item.weekday === weekday)
@@ -277,7 +277,7 @@ export function fromWindowDays(days) {
 	})
 }
 
-// Kacheln in Welt-Fenstertage; "ganzer Tag" heißt 0 bis 1440.
+// Tiles into world window days; "ganzer Tag" means 0 to 1440.
 export function toWindowDays(tiles) {
 	return [...tiles]
 		.sort((a, b) => a.weekday - b.weekday)
@@ -310,13 +310,13 @@ export function usageText(usedSeconds, limitMinutes) {
 	return t('core.playtime.usage', { used: Math.floor(usedSeconds / 60), limit: limitMinutes })
 }
 
-// Minuten in eine Uhrzeit für <input type="time"> (1440 zeigt 00:00).
+// Minutes into a clock time for <input type="time"> (1440 shows 00:00).
 export function minutesToDate(minutes) {
 	const value = minutes % FULL_DAY
 	return new Date(2000, 0, 1, Math.floor(value / 60), value % 60)
 }
 
-// Uhrzeit aus dem Picker in Minuten; als Ende heißt 00:00 Mitternacht (1440).
+// Clock time from the picker into minutes; as end, 00:00 means midnight (1440).
 export function dateToMinutes(date, isEnd) {
 	const minutes = date.getHours() * 60 + date.getMinutes()
 	return isEnd && minutes === 0 ? FULL_DAY : minutes
@@ -324,7 +324,7 @@ export function dateToMinutes(date, isEnd) {
 
 const WEEKDAY_INDEX = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }
 
-// ISO-Wochentag (1..7) jetzt in der Zeitzone des Haushalts.
+// ISO weekday (1..7) now in the household time zone.
 export function weekdayIn(timeZone, now = new Date()) {
 	try {
 		const name = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(now)
@@ -334,7 +334,7 @@ export function weekdayIn(timeZone, now = new Date()) {
 	}
 }
 
-// Heute geltende Regel eines Kindes (Ferienplan, wenn Ferien laufen und einer gesetzt ist).
+// Rule of a child that applies today (holiday plan when holidays are running and one is set).
 export function todayRule(child, holidayActive, weekday) {
 	const plan = holidayActive && child.holiday ? child.holiday : child.normal
 	return plan?.find((entry) => entry.weekday === weekday) ?? null
@@ -438,8 +438,8 @@ export function pauseUntilText(untilClock) {
 		: t('core.playtime.pause.running')
 }
 
-// Rückblick-Einstellung (04.1-08): Vorgabe 20 Uhr, Auswahl 0:15 bis 23:45 im 15-Minuten-Raster.
-// Minute 0 fehlt (Text-Regel: nie "0 Uhr"); vor 0:15 hat ein Abendrückblick keinen Nutzen.
+// Review setting (04.1-08): default 20:00, choice 0:15 to 23:45 in a 15 minute grid.
+// Minute 0 is missing (text rule: never "0 Uhr"); before 0:15 an evening review has no use.
 export const REVIEW_DEFAULT_MINUTE = 1200
 
 export function reviewTimeOptions() {
@@ -449,8 +449,8 @@ export function reviewTimeOptions() {
 	})
 }
 
-// Auswahl für den gespeicherten Wert: Ein Wert außerhalb des Rasters (1..1439) erscheint als
-// zusätzliche Option; 0 wird nie angezeigt, sondern auf 0:15 gesetzt und als ungespeichert markiert.
+// Choice for the saved value: a value outside the grid (1..1439) appears as an
+// additional option; 0 is never shown but set to 0:15 and marked as unsaved.
 export function reviewSelectOptions(stored) {
 	const options = reviewTimeOptions()
 	if (stored === null || stored === undefined) {

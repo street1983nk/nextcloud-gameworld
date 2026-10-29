@@ -1,5 +1,5 @@
-// Prüfskript für frontend/src/adult.js (rein, ohne Vue): node frontend/tests/adult.check.mjs
-// Literale stehen hier unabhängig vom Modul, wörtlich aus 06-UI-SPEC.md B2.
+// Check script for frontend/src/adult.js (pure, without Vue): node frontend/tests/adult.check.mjs
+// Literals stand here independently of the module, word for word from 06-UI-SPEC.md B2.
 import assert from 'node:assert/strict'
 import { setLanguage } from '../src/i18n/index.js'
 import {
@@ -19,7 +19,7 @@ import {
 
 setLanguage('de')
 
-// Bestätigungsdialog, Absatz 1 bis 4
+// Confirmation dialog, paragraph 1 to 4
 assert.equal(confirmLead(['Anna']), 'Anna spielt dann ohne Pause, Zeitfenster und Spielzeitregeln.')
 assert.equal(confirmLead(['Anna', 'Ben']), 'Anna, Ben spielen dann ohne Pause, Zeitfenster und Spielzeitregeln.')
 assert.equal(
@@ -32,7 +32,7 @@ assert.equal(
 	'Die Spielzeitregel von Anna bleibt gespeichert und gilt wieder, sobald du den Schalter ausschaltest.',
 )
 
-// Meldungen Spielerliste
+// Messages player list
 assert.equal(
 	adultOnText('Anna'),
 	'Anna ist als erwachsen markiert und spielt ab sofort ohne Pause, Zeitfenster und Spielzeitregeln.',
@@ -43,12 +43,12 @@ assert.equal(
 )
 assert.equal(nowVerwalterText('Anna'), 'Anna verwaltet Gameworld inzwischen und spielt ohnehin ohne Regeln.')
 
-// Einladen-Dialog
+// Invite dialog
 assert.equal(
 	adultInviteWarning('Anna', 'Fehler'),
 	'Anna ist eingeladen, aber nicht als erwachsen markiert: Fehler. Du kannst es in der Spielerliste nachholen.',
 )
-// Detail mit Schlusspunkt (Backend-Meldung) ergibt keinen doppelten Punkt.
+// Detail with a final full stop (backend message) yields no doubled full stop.
 assert.equal(
 	adultInviteWarning('Ben', 'Dieses Konto verwaltet Gameworld und spielt ohnehin ohne Regeln.'),
 	'Ben ist eingeladen, aber nicht als erwachsen markiert: Dieses Konto verwaltet Gameworld und spielt ohnehin ohne Regeln. Du kannst es in der Spielerliste nachholen.',
@@ -58,7 +58,7 @@ assert.equal(
 	'Eingeladen: Anna (erwachsen), Ben, Gruppe klasse-5a',
 )
 
-// Meta-Texte und Spielzeit-Abschnitt
+// Meta texts and playtime section
 assert.equal(switchMeta(), 'Spielt ohne Pause, Zeitfenster und Spielzeitregeln. Gilt in allen Welten.')
 assert.equal(
 	inviteSwitchMeta(),
@@ -69,7 +69,7 @@ assert.equal(
 	'Anna ist als erwachsen markiert. Diese Regel ruht und gilt erst wieder, wenn du den Schalter in der Spielerliste ausschaltest.',
 )
 
-// Keine Gedankenstriche in den Texten
+// No dashes in the texts
 for (const text of [confirmScope(), confirmWarning(), switchMeta(), inviteSwitchMeta(), adultOffText('X')]) {
 	assert.doesNotMatch(text, /[\u2013\u2014]/)
 }

@@ -1,5 +1,5 @@
-// Prüfskript für frontend/src/orphans.js (rein, ohne Vue): node frontend/tests/orphans.check.mjs
-// Texte wörtlich aus 06-UI-SPEC.md B3.
+// Check script for frontend/src/orphans.js (pure, without Vue): node frontend/tests/orphans.check.mjs
+// Texts word for word from 06-UI-SPEC.md B3.
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { formatDate } from '../src/backup.js'
@@ -37,7 +37,7 @@ const iso = '2026-10-20T08:15:00Z'
 assert.equal(containerMeta({ state: 'exited', created: iso }), `Stand: gestoppt, angelegt ${formatDate(iso)}`)
 assert.equal(containerMeta({ state: 'running', created: iso }), `Stand: läuft, angelegt ${formatDate(iso)}`)
 assert.equal(containerMeta({ state: 'created', created: iso }), `Stand: gestoppt, angelegt ${formatDate(iso)}`)
-// Docker kann created leer liefern (06-08): dann ohne Datumsteil.
+// Docker may deliver created empty (06-08): then without the date part.
 assert.equal(containerMeta({ state: 'running', created: '' }), 'Stand: läuft')
 assert.equal(volumeMeta({ created: iso }), `angelegt ${formatDate(iso)}`)
 assert.equal(volumeMeta({ created: '' }), '')
@@ -66,18 +66,18 @@ assert.equal(
 	scriptText(),
 	'Nach dem Deinstallieren gibt es diese Liste nicht mehr. Dann hilft das Skript gameworld-orphans.sh auf dem Docker-Host: Es zeigt Reste nur an und löscht sie erst mit --remove-containers oder --remove-volumes.',
 )
-// Die Darstellung mit code-Elementen ergibt denselben Text.
+// The rendering with code elements yields the same text.
 assert.equal(scriptSegments().map((part) => part.text).join(''), scriptText())
 assert.deepEqual(
 	scriptSegments().filter((part) => part.code).map((part) => part.text),
 	['gameworld-orphans.sh', '--remove-containers', '--remove-volumes'],
 )
 
-// Keine Gedankenstriche und keine Ersatz-Umlaute in den Texten.
+// No dashes and no substitute umlauts in the texts.
 const source = await readFile(new URL('../src/orphans.js', import.meta.url), 'utf8')
 assert.doesNotMatch(source, /[–—]/)
 
-// api.js: drei Aufrufe gegen die 06-08-Routen, Änderungen über post().
+// api.js: three calls against the 06-08 routes, changes via post().
 const api = await readFile(new URL('../src/api.js', import.meta.url), 'utf8')
 assert.match(api, /export async function listOrphans\(\)/)
 assert.match(api, /axios\.get\(`\$\{apiBase\}\/api\/admin\/orphans`\)/)
@@ -86,7 +86,7 @@ assert.match(api, /await post\(`\$\{apiBase\}\/api\/admin\/orphans\/container\/r
 assert.match(api, /export async function removeOrphanVolume\(name\)/)
 assert.match(api, /await post\(`\$\{apiBase\}\/api\/admin\/orphans\/volume\/remove`, \{ name \}\)/)
 
-// OrphanSection.vue (sobald vorhanden): kein v-html, kein Polling, Link mit rel.
+// OrphanSection.vue (once present): no v-html, no polling, link with rel.
 const vue = await readFile(new URL('../src/components/OrphanSection.vue', import.meta.url), 'utf8').catch(() => null)
 if (vue !== null) {
 	assert.doesNotMatch(vue, /v-html|setInterval/)
@@ -102,7 +102,7 @@ if (vue !== null) {
 	assert.match(vue, /\.focus\(\)/)
 }
 
-// Weiche in ParentView: genau ein Einhängepunkt, nur bei nc_admin === true (nicht bloß wahrheitsartig).
+// Switch in ParentView: exactly one mount point, only with nc_admin === true (not merely truthy).
 const parent = await readFile(new URL('../src/views/ParentView.vue', import.meta.url), 'utf8')
 if (vue !== null) {
 	const mounts = [...parent.matchAll(/<OrphanSection\b[^>]*>/g)].map((m) => m[0])

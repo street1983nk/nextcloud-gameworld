@@ -1,4 +1,4 @@
-<!-- Abschnitt "Spielzeit": eine Zeile je eingeladenem Kind (ohne Verwalter) mit Zusammenfassung, heutigem Verbrauch und Dialog. -->
+<!-- Section "Spielzeit": one row per invited child (without managers) with summary, today's usage and dialog. -->
 <template>
 	<section class="playtime">
 		<h3>{{ t('kids.playtimeSection.title') }}</h3>
@@ -24,7 +24,7 @@
 						</div>
 					</td>
 					<td>
-						<!-- ROLLE-04: Erwachsene bleiben in der Liste, ihre Regel ruht nur. -->
+						<!-- ROLLE-04: adults stay in the list, their rule is only dormant. -->
 						<NcChip
 							v-if="child.adult"
 							:text="t('kids.playtimeSection.adultResting')"
@@ -68,20 +68,20 @@ import { t } from '../i18n/index.js'
 import { summarize, todayRule, usageText, weekdayIn } from '../playtime.js'
 
 const props = defineProps({
-	// Antwort von GET /api/playtime oder null, solange nichts geladen ist.
+	// Response of GET /api/playtime or null while nothing is loaded.
 	playtime: { type: Object, default: null },
 	loading: { type: Boolean, default: false },
 	error: { type: String, default: '' },
 })
 const emit = defineEmits(['changed'])
 
-// Kopie des Kindes beim Öffnen; das Neuladen der Liste ändert den offenen Dialog nicht.
+// Copy of the child on opening; reloading the list does not change the open dialog.
 const editing = ref(null)
 
 const children = computed(() => props.playtime?.children ?? [])
 const holidayActive = computed(() => (props.playtime?.holidays ?? []).some((entry) => entry.active))
 
-// "heute 45 von 60 min", nur wenn heute ein Limit gilt; bei Erwachsenen zählt nichts.
+// "heute 45 von 60 min", only when a limit applies today; for adults nothing counts.
 function usage(child) {
 	if (child.adult) {
 		return t('kids.playtimeSection.notCounted')
@@ -135,7 +135,7 @@ function usage(child) {
 	text-align: end;
 }
 
-/* Handy: vier Spalten passen nicht in 390 px, die Zeile bricht um (Name oben, darunter Regel und Knopf). */
+/* Phone: four columns do not fit into 390 px, the row wraps (name on top, rule and button below). */
 @media (max-width: 480px) {
 	.playtime__list tr {
 		display: flex;

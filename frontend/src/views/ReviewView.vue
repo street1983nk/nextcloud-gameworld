@@ -1,4 +1,4 @@
-<!-- Handy-Seite Tagesrückblick (ELTERN-03, D-12 bis D-14): Minuten je Kind und Welt eines Tages. -->
+<!-- Phone page daily review (ELTERN-03, D-12 to D-14): minutes per child and world of one day. -->
 <template>
 	<div class="mobile-page">
 		<h2>{{ t('kids.review.title') }}</h2>
@@ -54,9 +54,9 @@ import { t } from '../i18n/index.js'
 import { minutesText } from '../playtime.js'
 import { currentParams, dayLabel, navigate } from '../route.js'
 
-// tag aus dem Link ist schon geprüft (route.js); das Backend prüft erneut. Ohne
-// tag wählt das Backend den heutigen Tag der Haushalts-Zeitzone, nicht die Uhr
-// dieses Geräts (IN-04); Tag und "heute" kommen aus der Antwort.
+// tag from the link is already checked (route.js); the backend checks again. Without
+// tag the backend picks today in the household time zone, not the clock
+// of this device (IN-04); day and "heute" come from the response.
 const linkDay = currentParams().tag ?? null
 
 const loading = ref(true)

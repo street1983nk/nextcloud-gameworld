@@ -1,4 +1,4 @@
-<!-- Block "Deine Spielzeit heute" in der Kind-Ansicht; ohne Regeln (limited false) erscheint nichts. -->
+<!-- Block "Deine Spielzeit heute" in the child view; without rules (limited false) nothing appears. -->
 <template>
 	<section v-if="text" class="playtime-card" aria-live="polite">
 		<h3>{{ t('kids.playtimeCard.title') }}</h3>
@@ -15,7 +15,7 @@ import { t } from '../i18n/index.js'
 import { kidPlaytimeBlocked, kidPlaytimeText } from '../playtime.js'
 
 const props = defineProps({
-	// Antwort von /api/my/playtime oder null (noch nicht geladen).
+	// Response of /api/my/playtime or null (not loaded yet).
 	playtime: {
 		type: Object,
 		default: null,

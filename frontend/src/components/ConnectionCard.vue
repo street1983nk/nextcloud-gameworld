@@ -1,4 +1,4 @@
-<!-- Karte einer eigenen Welt: Status ohne Steuerknöpfe, Verbindungsdaten zum Kopieren, Anleitung. -->
+<!-- Card of an own world: status without control buttons, connection data to copy, instructions. -->
 <template>
 	<section class="connection-card" :data-world-id="world.id">
 		<header class="connection-card__head">
@@ -15,7 +15,7 @@
 				no-close />
 		</header>
 
-		<!-- Browser-Spike 04.2: nur bei laufender Welt und eingeschaltetem Spike. Neuer Tab, keine Einbettung. -->
+		<!-- Browser spike 04.2: only with a running world and the spike switched on. New tab, no embedding. -->
 		<div v-if="showPlay" class="connection-card__play">
 			<NcButton variant="primary" :disabled="playStarting" @click="playInBrowser">
 				{{ t('kids.connection.play') }}
@@ -29,7 +29,7 @@
 			<NcFormBoxCopyButton :label="t('kids.connection.address')" :value="host" />
 			<NcFormBoxCopyButton :label="t('kids.connection.port')" :value="String(world.port)" />
 			<NcFormBoxCopyButton :label="t('kids.connection.playerName')" :value="world.player_name" />
-			<!-- Der Kopierknopf zeigt seinen Wert immer an, darum fürs Passwort erst nach "Anzeigen". -->
+			<!-- The copy button always shows its value, so for the password only after "Anzeigen". -->
 			<NcFormBoxCopyButton v-if="revealed" :label="t('kids.connection.password')" :value="world.password" />
 		</NcFormBox>
 
@@ -65,13 +65,13 @@ import { t } from '../i18n/index.js'
 import { windowText } from '../playtime.js'
 
 const props = defineProps({
-	// Eintrag aus /api/my/worlds: id, name, status, status_text, host, port, player_name, password,
-	// window_open und window_next (Zeitfenster der Welt, null ohne Fenster).
+	// Entry from /api/my/worlds: id, name, status, status_text, host, port, player_name, password,
+	// window_open and window_next (time window of the world, null without a window).
 	world: {
 		type: Object,
 		required: true,
 	},
-	// Spieler-Adresse, wenn die Eltern keine eingetragen haben: Hostname dieses Browsers.
+	// Player address when the parents entered none: hostname of this browser.
 	fallbackHost: {
 		type: String,
 		default: () => window.location.hostname,
@@ -100,16 +100,16 @@ onMounted(async () => {
 const showPlay = computed(() => playEnabled.value && props.world.status === 'running')
 
 const host = computed(() => props.world.host || props.fallbackHost)
-// "Heute offen, 10 bis 12 Uhr" bzw. "Diese Welt ist gerade zu. ..."; null ohne Zeitfenster.
+// "Heute offen, 10 bis 12 Uhr" or "Diese Welt ist gerade zu. ..."; null without a time window.
 const windowHint = computed(() => windowText(props.world))
 
 function chipVariant(status) {
 	return CHIP_VARIANT[status] ?? 'warning'
 }
 
-// Ticket holen und die Spielseite in einem neuen Tab öffnen. Das Ticket steht nur im
-// Fragment (geht nie an einen Server, die Spielseite löscht es sofort); das Passwort
-// holt die Spielseite selbst per POST, es steht nie in einer Adresse.
+// Fetch the ticket and open the play page in a new tab. The ticket is only in the
+// fragment (never goes to a server, the play page deletes it at once); the play page
+// fetches the password itself via POST, it is never in an address.
 async function playInBrowser() {
 	playError.value = ''
 	playStarting.value = true

@@ -1,4 +1,4 @@
-<!-- Sicherungen einer Welt (BACKUP-01/02): Liste, Gesamtgröße, Jetzt sichern und Wiederherstellen. Gameworld entfernt nie eine Sicherung (D-08). -->
+<!-- Backups of a world (BACKUP-01/02): list, total size, back up now and restore. Gameworld never removes a backup (D-08). -->
 <template>
 	<NcDialog
 		v-if="!confirm"
@@ -70,7 +70,7 @@
 		</template>
 	</NcDialog>
 
-	<!-- Bestätigung (D-04/D-09): ersetzt den Bereich, solange sie offen ist. -->
+	<!-- Confirmation (D-04/D-09): replaces the section while it is open. -->
 	<NcDialog
 		v-else
 		:open="true"
@@ -114,31 +114,31 @@ import { formatBytes, formatDate, jobFinished, jobNote, playersWarning, restoreQ
 import { t } from '../i18n/index.js'
 
 const props = defineProps({
-	// { id, name, players, delete_only, status } der Welt, aktuell aus dem Polling.
+	// { id, name, players, delete_only, status } of the world, current from the polling.
 	world: { type: Object, required: true },
-	// world.backup_job aus dem 5-s-Polling ({ kind, state, message, file_name, finished_at }) oder null.
+	// world.backup_job from the 5 s polling ({ kind, state, message, file_name, finished_at }) or null.
 	backupJob: { type: Object, default: null },
 })
 const emit = defineEmits(['changed', 'close'])
 
-// Antwort von GET .../backups ({ backups, total_size, other_files }) oder null.
+// Response of GET .../backups ({ backups, total_size, other_files }) or null.
 const listing = ref(null)
 const loading = ref(true)
 const listError = ref('')
 const saving = ref(false)
 const error = ref('')
-// Offene Bestätigung: { kind: 'backup' } oder { kind: 'restore', entry } oder null.
+// Open confirmation: { kind: 'backup' } or { kind: 'restore', entry } or null.
 const confirm = ref(null)
 
 const BUSY_STATUS = new Set(['backing_up', 'restoring'])
 
 const playerCount = computed(() => (props.world.players ?? []).length)
 const jobRunning = computed(() => props.backupJob?.state === 'running')
-// T-05-38: kein zweiter Auftrag, solange einer läuft (das Backend antwortet sonst 409).
+// T-05-38: no second job while one is running (the backend would answer 409).
 const locked = computed(() => saving.value || jobRunning.value || BUSY_STATUS.has(props.world.status))
 const note = computed(() => jobNote(props.backupJob))
 
-// Nur die Antwort des zuletzt gestarteten Abrufs zählt.
+// Only the response of the most recently started request counts.
 let loadSeq = 0
 
 async function load() {
@@ -160,7 +160,7 @@ async function load() {
 	}
 }
 
-// T-05-52: Endet ein Auftrag, erscheint der neue Eintrag ohne Schließen und Neuöffnen.
+// T-05-52: when a job ends, the new entry appears without closing and reopening.
 watch(
 	() => ({ state: props.backupJob?.state ?? null, finished_at: props.backupJob?.finished_at ?? null }),
 	(next, prev) => {
@@ -182,7 +182,7 @@ function askBackup() {
 	run({ kind: 'backup' }, false)
 }
 
-// D-04: jedes Wiederherstellen geht über die Sicherheitsabfrage.
+// D-04: every restore goes through the safety prompt.
 function askRestore(entry) {
 	if (locked.value) {
 		return

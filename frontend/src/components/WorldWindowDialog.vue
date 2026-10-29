@@ -1,4 +1,4 @@
-<!-- Zeitfenster einer Welt (ZEIT-05): dieselben Tages-Kacheln ohne Limit; außerhalb kommt kein Kind neu hinein, die Welt läuft weiter. -->
+<!-- Time window of a world (ZEIT-05): the same day tiles without limit; outside it no child newly gets in, the world keeps running. -->
 <template>
 	<NcDialog
 		:open="true"
@@ -61,7 +61,7 @@ import { t } from '../i18n/index.js'
 import { fromWindowDays, notAppliedText, toWindowDays, validateDays } from '../playtime.js'
 
 const props = defineProps({
-	// { id, name, time_window } der Welt; time_window null heißt immer offen.
+	// { id, name, time_window } of the world; time_window null means always open.
 	world: { type: Object, required: true },
 })
 const emit = defineEmits(['saved', 'close'])
@@ -69,13 +69,13 @@ const emit = defineEmits(['saved', 'close'])
 const days = ref(fromWindowDays(props.world.time_window))
 const saving = ref(false)
 const error = ref('')
-// Gespeichert, aber noch nicht in der Welt (applied false, WR-08): Der Dialog bleibt mit Hinweis offen.
+// Saved, but not yet in the world (applied false, WR-08): the dialog stays open with a notice.
 const pending = ref('')
 
 const invalid = computed(() => Object.keys(validateDays(days.value)).length > 0)
 const noOpenDay = computed(() => days.value.every((entry) => !entry.allowed))
 
-// alwaysOpen: Fenster entfernen; sonst die sieben Tage speichern.
+// alwaysOpen: remove the window; otherwise save the seven days.
 async function submit(alwaysOpen) {
 	if (saving.value || (!alwaysOpen && (invalid.value || noOpenDay.value))) {
 		return

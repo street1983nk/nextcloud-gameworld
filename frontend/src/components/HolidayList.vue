@@ -1,4 +1,4 @@
-<!-- Abschnitt "Ferien": Zeiträume für den ganzen Haushalt (O-08); die Regeln für die Ferien stehen je Kind im Spielzeit-Dialog. -->
+<!-- Section "Ferien": periods for the whole household (O-08); the rules for the holidays are per child in the playtime dialog. -->
 <template>
 	<section class="holidays">
 		<h3>{{ t('kids.holidays.title') }}</h3>
@@ -81,7 +81,7 @@ import { dateLocale, t } from '../i18n/index.js'
 import { notAppliedText } from '../playtime.js'
 
 defineProps({
-	// holidays aus GET /api/playtime: { id, label, start_date, end_date, active }.
+	// holidays from GET /api/playtime: { id, label, start_date, end_date, active }.
 	holidays: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['changed'])
@@ -92,10 +92,10 @@ const endDate = ref(null)
 const busy = ref(false)
 const error = ref('')
 const pendingRemove = ref(null)
-// Gespeichert, aber noch nicht in jeder Welt (applied false, WR-08).
+// Saved, but not yet in every world (applied false, WR-08).
 const pending = ref('')
 
-// Datum aus dem Picker (lokale Mitternacht) als JJJJ-MM-TT.
+// Date from the picker (local midnight) as YYYY-MM-DD.
 function isoDate(date) {
 	const yyyy = String(date.getFullYear()).padStart(4, '0')
 	const mm = String(date.getMonth() + 1).padStart(2, '0')

@@ -1,4 +1,4 @@
-<!-- Anleitung in fünf Schritten für den Luanti-Client (Pattern 7). Werte nur per Textinterpolation. -->
+<!-- Instructions in five steps for the Luanti client (Pattern 7). Values only via text interpolation. -->
 <template>
 	<div class="join-guide">
 		<h4>{{ t('kids.guide.title') }}</h4>
@@ -32,7 +32,7 @@
 import { computed } from 'vue'
 import { t } from '../i18n/index.js'
 
-// Das Passwort selbst steht nur in der Karte (verdeckt, kopierbar), nicht im Anleitungstext.
+// The password itself is only in the card (hidden, copyable), not in the instruction text.
 const props = defineProps({
 	host: {
 		type: String,

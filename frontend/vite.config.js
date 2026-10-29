@@ -1,11 +1,11 @@
-// Build der Gameworld-Oberfläche.
+// Build of the Gameworld UI.
 //
-// AppAPI bindet per set_script registrierte Pfade als klassisches Skript ein:
-// ScriptsService.php registriert "proxy_js/<n>", ExAppUiMiddleware.php hängt
-// ".js" an und leitet auf /index.php/apps/app_api/proxy/gameworld/<pfad>.js um.
-// Nextcloud setzt type="module" nur bei ".mjs" (lib/private/Template/functions.php).
-// Darum entsteht hier genau eine Datei js/gameworld-main.js im Format IIFE, mit
-// eingebettetem CSS und ohne nachgeladene Chunks.
+// AppAPI includes paths registered via set_script as a classic script:
+// ScriptsService.php registers "proxy_js/<n>", ExAppUiMiddleware.php appends
+// ".js" and redirects to /index.php/apps/app_api/proxy/gameworld/<path>.js.
+// Nextcloud sets type="module" only for ".mjs" (lib/private/Template/functions.php).
+// Therefore this produces exactly one file js/gameworld-main.js in IIFE format, with
+// embedded CSS and without lazily loaded chunks.
 import { createAppConfig } from '@nextcloud/vite-config'
 import { fileURLToPath } from 'node:url'
 
@@ -16,12 +16,12 @@ export default createAppConfig(
 	{
 		appName: 'gameworld',
 		inlineCSS: true,
-		// Das Plugin leert js/ relativ zum Arbeitsverzeichnis (frontend/);
-		// das Leeren des echten Ziels übernimmt emptyOutDir unten.
+		// The plugin empties js/ relative to the working directory (frontend/);
+		// emptying the real target is handled by emptyOutDir below.
 		emptyOutputDirectory: false,
-		// Das REUSE-Lizenz-Plugin läuft mit einem outDir außerhalb von frontend/
-		// in einen Speicherüberlauf (JavaScript heap out of memory, gemessen).
-		// Die Lizenzangaben der Abhängigkeiten kommen in Phase 6 mit dem Image.
+		// The REUSE license plugin runs out of memory with an outDir outside of frontend/
+		// (JavaScript heap out of memory, measured).
+		// The license data of the dependencies arrives in phase 6 with the image.
 		extractLicenseInformation: false,
 		config: {
 			build: {

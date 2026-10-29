@@ -1,15 +1,15 @@
-// Rückfrage zur Link-Adresse der Benachrichtigungen (WR-04, Owner 22.10.2026:
-// "Erste merken, Wechsel nur bestätigt"). Rein bis auf den Speicher, prüfbar
-// mit node frontend/tests/origin.check.mjs.
+// Confirmation question about the link address of notifications (WR-04, owner 22.10.2026:
+// "Erste merken, Wechsel nur bestätigt"). Pure except for the storage, checkable
+// with node frontend/tests/origin.check.mjs.
 //
-// Der Server entscheidet: Er speichert nur die erste Adresse, eine abweichende
-// erst mit confirm, und ersetzt https nie durch http (dann gar keine Rückfrage).
-// Die Seite fragt nur, wenn die Antwort confirm_needed meldet und diese neue
-// Adresse in diesem Browser nicht schon mit "Nein" beantwortet wurde.
+// The server decides: it stores only the first address, a different one only
+// with confirm, and never replaces https with http (then no question at all).
+// The page asks only when the response reports confirm_needed and this new
+// address has not already been answered with "Nein" in this browser.
 
 export const DISMISS_KEY = 'gameworld.origin.dismissed'
 
-// Antwort von POST /api/origin -> { current, proposed } für die Rückfrage, sonst null.
+// Response of POST /api/origin -> { current, proposed } for the question, otherwise null.
 export function originQuestion(result, dismissed) {
 	if (!result || result.confirm_needed !== true) {
 		return null
@@ -35,6 +35,6 @@ export function rememberDismissed(storage, proposed) {
 	try {
 		storage?.setItem(DISMISS_KEY, proposed)
 	} catch {
-		// Ohne Speicher fragt die Seite beim nächsten Besuch erneut, mehr passiert nicht.
+		// Without storage the page asks again on the next visit, nothing more happens.
 	}
 }

@@ -1,4 +1,4 @@
-<!-- Zeitzone des Haushalts (O-02): Vorgabe Europe/Berlin, Vorschlag aus diesem Browser; Spielzeiten und Ferien rechnen in dieser Zone. -->
+<!-- Household time zone (O-02): default Europe/Berlin, suggestion from this browser; playtimes and holidays are calculated in this zone. -->
 <template>
 	<section class="time-zone">
 		<h4>{{ t('admin.timeZone.title') }}</h4>
@@ -45,7 +45,7 @@ import { t } from '../i18n/index.js'
 const DEFAULT_ZONE = 'Europe/Berlin'
 
 const props = defineProps({
-	// time_zone aus GET /api/playtime; leer, solange nichts geladen ist.
+	// time_zone from GET /api/playtime; empty while nothing is loaded.
 	timeZone: { type: String, default: '' },
 })
 const emit = defineEmits(['changed'])
@@ -57,7 +57,7 @@ const saving = ref(false)
 const notice = ref('')
 const error = ref('')
 
-// Nur aus dem Browser, kein externer Dienst (T-04-36).
+// From the browser only, no external service (T-04-36).
 function readBrowserZone() {
 	try {
 		return Intl.DateTimeFormat().resolvedOptions().timeZone || ''
@@ -69,7 +69,7 @@ const browserZone = readBrowserZone()
 
 const changed = computed(() => value.value !== '' && value.value !== saved.value)
 
-// Neu geladene Werte übernehmen, solange nichts ungespeichert geändert wurde.
+// Adopt newly loaded values as long as nothing unsaved was changed.
 watch(() => props.timeZone, (zone) => {
 	if (!zone) {
 		return

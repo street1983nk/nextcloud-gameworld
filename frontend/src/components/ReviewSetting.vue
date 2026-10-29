@@ -1,4 +1,4 @@
-<!-- Tagesrückblick am Abend (D-12, D-14, D-15): an/aus und Uhrzeit, gespeichert nur für den angemeldeten Verwalter. -->
+<!-- Evening daily review (D-12, D-14, D-15): on/off and time of day, saved only for the signed-in manager. -->
 <template>
 	<section class="review-setting">
 		<h4>{{ t('admin.review.title') }}</h4>
@@ -56,11 +56,11 @@ const loading = ref(true)
 const saving = ref(false)
 const notice = ref('')
 const error = ref('')
-// Zuletzt gespeicherter Stand (aus der API) und die Auswahl im Formular.
+// Last saved state (from the API) and the selection in the form.
 const savedEnabled = ref(true)
 const savedMinute = ref(null)
 const enabled = ref(true)
-// Optionen und Auswahl aus dem gespeicherten Wert; dirty heißt: die Anzeige weicht vom gespeicherten Wert ab.
+// Options and selection from the saved value; dirty means: the display differs from the saved value.
 const choice = ref(reviewSelectOptions(null))
 const minute = ref(choice.value.selected)
 

@@ -1,4 +1,4 @@
-<!-- Einstellung der Eltern: Adresse, die Spieler in Luanti eintragen (join_host, Pattern 7). -->
+<!-- Parents' setting: address that players enter in Luanti (join_host, Pattern 7). -->
 <template>
 	<section class="join-host">
 		<h3>{{ t('admin.joinHost.title') }}</h3>
@@ -44,7 +44,7 @@ import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { errorText, getSettings, saveSettings } from '../api.js'
 import { t } from '../i18n/index.js'
 
-// Endungen typischer Heimnetz-Namen; sonst gilt ein Name mit Punkt als Internetadresse.
+// Suffixes of typical home network names; otherwise a name with a dot counts as an internet address.
 const HOME_SUFFIXES = ['.local', '.lan', '.home', '.fritz.box']
 
 const value = ref('')
@@ -55,7 +55,7 @@ const notice = ref('')
 const error = ref('')
 
 const changed = computed(() => value.value.trim() !== saved.value)
-// Wirksame Adresse: Eingabe, sonst Hostname dieses Browsers (wie in der Spieleransicht).
+// Effective address: input, otherwise hostname of this browser (as in the player view).
 const effective = computed(() => value.value.trim() || window.location.hostname)
 const warning = computed(() => classify(effective.value))
 
@@ -69,7 +69,7 @@ function isPrivateIpv4(parts) {
 	return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
 }
 
-// 'loopback', 'internet' oder '' (kein Hinweis).
+// 'loopback', 'internet' or '' (no hint).
 function classify(rawHost) {
 	const host = rawHost.toLowerCase().replace(/^\[|\]$/g, '')
 	const parts = ipv4(host)

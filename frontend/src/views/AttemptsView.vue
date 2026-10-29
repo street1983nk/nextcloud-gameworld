@@ -1,4 +1,4 @@
-<!-- Handy-Seite Beitrittsversuche (ELTERN-02, D-07 bis D-09): wer nicht eingeladen war, und der Weg zum Einladen. -->
+<!-- Phone page join attempts (ELTERN-02, D-07 to D-09): who was not invited, and the way to invite. -->
 <template>
 	<div class="mobile-page">
 		<h2>{{ t('kids.attempts.title') }}</h2>
@@ -51,7 +51,7 @@
 			</NcButton>
 		</div>
 
-		<!-- D-09: nur der normale Einladen-Dialog der Welt, nie ein Knopf für den fremden Spielernamen. -->
+		<!-- D-09: only the normal invite dialog of the world, never a button for the foreign player name. -->
 		<InviteDialog
 			v-if="inviteWorld"
 			:key="`invite-${inviteWorld.id}`"
@@ -72,13 +72,13 @@ import { t } from '../i18n/index.js'
 import { currentParams, dayLabel, navigate } from '../route.js'
 
 defineProps({
-	// Antwort von /api/me (App.vue); der Einladen-Dialog zeigt damit die Einladungsgrenze (D-01).
+	// Response of /api/me (App.vue); the invite dialog uses it to show the invitation limit (D-01).
 	me: { type: Object, required: false, default: null },
 })
 
-// Parameter aus dem Link sind schon geprüft (route.js); das Backend prüft erneut.
-// Ohne tag wählt das Backend den heutigen Tag der Haushalts-Zeitzone, nicht die
-// Uhr dieses Geräts (IN-04); Tag und "heute" kommen aus der Antwort.
+// Parameters from the link are already checked (route.js); the backend checks again.
+// Without tag the backend picks today in the household time zone, not the
+// clock of this device (IN-04); day and "heute" come from the response.
 const params = currentParams()
 const worldFilter = params.welt ?? null
 
@@ -94,7 +94,7 @@ const emptyText = computed(() => (day.value !== '' && day.value === today.value
 	? t('kids.attempts.emptyToday')
 	: t('kids.attempts.emptyDay')))
 
-// Je Welt einmal { id, name } für den Einladen-Dialog, in der Reihenfolge der Liste.
+// Once per world { id, name } for the invite dialog, in the order of the list.
 const worlds = computed(() => {
 	const seen = new Map()
 	for (const attempt of attempts.value) {

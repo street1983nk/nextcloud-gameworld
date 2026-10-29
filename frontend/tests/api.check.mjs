@@ -1,11 +1,11 @@
-// Prüfskript für frontend/src/api.js (ohne Browser): node frontend/tests/api.check.mjs
-// IN-08: Jede zustandsändernde Anfrage geht als JSON über post/del.
+// Check script for frontend/src/api.js (without browser): node frontend/tests/api.check.mjs
+// IN-08: every state-changing request goes out as JSON via post/del.
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/api.js', import.meta.url), 'utf8')
 
-// Kein direkter axios.post/put/patch/delete mehr außerhalb der beiden Helfer.
+// No direct axios.post/put/patch/delete any more outside the two helpers.
 const direct = [...source.matchAll(/axios\.(post|put|patch|delete)\(/g)].map((m) => m.index)
 const helpers = [source.indexOf('export function post('), source.indexOf('export function del(')]
 assert.ok(helpers.every((index) => index >= 0), 'Helfer post und del fehlen')
@@ -13,16 +13,16 @@ assert.equal(direct.length, 2, `direkte axios-Aufrufe: ${direct.length}`)
 for (const index of direct) {
 	assert.ok(helpers.some((start) => index > start && index - start < 200), 'axios-Aufruf außerhalb der Helfer')
 }
-// Beide Helfer setzen Content-Type application/json, del schickt einen leeren JSON-Körper.
+// Both helpers set Content-Type application/json, del sends an empty JSON body.
 assert.match(source, /'Content-Type': 'application\/json'/)
 assert.match(source, /axios\.delete\(url, \{ data: \{\}, headers:/)
 assert.match(source, /axios\.post\(url, data, \{ headers:/)
-// Alle Änderungen laufen über post( oder del(.
+// All changes go through post( or del(.
 assert.ok((source.match(/await post\(/g) ?? []).length >= 15)
 assert.ok((source.match(/await del\(/g) ?? []).length >= 4)
 
-// Browser-Spike 04.2: Status und Ticket sind exportiert, das Ticket läuft über post()
-// (JSON-Pflicht, IN-08) an /api/my/play-ticket, kein eigener fetch.
+// Browser spike 04.2: status and ticket are exported, the ticket goes through post()
+// (JSON requirement, IN-08) to /api/my/play-ticket, no own fetch.
 assert.match(source, /export function getPlayStatus\(/)
 assert.match(source, /export async function getPlayTicket\(worldId\)/)
 const ticketFn = source.slice(source.indexOf('export async function getPlayTicket('))

@@ -1,26 +1,26 @@
-// Kleiner Pfad-Router für die Handy-Seiten hinter den Benachrichtigungen
-// (04.1 Pattern 9), ohne vue-router.
+// Small path router for the phone pages behind the notifications
+// (04.1 Pattern 9), without vue-router.
 //
-// Die Embedded-Route von AppAPI nimmt einen Pfadrest an:
-// /index.php/apps/app_api/embedded/gameworld/gameworld/<seite>?<parameter>.
-// Pfad statt "#": das Fragment ginge beim Login-Umweg verloren.
+// The embedded route of AppAPI takes a path remainder:
+// /index.php/apps/app_api/embedded/gameworld/gameworld/<page>?<parameter>.
+// Path instead of "#": the fragment would be lost on the login detour.
 //
-// parsePath, pageParams und pagePath sind rein (Node-Prüfung in
-// frontend/tests/route.check.mjs); nur currentPage und navigate greifen auf
-// window zu. Parameter aus der Adresse sind manipulierbar: hier fällt alles
-// weg, was nicht dem Muster entspricht, das Backend prüft erneut (T-04.1-36).
+// parsePath, pageParams and pagePath are pure (Node check in
+// frontend/tests/route.check.mjs); only currentPage and navigate access
+// window. Parameters from the address can be manipulated: everything that does not
+// match the pattern is dropped here, the backend checks again (T-04.1-36).
 import { generateUrl } from '@nextcloud/router'
 import { dateLocale, t } from './i18n/index.js'
 
 export const EMBED_STEM = '/apps/app_api/embedded/gameworld/gameworld'
 export const PAGES = Object.freeze(['pause', 'versuch', 'rueckblick'])
-// Ereignis nach navigate(); history.pushState selbst löst kein popstate aus.
+// Event after navigate(); history.pushState itself triggers no popstate.
 export const ROUTE_EVENT = 'gameworld-route'
 
 const WORLD_ID = /^[0-9a-f]{12}$/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
-// Seite aus dem Pfad: das erste Segment nach dem Stamm, sonst "" (Übersicht).
+// Page from the path: the first segment after the root, otherwise "" (overview).
 export function parsePath(pathname) {
 	if (typeof pathname !== 'string') {
 		return ''
@@ -37,7 +37,7 @@ export function parsePath(pathname) {
 	return PAGES.includes(segment) ? segment : ''
 }
 
-// Echter Kalendertag im Format JJJJ-MM-TT (2026-02-30 fällt weg).
+// Real calendar day in the format YYYY-MM-DD (2026-02-30 is dropped).
 function validDay(value) {
 	if (!DAY.test(value)) {
 		return false
@@ -47,7 +47,7 @@ function validDay(value) {
 	return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
 }
 
-// Nur bekannte, gültige Parameter: welt (Welt-ID, 12 Hex) und tag (Datum).
+// Known, valid parameters only: welt (world ID, 12 hex) and tag (date).
 function cleanParams(raw) {
 	const params = {}
 	const welt = raw.welt
@@ -66,7 +66,7 @@ export function pageParams(search) {
 	return cleanParams({ welt: query.get('welt'), tag: query.get('tag') })
 }
 
-// Vorgabe für tag: heute nach der Uhr dieses Geräts (JJJJ-MM-TT).
+// Default for tag: today by the clock of this device (YYYY-MM-DD).
 export function localDay(now = new Date()) {
 	const month = String(now.getMonth() + 1).padStart(2, '0')
 	const day = String(now.getDate()).padStart(2, '0')
@@ -90,7 +90,7 @@ export function dayLabel(tag, today = localDay()) {
 	return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
-// Pfad für generateUrl; unbekannte Seiten führen zur Übersicht.
+// Path for generateUrl; unknown pages lead to the overview.
 export function pagePath(page) {
 	return PAGES.includes(page) ? `${EMBED_STEM}/${page}` : EMBED_STEM
 }
@@ -103,7 +103,7 @@ export function currentParams() {
 	return pageParams(window.location.search)
 }
 
-// Wechsel innerhalb der App ohne Neuladen; App.vue hört auf ROUTE_EVENT und popstate.
+// Switch within the app without reloading; App.vue listens to ROUTE_EVENT and popstate.
 export function navigate(page, params = {}) {
 	const query = new URLSearchParams(cleanParams(params ?? {})).toString()
 	const url = generateUrl(pagePath(page)) + (query ? `?${query}` : '')

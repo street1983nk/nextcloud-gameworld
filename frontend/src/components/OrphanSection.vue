@@ -1,4 +1,4 @@
-<!-- Reste früherer Installationen (UI-SPEC B3, D-15/D-17): nur für Nextcloud-Admins eingehängt; gesperrt ist das Entfernen serverseitig (require_nc_admin, nur fremde gameworld-Objekte). -->
+<!-- Leftovers of earlier installations (UI-SPEC B3, D-15/D-17): mounted for Nextcloud admins only; removal is locked on the server side (require_nc_admin, foreign gameworld objects only). -->
 <template>
 	<section class="orphans">
 		<h3>{{ t('admin.orphans.title') }}</h3>
@@ -140,7 +140,7 @@ import {
 import { ncAdminOnlyText } from '../roles.js'
 import { t } from '../i18n/index.js'
 
-// 403: Rechte inzwischen entzogen; der Elternteil lädt /api/me neu und blendet aus.
+// 403: rights revoked in the meantime; the parent reloads /api/me and hides the section.
 const emit = defineEmits(['forbidden'])
 
 // Backend text on 409 for world data still in use (06-08, api/admin.py MSG_ORPHAN_IN_USE), in
@@ -149,7 +149,7 @@ const IN_USE_MARKS = ['noch von einem Container benutzt', 'still used by a conta
 
 const loading = ref(true)
 const busy = ref(false)
-// Letzter Serverstand als flache Liste; null, solange nichts geladen ist.
+// Last server state as a flat list; null while nothing is loaded.
 const entries = ref(null)
 const notice = ref('')
 const warning = ref('')
@@ -179,7 +179,7 @@ function toEntries(data) {
 	]
 }
 
-// Fokuspunkt B3 (UI-SPEC-Nachtrag): die Restliste, im Leerzustand der Leer-Absatz.
+// Focus point B3 (UI-SPEC addendum): the leftover list, in the empty state the empty paragraph.
 async function focusList() {
 	await nextTick()
 	const target = listEl.value ?? emptyEl.value
@@ -201,7 +201,7 @@ function failed(err, entry) {
 	}
 }
 
-// Nur die Antwort des zuletzt gestarteten Abrufs zählt.
+// Only the response of the most recently started request counts.
 let seq = 0
 
 async function load() {
@@ -278,7 +278,7 @@ async function remove(entry) {
 	notice.value = ''
 	warning.value = ''
 	error.value = ''
-	// Ein laufender Abruf darf die Serverantwort des Entfernens nicht überschreiben.
+	// A running request must not overwrite the server response of the removal.
 	const mine = ++seq
 	try {
 		const data = entry.kind === 'container'

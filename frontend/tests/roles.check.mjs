@@ -1,6 +1,6 @@
-// Prüfskript für frontend/src/roles.js (rein, ohne Vue): node frontend/tests/roles.check.mjs
-// Die Soll-Texte stehen hier als eigene Literale (abgeschrieben aus 06-UI-SPEC.md B1),
-// nicht aus roles.js übernommen: unabhängige Gegenprobe.
+// Check script for frontend/src/roles.js (pure, without Vue): node frontend/tests/roles.check.mjs
+// The expected texts stand here as literals of their own (copied from 06-UI-SPEC.md B1),
+// not taken over from roles.js: independent counter-check.
 import assert from 'node:assert/strict'
 import { setLanguage } from '../src/i18n/index.js'
 import {
@@ -20,7 +20,7 @@ import {
 
 setLanguage('de')
 
-// scopeHint (D-01): alphabetisch, leer heißt null
+// scopeHint (D-01): alphabetical, empty means null
 assert.equal(
 	scopeHint(['klasse', 'lehrkraefte']),
 	'Du kannst Konten aus deinen Gruppen einladen: klasse, lehrkraefte. Andere Konten zeigt dir Nextcloud nicht.',
@@ -37,7 +37,7 @@ assert.equal(scopeHint(['klasse']), 'Du kannst Konten aus deinen Gruppen einlade
 assert.equal(scopeHint([]), null)
 assert.equal(scopeHint(undefined), null)
 assert.equal(scopeHint(null), null)
-// Eingabe bleibt unverändert
+// Input stays unchanged
 const input = ['b', 'a']
 scopeHint(input)
 assert.deepEqual(input, ['b', 'a'])
@@ -47,7 +47,7 @@ assert.equal(
 	'Nextcloud zeigt dir keine Konten zum Einladen. Bitte einen Nextcloud-Admin, dich in die Gruppe der Kinder aufzunehmen oder zum Gruppenadmin zu machen.',
 )
 
-// Meldungen der Gruppenliste
+// Messages of the group list
 assert.equal(groupAddedText('lehrkraefte'), 'Die Gruppe lehrkraefte verwaltet Gameworld ab sofort.')
 assert.equal(
 	groupRemovedText('lehrkraefte'),
@@ -59,7 +59,7 @@ assert.equal(
 	'Die Verwalter-Gruppen konnten nicht geladen werden: Nextcloud antwortet gerade nicht.',
 )
 
-// Feste Texte des Abschnitts
+// Fixed texts of the section
 assert.equal(
 	sectionHint(),
 	'Mitglieder dieser Gruppen verwalten Gameworld wie du: Welten erstellen, Spieler einladen, Spielzeiten, Ferien und Pause einstellen. Nextcloud-Admin werden sie dadurch nicht.',

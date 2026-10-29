@@ -1,5 +1,5 @@
-<!-- Talk-Raum einer Welt (TALK-01, D-17, D-19): Link in Talk, Schalter "Nur lesen", Übernahme-Hinweise (UI-SPEC B4).
-     Ohne Talk zeigt die Verwaltung den Hinweis einmal oberhalb der Liste, hier steht dann nichts. -->
+<!-- Talk room of a world (TALK-01, D-17, D-19): link into Talk, switch "Nur lesen", takeover hints (UI-SPEC B4).
+     Without Talk the management shows the hint once above the list, here nothing is shown. -->
 <template>
 	<div v-if="status && status.available" class="talk-room">
 		<template v-if="status.has_room && !recreating">
@@ -84,9 +84,9 @@ import {
 import { t } from '../i18n/index.js'
 
 const props = defineProps({
-	// { id, name } der Welt.
+	// { id, name } of the world.
 	world: { type: Object, required: true },
-	// Eintrag der Welt aus GET /api/talk plus available; null, solange nichts geladen ist.
+	// Entry of the world from GET /api/talk plus available; null while nothing is loaded.
 	status: { type: Object, default: null },
 })
 const emit = defineEmits(['changed'])
@@ -99,7 +99,7 @@ const success = ref('')
 const error = ref('')
 const formerCard = ref(null)
 const recreateButton = ref(null)
-// Eigene Anzeige des Schalters, damit er beim Speichern nicht zurückspringt.
+// Own display of the switch, so that it does not jump back while saving.
 const readOnly = ref(Boolean(props.status?.read_only))
 
 watch(() => props.status?.read_only, (value) => {
@@ -114,12 +114,12 @@ const roomUrl = computed(() => (props.status?.token
 
 const hint = computed(() => talkHint(props.status))
 
-// Ex-Verwalter ist in Talk noch Owner (D-19); nur mit fertigem Raum.
+// A former manager is still owner in Talk (D-19); only with a finished room.
 const formerOwner = computed(() => (props.status?.has_room && props.status?.owner_not_admin
 	? formerOwnerText(props.status.owner_display)
 	: ''))
 
-// Fokus auf die Warnung, sobald sie erscheint; der Knopf steht direkt darunter.
+// Focus on the warning as soon as it appears; the button is right below it.
 watch(formerOwner, async (text, before) => {
 	if (text && !before) {
 		await nextTick()
@@ -157,7 +157,7 @@ function onDialogOpen(open) {
 	}
 }
 
-// Nur nach Bestätigung im Dialog: alter Raum samt Verlauf weg, neuer Raum ohne Ex-Verwalter.
+// Only after confirmation in the dialog: old room including history is gone, new room without the former manager.
 async function recreate() {
 	if (saving.value) {
 		return

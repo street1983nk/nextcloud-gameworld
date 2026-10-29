@@ -1,4 +1,4 @@
-// Prüfskript für frontend/src/backup.js (rein, ohne Vue): node frontend/tests/backup.check.mjs
+// Check script for frontend/src/backup.js (pure, without Vue): node frontend/tests/backup.check.mjs
 import assert from 'node:assert/strict'
 import {
 	formatBytes,
@@ -15,7 +15,7 @@ setLanguage('de')
 const MIB = 1048576
 const GIB = 1073741824
 
-// formatBytes: Grenzen um 1 GiB
+// formatBytes: limits around 1 GiB
 assert.equal(formatBytes(0), '0 MB')
 assert.equal(formatBytes(MIB), '1 MB')
 assert.equal(formatBytes(GIB - 1), '1024 MB')
@@ -43,7 +43,7 @@ assert.equal(jobNote({ kind: 'restore', state: 'running', message: null }), 'Wie
 assert.equal(jobNote({ kind: 'backup', state: 'ok', message: null }), '')
 assert.equal(jobNote({ kind: 'restore', state: 'ok', message: null }), '')
 
-// formatDate: ohne Zonenangabe liest Date die Ortszeit, das Ergebnis ist darum fest.
+// formatDate: without a zone Date reads local time, so the result is fixed.
 assert.equal(formatDate('2026-10-23T09:05:00'), '23.10.2026 09:05')
 assert.equal(formatDate('2026-01-02T23:59:00'), '02.01.2026 23:59')
 assert.equal(formatDate('kaputt'), 'kaputt')

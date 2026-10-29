@@ -39,7 +39,7 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import { getSetupCheck } from '../api.js'
 import { t } from '../i18n/index.js'
 
-// checked: nach jedem Prüflauf (Erfolg wie Fehler), damit die Weltenliste mitzieht.
+// checked: after every check run (success or failure), so that the world list follows.
 const emit = defineEmits(['update:ok', 'checked'])
 
 const result = ref(null)

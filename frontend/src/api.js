@@ -1,10 +1,10 @@
-// Zugriff auf die Welt-API der ExApp über den Nextcloud-Proxy.
+// Access to the world API of the ExApp through the Nextcloud proxy.
 //
-// @nextcloud/axios setzt das requesttoken; der AppAPI-Proxy prüft es aber nicht
-// (NoCSRFRequired, IN-08). Gegen Cross-Site-Anfragen schützt darum die JSON-Pflicht
-// der Änderungen (post, del unten). Die Basis-URL kommt vom Backend (lifecycle.py, Initial
-// State gameworld_config): unter manual-install der AppAPI-Proxy, unter HaRP
-// /exapps/gameworld.
+// @nextcloud/axios sets the requesttoken, but the AppAPI proxy does not check it
+// (NoCSRFRequired, IN-08). The JSON requirement for changes (post, del below) is
+// therefore what protects against cross-site requests. The base URL comes from the backend (lifecycle.py, initial
+// state gameworld_config): the AppAPI proxy under manual-install, and
+// /exapps/gameworld under HaRP.
 import axios from '@nextcloud/axios'
 import { loadState } from '@nextcloud/initial-state'
 import { generateOcsUrl, generateUrl } from '@nextcloud/router'
@@ -12,9 +12,9 @@ import { t } from './i18n/index.js'
 
 const fallback = { apiBase: generateUrl('/apps/app_api/proxy/gameworld') }
 
-// AppAPI stellt den Initial State im Namen der App app_api bereit
-// (TopMenuController::viewExAppPage, IInitialState von app_api) und speichert
-// den Wert als JSON-Text; im Dokument steht er darum doppelt kodiert.
+// AppAPI provides the initial state in the name of the app app_api
+// (TopMenuController::viewExAppPage, IInitialState of app_api) and stores
+// the value as JSON text; in the document it is therefore double-encoded.
 function readConfig() {
 	const raw = loadState('app_api', 'gameworld_config', fallback)
 	if (typeof raw !== 'string') {
@@ -29,10 +29,10 @@ function readConfig() {
 
 export const apiBase = readConfig().apiBase ?? fallback.apiBase
 
-// IN-08: Jede Änderung geht als JSON, auch ohne Inhalt. Das Backend lehnt
-// zustandsändernde Anfragen ohne Content-Type application/json ab (403), damit
-// ein Formular einer fremden Seite nichts auslösen kann; der AppAPI-Proxy prüft
-// das requesttoken nicht.
+// IN-08: every change goes out as JSON, even without content. The backend rejects
+// state-changing requests without Content-Type application/json (403), so that
+// a form on a foreign site cannot trigger anything; the AppAPI proxy does not check
+// the requesttoken.
 const JSON_HEADERS = Object.freeze({ 'Content-Type': 'application/json' })
 
 export function post(url, data = {}) {
@@ -58,26 +58,26 @@ export function errorText(err) {
 	return t('core.api.requestFailed')
 }
 
-// Für alle angemeldeten Konten: Nutzer, Anzeigename und Rolle (verwalter oder spieler).
+// For all signed-in accounts: user, display name and role (verwalter or spieler).
 export async function getMe() {
 	const response = await axios.get(`${apiBase}/api/me`)
 	return response.data
 }
 
-// Eigene Welten mit Verbindungsdaten (für jedes Konto, nur eigene Daten).
+// Own worlds with connection data (for every account, own data only).
 export async function listMyWorlds() {
 	const response = await axios.get(`${apiBase}/api/my/worlds`)
 	return response.data.worlds
 }
 
-// Eigene Restzeit heute (nur eigene Werte; die UID kommt aus der AppAPI-Anfrage).
+// Own remaining time today (own values only; the UID comes from the AppAPI request).
 export async function getMyPlaytime() {
 	const response = await axios.get(`${apiBase}/api/my/playtime`)
 	return response.data
 }
 
-// Browser-Spike 04.2: Ist "Im Browser spielen" eingeschaltet? Einmal je Seitenaufruf
-// gefragt (alle Karten teilen das Ergebnis); bei Fehler gilt aus.
+// Browser spike 04.2: is "Im Browser spielen" switched on? Asked once per page load
+// (all cards share the result); on error it counts as off.
 let playStatusPromise = null
 
 export function getPlayStatus() {
@@ -89,14 +89,14 @@ export function getPlayStatus() {
 	return playStatusPromise
 }
 
-// Ein-Mal-Ticket (60 s) für die eigene, laufende Welt: { ticket, play_path }. Das
-// Ticket wandert nur im URL-Fragment zur Spielseite, nie in Pfad oder Query.
+// One-time ticket (60 s) for the own, running world: { ticket, play_path }. The
+// ticket travels only in the URL fragment to the play page, never in path or query.
 export async function getPlayTicket(worldId) {
 	const response = await post(`${apiBase}/api/my/play-ticket`, { world_id: worldId })
 	return response.data
 }
 
-// Spieler-Adresse (nur Verwalter); leer heißt: Hostname des Browsers.
+// Player address (managers only); empty means: the browser's hostname.
 export async function getSettings() {
 	const response = await axios.get(`${apiBase}/api/settings`)
 	return response.data
@@ -137,7 +137,7 @@ export async function stopWorld(id) {
 	return response.data
 }
 
-// Neustart läuft im Backend als Stoppen plus Starten (gleiche Port-Saga wie Start).
+// Restart runs in the backend as stop plus start (same port saga as start).
 export async function restartWorld(id) {
 	const response = await post(`${apiBase}/api/worlds/${id}/restart`)
 	return response.data
@@ -147,14 +147,14 @@ export async function deleteWorld(id) {
 	await del(`${apiBase}/api/worlds/${id}`)
 }
 
-// Sicherungen (Phase 5, nur Verwalter): Liste nur eigener, geprüfter Sicherungen
-// ({ backups, total_size, other_files }); Löschen gibt es bewusst nicht (D-08).
+// Backups (phase 5, managers only): list of own, verified backups only
+// ({ backups, total_size, other_files }); deleting is deliberately absent (D-08).
 export async function listBackups(worldId) {
 	const response = await axios.get(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/backups`)
 	return response.data
 }
 
-// 202 mit der Welt; 409 mit Text, wenn Kinder spielen und confirmDisconnect fehlt (D-09).
+// 202 with the world; 409 with text when children are playing and confirmDisconnect is missing (D-09).
 export async function startBackup(worldId, confirmDisconnect = false) {
 	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/backups`, {
 		confirm_disconnect: Boolean(confirmDisconnect),
@@ -162,7 +162,7 @@ export async function startBackup(worldId, confirmDisconnect = false) {
 	return response.data
 }
 
-// Nur die Datei-ID aus der eigenen Liste; confirm true ist die Sicherheitsabfrage (D-04).
+// Only the file ID from the own list; confirm true is the safety prompt (D-04).
 export async function restoreBackup(worldId, fileId, confirmDisconnect = false) {
 	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/restore`, {
 		file_id: fileId,
@@ -172,14 +172,14 @@ export async function restoreBackup(worldId, fileId, confirmDisconnect = false) 
 	return response.data
 }
 
-// Einladungen und Spieler (03-03/03-04). Passwörter kommen abgeleitet aus der
-// API und werden im Frontend nie gespeichert, nur angezeigt.
+// Invitations and players (03-03/03-04). Passwords arrive derived from the
+// API and are never stored in the frontend, only displayed.
 export async function listPlayers(worldId) {
 	const response = await axios.get(`${apiBase}/api/worlds/${worldId}/players`)
 	return response.data
 }
 
-// kind: 'user' oder 'group'; das Backend prüft Konto oder Gruppe erneut bei Nextcloud.
+// kind: 'user' or 'group'; the backend checks the account or group again with Nextcloud.
 export async function invite(worldId, kind, target) {
 	const response = await post(`${apiBase}/api/worlds/${worldId}/invites`, { kind, target })
 	return response.data
@@ -190,13 +190,13 @@ export async function removeInvite(worldId, kind, target) {
 	return response.data
 }
 
-// Neues Passwort in allen Welten des Kontos; das alte gilt sofort nicht mehr.
+// New password in all worlds of the account; the old one stops working immediately.
 export async function rotatePassword(ncUser) {
 	const response = await post(`${apiBase}/api/players/password`, { nc_user: ncUser })
 	return response.data
 }
 
-// ROLLE-04: Konto als erwachsen markieren oder die Marke entfernen; gilt in allen Welten.
+// ROLLE-04: mark an account as adult or remove the mark; applies in all worlds.
 export async function setAdult(ncUser, adult) {
 	const response = await post(`${apiBase}/api/players/adult`, { nc_user: ncUser, adult })
 	return response.data
@@ -207,25 +207,25 @@ export async function renamePlayer(ncUser, playerName) {
 	return response.data
 }
 
-// Spielzeit (04-03 bis 04-05): Kinder mit Regeln und Verbrauch, Ferien, Zeitzone.
+// Playtime (04-03 to 04-05): children with rules and usage, holidays, time zone.
 export async function getPlaytime() {
 	const response = await axios.get(`${apiBase}/api/playtime`)
 	return response.data
 }
 
-// normal und holiday sind je 7 Tage im API-Format; holiday null heißt: Normalplan gilt auch in den Ferien.
+// normal and holiday are 7 days each in the API format; holiday null means: the normal plan also applies during the holidays.
 export async function saveChildPlan(ncUser, normal, holiday) {
 	const response = await post(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`, { normal, holiday })
 	return response.data
 }
 
-// Keine Begrenzung: alle Regeln des Kindes entfernen.
+// No limit: remove all rules of the child.
 export async function clearChildPlan(ncUser) {
 	const response = await del(`${apiBase}/api/playtime/children/${encodeURIComponent(ncUser)}`)
 	return response.data
 }
 
-// Ferienliste des Haushalts; Daten als JJJJ-MM-TT, Bezeichnung optional.
+// Holiday list of the household; dates as YYYY-MM-DD, label optional.
 export async function addHoliday(label, startDate, endDate) {
 	const response = await post(`${apiBase}/api/playtime/holidays`, { label, start_date: startDate, end_date: endDate })
 	return response.data
@@ -236,13 +236,13 @@ export async function removeHoliday(id) {
 	return response.data
 }
 
-// IANA-Name, etwa Europe/Berlin; das Backend kennt nur Namen aus tzdata.
+// IANA name, e.g. Europe/Berlin; the backend only knows names from tzdata.
 export async function setTimeZone(timeZone) {
 	const response = await post(`${apiBase}/api/playtime/time-zone`, { time_zone: timeZone })
 	return response.data
 }
 
-// days: genau 7 Tage { weekday, open, window_start, window_end }; "immer offen" ist clearWorldWindow.
+// days: exactly 7 days { weekday, open, window_start, window_end }; "always open" is clearWorldWindow.
 export async function setWorldWindow(worldId, days) {
 	const response = await post(`${apiBase}/api/playtime/worlds/${encodeURIComponent(worldId)}/window`, { days })
 	return response.data
@@ -253,33 +253,33 @@ export async function clearWorldWindow(worldId) {
 	return response.data
 }
 
-// Pause aller Welten (04.1-03): Zustand mit until_clock (H:MM) und je Welt applied/restarted.
+// Pause of all worlds (04.1-03): state with until_clock (H:MM) and applied/restarted per world.
 export async function getPause() {
 	const response = await axios.get(`${apiBase}/api/pause`)
 	return response.data
 }
 
-// minutes: genau 15, 30 oder 60 (das Backend lehnt alles andere ab).
+// minutes: exactly 15, 30 or 60 (the backend rejects anything else).
 export async function startPause(minutes) {
 	const response = await post(`${apiBase}/api/pause`, { minutes })
 	return response.data
 }
 
-// "Weiter": Pause oder "Für heute Schluss" sofort beenden.
+// "Weiter": end a pause or "Für heute Schluss" immediately.
 export async function endPause() {
 	const response = await post(`${apiBase}/api/pause/end`)
 	return response.data
 }
 
-// "Für heute Schluss": bis zum Ende des Tages in der Haushalts-Zeitzone.
+// "Für heute Schluss": until the end of the day in the household time zone.
 export async function stopForToday() {
 	const response = await post(`${apiBase}/api/pause/schluss`)
 	return response.data
 }
 
-// Fremdversuche eines Tages (JJJJ-MM-TT), optional nur einer Welt. Ohne day wählt
-// das Backend den heutigen Tag der Haushalts-Zeitzone (IN-04); die Antwort nennt
-// day und today ({ day, today, attempts }).
+// Foreign attempts of one day (YYYY-MM-DD), optionally for one world only. Without day
+// the backend picks today in the household time zone (IN-04); the response names
+// day and today ({ day, today, attempts }).
 export async function listAttempts(day = null, worldId = null) {
 	const params = {}
 	if (day) {
@@ -292,14 +292,14 @@ export async function listAttempts(day = null, worldId = null) {
 	return response.data
 }
 
-// Tagesrückblick: Minuten je Kind und Welt, limit_reached nur für heute; ohne day
-// der heutige Tag der Haushalts-Zeitzone ({ day, today, kids }).
+// Daily review: minutes per child and world, limit_reached only for today; without day
+// today in the household time zone ({ day, today, kids }).
 export async function getReview(day = null) {
 	const response = await axios.get(`${apiBase}/api/review`, { params: day ? { day } : {} })
 	return response.data
 }
 
-// Rückblick an/aus und Uhrzeit (Minute ab 00:00), je Verwalter.
+// Review on/off and time of day (minute from 00:00), per manager.
 export async function getReviewPrefs() {
 	const response = await axios.get(`${apiBase}/api/review/prefs`)
 	return response.data
@@ -310,13 +310,13 @@ export async function saveReviewPrefs(enabled, minute) {
 	return response.data
 }
 
-// Talk-Räume je Welt: available, bots und je Welt has_room, read_only, owner_not_admin.
+// Talk rooms per world: available, bots and per world has_room, read_only, owner_not_admin.
 export async function getTalkStatus() {
 	const response = await axios.get(`${apiBase}/api/talk`)
 	return response.data
 }
 
-// "Nur lesen" an ist POST, aus ist DELETE.
+// "Nur lesen" on is POST, off is DELETE.
 export async function setTalkReadOnly(worldId, on) {
 	const url = `${apiBase}/api/worlds/${encodeURIComponent(worldId)}/talk/read-only`
 	const response = on ? await post(url) : await del(url)
@@ -329,14 +329,14 @@ export async function setWorldLanguage(worldId, language) {
 	return response.data
 }
 
-// Talk-Raum neu anlegen (D-19): alter Raum samt Verlauf weg, Antwort ist die neue Zeile aus GET /api/talk.
+// Recreate the Talk room (D-19): old room including history is gone, the response is the new row from GET /api/talk.
 export async function recreateTalkRoom(worldId) {
 	const response = await post(`${apiBase}/api/worlds/${encodeURIComponent(worldId)}/talk/recreate`)
 	return response.data
 }
 
-// Verwalter-Gruppen (06-02, nur NC-Admins, sonst 403): Liste ohne admin, das die UI
-// fest voranstellt; Hinzufügen und Entfernen antworten mit der neuen Liste ({ groups }).
+// Manager groups (06-02, NC admins only, otherwise 403): list without admin, which the UI
+// always prepends; adding and removing respond with the new list ({ groups }).
 export async function getVerwalterGroups() {
 	const response = await axios.get(`${apiBase}/api/admin/verwalter-groups`)
 	return response.data.groups
@@ -352,8 +352,8 @@ export async function removeVerwalterGroup(gid) {
 	return response.data.groups
 }
 
-// Reste früherer Installationen (06-08, nur NC-Admins, sonst 403): alle drei Routen
-// antworten mit { containers, volumes }; 409 eigene/fremde oder benutzte Objekte, 503 Docker gestört.
+// Leftovers of earlier installations (06-08, NC admins only, otherwise 403): all three routes
+// respond with { containers, volumes }; 409 own/foreign or used objects, 503 Docker disturbed.
 export async function listOrphans() {
 	const response = await axios.get(`${apiBase}/api/admin/orphans`)
 	return response.data
@@ -369,23 +369,23 @@ export async function removeOrphanVolume(name) {
 	return response.data
 }
 
-// Gruppensuche über Nextcloud ([{ id, display_name }]); 503 heißt: Suche gestört.
+// Group search through Nextcloud ([{ id, display_name }]); 503 means: search disturbed.
 export async function searchGroups(query) {
 	const response = await axios.get(`${apiBase}/api/admin/groups`, { params: { search: query } })
 	return response.data.groups
 }
 
-// Basis-URL für die Links in Benachrichtigungen: Origin des Browsers plus Webroot
-// der Nextcloud (getRootUrl, etwa /nextcloud). Der Server speichert nur die erste
-// Adresse; eine abweichende erst mit confirm (Antwort confirm_needed), und eine
-// https-Adresse ersetzt er nie durch http.
+// Base URL for the links in notifications: the browser's origin plus the web root
+// of Nextcloud (getRootUrl, e.g. /nextcloud). The server stores only the first
+// address; a different one only with confirm (response confirm_needed), and it
+// never replaces an https address with http.
 export async function reportOrigin(origin, webroot, confirm = false) {
 	const response = await post(`${apiBase}/api/origin`, { origin, webroot, confirm })
 	return response.data
 }
 
-// Suche über Nextclouds eigene Autovervollständigung (Benutzer 0, Gruppen 1),
-// mit Nextclouds Regeln, wer wen finden darf. Keine eigene Benutzerliste.
+// Search through Nextcloud's own autocomplete (users 0, groups 1),
+// with Nextcloud's rules on who may find whom. No user list of our own.
 export async function searchAccounts(term) {
 	const response = await axios.get(generateOcsUrl('core/autocomplete/get'), {
 		params: {

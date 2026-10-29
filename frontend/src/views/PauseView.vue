@@ -1,4 +1,4 @@
-<!-- Handy-Seite Pause (ELTERN-01, D-01 bis D-06, D-25, D-29): Pause für alle Kinder in allen Welten. -->
+<!-- Phone page pause (ELTERN-01, D-01 to D-06, D-25, D-29): pause for all children in all worlds. -->
 <template>
 	<div class="mobile-page">
 		<h2>{{ t('kids.pause.title') }}</h2>
@@ -99,18 +99,18 @@ const PAUSE_OPTIONS = Object.freeze([
 	{ minutes: 30 },
 	{ minutes: 60 },
 ])
-// Abruf nur bei sichtbarer Seite (T-04.1-39).
+// Fetch only with a visible page (T-04.1-39).
 const POLL_MS = 15000
 
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const pause = ref(null)
-// Hinweise je Welt aus der letzten Aktion (D-25).
+// Hints per world from the last action (D-25).
 const worldNotes = ref([])
 
 let timer = null
-// Nur die Antwort des zuletzt gestarteten Abrufs zählt.
+// Only the response of the most recently started fetch counts.
 let loadSeq = 0
 
 async function load() {
@@ -144,7 +144,7 @@ function notesFrom(result) {
 	return notes
 }
 
-// Doppelklick-Schutz: solange saving läuft, startet keine zweite Aktion.
+// Double-click protection: while saving runs, no second action starts.
 async function act(action) {
 	if (saving.value) {
 		return
@@ -176,14 +176,14 @@ function schluss() {
 	return act(stopForToday)
 }
 
-// document.hidden: Tab im Hintergrund oder Handy gesperrt, dann kein Abruf.
+// document.hidden: tab in the background or phone locked, then no fetch.
 function tick() {
 	if (!document.hidden) {
 		load()
 	}
 }
 
-// Zurück auf der Seite (Fokus oder Rückkehr aus dem Verlauf): sofort frisch laden.
+// Back on the page (focus or return from history): reload at once.
 function onReturn() {
 	if (!document.hidden && !saving.value) {
 		load()

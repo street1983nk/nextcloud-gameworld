@@ -1,4 +1,4 @@
-<!-- Spielzeit eines Kindes: Voreinstellungen, Wochenplan als Tages-Kacheln und eigene Regeln für die Ferien (O-07, O-08, O-10). -->
+<!-- Playtime of a child: presets, weekly plan as day tiles and own rules for the holidays (O-07, O-08, O-10). -->
 <template>
 	<NcDialog
 		:open="true"
@@ -91,7 +91,7 @@ import {
 } from '../playtime.js'
 
 const props = defineProps({
-	// Kind aus GET /api/playtime: nc_user, display_name, has_rules, normal, holiday.
+	// Child from GET /api/playtime: nc_user, display_name, has_rules, normal, holiday.
 	child: { type: Object, required: true },
 })
 const emit = defineEmits(['saved', 'close'])
@@ -105,7 +105,7 @@ const PRESET_CHOICES = [
 	{ key: 'schultage' },
 ]
 
-// Ohne Regeln ist "Keine Begrenzung" gewählt (Opt-in, O-10).
+// Without rules "Keine Begrenzung" is selected (opt-in, O-10).
 const limited = ref(Boolean(props.child.has_rules && props.child.normal))
 const activePreset = ref(limited.value ? '' : 'keine')
 const normal = ref(fromApiDays(props.child.normal ?? PRESETS.wochenende))
@@ -113,14 +113,14 @@ const ownHoliday = ref(Boolean(props.child.holiday))
 const holiday = ref(fromApiDays(props.child.holiday ?? HOLIDAY_PRESET))
 const saving = ref(false)
 const error = ref('')
-// Gespeichert, aber noch nicht in jeder Welt (applied false, WR-08): Der Dialog bleibt mit Hinweis offen.
+// Saved, but not yet in every world (applied false, WR-08): the dialog stays open with a notice.
 const pending = ref('')
 
 const invalid = computed(() => limited.value && (
 	Object.keys(validateDays(normal.value)).length > 0
 	|| (ownHoliday.value && Object.keys(validateDays(holiday.value)).length > 0)))
 
-// Eine Voreinstellung setzt die Kacheln; "Keine Begrenzung" blendet sie aus.
+// A preset sets the tiles; "Keine Begrenzung" hides them.
 function applyPreset(key) {
 	const days = PRESETS[key]
 	if (!days) {
@@ -129,7 +129,7 @@ function applyPreset(key) {
 		limited.value = true
 		normal.value = fromApiDays(days)
 	}
-	// Erst nach dem Setzen markieren; DayTiles meldet nur Änderungen durch Eltern.
+	// Mark only after setting; DayTiles reports changes by parents only.
 	activePreset.value = key
 }
 

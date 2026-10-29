@@ -1,4 +1,4 @@
-// Prüfskript für frontend/src/playtime.js (rein, ohne Vue): node frontend/tests/playtime.check.mjs
+// Check script for frontend/src/playtime.js (pure, without Vue): node frontend/tests/playtime.check.mjs
 import assert from 'node:assert/strict'
 import { setLanguage } from '../src/i18n/index.js'
 import {
@@ -72,7 +72,7 @@ for (const entry of HOLIDAY_PRESET) {
 }
 assert.deepEqual(PRESETS.wochenende.map((entry) => entry.weekday), [1, 2, 3, 4, 5, 6, 7])
 
-// Voreinstellungen sind unveränderlich (Kacheln arbeiten auf Kopien)
+// Presets are immutable (tiles work on copies)
 assert.ok(Object.isFrozen(PRESETS.wochenende[0]))
 
 // Zusammenfassungen
@@ -83,21 +83,21 @@ assert.equal(summarize(PRESETS.schultage), 'Mo bis Fr 1 Std, Sa und So 2 Std')
 assert.equal(summarize(HOLIDAY_PRESET), 'Jeden Tag 2 Std, 9 bis 20 Uhr')
 assert.equal(summarize(PRESETS.wochenende.map((entry) => ({ ...entry, allowed: false, limit_minutes: null, window_start: null, window_end: null }))), 'Kein Spieltag')
 
-// Umrechnung UI <-> API ist verlustfrei
+// Conversion UI <-> API is lossless
 for (const days of [PRESETS.wochenende, PRESETS.taeglich, PRESETS.schultage, HOLIDAY_PRESET]) {
 	assert.deepEqual(toApiDays(fromApiDays(days)), days)
 }
-// "ganzer Tag" wird zu window_start null und window_end null
+// "ganzer Tag" becomes window_start null and window_end null
 const tiles = fromApiDays(PRESETS.taeglich)
 tiles[0].fullDay = true
 const api = toApiDays(tiles)
 assert.equal(api[0].window_start, null)
 assert.equal(api[0].window_end, null)
 assert.equal(api[0].limit_minutes, 60)
-// Kacheln sind Kopien, Ändern berührt die Voreinstellung nicht
+// Tiles are copies, changing them does not touch the preset
 assert.equal(PRESETS.taeglich[0].window_start, 540)
 
-// Prüfung im Browser: Ende nach Beginn
+// Check in the browser: end after start
 const broken = fromApiDays(PRESETS.schultage)
 broken[2].start = 1140
 broken[2].end = 900
@@ -105,7 +105,7 @@ const problems = validateDays(broken)
 assert.deepEqual(Object.keys(problems), ['3'])
 assert.deepEqual(validateDays(fromApiDays(PRESETS.schultage)), {})
 
-// Limit-Auswahl: 15 min bis 4 Std im 15-Minuten-Raster, plus "ohne Limit"
+// Limit choice: 15 min to 4 h in a 15 minute grid, plus "ohne Limit"
 assert.equal(limitOptions()[0].value, 15)
 assert.equal(limitOptions()[limitOptions().length - 1].value, 240)
 assert.equal(limitOptions().length, 16)
@@ -113,7 +113,7 @@ assert.ok(limitOptions().every((option, index) => option.value === 15 * (index +
 assert.equal(noLimitOption().value, null)
 assert.equal(noLimitOption().label, 'ohne Limit')
 
-// Texte
+// Texts
 assert.equal(formatMinutes(45), '45 min')
 assert.equal(formatMinutes(60), '1 Std')
 assert.equal(formatMinutes(90), '1 Std 30 min')
@@ -123,7 +123,7 @@ assert.equal(formatClock(1440), '24 Uhr')
 assert.equal(usageText(2700, 60), 'heute 45 von 60 min')
 assert.equal(usageText(0, 120), 'heute 0 von 120 min')
 
-// Welt-Zeitfenster (ZEIT-05)
+// World time window (ZEIT-05)
 const midweek = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
 	weekday,
 	open: weekday === 3,
@@ -141,7 +141,7 @@ const school = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
 assert.equal(windowSummary(school), 'Offen Mo bis Fr 8 bis 13 Uhr')
 assert.deepEqual(toWindowDays(fromWindowDays(midweek)), midweek)
 assert.deepEqual(toWindowDays(fromWindowDays(school)), school)
-// Ganzer Tag offen wird für die Welt zu 0 bis 1440
+// Whole day open becomes 0 to 1440 for the world
 const allDay = fromWindowDays(null)
 assert.equal(allDay.length, 7)
 allDay.forEach((entry) => { entry.allowed = entry.weekday === 6; entry.fullDay = true })
@@ -149,7 +149,7 @@ assert.deepEqual(toWindowDays(allDay)[5], { weekday: 6, open: true, window_start
 assert.deepEqual(toWindowDays(allDay)[0], { weekday: 1, open: false, window_start: null, window_end: null })
 assert.equal(windowSummary(toWindowDays(allDay)), 'Offen Sa ganztags')
 
-// Kind-Ansicht (04-07): Restzeit aus /api/my/playtime
+// Kid view (04-07): remaining time from /api/my/playtime
 const kid = (state, remaining, until, next = null) => ({
 	limited: true, state, remaining_minutes: remaining, until_minute: until, next,
 })
@@ -186,11 +186,11 @@ assert.equal(
 )
 assert.equal(kidPlaytimeText(kid('tag', 0, null, null)), 'Heute ist kein Spieltag.')
 assert.equal(kidPlaytimeText(kid('fenster', 0, null, null)), 'Jetzt ist keine Spielzeit.')
-// Unsinnige Angaben: nur der Grundsatz, nie ein halber Satz.
+// Nonsensical input: only the basic statement, never half a sentence.
 assert.equal(kidPlaytimeText(kid('tag', 0, null, { weekday: 6, minute: 540, days_ahead: 8 })), 'Heute ist kein Spieltag.')
 assert.equal(kidPlaytimeText(kid('tag', 0, null, { weekday: 9, minute: 540, days_ahead: 3 })), 'Heute ist kein Spieltag.')
 
-// Welt-Fenster in der Kind-Ansicht (window_open, window_next aus /api/my/worlds)
+// World window in the kid view (window_open, window_next from /api/my/worlds)
 assert.equal(windowText({ window_open: null, window_next: null }), null)
 assert.equal(windowText({}), null)
 assert.equal(
@@ -225,15 +225,15 @@ assert.equal(
 	windowText({ window_open: false, window_next: { weekday: 3, start: 600, end: 720, days_ahead: 7 } }),
 	'Diese Welt ist gerade zu. Nächsten Mittwoch ab 10 Uhr ist sie wieder offen.',
 )
-// Ohne days_ahead (älteres Backend) kein Tagesbezug.
+// Without days_ahead (older backend) no day reference.
 assert.equal(
 	windowText({ window_open: false, window_next: { weekday: 3, start: 600, end: 720 } }),
 	'Diese Welt ist gerade zu.',
 )
 assert.equal(windowText({ window_open: false, window_next: null }), 'Diese Welt ist gerade zu.')
 
-// Verbotsliste (Owner-Entscheid 21.10.2026): nie "0 Uhr", "00:00", "Mitternacht", "24 Uhr".
-// "0 Uhr" nur als eigene Zahl: "14:30" ist erlaubt.
+// Forbidden list (owner decision 21.10.2026): never "0 Uhr", "00:00", "Mitternacht", "24 Uhr".
+// "0 Uhr" only as a number of its own: "14:30" is allowed.
 const FORBIDDEN = /(?<!\d)0 Uhr|00:00|Mitternacht|24 Uhr/
 const MINUTES = [0, 540, 870, 1439]
 for (const state of ['aufgebraucht', 'fenster', 'tag']) {
@@ -259,7 +259,7 @@ for (let ahead = 0; ahead <= 7; ahead += 1) {
 	}
 }
 
-// WR-08: applied false heißt "gespeichert, aber noch nicht in der Welt"; sonst kein Hinweis.
+// WR-08: applied false means "gespeichert, aber noch nicht in der Welt"; otherwise no notice.
 assert.equal(notAppliedText({ applied: false }), notAppliedMessage())
 assert.equal(notAppliedText({ applied: true }), '')
 assert.equal(notAppliedText({ applied: null }), '')
@@ -271,7 +271,7 @@ for (const forbidden of ['–', '—', 'uebernimmt', 'Aenderung', 'naechsten']) 
 	assert.ok(!notAppliedMessage().includes(forbidden), forbidden)
 }
 
-// Handy-Seiten (04.1-07): Minuten im Rückblick und Ende der Pause
+// Phone pages (04.1-07): minutes in the review and end of the pause
 assert.equal(minutesText(45), '45 Min.')
 assert.equal(minutesText(0), '0 Min.')
 assert.equal(minutesText(130), '130 Min.')
@@ -280,7 +280,7 @@ assert.equal(pauseUntilText('9:05'), 'Pause bis 9:05')
 assert.equal(pauseUntilText(null), 'Pause läuft')
 assert.equal(pauseUntilText(''), 'Pause läuft')
 
-// Rückblick-Einstellung (04.1-08): Uhrzeiten 0:15 bis 23:45 im 15-Minuten-Raster, nie "0 Uhr".
+// Review setting (04.1-08): clock times 0:15 to 23:45 in a 15 minute grid, never "0 Uhr".
 const times = reviewTimeOptions()
 assert.equal(times.length, 95)
 assert.equal(times[0].value, 15)
@@ -295,12 +295,12 @@ for (const option of times) {
 	assert.ok(!FORBIDDEN.test(option.label), option.label)
 }
 
-// Gespeicherter Wert in der Liste: genau die Liste
+// Saved value in the list: exactly the list
 const inList = reviewSelectOptions(1230)
 assert.deepEqual(inList.options, times)
 assert.equal(inList.selected, 1230)
 assert.equal(inList.dirty, false)
-// Gespeicherter Wert außerhalb des Rasters (API erlaubt 0..1439): Zusatz-Option, nach Wert einsortiert
+// Saved value outside the grid (API allows 0..1439): additional option, sorted by value
 const odd = reviewSelectOptions(1207)
 assert.equal(odd.options.length, 96)
 assert.equal(odd.selected, 1207)
@@ -315,12 +315,12 @@ for (const stored of [1, 7, 1207, 1439]) {
 	}
 }
 assert.equal(reviewSelectOptions(1439).options.at(-1).value, 1439)
-// 0 würde "0 Uhr" zeigen: nächster Listenwert, als ungespeichert markiert
+// 0 would show "0 Uhr": next list value, marked as unsaved
 const zero = reviewSelectOptions(0)
 assert.deepEqual(zero.options, times)
 assert.equal(zero.selected, 15)
 assert.equal(zero.dirty, true)
-// Ohne gespeicherten Wert: Vorgabe 20 Uhr
+// Without a saved value: default 20:00
 for (const stored of [null, undefined]) {
 	const fresh = reviewSelectOptions(stored)
 	assert.deepEqual(fresh.options, times)
@@ -328,15 +328,15 @@ for (const stored of [null, undefined]) {
 	assert.equal(fresh.dirty, false)
 }
 
-// Talk-Hinweise (D-20, D-27)
+// Talk hints (D-20, D-27)
 assert.equal(talkHint({ available: false }), talkMissingText())
 assert.equal(talkMissingText(), 'Talk ist auf diesem Server nicht installiert. Gameworld funktioniert ohne Talk-Räume weiter.')
-// Kein Besitz-Versprechen mehr (Talk erlaubt Gameworld keinen Owner-Wechsel); B4 zeigt die Warnung.
+// No ownership promise any more (Talk does not allow Gameworld an owner change); B4 shows the warning.
 assert.equal(talkHint({ available: true, owner_not_admin: true, owner_display: 'Anna' }), '')
 assert.equal(talkHint({ available: true, owner_not_admin: false, owner_display: null }), '')
 assert.equal(talkHint(null), '')
 
-// Talk-Raum-Übernahme (UI-SPEC B4), wörtlich
+// Talk room takeover (UI-SPEC B4), word for word
 assert.equal(
 	formerOwnerText('Anna'),
 	'Der Talk-Raum gehört noch Anna, der kein Verwalter mehr ist. Anna kann den Raum weiter lesen. '
@@ -362,7 +362,7 @@ assert.equal(
 		+ 'Ein Nextcloud-Admin kann den alten Raum mit occ talk:room:delete abc123 löschen.',
 )
 assert.equal(orphanedCommand('abc123'), 'occ talk:room:delete abc123')
-// Keine Gedankenstriche in den neuen Texten
+// No dashes in the new texts
 for (const text of [formerOwnerText('Anna'), formerOwnerText(null), recreateQuestion('W', 'A'), recreatedText(), orphanedText('t')]) {
 	assert.equal(/[\u2013\u2014]/.test(text), false)
 	assert.equal(text.includes('Besitz'), false)

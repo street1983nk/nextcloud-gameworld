@@ -1,4 +1,4 @@
-<!-- Verwalter-Gruppen (UI-SPEC B1, ROLLE-03): nur für Nextcloud-Admins eingehängt; gesperrt ist die Änderung serverseitig (require_nc_admin). -->
+<!-- Manager groups (UI-SPEC B1, ROLLE-03): mounted for Nextcloud admins only; the change is locked on the server side (require_nc_admin). -->
 <template>
 	<section class="verwalter-groups">
 		<h3>{{ t('admin.groups.title') }}</h3>
@@ -115,7 +115,7 @@ import {
 } from '../roles.js'
 import { t } from '../i18n/index.js'
 
-// 403: Rechte inzwischen entzogen; der Elternteil lädt /api/me neu und blendet aus.
+// 403: rights revoked in the meantime; the parent reloads /api/me and hides the section.
 const emit = defineEmits(['forbidden'])
 
 const ADMIN_GROUP = 'admin'
@@ -126,7 +126,7 @@ const UNKNOWN_MARKS = ['gibt es in Nextcloud nicht', 'does not exist in Nextclou
 
 const loading = ref(true)
 const loadError = ref('')
-// Letzter Serverstand ohne admin; null, solange nichts geladen ist.
+// Last server state without admin; null while nothing is loaded.
 const groups = ref(null)
 const saving = ref(false)
 const notice = ref('')
@@ -135,12 +135,12 @@ const searchError = ref('')
 const searching = ref(false)
 const found = ref([])
 const selected = ref(null)
-// Anzeigenamen aus der Gruppensuche (die Liste selbst liefert nur IDs).
+// Display names from the group search (the list itself delivers IDs only).
 const names = ref({})
 const addButton = ref(null)
 const errorCard = ref(null)
 
-// admin und bereits gewählte Gruppen erscheinen nicht als Option.
+// admin and already chosen groups do not appear as options.
 const options = computed(() => {
 	const taken = new Set(groups.value ?? [])
 	return found.value
@@ -175,7 +175,7 @@ async function load() {
 }
 
 let timer = null
-// Nur die Antwort der zuletzt gestarteten Suche zählt.
+// Only the response of the most recently started search counts.
 let searchSeq = 0
 
 function onSearch(term) {
@@ -209,7 +209,7 @@ function onSearch(term) {
 	}, SEARCH_DELAY_MS)
 }
 
-// Fokus nach der Aktion (UI-SPEC-Nachtrag): auf die Fehlermeldung, sonst auf "Gruppe hinzufügen".
+// Focus after the action (UI-SPEC addendum): on the error message, otherwise on "Gruppe hinzufügen".
 async function focusAfterAction() {
 	await nextTick()
 	if (error.value && errorCard.value) {
