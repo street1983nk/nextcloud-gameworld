@@ -28,9 +28,10 @@
 
 - `.dev/exapp.log`: "Bot-Nachricht nicht gesendet: Status 401" (23:55) und "Talk-Anlegen für Welt d41684555773 gescheitert: TalkUnavailableError" nach "Talk-Aufruf gescheitert: Status 404" (00:05, K8-Welt eines frischen Verwalters, gleiche Ursache wie oben möglich). K8 prüft keinen Bot-Text; beobachten.
 
-### 06-25: tests/test_admin_snapshot.py::test_ex_admin_gets_no_attempt_or_review_after_check schlägt schon an der Basis fehl
+### ERLEDIGT (06-26 Vorab-Fix): tests/test_admin_snapshot.py::test_ex_admin_gets_no_attempt_or_review_after_check
 
-- Befund 29.10.2026: Der Test scheitert auch am Basis-Stand 579a162 (Prüfung in einer `git archive`-Kopie mit PYTHONPATH auf die Kopie): der Rückblick kommt nicht in `fake_notifier.calls` an (erwartet {"Unbekannter Spielername in {world}", "Tagesrückblick"}, vorhanden nur der Fremdversuch-Text). Nicht von 06-25 verursacht (06-25 ändert nur Kommentare, Docstrings und Log-Texte). Ursache offen (Uhrzeit/Zeitzone gegen `_epoch(20, 1)` oder Rückblick-Fenster); gehört in einen eigenen Fix.
+- Ursache: Der Test bucht Nutzung auf das feste DAY 21.10.2026; `TimeEngine._maybe_prune` (`_RETENTION_DAYS = 7`, Uhr `time.time`, als Default-Argument beim Import gebunden) löschte die Zeile ab dem 29.10.2026, der "Tagesrückblick" fehlte. Fix: Die Engine-Uhr (`world_service.time._clock`) wird in der service-Fixture per monkeypatch auf die Test-Epoche gesetzt. Produkt und Assertions unverändert.
+- Offen (anderer Mechanismus, kein Prune): tests/test_alerts_api.py hat Review-Tests, die bei weit späterer Uhr (+40 Tage) am heutigen Datum scheitern; heute grün, später beobachten.
 
 ### 06-25: Aktionsnamen in backup/files.py bleiben deutsch im Log
 

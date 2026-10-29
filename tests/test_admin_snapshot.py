@@ -77,6 +77,9 @@ def service(store: WorldStore, monkeypatch: pytest.MonkeyPatch) -> WorldService:
     from gameworld.main import APP
 
     world_service = WorldService(store, cast(DockerProvisioner, FakeProvisioner()), load_settings())
+    # Pin the engine clock to the test epoch: the engine prunes usage older than 7 days
+    # against its clock, so a real clock would delete the rows booked on the fixed DAY.
+    monkeypatch.setattr(world_service.time, "_clock", lambda: float(_epoch(20, 1)))
     monkeypatch.setitem(APP.dependency_overrides, get_service, lambda: world_service)
     return world_service
 
