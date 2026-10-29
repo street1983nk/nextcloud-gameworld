@@ -1,4 +1,4 @@
-"""Backup-API über ASGI: Verwalter-Sperre, strenger Body, 202, Fehler 409/404/422, Liste (05-05)."""
+"""Backup API over ASGI: manager lock, strict body, 202, errors 409/404/422, list (05-05)."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ async def _world(service: WorldService, fake: FakeProvisioner, name: str = "Burg
 
 
 class _Gate:
-    """Hält den Fake-Upload an, bis ``release`` gesetzt ist."""
+    """Holds the fake upload until ``release`` is set."""
 
     def __init__(self, files: FakeBackupFiles) -> None:
         self.entered = asyncio.Event()
@@ -79,7 +79,7 @@ async def _post(client: httpx.AsyncClient, world_id: str, body: object, user: st
     return await client.post(f"/api/worlds/{world_id}/backups", json=body, headers=appapi_headers(user))
 
 
-# Auslösen
+# Trigger
 
 
 @pytest.mark.usefixtures("_override")
@@ -188,7 +188,7 @@ async def test_running_job_elsewhere_is_409(
     response = await _post(client, second, {})
     assert response.status_code == 409
     assert response.json() == {"detail": "Es läuft schon eine Sicherung oder Wiederherstellung. Bitte kurz warten."}
-    # Löschen während des Uploads: ebenfalls 409 (T-05-48).
+    # Delete during the upload: also 409 (T-05-48).
     deleted = await client.delete(f"/api/worlds/{first}", headers=appapi_headers())
     assert deleted.status_code == 409
     gate.release.set()
@@ -209,7 +209,7 @@ async def test_delete_only_world_is_409(
 async def test_pause_answers_during_long_upload(
     client: httpx.AsyncClient, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles
 ) -> None:
-    """Pitfall 3: Die globale Sperre ist während des Uploads frei."""
+    """Pitfall 3: the global lock is free during the upload."""
     world_id = await _world(service, fake)
     gate = _Gate(fake_files)
     assert (await _post(client, world_id, {})).status_code == 202
@@ -225,7 +225,7 @@ async def test_pause_answers_during_long_upload(
     await get_backup_service(service).drain()
 
 
-# Liste
+# List
 
 
 @pytest.mark.usefixtures("_override")
@@ -255,12 +255,12 @@ async def test_list_shows_own_backup_after_upload_only_for_owner(
     assert payload["total_size"] == item["size"]
     assert payload["other_files"] == 0
 
-    # D-13: Ein zweiter Verwalter sieht die Sicherung des ersten nicht.
+    # D-13: a second manager does not see the first one's backup.
     other = await client.get(f"/api/worlds/{world_id}/backups", headers=appapi_headers("papa"))
     assert other.status_code == 200
     assert other.json() == {"backups": [], "total_size": 0, "other_files": 0}
 
-    # Die Weltenliste zeigt den abgeschlossenen Auftrag.
+    # The world list shows the finished job.
     worlds = await client.get("/api/worlds", headers=appapi_headers())
     job = next(world["backup_job"] for world in worlds.json()["worlds"] if world["id"] == world_id)
     assert (job["state"], job["file_name"]) == ("ok", item["name"])

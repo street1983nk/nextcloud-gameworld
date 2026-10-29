@@ -1,4 +1,4 @@
-"""GET /api/my/worlds: nur eigene Welten und Zugangsdaten, lazy Gruppen-Provisionierung (03-06)."""
+"""GET /api/my/worlds: own worlds and access data only, lazy group provisioning (03-06)."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from gameworld.worlds.store import WorldRow, WorldStore
 from tests.conftest import FAKE_PROFILES, TEST_SALT, TEST_SECRET, FakeDirectory, StaticSecret, appapi_headers
 from tests.test_service_lifecycle import FakeProvisioner
 
-# Fester Zusatz neuer Spielerzeilen, damit die Passwörter hier vorab berechenbar sind.
+# Fixed salt of new player rows so that the passwords here are computable in advance.
 pytestmark = pytest.mark.usefixtures("fixed_salt")
 
 W1 = "aaaaaaaaaaa1"
@@ -43,7 +43,7 @@ KIND_GROUPS: dict[str, tuple[str, ...]] = {"gw-kind": ("familie",)}
 
 
 def _access_writes(fake: FakeProvisioner) -> list[bytes]:
-    """Nur Zugangsdatei-Tars; push_access schreibt seit 04-03 zusätzlich die Regeldatei (push_time)."""
+    """Access file tars only; since 04-03 push_access additionally writes the rules file (push_time)."""
     result: list[bytes] = []
     for _world_id, archive in fake.written:
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
@@ -96,7 +96,7 @@ def service(store: WorldStore, fake: FakeProvisioner, monkeypatch: pytest.Monkey
 
 @pytest.fixture
 def kind_in_familie(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Selbstauskunft: gw-kind ist Mitglied der Gruppe familie."""
+    """Self-report: gw-kind is a member of the group familie."""
     del app_env
 
     async def lookup(uid: str) -> Profile:
@@ -158,7 +158,7 @@ async def test_answer_has_no_foreign_data(
     await _invite(client, W1, "user", "gw-kind")
     await _invite(client, W1, "user", FRIEND)
 
-    # Positivkontrolle: Die Verwalteransicht kennt beide Konten.
+    # Positive control: the manager view knows both accounts.
     players = await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())
     friend = next(p for p in players.json()["players"] if p["nc_user"] == FRIEND)
     assert friend["password"] == FRIEND_PASSWORD
@@ -195,7 +195,7 @@ async def test_group_invite_provisions_on_own_visit(
 ) -> None:
     del service, kind_in_familie
     await _invite(client, W1, "user", "gw-kind")
-    # Kein Verwalter-Abgleich mit Mitgliedern: Das Verzeichnis liefert die Gruppe leer.
+    # No manager reconciliation with members: the directory returns the group empty.
     fake_directory.groups["familie"] = []
     await _invite(client, W2, "group", "familie")
     assert "gw-kind" not in store.world_access(W2)
@@ -214,7 +214,7 @@ async def test_group_invite_provisions_on_own_visit(
     assert row.access_generation == generation + 1
     assert len(_access_writes(fake)) == pushes + 1
 
-    # Zweiter Aufruf ändert nichts.
+    # A second call changes nothing.
     again = await _mine(client)
     assert again.json() == response.json()
     row = store.get_world(W2)
@@ -227,7 +227,7 @@ async def test_lazy_provisioning_never_removes(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, kind_in_familie: None
 ) -> None:
     del service, kind_in_familie
-    # gw-kind direkt in W1, Gruppe familie nirgends; Profil hat familie.
+    # gw-kind directly in W1, group familie nowhere; profile has familie.
     await _invite(client, W1, "user", "gw-kind")
     before = store.world_access(W1)
     response = await _mine(client)
@@ -238,7 +238,7 @@ async def test_lazy_provisioning_never_removes(
 async def test_lazy_provisioning_needs_own_group(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_directory: FakeDirectory
 ) -> None:
-    """Ohne familie in der eigenen Selbstauskunft kein Zugang (T-03-40)."""
+    """Without familie in the own self-report no access (T-03-40)."""
     del service
     fake_directory.groups["familie"] = []
     await _invite(client, W2, "group", "familie")
@@ -271,7 +271,7 @@ async def test_host_comes_from_setting(client: httpx.AsyncClient, service: World
 async def test_failed_world_shows_fixed_text_to_child(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """AR-24: last_error (Docker-Interna wie Containername mit Instanz-ID) erreicht die Kind-Ansicht nie."""
+    """AR-24: last_error (Docker internals such as the container name with instance ID) never reaches the child view."""
     del service
     await _invite(client, W1, "user", "gw-kind")
     last_error = f"500 Server Error: Container gw-x-{W1} konnte nicht starten"
@@ -285,7 +285,7 @@ async def test_failed_world_shows_fixed_text_to_child(
     assert last_error not in response.text
     assert f"gw-x-{W1}" not in response.text
 
-    # Positivkontrolle: Die Verwalter-Ansicht zeigt last_error unverändert.
+    # Positive control: the manager view shows last_error unchanged.
     admin = await client.get("/api/worlds", headers=appapi_headers())
     assert admin.status_code == 200
     assert last_error in admin.text
@@ -295,7 +295,7 @@ async def test_failed_world_shows_fixed_text_to_child(
 async def test_busy_world_shows_pause_text_without_job_data(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, op_state: str
 ) -> None:
-    """D-10, T-05-17: Kinder sehen nur den festen Text, nie Auftrag oder Dateinamen."""
+    """D-10, T-05-17: children see only the fixed text, never job or file names."""
     del service
     await _invite(client, W1, "user", "gw-kind")
     store.update_world(W1, op_state=op_state)
@@ -310,13 +310,13 @@ async def test_busy_world_shows_pause_text_without_job_data(
     for secret in ("Geheimgrund", "Waldwelt-geheim", "Wird gesichert", "Wird wiederhergestellt"):
         assert secret not in response.text
 
-    # Positivkontrolle: Die Verwalter-Ansicht trägt den Auftrag.
+    # Positive control: the manager view carries the job.
     admin = await client.get("/api/worlds", headers=appapi_headers())
     assert "Waldwelt-geheim.tar.gz" in admin.text
 
 
 def _fixed_clock(service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mittwoch, 21.10.2026, 15:00 Uhr in Berlin."""
+    """Wednesday, 21.10.2026, 15:00 in Berlin."""
     now = datetime(2026, 10, 21, 15, 0, tzinfo=ZoneInfo("Europe/Berlin")).timestamp()
     monkeypatch.setattr(service, "_time", TimeEngine(store, clock=lambda: now))
 
@@ -331,7 +331,7 @@ async def test_world_window_open_now(
     worlds = {w["id"]: w for w in (await _mine(client)).json()["worlds"]}
     assert worlds[W1]["window_open"] is True
     assert worlds[W1]["window_next"] == {"weekday": 3, "start": 900, "end": 1020, "days_ahead": 0}
-    # Welt ohne Fenster: immer offen, kein Hinweis.
+    # World without a window: always open, no hint.
     assert worlds[W2]["window_open"] is None
     assert worlds[W2]["window_next"] is None
 
@@ -346,7 +346,7 @@ async def test_world_window_closed_shows_next(
     [world] = response.json()["worlds"]
     assert world["window_open"] is False
     assert world["window_next"] == {"weekday": 6, "start": 600, "end": 720, "days_ahead": 3}
-    # Kein vollständiger Wochenplan in der Antwort (nur das nächste Fenster).
+    # No full weekly plan in the response (only the next window).
     assert "time_window" not in response.text
     assert '"weekday": 3' not in json.dumps(response.json())
 
@@ -365,7 +365,7 @@ async def test_world_window_later_today(
 async def test_world_window_same_weekday_next_week(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Nur mittwochs 10 bis 12 Uhr, jetzt Mittwoch 15 Uhr: nächstes Fenster in 7 Tagen."""
+    """Only Wednesdays 10 to 12, now Wednesday 15:00: next window in 7 days."""
     _fixed_clock(service, store, monkeypatch)
     await _invite(client, W1, "user", "gw-kind")
     store.replace_world_window(W1, {3: (600, 720)})
@@ -384,7 +384,7 @@ async def test_world_window_read_error_is_503(
     def broken(*args: object) -> object:
         raise sqlite3.OperationalError(f"kaputt {len(args)}")
 
-    # Nur die Auswertung der Kind-Ansicht bricht; die Weltenliste selbst bleibt heil.
+    # Only the evaluation of the child view breaks; the world list itself stays intact.
     monkeypatch.setattr(playtime_service, "evaluate_world", broken)
     response = await _mine(client)
     assert response.status_code == 503
@@ -430,11 +430,11 @@ async def test_secret_change_before_my_worlds_no_deadlock(
 async def test_secret_change_with_busy_lock_shows_no_wrong_password(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, fake_secret: StaticSecret
 ) -> None:
-    """WR-02: Neues Geheimnis bei belegter Sperre: 503 statt eines noch nicht gültigen Passworts.
+    """WR-02: new secret while the lock is held: 503 instead of a not yet valid password.
 
-    Die Welten tragen noch die alten Verifier; ein Passwort aus dem neuen
-    Geheimnis liefe in die Fehlversuch-Sperre des Welt-Mods. Der 5-s-Poll
-    bekommt nach Freigabe der Sperre die neuen Zugangsdaten.
+    The worlds still carry the old verifiers; a password from the new
+    secret would run into the failed-attempt block of the world mod. The 5 s poll
+    gets the new access data after the lock is released.
     """
     del service
     await _invite(client, W1, "user", "gw-kind")
@@ -445,17 +445,17 @@ async def test_secret_change_with_busy_lock_shows_no_wrong_password(
     try:
         with anyio.fail_after(5):
             response = await _mine(client)
-        # Keine Zugangsdaten, solange die Verifier nicht zum Geheimnis passen.
+        # No access data as long as the verifiers do not match the secret.
         assert response.status_code == 503
         assert new_password not in response.text
         assert PASSWORD not in response.text
-        # Nichts neu provisioniert: alter Fingerabdruck, alte Verifier.
+        # Nothing reprovisioned: old fingerprint, old verifiers.
         from gameworld.access.secret import fingerprint
 
         assert store.get_meta("secret_fingerprint") == fingerprint(TEST_SECRET)
     finally:
         lock.release()
-    # Sperre frei: Neuprovisionierung läuft, das Kind sieht das gültige Passwort.
+    # Lock free: reprovisioning runs, the child sees the valid password.
     response = await _mine(client)
     assert response.status_code == 200
     [world] = response.json()["worlds"]
@@ -471,7 +471,7 @@ async def test_busy_lock_never_blocks_my_worlds(
     fake_directory: FakeDirectory,
     kind_in_familie: None,
 ) -> None:
-    """Belegte Sperre (etwa ein Erzeugen): Antwort sofort, Provisionierung beim nächsten Abruf."""
+    """Held lock (such as a create): immediate response, provisioning on the next call."""
     del service, kind_in_familie
     fake_directory.groups["familie"] = []
     await _invite(client, W2, "group", "familie")

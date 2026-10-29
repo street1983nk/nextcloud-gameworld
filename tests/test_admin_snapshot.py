@@ -1,9 +1,9 @@
-"""Verwalter-Schnappschuss im Hintergrund (CR-01): nur von Nextcloud bestätigte Admins.
+"""Manager snapshot in the background (CR-01): only admins confirmed by Nextcloud.
 
-Szenario des Reviews: Konten ``anna`` und ``papa`` stehen im Schnappschuss, ``anna``
-verliert die Adminrechte (Ex-Partner, versehentlich zum Admin gemachtes älteres
-Kind). Danach darf ``anna`` weder Kinderdaten bekommen noch in Talk-Räume geholt
-werden, kein neuer Raum gehört ihr, und ihre Zeile ``frei`` fällt weg.
+Review scenario: accounts ``anna`` and ``papa`` are in the snapshot, ``anna``
+loses the admin rights (ex-partner, an older child accidentally made admin).
+After that ``anna`` may neither receive child data nor be pulled into Talk
+rooms, no new room belongs to her, and her ``frei`` row is dropped.
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def service(store: WorldStore, monkeypatch: pytest.MonkeyPatch) -> WorldService:
 
 @pytest.fixture
 def anna_lost_admin(fake_directory: FakeDirectory) -> FakeDirectory:
-    """Nextcloud wie am Dev-Stack: nur Admins lösen Gruppen auf; anna ist keiner mehr."""
+    """Nextcloud as on the dev stack: only admins resolve groups; anna is none any more."""
     fake_directory.strict = True
     fake_directory.groups["admin"] = ["papa"]
     fake_directory.users["papa"] = ("Papa", True)
@@ -124,10 +124,10 @@ async def test_ex_admin_gets_no_attempt_or_review_after_check(
     await verify_once(service, anna_lost_admin)
     await run_once(service, fake_notifier, anna_lost_admin, _epoch(20, 1))
     recipients = {call[0] for call in fake_notifier.calls}
-    # Positivkontrolle: papa bekommt Fremdversuch und Rückblick, anna nichts.
+    # Positive control: papa gets the foreign attempt and the review, anna nothing.
     assert recipients == {"papa"}
     assert {call[1] for call in fake_notifier.calls} == {"Unbekannter Spielername in {world}", "Tagesrückblick"}
-    # Verzeichnis-Aufrufe (Anzeigenamen) nur als bestätigter Verwalter.
+    # Directory calls (display names) only as a confirmed manager.
     assert {acting for acting, _uid in anna_lost_admin.calls} <= {"papa"}
 
 
@@ -158,7 +158,7 @@ async def test_ex_admin_loses_frei_line(
     assert b"Anna -1 -1 -1 frei" in before
     await verify_once(service, anna_lost_admin)
     after, _changed = service.time.render(W1)
-    # Ohne Regeln und ohne frei steht anna gar nicht mehr in der Regeldatei.
+    # Without rules and without frei, anna is no longer in the rules file at all.
     assert b"Anna" not in after
 
 
@@ -192,7 +192,7 @@ async def test_rejection_while_app_not_accepted_keeps_snapshot(
     fake_notifier: FakeNotifier,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Start/Neuregistrierung: Nextcloud lehnt die ExApp selbst ab, jedes Konto bekommt 401.
+    # Start/re-registration: Nextcloud itself rejects the ExApp, every account gets 401.
     fake_directory.error = DirectoryRejectedError("401")
     fake_directory.app_ok = False
     seen: list[str] = []
@@ -206,10 +206,10 @@ async def test_rejection_while_app_not_accepted_keeps_snapshot(
     assert _snapshot(store) == ["anna", "papa"]
     assert seen == []
     assert loop.LOOP_STATE.acting is None
-    # Gegenprobe vor den Abfragen: Eine spätere Probe könnte schon gelingen, während
-    # die Abfragen noch abgelehnt wurden (Wettlauf am Dev-Stack beobachtet).
+    # Counter-check before the queries: a later probe might already succeed while
+    # the queries were still rejected (race observed on the dev stack).
     assert fake_directory.group_calls == []
-    # Sobald Nextcloud die ExApp wieder annimmt, bestätigt der nächste Lauf und Hinweise gehen raus.
+    # As soon as Nextcloud accepts the ExApp again, the next run confirms and notices go out.
     fake_directory.error = None
     fake_directory.app_ok = True
     fake_directory.groups["admin"] = ["papa"]
@@ -222,7 +222,7 @@ async def test_rejection_while_app_not_accepted_keeps_snapshot(
 async def test_rejection_with_app_accepted_still_empties_snapshot(
     service: WorldService, store: WorldStore, fake_directory: FakeDirectory
 ) -> None:
-    # Gegenprobe gelingt: 401/403 betrifft die Konten selbst (gelöscht, kein Admin mehr), fail closed.
+    # Counter-check succeeds: 401/403 concerns the accounts themselves (deleted, no longer admin), fail closed.
     fake_directory.error = DirectoryRejectedError("401")
     assert await verify_once(service, fake_directory) is None
     assert _snapshot(store) == []
@@ -240,7 +240,7 @@ async def test_outage_keeps_snapshot_but_confirms_nobody(
 
     monkeypatch.setattr(loop, "MAINTENANCE", [(hook, False)])
     await maintain_once(service, fake_directory)
-    # Eine Störung ist keine Ablehnung: der Stand bleibt, aber niemand handelt.
+    # A failure is not a rejection: the state stays, but nobody acts.
     assert _snapshot(store) == ["anna", "papa"]
     assert seen == []
     assert loop.LOOP_STATE.acting is None
@@ -266,11 +266,11 @@ async def test_ex_admin_removed_from_kids_room_and_never_owner(
         RoomMember(12, "users", "gw-kind", 3),
     ]
     await maintain_once(service, anna_lost_admin)
-    # anna ist in W1 als Spielerin eingeladen: sie bleibt Teilnehmerin, aber ohne Moderation.
+    # anna is invited to W1 as a player: she stays a participant, but without moderation.
     by_actor = {m.actor_id: m.participant_type for m in fake_talk.rooms["tok-w1"]}
     assert by_actor == {"papa": 1, "anna": 3, "gw-kind": 3}
     assert ("demote", "papa", ("tok-w1", 11)) in fake_talk.calls
-    # In W2 ist sie nicht eingeladen: Der neue Raum gehört papa, anna ist nicht darin.
+    # She is not invited to W2: the new room belongs to papa, anna is not in it.
     new_room = store.talk_room(W2)
     assert new_room is not None
     assert new_room.owner_uid == "papa"

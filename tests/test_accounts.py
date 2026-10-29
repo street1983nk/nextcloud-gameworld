@@ -1,4 +1,4 @@
-"""Abgeleitete Spielpasswörter, Spielernamen und das Geheimnis in Nextcloud (A2, A3)."""
+"""Derived game passwords, player names and the secret in Nextcloud (A2, A3)."""
 
 from __future__ import annotations
 
@@ -21,12 +21,12 @@ from gameworld.access.secret import SECRET_KEY, PlayerSecret, SecretUnavailableE
 
 SECRET = bytes(range(32))
 PASSWORD_RE = re.compile(r"^[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}-[a-hj-km-np-z2-9]{4}$")
-# Unabhängig per python -c (hmac, divmod über das Alphabet, erste Stelle = erster Rest) berechnet.
+# Computed independently via python -c (hmac, divmod over the alphabet, first position = first remainder).
 VECTOR_GW_KIND_0 = "nyd5-hh9q-u45t"
 VECTOR_GW_KIND_1 = "updy-6kpg-2f23"
 
 
-# Passwörter
+# Passwords
 
 
 def test_alphabet_has_no_confusable_characters() -> None:
@@ -52,8 +52,8 @@ def test_derive_password_changes_with_rotation_account_and_secret() -> None:
     assert derive_password(bytes(32), "gw-kind", 0) != base
 
 
-# Zusatz je Spielerzeile (Schema 6). Vektor unabhängig berechnet: HMAC von Hand über
-# sha256 (ipad/opad), Ziffern per wiederholtem Rest; derselbe Weg liefert VECTOR_GW_KIND_0.
+# Salt per player row (schema 6). Vector computed independently: HMAC by hand over
+# sha256 (ipad/opad), digits by repeated remainder; the same path yields VECTOR_GW_KIND_0.
 SALT = "5a" * 16
 VECTOR_GW_KIND_0_SALTED = "uq8x-t78x-7zyf"
 
@@ -75,7 +75,7 @@ def test_new_player_salt_is_random_hex() -> None:
     assert first != second
 
 
-# Spielernamen
+# Player names
 
 
 def test_first_word_of_display_name() -> None:
@@ -129,7 +129,7 @@ def test_names_are_always_valid_luanti_names() -> None:
         assert "@" not in name
 
 
-# Geheimnis
+# Secret
 
 
 @dataclass
@@ -138,7 +138,7 @@ class FakeAppConfig:
     set_calls: list[tuple[str, bool | None]] = field(default_factory=list)
     get_error: Exception | None = None
     set_error: Exception | None = None
-    # Was beim Rücklesen nach set_value herauskommt (None = wie gesetzt).
+    # What comes back when read after set_value (None = as set).
     read_back: str | None = None
 
     async def get_value(self, key: str, default: str | None = None) -> str | None:
@@ -187,7 +187,7 @@ async def test_missing_secret_is_created_sensitive_and_read_back() -> None:
 
 
 async def test_read_back_value_wins() -> None:
-    # Ein paralleler Prozess hat zuerst geschrieben: Der zurückgelesene Wert gilt.
+    # A parallel process wrote first: the value read back applies.
     config = FakeAppConfig(read_back=SECRET.hex())
     secret, _ = _secret(config)
     assert await secret.get() == SECRET
@@ -237,9 +237,9 @@ async def test_error_message_never_contains_the_secret() -> None:
     assert stored not in str(info.value)
 
 
-# Spielernamen von Hand (03-04) und Fingerabdruck des Geheimnisses
+# Player names by hand (03-04) and fingerprint of the secret
 
-# Unabhängig per python -c (hmac.new(..., b"gameworld:fingerprint", sha256).hexdigest()[:16]) berechnet.
+# Computed independently via python -c (hmac.new(..., b"gameworld:fingerprint", sha256).hexdigest()[:16]).
 FINGERPRINT_VECTOR = "f9ddab6ceada0345"
 
 
@@ -260,6 +260,6 @@ def test_fingerprint_vector_and_independence_from_passwords() -> None:
     assert fingerprint(SECRET) == FINGERPRINT_VECTOR
     assert fingerprint(bytes(32)) != FINGERPRINT_VECTOR
     assert re.fullmatch("[0-9a-f]{16}", fingerprint(bytes(32)))
-    # Der Fingerabdruck verrät weder Geheimnis noch ein Passwort.
+    # The fingerprint reveals neither the secret nor a password.
     assert SECRET.hex()[:16] != FINGERPRINT_VECTOR
     assert FINGERPRINT_VECTOR not in VECTOR_GW_KIND_0.replace("-", "")

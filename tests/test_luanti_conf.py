@@ -1,4 +1,4 @@
-"""Private Defaults in der minetest.conf, Presets und Schutz vor Key-Injection (ZUGANG-01, WELT-01)."""
+"""Private defaults in minetest.conf, presets and protection against key injection (ZUGANG-01, WELT-01)."""
 
 import pytest
 

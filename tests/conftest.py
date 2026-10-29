@@ -1,4 +1,4 @@
-"""Gemeinsame Fixtures: AppAPI-Umgebung, signierte Header, ASGI-Client, Docker-Gate."""
+"""Shared fixtures: AppAPI environment, signed headers, ASGI client, Docker gate."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def _docker_required() -> None:
 
 
 def appapi_headers(user: str = "admin") -> dict[str, str]:
-    """Die Header, die AppAPI für einen Nutzer mitschickt."""
+    """The headers AppAPI sends along for a user."""
     authorization = b64encode(f"{user}:{APP_CREDENTIAL}".encode()).decode()
     return {
         "EX-APP-ID": APP_ID,
@@ -77,7 +77,7 @@ def appapi_headers(user: str = "admin") -> dict[str, str]:
 
 @pytest.fixture
 def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """AppAPI-Umgebung mit leerem Speicher; das Service-Singleton beginnt frisch."""
+    """AppAPI environment with empty storage; the service singleton starts fresh."""
     monkeypatch.setenv("APP_ID", APP_ID)
     monkeypatch.setenv("APP_VERSION", APP_VERSION)
     monkeypatch.setenv("APP_SECRET", APP_CREDENTIAL)
@@ -92,39 +92,39 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     from gameworld.playtime import service as playtime_service
 
     monkeypatch.setattr(worlds, "_service", None)
-    # Drossel des Abgleichs beim Verwalter-Besuch beginnt je Test frisch.
+    # Throttle of the reconciliation on a manager visit starts fresh per test.
     monkeypatch.setattr(access_service, "SYNC_STATE", access_service.SyncState())
-    # Ebenso die Drossel des Verwalter-Schnappschusses (04-05).
+    # Likewise the throttle of the manager snapshot (04-05).
     monkeypatch.setattr(playtime_service, "ADMINS_STATE", playtime_service.AdminsState())
     monkeypatch.setattr(roles, "_role_service", roles.RoleService(fake_lookup))
     monkeypatch.setattr(directory, "_directory", FakeDirectory())
     monkeypatch.setattr(secret, "_player_secret", StaticSecret())
-    # Benachrichtigungen ohne Nextcloud; Zustand des Benachrichtigungs-Loops frisch (04.1-04).
+    # Notifications without Nextcloud; notification loop state starts fresh (04.1-04).
     from gameworld.notify import loop as notify_loop
     from gameworld.notify import service as notify_service
 
     monkeypatch.setattr(notify_service, "_notifier", FakeNotifier())
     monkeypatch.setattr(notify_loop, "LOOP_STATE", notify_loop.LoopState())
-    # Talk ohne Nextcloud; Verfügbarkeits-Cache und Dienst-Singleton frisch (04.1-05).
+    # Talk without Nextcloud; availability cache and service singleton start fresh (04.1-05).
     from gameworld.talk import rooms as talk_rooms
     from gameworld.talk import service as talk_service
 
     monkeypatch.setattr(talk_rooms, "_rooms", FakeTalkRooms())
     monkeypatch.setattr(talk_service, "_talk_service", None)
     monkeypatch.setattr(talk_service, "TALK_STATE", talk_service.TalkState())
-    # Gameworld-Bot ohne Talk (04.1-06).
+    # Gameworld bot without Talk (04.1-06).
     from gameworld.talk import bot as talk_bot
 
     monkeypatch.setattr(talk_bot, "_bot", FakeBot())
-    # Ticket-Speicher des Browser-Spikes beginnt je Test leer (04.2-06).
+    # Ticket store of the browser spike starts empty per test (04.2-06).
     from gameworld.play import tickets as tickets_module
 
     monkeypatch.setattr(tickets_module, "_ticket_store", None)
-    # Sicherungen ohne Nextcloud Files (05-02).
+    # Backups without Nextcloud Files (05-02).
     from gameworld.backup import files as files_module
 
     monkeypatch.setattr(files_module, "_files", FakeBackupFiles())
-    # Sicherungsdienst-Singleton beginnt je Test frisch (05-05).
+    # Backup service singleton starts fresh per test (05-05).
     from gameworld.backup import service as backup_service
 
     monkeypatch.setattr(backup_service, "_backup_service", None)
@@ -132,7 +132,7 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 def give_rules(store: Any, nc_user: str) -> None:
-    """Spielzeit-Regeln ohne Grenzen für ``nc_user``: nur Kinder mit Regeln erscheinen im Rückblick (IN-03)."""
+    """Play time rules without limits for ``nc_user``: only children with rules appear in the daily review (IN-03)."""
     from gameworld.playtime.plan import DayRule, WeekPlan
 
     week = WeekPlan({weekday: DayRule(True, None, None, None) for weekday in range(1, 8)})
@@ -140,9 +140,9 @@ def give_rules(store: Any, nc_user: str) -> None:
 
 
 class NcRecorder:
-    """Ersatz für AsyncNextcloudApp in gameworld.nc: merkt Konto und Optionen je Client.
+    """Stand-in for AsyncNextcloudApp in gameworld.nc: remembers account and options per client.
 
-    ``error`` lässt den Bau scheitern; ``options`` hält je Aufruf alle übrigen Argumente.
+    ``error`` makes construction fail; ``options`` keeps all remaining arguments per call.
     """
 
     def __init__(self, instance: Any) -> None:
@@ -160,7 +160,7 @@ class NcRecorder:
 
 
 def install_fake_nc(monkeypatch: pytest.MonkeyPatch, instance: Any) -> NcRecorder:
-    """Lässt nc_as/nc_app ``instance`` liefern; beide Sessions bekommen ein prüfbares close (WR-05)."""
+    """Makes nc_as/nc_app return ``instance``; both sessions get a checkable close (WR-05)."""
     from unittest.mock import AsyncMock
 
     from gameworld import nc as nc_mod
@@ -173,7 +173,7 @@ def install_fake_nc(monkeypatch: pytest.MonkeyPatch, instance: Any) -> NcRecorde
 
 
 def assert_closed(instance: Any, times: int | None = None) -> None:
-    """Beide Sessions wurden geschlossen (optional genau ``times`` Mal)."""
+    """Both sessions were closed (optionally exactly ``times`` times)."""
     for adapter in (instance._session.adapter, instance._session.adapter_dav):
         if times is None:
             assert adapter.close.await_count >= 1
@@ -182,12 +182,12 @@ def assert_closed(instance: Any, times: int | None = None) -> None:
 
 
 class FakeBackupFiles:
-    """Nextcloud Files im Speicher je Konto; gleiche Methoden wie backup.files.BackupFiles.
+    """In-memory Nextcloud Files per account; same methods as backup.files.BackupFiles.
 
-    ``files`` bildet (uid, Pfad) auf (file_id, Inhalt) ab. ``upload_error`` lässt den
-    Upload mit dieser Ausnahme scheitern, ``size_mismatch`` simuliert eine
-    unvollständige Datei (FilesError MSG_UPLOAD_INCOMPLETE, nichts bleibt liegen).
-    ``calls`` protokolliert (Methode, Konto, Pfad).
+    ``files`` maps (uid, path) to (file_id, content). ``upload_error`` makes the
+    upload fail with this exception, ``size_mismatch`` simulates an
+    incomplete file (FilesError MSG_UPLOAD_INCOMPLETE, nothing is left behind).
+    ``calls`` records (method, account, path).
     """
 
     def __init__(self) -> None:
@@ -199,7 +199,7 @@ class FakeBackupFiles:
         self._next_id = 100
 
     def put(self, uid: str, path: str, data: bytes) -> int:
-        """Legt eine Datei direkt ab (Testvorbereitung) und gibt ihre file_id zurück."""
+        """Puts a file in place directly (test setup) and returns its file_id."""
         self._next_id += 1
         self.files[(uid, path)] = (self._next_id, data)
         return self._next_id
@@ -269,7 +269,7 @@ def fake_files(app_env: Path) -> FakeBackupFiles:
 
 
 class FakeBot:
-    """Bot ohne Talk: sammelt (token, text, silent); ``result`` simuliert Erfolg, ``error`` eine Störung."""
+    """Bot without Talk: collects (token, text, silent); ``result`` simulates success, ``error`` a failure."""
 
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, bool]] = []
@@ -302,9 +302,9 @@ def fake_bot(app_env: Path) -> FakeBot:
 
 
 class FakeTalkRooms:
-    """Talk-Räume im Speicher; ``talk``/``bots`` simulieren die Capabilities, ``error`` eine Störung.
+    """In-memory Talk rooms; ``talk``/``bots`` simulate the capabilities, ``error`` a failure.
 
-    ``calls`` protokolliert jeden Aufruf als (Methode, handelndes Konto, Argumente).
+    ``calls`` records every call as (method, acting account, arguments).
     """
 
     def __init__(self) -> None:
@@ -395,7 +395,7 @@ def fake_talk(app_env: Path) -> FakeTalkRooms:
 
 
 class FakeNotifier:
-    """Sammelt Benachrichtigungen statt sie über AppAPI zu senden; ``result`` simuliert Erfolg."""
+    """Collects notifications instead of sending them via AppAPI; ``result`` simulates success."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, str, dict[str, dict[str, str]], str]] = []
@@ -415,15 +415,15 @@ def fake_notifier(app_env: Path) -> FakeNotifier:
     return notify_service._notifier  # pyright: ignore[reportPrivateUsage]
 
 
-# Geheimnis der Tests; das echte liegt nur in Nextcloud (appconfig_ex).
+# Secret of the tests; the real one lives only in Nextcloud (appconfig_ex).
 TEST_SECRET = bytes(range(32))
-# Fester Zusatz neuer Spielerzeilen (Fixture fixed_salt); echt ist er je Zeile zufällig.
+# Fixed salt of new player rows (fixture fixed_salt); the real one is random per row.
 TEST_SALT = "5a" * 16
 
 
 @pytest.fixture
 def fixed_salt(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> str:
-    """Neue Spielerzeilen bekommen TEST_SALT statt eines zufälligen Zusatzes (vorab berechenbare Passwörter)."""
+    """New player rows get TEST_SALT instead of a random salt (passwords computable in advance)."""
     del app_env
     from gameworld.access import service as access_service
 
@@ -432,19 +432,19 @@ def fixed_salt(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 class FakeDirectory:
-    """Nextcloud-Konten ohne Nextcloud: gw-kind aktiv, gw-aus deaktiviert, alles andere fehlt.
+    """Nextcloud accounts without Nextcloud: gw-kind active, gw-aus deactivated, everything else missing.
 
-    gw-kind2 und admin sind aktiv (Spielzeit-e2e: zweites Kind als Positivkontrolle,
-    admin für Welt-Fenster ab 04-05). Gruppe familie: gw-kind und gw-aus, Gruppe admin:
-    admin (Verwalter-Schnappschuss, 04-05); im Test änderbar (groups). ``lock_held``
-    hält für jede Gruppenabfrage fest, ob die Welt-Sperre dabei belegt war (Sperrregel:
-    Nextcloud-Aufrufe nie unter mutation()), ``user_lock_held`` dasselbe für jede Kontoabfrage.
+    gw-kind2 and admin are active (play time e2e: second child as positive control,
+    admin for world windows from 04-05). Group familie: gw-kind and gw-aus, group admin:
+    admin (manager snapshot, 04-05); changeable in the test (groups). ``lock_held``
+    records for every group query whether the world lock was held at the time (lock rule:
+    Nextcloud calls never under mutation()), ``user_lock_held`` the same for every account query.
 
-    Schul-Fall (06-01): gw-lehrer in lehrkraefte und klasse, gw-kind-k in klasse,
-    gw-kind-out in keiner Gruppe. ``answers`` steuert die Antwort je (handelndes Konto,
-    Gruppe): Mitgliederliste oder eine Ausnahme (DirectoryRejectedError = 403,
-    DirectoryUnavailableError = Störung); ``calls`` und ``group_calls`` belegen, in wessen
-    Namen welche Abfrage lief.
+    School case (06-01): gw-lehrer in lehrkraefte and klasse, gw-kind-k in klasse,
+    gw-kind-out in no group. ``answers`` controls the answer per (acting account,
+    group): member list or an exception (DirectoryRejectedError = 403,
+    DirectoryUnavailableError = failure); ``calls`` and ``group_calls`` record on whose
+    behalf which query ran.
     """
 
     def __init__(self) -> None:
@@ -469,12 +469,12 @@ class FakeDirectory:
         self.calls: list[tuple[str, str]] = []
         self.group_calls: list[tuple[str, str]] = []
         self.error: Exception | None = None
-        # Wie Nextcloud (am Dev-Stack belegt): Gruppen löst nur ein Admin auf, alle
-        # anderen bekommen 403 (DirectoryRejectedError). Aus, damit ältere Tests bleiben.
+        # Like Nextcloud (verified on the dev stack): only an admin resolves groups, everyone
+        # else gets 403 (DirectoryRejectedError). Off by default so older tests keep working.
         self.strict = False
-        # Gegenprobe app_accepted: False wie beim Start, wenn Nextcloud die ExApp noch ablehnt.
+        # Counter-check app_accepted: False as at startup, when Nextcloud still rejects the ExApp.
         self.app_ok = True
-        # Anzeigenamen der Gruppensuche (06-02); ohne Eintrag ist der Name die ID.
+        # Display names of the group search (06-02); without an entry the name is the ID.
         self.group_names: dict[str, str] = {"lehrkraefte": "Lehrkräfte", "klasse": "Klasse 4b"}
         self.search_calls: list[tuple[str, str, int]] = []
         self.search_error: Exception | None = None
@@ -528,7 +528,7 @@ class FakeDirectory:
 
 
 class StaticSecret(PlayerSecret):
-    """Festes Geheimnis statt appconfig_ex; error simuliert eine Störung."""
+    """Fixed secret instead of appconfig_ex; error simulates a failure."""
 
     def __init__(self, value: bytes = TEST_SECRET) -> None:
         super().__init__()
@@ -559,7 +559,7 @@ def fake_secret(app_env: Path) -> StaticSecret:
     return secret._player_secret  # pyright: ignore[reportPrivateUsage]
 
 
-# Handelnde Verwalter für AccessService (06-02): admin ist NC-Admin, gw-lehrer Gruppen-Verwalter.
+# Acting managers for AccessService (06-02): admin is an NC admin, gw-lehrer a group manager.
 ADMIN_ACTOR = Actor(uid="admin", nc_admin=True, groups=frozenset({"admin"}))
 LEHRER_ACTOR = Actor(uid="gw-lehrer", nc_admin=False, groups=frozenset({"klasse", "lehrkraefte"}))
 
@@ -577,14 +577,14 @@ FAKE_LANGUAGES: dict[str, str] = {}
 
 
 async def fake_lookup(uid: str) -> Profile:
-    """Selbstauskunft ohne Nextcloud: admin ist Verwalter, alle anderen Spieler."""
+    """Self-report without Nextcloud: admin is a manager, everyone else a player."""
     display_name, groups = FAKE_PROFILES.get(uid, (uid, ()))
     return Profile(user_id=uid, display_name=display_name, groups=groups, language=FAKE_LANGUAGES.get(uid, "de"))
 
 
 @pytest.fixture
 def role_lookup_error(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Die Selbstauskunft wirft; die Liste zählt die Aufrufe."""
+    """The self-report raises; the list counts the calls."""
     del app_env
     from gameworld.access import roles
 
@@ -604,18 +604,18 @@ async def client(app_env: Path) -> AsyncIterator[httpx.AsyncClient]:
     from gameworld.main import APP
 
     transport = httpx.ASGITransport(app=APP)
-    # Wie das Gameworld-Frontend: jede Anfrage als JSON (IN-08). Tests der JSON-Pflicht
-    # setzen Content-Type ausdrücklich anders (tests/test_csrf.py).
+    # Like the Gameworld frontend: every request as JSON (IN-08). Tests of the JSON requirement
+    # set the Content-Type explicitly to something else (tests/test_csrf.py).
     headers = {"Content-Type": "application/json"}
     async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=headers) as http:
         yield http
-    # Offene Talk-Hooks (verfolgte Tasks) vor dem Schließen der Schleife abarbeiten.
+    # Finish open Talk hooks (tracked tasks) before closing the loop.
     from gameworld.talk import service as talk_service
 
     pending = talk_service._talk_service  # pyright: ignore[reportPrivateUsage]
     if pending is not None:
         await pending.drain()
-    # Ebenso laufende Sicherungsaufträge (05-05).
+    # Likewise running backup jobs (05-05).
     from gameworld.backup import service as backup_service
 
     backups = backup_service._backup_service  # pyright: ignore[reportPrivateUsage]
@@ -639,7 +639,7 @@ def _instance_id(storage: Path) -> str | None:
 
 @pytest.fixture
 def docker_cleanup(app_env: Path) -> Iterator[None]:
-    """Entfernt nach dem Test alle Container und Volumes der Test-Instanz."""
+    """Removes all containers and volumes of the test instance after the test."""
     yield
     instance = _instance_id(app_env)
     if instance is None:

@@ -1,4 +1,4 @@
-"""CLI des Session-Probers ohne Netz: --rejoin-after für die Wiederbeitritts-Sperre (Abnahme K6)."""
+"""CLI of the session prober without network: --rejoin-after for the rejoin block (acceptance K6)."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def test_rejoin_after_runs_both_steps_in_one_process(
     assert calls == ["session 2.0", "join"]
     assert out["result"] == "held"
     assert out["rejoin"]["result"] == "denied"
-    # Der gemessene Abstand liegt nahe am verlangten, ohne Prozessstart dazwischen.
+    # The measured gap is close to the requested one, with no process start in between.
     assert 0.05 <= out["gap_s"] < 1.0
 
 

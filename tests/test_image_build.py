@@ -1,4 +1,4 @@
-"""ExApp-Image und Lieferkette: Pins, Dienstnutzer, Image-Skripte (ohne Docker, T-06-SC, T-06-43)."""
+"""ExApp image and supply chain: pins, service user, image scripts (without Docker, T-06-SC, T-06-43)."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _from_lines() -> list[str]:
 def test_runs_as_fixed_service_user() -> None:
     text = _dockerfile()
     assert "USER 10001:10001" in text
-    # D-22: kein root-Entrypoint mit chown/gosu.
+    # D-22: no root entrypoint with chown/gosu.
     assert "gosu" not in text
     assert "--chown" not in text
 
@@ -50,7 +50,7 @@ def test_every_base_pinned_by_digest() -> None:
         assert ":latest" not in line, line
     for line in _dockerfile().splitlines():
         if line.startswith("COPY --from=") and "/" in line.split()[1]:
-            # Fremde Images (uv) ebenfalls per Digest, eigene Stufen nicht.
+            # Foreign images (uv) also by digest, own stages not.
             source = line.split()[1].removeprefix("--from=")
             if "." in source.split("/")[0]:
                 assert "@sha256:" in source, line

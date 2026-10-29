@@ -1,4 +1,4 @@
-"""API-Vertrag ohne Docker: kein Sichtbarkeitsfeld, keine Injection, nur Registry-Presets, nur signierte Aufrufe."""
+"""API contract without Docker: no visibility field, no injection, only registry presets, only signed calls."""
 
 import httpx
 import pytest
@@ -21,7 +21,7 @@ async def test_rejected_bodies_return_422(client: httpx.AsyncClient, body: dict[
 
 
 async def test_invalid_name_detail_carries_german_message(client: httpx.AsyncClient) -> None:
-    """422-Detail-Liste trägt die deutsche Namensmeldung; das Frontend zeigt detail[0].msg (WR-03)."""
+    """The 422 detail list carries the German name message; the frontend shows detail[0].msg (WR-03)."""
     response = await client.post("/api/worlds", json={"name": "Mias & Leos Welt"}, headers=appapi_headers())
     assert response.status_code == 422
     detail = response.json()["detail"]

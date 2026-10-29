@@ -1,4 +1,4 @@
-"""ExApp-Manifest: Version im Lockstep, feste Routen vor dem Auffangmuster, alles USER, Env-Variablen, NC-Fenster."""
+"""ExApp manifest: version in lockstep, fixed routes before the catch-all, everything USER, env variables, NC window."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ INFO_XML = ROOT / "appinfo" / "info.xml"
 
 
 def _root() -> ET.Element:
-    return ET.parse(INFO_XML).getroot()  # noqa: S314 - eigene, versionierte Datei
+    return ET.parse(INFO_XML).getroot()  # noqa: S314 - own, versioned file
 
 
 def _text(element: ET.Element, path: str) -> str:
@@ -30,7 +30,7 @@ def test_id_and_version_lockstep() -> None:
 
 
 def test_image_tag_lockstep() -> None:
-    """T-06-45: Store-Archiv und Image laufen auf derselben Version (image.yml prüft dasselbe)."""
+    """T-06-45: store archive and image run on the same version (image.yml checks the same)."""
     root = _root()
     docker = root.find("./external-app/docker-install")
     assert docker is not None
@@ -59,14 +59,14 @@ def _routes() -> list[tuple[str, str, str]]:
 
 
 def test_route_order_and_levels() -> None:
-    """Erste passende Route gewinnt: feste Routen zuerst, das Auffangmuster der Verwaltung dahinter (USER)."""
+    """The first matching route wins: fixed routes first, the catch-all of the administration behind it (USER)."""
     assert _routes() == EXPECTED_ROUTES
 
 
 def test_user_routes_are_anchored_or_static() -> None:
-    """AppAPI hängt keinen End-Anker an: feste Routen unter /api/ brauchen "$" oder ^/api/my/.
+    """AppAPI appends no end anchor: fixed routes under /api/ need "$" or ^/api/my/.
 
-    Ausgenommen ist nur das Auffangmuster ^/api/.* als letzte Route (seit Phase 6 USER).
+    Only the catch-all ^/api/.* as the last route is excepted (USER since phase 6).
     """
     for url, _verb, level in _routes()[:-1]:
         if level == "USER" and url.startswith("^/api/"):
@@ -74,7 +74,7 @@ def test_user_routes_are_anchored_or_static() -> None:
 
 
 def test_talk_bot_route_is_anchored_post_before_admin() -> None:
-    """Webhook des Gameworld-Bots (04.1-06): nur POST, fest verankert, vor dem Auffangmuster ^/api/.*."""
+    """Webhook of the Gameworld bot (04.1-06): POST only, firmly anchored, before the catch-all ^/api/.*."""
     routes = _routes()
     urls = [url for url, _verb, _level in routes]
     assert ("^/talk/bot$", "POST", "USER") in routes
@@ -82,7 +82,7 @@ def test_talk_bot_route_is_anchored_post_before_admin() -> None:
 
 
 def test_play_routes_before_admin() -> None:
-    """Browser-Spike 04.2: Ticket (nur POST, verankert) und Spielseite stehen vor dem Auffangmuster ^/api/.*."""
+    """Browser spike 04.2: ticket (POST only, anchored) and play page come before the catch-all ^/api/.*."""
     routes = _routes()
     urls = [url for url, _verb, _level in routes]
     assert ("^/api/my/play-ticket$", "POST", "USER") in routes
@@ -92,7 +92,7 @@ def test_play_routes_before_admin() -> None:
 
 
 def test_api_catch_all_is_last_and_no_admin_level() -> None:
-    """Seit Phase 6 keine AppAPI-ADMIN-Stufe (F-03); die Sperre belegt tests/test_route_guards.py."""
+    """Since phase 6 no AppAPI ADMIN level (F-03); the block is evidenced by tests/test_route_guards.py."""
     routes = _routes()
     assert routes[-1] == ("^/api/.*", "GET,POST,DELETE", "USER")
     assert [level for _url, _verb, level in routes].count("ADMIN") == 0
@@ -121,7 +121,7 @@ def test_no_public_or_announce_setting() -> None:
     assert "public" not in content
 
 
-# --- Store-Texte (06-11, D-09, D-11, T-06-48) -------------------------------------------
+# --- Store texts (06-11, D-09, D-11, T-06-48) -------------------------------------------
 
 LANGS = {None, "de", "fr"}
 PRIVILEGES_HEADING = {
@@ -141,7 +141,7 @@ SCREENSHOTS = [
 ]
 DOC_BASE = "https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/"
 
-# Reihenfolge der Elemente laut info.xsd; ein Element an falscher Stelle scheitert beim Upload.
+# Order of elements according to info.xsd; an element in the wrong place fails on upload.
 XSD_ORDER = [
     "id",
     "name",
@@ -179,11 +179,11 @@ def test_store_texts_in_three_languages(tag: str) -> None:
 
 
 def test_name_exactly_once_without_lang() -> None:
-    """AppAPI liest info.xml per simplexml/json; mehrere <name> werden ein Array.
+    """AppAPI reads info.xml via simplexml/json; several <name> become an array.
 
-    Belegt am 24.10.2026 mit occ app_api:app:register --info-xml über HaRP (06-12):
-    Die App hieß danach "Array" (ExAppService::getAppInfo -> setName). Derselbe
-    Pfad gilt für die Store-Installation. Darum genau ein <name>, ohne lang.
+    Verified on 24.10.2026 with occ app_api:app:register --info-xml via HaRP (06-12):
+    the app was then called "Array" (ExAppService::getAppInfo -> setName). The same
+    path applies to the store installation. Hence exactly one <name>, without lang.
     """
     names = _root().findall("name")
     assert len(names) == 1
@@ -198,7 +198,7 @@ def test_name_and_summary_length() -> None:
 
 
 def test_description_leads_with_privileges() -> None:
-    """D-11: nach höchstens einem Einleitungssatz kommt der Privilegien-Abschnitt."""
+    """D-11: after at most one introductory sentence comes the privileges section."""
     for lang, text in _by_lang("description").items():
         headings = [line for line in text.splitlines() if line.startswith("#")]
         assert headings, lang
@@ -213,7 +213,7 @@ def test_description_names_interface_language() -> None:
 
 
 def test_description_honest_about_uninstall() -> None:
-    """D-15/D-17: Volumes und Sicherungen bleiben, Welt-Container werden entfernt (T-06-51)."""
+    """D-15/D-17: volumes and backups stay, world containers are removed (T-06-51)."""
     texts = _by_lang("description")
     assert "gameworld-orphans.sh" in texts[None]
     for text in texts.values():
@@ -223,7 +223,7 @@ def test_description_honest_about_uninstall() -> None:
 
 
 def test_description_store_markdown_subset() -> None:
-    """Der Store rendert nur Überschriften, Absätze, Listen, Links und Hervorhebungen."""
+    """The store renders only headings, paragraphs, lists, links and emphasis."""
     for lang, text in _by_lang("description").items():
         assert "`" not in text, lang
         assert "|" not in text, lang
@@ -258,7 +258,7 @@ def test_element_order_follows_xsd() -> None:
 
 
 def test_store_listing_matches_info_xml() -> None:
-    """docs/store-listing.md ist die eine Quelle: jeder Text steht dort wortgleich."""
+    """docs/store-listing.md is the single source: every text appears there verbatim."""
     listing = (ROOT / "docs" / "store-listing.md").read_text(encoding="utf-8")
     for tag in ("name", "summary", "description"):
         for lang, text in _by_lang(tag).items():

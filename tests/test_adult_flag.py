@@ -1,4 +1,4 @@
-"""Erwachsen-Schalter je Konto (ROLLE-04, D-05 bis D-08): Store, Engine, API und Negativtests."""
+"""Adult switch per account (ROLLE-04, D-05 to D-08): store, engine, API and negative tests."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def store(app_env: Path) -> WorldStore:
 
 
 def _raw_adults(db: Path) -> list[tuple[str, str, str]]:
-    """Inhalt der Tabelle adults per eigener Abfrage (nicht über die Store-Methode)."""
+    """Contents of the adults table via a separate query (not via the store method)."""
     connection = sqlite3.connect(db)
     try:
         rows = connection.execute("SELECT nc_user, set_by, set_at FROM adults ORDER BY nc_user").fetchall()
@@ -56,7 +56,7 @@ def test_set_and_clear_adult(store: WorldStore, app_env: Path) -> None:
     assert store.adults() == set()
     store.set_adult("gw-kind", set_by="admin", set_at=SET_AT)
     assert store.adults() == {"gw-kind"}
-    # Wer und wann bleiben gespeichert (T-06-19).
+    # Who and when stay stored (T-06-19).
     assert _raw_adults(app_env / "gameworld.sqlite3") == [("gw-kind", "admin", SET_AT)]
     store.clear_adult("gw-kind")
     assert store.adults() == set()
@@ -74,14 +74,14 @@ def test_set_adult_twice_replaces_marker(store: WorldStore, app_env: Path) -> No
     assert _raw_adults(app_env / "gameworld.sqlite3") == [("gw-kind", "lehrerin", "2026-10-24T11:00:00+00:00")]
 
 
-# Tagesrückblick (D-05: Erwachsene erscheinen nicht)
+# Daily review (D-05: adults do not appear)
 
 
 def test_adult_never_in_daily_review_even_with_minutes_before_switch(store: WorldStore) -> None:
     day = date(2026, 10, 24)
     for uid in ("gw-kind", "gw-oma"):
         give_rules(store, uid)
-    # Minuten von heute früh, als gw-oma noch als Kind lief.
+    # Minutes from this morning, when gw-oma still ran as a child.
     store.book_usage("w1", day, {}, {}, play={"gw-kind": 300, "gw-oma": 300})
     assert collect_play(store, day, ()) == {"gw-kind": {"w1": 300}, "gw-oma": {"w1": 300}}
 
@@ -90,14 +90,14 @@ def test_adult_never_in_daily_review_even_with_minutes_before_switch(store: Worl
     assert collect_play(store, day, ()) == {"gw-kind": {"w1": 300}}
 
 
-# API: POST /api/players/adult (nur Verwalter), erweiterte Ausgaben, Negativtests
+# API: POST /api/players/adult (managers only), extended outputs, negative tests
 
 W1 = "aaaaaaaaaaa1"
 W2 = "aaaaaaaaaaa2"
 VERIFIER = "#1#c2FsdA==#dmVyaWZpZXI="
 KID = "gw-kind"
 FORBIDDEN = "Nur Eltern können Welten verwalten."
-# Erwartete frei-Zeile als Literal (nicht aus der Engine abgeleitet).
+# Expected frei row as a literal (not derived from the engine).
 FREI_LINE = "Kind -1 -1 -1 frei -"
 
 
@@ -151,7 +151,7 @@ def service(
     original = world_service.push_time
 
     def spy(world_id: str) -> bool:
-        # Sofortige Wirkung nur unter der Welt-Sperre (Sperr-Regel, D-08).
+        # Immediate effect only under the world lock (lock rule, D-08).
         assert worlds_service._LOCK.locked()  # pyright: ignore[reportPrivateUsage]
         pushes.append(world_id)
         return original(world_id)
@@ -162,7 +162,7 @@ def service(
 
 
 def _dump(db: Path) -> list[str]:
-    """Ganze Datenbank als SQL-Text (roher Vergleich vorher/nachher, unabhängig vom Store)."""
+    """Whole database as SQL text (raw before/after comparison, independent of the store)."""
     connection = sqlite3.connect(db)
     try:
         return list(connection.iterdump())
@@ -187,9 +187,9 @@ async def _adult(client: httpx.AsyncClient, body: object, user: str = "admin") -
 
 
 async def _warm(client: httpx.AsyncClient, pushes: list[str]) -> None:
-    """Erster Verwalter-Besuch legt den Verwalter-Schnappschuss an (schreibt dabei alle Welten neu).
+    """The first manager visit creates the manager snapshot (which rewrites all worlds).
 
-    Danach zählt ``pushes`` nur noch, was der Erwachsen-Schalter selbst schreibt.
+    After that ``pushes`` counts only what the adult switch itself writes.
     """
     assert (await client.get("/api/playtime", headers=appapi_headers())).status_code == 200
     pushes.clear()
@@ -272,7 +272,7 @@ async def test_kind_setzt_sich_selbst_erwachsen_403_ohne_db_aenderung_ohne_push(
     app_env: Path,
     target: str,
 ) -> None:
-    """Kind setzt sich selbst erwachsen -> 403, adults() unverändert, kein push_time (T-06-16)."""
+    """Child makes itself an adult -> 403, adults() unchanged, no push_time (T-06-16)."""
     del service
     give_rules(api_store, KID)
     db = app_env / "gameworld.sqlite3"
@@ -286,7 +286,7 @@ async def test_kind_setzt_sich_selbst_erwachsen_403_ohne_db_aenderung_ohne_push(
     assert _raw_adults(db) == []
     assert api_store.adults() == set()
     assert pushes == []
-    # Positivkontrolle: Dieselbe Anfrage als Verwalter ändert die Datenbank.
+    # Positive control: the same request as a manager changes the database.
     assert (await _adult(client, {"nc_user": KID, "adult": True})).status_code == 200
     assert _dump(db) != before
 
@@ -305,14 +305,14 @@ async def test_no_writing_adult_path_under_api_my(
 
 
 def test_only_play_ticket_writes_under_api_my() -> None:
-    """Strukturtest: Unter /api/my/ schreibt höchstens das Spiel-Ticket, nie ein Erwachsen-Pfad."""
+    """Structure test: under /api/my/ at most the game ticket writes, never an adult path."""
     from gameworld.main import APP
 
     paths: dict[str, dict[str, object]] = APP.openapi()["paths"]
     writing = {path for path, operations in paths.items() if path.startswith("/api/my") and set(operations) - {"get"}}
     assert writing <= {"/api/my/play-ticket"}
     assert not [path for path in paths if path.startswith("/api/my") and "adult" in path]
-    # Positivkontrolle: Die Verwalter-Route ist sichtbar.
+    # Positive control: the manager route is visible.
     assert set(paths["/api/players/adult"]) == {"post"}
 
 
@@ -351,7 +351,7 @@ async def test_playtime_list_and_my_playtime_for_adult(
 
 
 def _world_config(store: WorldStore, world_id: str) -> dict[str, bytes]:
-    """Welt-Konfiguration aus den echten Erzeugern (spec, luanti_conf, access_mod, archive)."""
+    """World configuration from the real generators (spec, luanti_conf, access_mod, archive)."""
     row = store.get_world(world_id)
     assert row is not None
     preset = get_preset(row.preset)
@@ -368,10 +368,10 @@ def _world_config(store: WorldStore, world_id: str) -> dict[str, bytes]:
 async def test_welt_konfiguration_fuer_erwachsenen_byte_identisch(
     client: httpx.AsyncClient, service: WorldService, api_store: WorldStore, fake: FakeProvisioner
 ) -> None:
-    """T-06-17: Erwachsen ändert nur die frei-Zeile der Regeldatei, nie Rechte oder Zugang."""
+    """T-06-17: adult only changes the frei row of the rules file, never rights or access."""
     del service
     give_rules(api_store, KID)
-    # Erst als Kind rendern lassen (Rückschalten ohne Markierung ist erlaubt und schreibt die Datei).
+    # Render as a child first (switching back without a marker is allowed and writes the file).
     assert (await _adult(client, {"nc_user": KID, "adult": False})).status_code == 200
     child_config = _world_config(api_store, W1)
     child_rules = _last_rules(fake, W1)
@@ -386,8 +386,8 @@ async def test_welt_konfiguration_fuer_erwachsenen_byte_identisch(
     assert "privs" not in privs[0].split("=", 1)[1]
     adult_rules = _last_rules(fake, W1)
 
-    # Nur Kopf (Generation, Zeitpunkt), die Zeile des Kindes und seine Startzeilen ändern sich;
-    # @tage fällt weg, weil keine Zeile mehr einen nächsten Start trägt.
+    # Only the header (generation, time), the child's row and its start rows change;
+    # @tage disappears because no row carries a next start any more.
     def rest(lines: list[str]) -> list[str]:
         return [line for line in lines[1:] if not line.startswith(("Kind ", "@start Kind ", "@tage "))]
 

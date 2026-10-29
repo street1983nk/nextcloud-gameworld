@@ -1,9 +1,9 @@
-"""Öffentliche Doku: feste Anker, Sprachfassungen, Links und Typografie (06-11, T-06-50).
+"""Public docs: fixed anchors, language versions, links and typography (06-11, T-06-50).
 
-Store-Nutzer haben kein Repository. Setup-Check und der Abschnitt "Reste früherer
-Installationen" verlinken darum feste URLs auf docs/install.md; ein umbenannter Anker
-wäre ein toter Link in jeder Fehlermeldung. Diese Tests koppeln die URL-Konstanten aus
-dem Code an die Anker in beiden Sprachfassungen.
+Store users have no repository. The setup check and the section
+"Reste früherer Installationen" therefore link fixed URLs to docs/install.md; a renamed anchor
+would be a dead link in every error message. These tests tie the URL constants from
+the code to the anchors in both language versions.
 """
 
 from __future__ import annotations
@@ -30,9 +30,9 @@ STORE_LISTING = DOCS / "store-listing.md"
 
 PUBLIC_DOCS = sorted(DOCS.glob("*.md")) + READMES
 
-# Emoji-Blöcke (Bildzeichen, Symbole, Dingbats, Varianten-Selektor); Pfeile und
-# mathematische Zeichen bleiben erlaubt.
-DASHES = (chr(0x2013), chr(0x2014))  # Halbgeviert- und Geviertstrich
+# Emoji blocks (pictographs, symbols, dingbats, variation selector); arrows and
+# mathematical symbols stay allowed.
+DASHES = (chr(0x2013), chr(0x2014))  # en dash and em dash
 EMOJI = re.compile(f"[{chr(0x1F000)}-{chr(0x1FAFF)}{chr(0x2600)}-{chr(0x27BF)}{chr(0xFE0F)}]")
 
 
@@ -45,7 +45,7 @@ def _ids(text: str) -> set[str]:
 
 
 def _slug(heading: str) -> str:
-    """GitHub-Anker einer Überschrift: klein, Satzzeichen weg, Leerzeichen zu Bindestrich."""
+    """GitHub anchor of a heading: lowercase, punctuation removed, spaces to hyphens."""
     text = unicodedata.normalize("NFC", heading.strip().lower())
     text = re.sub(r"[^\w\- ]", "", text)
     return text.replace(" ", "-")
@@ -90,7 +90,7 @@ def test_cleanup_url_points_at_anchor() -> None:
 
 
 def test_anchors_precede_their_sections() -> None:
-    """Der Anker steht direkt vor der zugehörigen Überschrift, in beiden Fassungen."""
+    """The anchor sits directly before the matching heading, in both versions."""
     for path, setup, cleanup in [
         (INSTALL, "## 7. Setup check", "## 13. Uninstalling and cleaning up"),
         (INSTALL_DE, "## 7. Setup-Check", "## 13. Deinstallieren und aufräumen"),
@@ -116,7 +116,7 @@ def test_language_versions_link_each_other(path: Path, other: str) -> None:
 
 
 def test_install_versions_share_structure() -> None:
-    """Gleiche Gliederung: dieselbe Zahl Haupt- und Unterabschnitte, gleiche Nummern."""
+    """Same structure: the same number of main and sub sections, same numbers."""
 
     def numbers(text: str) -> list[str]:
         return re.findall(r"^## (\d+)\. ", text, flags=re.MULTILINE)
@@ -143,7 +143,7 @@ def test_privacy_names_privileges(path: Path) -> None:
 
 
 def test_privacy_section_first() -> None:
-    """D-11: der Privilegien-Abschnitt kommt direkt nach der Kurzfassung."""
+    """D-11: the privileges section comes directly after the short version."""
     en = re.findall(r"^## (.+)$", _read(PRIVACY), flags=re.MULTILINE)
     de = re.findall(r"^## (.+)$", _read(PRIVACY_DE), flags=re.MULTILINE)
     assert en[:2] == ["The short version", "What this app may do and why"]

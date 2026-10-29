@@ -1,4 +1,4 @@
-"""Welt-Mod gameworld_access und Zugangsdatei (03-RESEARCH.md Pattern 1 und 3)."""
+"""World mod gameworld_access and access file (03-RESEARCH.md patterns 1 and 3)."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def test_lua_contains_enforcement_points() -> None:
 
 
 def test_revocation_uses_disconnect_without_kicked_prefix() -> None:
-    # kick_player stellt "Kicked: " vor den Kindertext (04-RESEARCH.md State of the Art).
+    # kick_player prepends "Kicked: " to the child text (04-RESEARCH.md State of the Art).
     assert "kick_player" not in MOD_INIT_LUA
     assert "core.disconnect_player(name, KICK)" in MOD_INIT_LUA
 
@@ -90,13 +90,13 @@ def test_revocation_uses_disconnect_without_kicked_prefix() -> None:
 def test_rejoin_guard_text_and_order() -> None:
     assert access_mod.TEXT_WAIT == "Bitte einen Moment warten und dann nochmal beitreten."
     assert f"local WAIT = {access_mod._lua_string(access_mod.TEXT_WAIT)}" in MOD_INIT_LUA
-    # Nicht Eingeladene bekommen nie den Wartetext: Die Sperre steht nach der
-    # Einladungsprüfung und vor set_player_password.
+    # Players who are not invited never get the waiting text: the block comes after the
+    # invitation check and before set_player_password.
     deny = MOD_INIT_LUA.index("return DENY")
     wait = MOD_INIT_LUA.index("return WAIT")
     password = MOD_INIT_LUA.index("core.set_player_password(name, hash)")
     assert deny < wait < password
-    # Alte Einträge werden beim Prüfen gelöscht (kein Wachstum).
+    # Old entries are deleted on check (no growth).
     assert "left_at[name] = nil" in MOD_INIT_LUA
 
 
@@ -114,7 +114,7 @@ def test_lua_texts_and_limits() -> None:
         assert access_mod._lua_string(text) in MOD_INIT_LUA
     assert "local FAIL_LIMIT = 5" in MOD_INIT_LUA
     assert "local LOCK_SECONDS = 600" in MOD_INIT_LUA
-    # Kein Debug-Log aus dem Spike.
+    # No debug log from the spike.
     assert "gameworld_spike" not in MOD_INIT_LUA
     assert "check_password_entry" not in MOD_INIT_LUA
 
@@ -127,7 +127,7 @@ def test_lua_string_escapes_utf8_as_decimal() -> None:
 def test_lua_source_is_ascii_without_dashes() -> None:
     assert MOD_INIT_LUA.isascii()
     assert MOD_CONF.isascii()
-    # Gedankenstriche sind verboten (Owner-Regel), auch in den Texten.
+    # Dashes are forbidden (owner rule), including in the texts.
     for text in (
         access_mod.TEXT_DENY,
         access_mod.TEXT_KICK,
@@ -151,7 +151,7 @@ def test_paths_and_conf() -> None:
 
 
 def test_events_constants() -> None:
-    """Phase 4.1 Pattern 1: Ereignisdatei der Welt, einziger Weg von der Welt zur ExApp."""
+    """Phase 4.1 pattern 1: event file of the world, the only way from the world to the ExApp."""
     assert access_mod.EVENTS_FILE_NAME == "gameworld_events.txt"
     assert access_mod.EVENTS_FILE == "/var/lib/minetest/.minetest/worlds/world/gameworld_events.txt"
     assert access_mod.EVENTS_HEADER == "gameworld-events 1"
@@ -169,19 +169,19 @@ def _prejoin_body() -> str:
 
 
 def test_deny_event_only_before_return_deny() -> None:
-    """D-10, D-29: Nur fremde Namen melden, nie Tippfehler, Sperre oder Wartezeit."""
+    """D-10, D-29: report foreign names only, never typos, blocks or waiting time."""
     assert MOD_INIT_LUA.count('event("deny"') == 1
     body = _prejoin_body()
     deny_event = body.index('event("deny", name)')
     return_deny = body.index("return DENY")
     assert deny_event < return_deny
-    # Zwischen Meldung und return DENY steht kein anderer Zweig.
+    # No other branch sits between the report and return DENY.
     between = body[deny_event:return_deny]
     for other in ("return CASE_HINT", "return LOCKED", "return WAIT"):
         assert other not in between
     for other in ("return CASE_HINT", "return LOCKED", "return WAIT"):
         assert body.index(other) < deny_event or body.index(other) > return_deny
-    # Die CASE_HINT-Zeile meldet nichts.
+    # The CASE_HINT line reports nothing.
     assert "if variant then return CASE_HINT end" in body
     assert "if locked(name) then return LOCKED end" in body
 
@@ -195,7 +195,7 @@ def test_join_and_leave_events() -> None:
 
 
 def test_events_global_export() -> None:
-    # Luanti-Konvention: Global mit Modnamen, damit gameworld_time warn10 meldet.
+    # Luanti convention: global with the mod name, so that gameworld_time reports warn10.
     assert "gameworld_access = { event = event }" in MOD_INIT_LUA
     assert MOD_INIT_LUA.rstrip().endswith("gameworld_access = { event = event }")
 
@@ -212,13 +212,13 @@ def test_events_file_written_atomically_and_bounded() -> None:
         "os.time()",
     ):
         assert needle in MOD_INIT_LUA, needle
-    # Beim Laden einmal schreiben: Fähigkeits-Merker für die ExApp (Pattern 3).
+    # Write once on load: capability marker for the ExApp (pattern 3).
     loaded = MOD_INIT_LUA[MOD_INIT_LUA.index("core.register_on_mods_loaded") :]
     assert "write_events()" in loaded
 
 
 def test_deny_flood_is_throttled() -> None:
-    """T-04.1-01: je Name ein deny pro 60 s, höchstens 30 pro gleitender Minute."""
+    """T-04.1-01: one deny per name per 60 s, at most 30 per sliding minute."""
     for needle in ("local DENY_NAME_SECONDS = 60", "local DENY_PER_MINUTE = 30", "local function deny_allowed(name)"):
         assert needle in MOD_INIT_LUA, needle
     body = _prejoin_body()
@@ -233,26 +233,26 @@ def test_events_contain_no_ip_or_password() -> None:
 
 
 def test_case_hint_never_reveals_invited_name() -> None:
-    """IN-07: Der Hinweis nennt den eingeladenen Namen nicht (nur ob die Schreibweise abweicht)."""
+    """IN-07: the hint does not name the invited name (only whether the spelling differs)."""
     body = _prejoin_body()
     assert "CASE_HINT .." not in MOD_INIT_LUA
     assert ".. variant" not in body
-    # Der Text endet als ganzer Satz, nicht mit einem Doppelpunkt für einen Namen.
+    # The text ends as a whole sentence, not with a colon for a name.
     assert access_mod.TEXT_CASE_HINT.endswith(".")
     assert ":" not in access_mod.TEXT_CASE_HINT
-    # Kindgerecht und mit echtem ß.
+    # Child-friendly and with a real sharp s.
     assert "Groß- und Kleinschreibung" in access_mod.TEXT_CASE_HINT
 
 
 def test_prejoin_runs_before_builtin_case_check() -> None:
-    """IN-07: Luantis eigene Prüfung in builtin/game/auth.lua nennt den registrierten Namen.
+    """IN-07: Luanti's own check in builtin/game/auth.lua names the registered name.
 
-    Sie ist vor allen Mods registriert, und von mehreren Ablehnungen gilt die erste. Der
-    Mod rückt seine Prüfung deshalb direkt nach der Registrierung an die erste Stelle.
+    It is registered before all mods, and of several rejections the first one wins. The
+    mod therefore moves its check to the first position right after registration.
     """
     end = MOD_INIT_LUA.index("\nend)", MOD_INIT_LUA.index("core.register_on_prejoinplayer(function(name)"))
     after = MOD_INIT_LUA[end : end + 400]
     assert "local callbacks = core.registered_on_prejoinplayers" in after
     assert "table.insert(callbacks, 1, table.remove(callbacks))" in after
-    # Keine weitere Registrierung dazwischen, sonst rückte der falsche Callback nach vorn.
+    # No other registration in between, otherwise the wrong callback would move to the front.
     assert "register_on" not in after[: after.index("table.insert(callbacks")]

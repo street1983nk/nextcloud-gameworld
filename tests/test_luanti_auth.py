@@ -1,4 +1,4 @@
-"""SRP-Verifier nach Luanti 5.17.0: Golden Vector aus dem Live-Spike (03-RESEARCH.md Pattern 2)."""
+"""SRP verifier according to Luanti 5.17.0: golden vector from the live spike (03-RESEARCH.md pattern 2)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 
 from gameworld.provisioner.luanti_auth import G, N, make_verifier
 
-# Wörtlich aus 03-RESEARCH.md Pattern 2; Luanti 5.17.0 hat ihn per echtem SRP-Login akzeptiert.
+# Verbatim from 03-RESEARCH.md pattern 2; Luanti 5.17.0 accepted it in a real SRP login.
 GOLDEN = "#1#AAECAwQFBgcICQoLDA0ODw==#pCyNep+1Ug3he9xjpqMCK1MBx7OOe2SLVkX1lvyHmIf8bATbrA6zgiJ/+xEmx+MaV+IllHKn1rqJHViRuv9ysMGPSDxm5xWmTyhasxEQtfWJI1EiyABU/v15UncRaqWEr+OvrPXxcsb3QCsQrZ8cYd1vgRaJByW7QmW75Le8VriHfR+/xNSE2hHnmFd60n0eOlufj7UBtmfTmFOIO/uHbnvA74UHr3LnoeimBaOXvo4OR9NorNAjcVYraZ0i9HvO98VoRCKxvFsYXrbnfHJGE+3VWpsAPqmcGXzfFTkrzrfPY78b7lOjUMReiUf2zchmlwcNc12S46iQOEHkiFsdhw=="  # noqa: E501
 VERIFIER_FORM = re.compile(r"^#1#[A-Za-z0-9+/=]+#[A-Za-z0-9+/=]+$")
 SALT = bytes(range(16))

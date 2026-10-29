@@ -1,4 +1,4 @@
-"""Sicherungsdienst ohne Docker und Nextcloud: Ablauf, Fehlerpfade, Chat-Hinweis, Liste (05-05)."""
+"""Backup service without Docker and Nextcloud: flow, error paths, chat notice, list (05-05)."""
 
 from __future__ import annotations
 
@@ -34,13 +34,13 @@ from gameworld.worlds.store import BackupRow, WorldStore
 from tests.conftest import FakeBackupFiles, FakeNotifier
 from tests.test_service_lifecycle import FRESH, STARTED_AT, FakeProvisioner
 
-# 2026-10-23 12:00 UTC, in Berlin (Sommerzeit) 14:00.
+# 2026-10-23 12:00 UTC, in Berlin (summer time) 14:00.
 NOW = 1_792_756_800
 ADMIN = "admin"
 
 
 def world_tar(*, with_map: bool = True) -> bytes:
-    """Tar-Strom wie Docker get_archive: Präfix world/, optional mit map.sqlite."""
+    """Tar stream like Docker get_archive: prefix world/, optionally with map.sqlite."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as tar:
         root = tarfile.TarInfo("world")
@@ -87,7 +87,7 @@ def backup(service: WorldService, sleeps: list[float], app_env: Path) -> BackupS
 
 
 async def _world(service: WorldService, fake: FakeProvisioner, name: str = "Welt", players: bytes = b"") -> str:
-    """Laufende Welt mit Status-Mod; ``players`` steht frisch in der Status-Datei."""
+    """Running world with status mod; ``players`` is fresh in the status file."""
     created = await service.create_world(name)
     fake.extra[created.id] = {"schema": "2", "started_at": STARTED_AT}
     fake.status_files[created.id] = StatusFile(FRESH, players)
@@ -105,7 +105,7 @@ def _halt_rules(archive: bytes) -> bool:
 
 
 def _halt_write_index(fake: FakeProvisioner, world_id: str) -> int | None:
-    """Index in ``calls`` des ersten Schreibvorgangs mit @halt für diese Welt."""
+    """Index in ``calls`` of the first write with @halt for this world."""
     written = 0
     for index, call in enumerate(fake.calls):
         if not call.startswith("files:"):
@@ -133,7 +133,7 @@ def _op_state(store: WorldStore, world_id: str) -> str:
     return row.op_state
 
 
-# Bestätigung bei Spielern (D-09)
+# Confirmation when players are online (D-09)
 
 
 @pytest.mark.parametrize(
@@ -159,7 +159,7 @@ async def test_players_online_need_confirmation(
     assert fake.calls == []
 
 
-# Erfolgsfall
+# Success case
 
 
 async def test_backup_runs_in_order_and_uploads_after_restart(
@@ -208,7 +208,7 @@ async def test_backup_without_players_neither_halts_nor_waits(
 async def test_backup_with_player_halts_before_stop(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, store: WorldStore, sleeps: list[float]
 ) -> None:
-    """D-09, T-05-47: @halt steht in der Regeldatei, bevor der Container stoppt."""
+    """D-09, T-05-47: @halt is in the rules file before the container stops."""
     world_id = await _world(service, fake, players=b"Mia\n")
     fake.calls.clear()
     fake.written.clear()
@@ -219,10 +219,10 @@ async def test_backup_with_player_halts_before_stop(
     halt = _halt_write_index(fake, world_id)
     assert halt is not None
     assert halt < fake.calls.index(f"stop:{world_id}")
-    # Gewartet wird bis ab (jetzt + 15 s) plus 7 s Gnadenfrist (ein Mod-Takt plus 2 s).
+    # It waits until from (now + 15 s) plus 7 s grace (one mod tick plus 2 s).
     assert sleeps == [pytest.approx(22.0)]
     assert _job_state(store, world_id) == ("ok", None)
-    # Nach dem Neustart steht kein Halt mehr in der Regeldatei.
+    # After the restart there is no halt in the rules file any more.
     last = [archive for target, archive in fake.written if target == world_id and _rules_in(archive)]
     assert last
     assert not _halt_rules(last[-1])
@@ -290,7 +290,7 @@ async def test_stopped_world_stays_stopped(
     assert _job_state(store, world_id) == ("ok", None)
 
 
-# Fehlerpfade (D-11)
+# Error paths (D-11)
 
 
 async def test_snapshot_error_restarts_world_and_fails_job(
@@ -313,7 +313,7 @@ async def test_snapshot_error_restarts_world_and_fails_job(
 async def test_snapshot_without_map_is_unusable(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
 ) -> None:
-    """Nie gestartete Welt (kein map.sqlite): Job failed statt einer scheinbar gültigen Sicherung."""
+    """Never-started world (no map.sqlite): job failed instead of a seemingly valid backup."""
     world_id = await _world(service, fake)
     fake.snapshots[world_id] = world_tar(with_map=False)
     fake.calls.clear()
@@ -397,7 +397,7 @@ async def test_too_little_space_fails_before_stop(
     store: WorldStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pitfall 10: freier Platz unter 2 x letzter Sicherung, kein Stopp, Welt bleibt wie sie war."""
+    """Pitfall 10: free space below 2 x last backup, no stop, world stays as it was."""
     world_id = await _world(service, fake)
     store.add_backup(
         BackupRow(
@@ -460,7 +460,7 @@ async def test_spool_lives_in_tmp_and_is_closed(
     assert opened[0][1].closed
 
 
-# Ein Auftrag zur Zeit, Abbruch vor dem Ablauf
+# One job at a time, abort before the flow
 
 
 async def test_second_backup_while_running_is_refused(
@@ -494,7 +494,7 @@ async def test_second_backup_while_running_is_refused(
 async def test_delete_during_upload_is_refused(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
 ) -> None:
-    """T-05-48: op_state ist schon ready, der laufende Job sperrt das Löschen."""
+    """T-05-48: op_state is already ready, the running job blocks deletion."""
     world_id = await _world(service, fake)
     release = asyncio.Event()
     entered = asyncio.Event()
@@ -571,7 +571,7 @@ async def test_failed_world_keeps_failed_state_after_abort(
     store: WorldStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Eine gewöhnlich fehlgeschlagene Welt bleibt sicherbar; ein Abbruch stellt failed wieder her."""
+    """An ordinarily failed world stays backable; an abort restores failed."""
     world_id = await _world(service, fake)
     store.update_world(world_id, op_state="failed", last_error="Proxy weg")
     monkeypatch.setattr(backup_module, "disk_free", lambda path: 0)
@@ -591,7 +591,7 @@ async def test_failed_world_keeps_failed_state_after_abort(
 async def test_abort_offline_writes_rules_without_halt(
     service: WorldService, fake: FakeProvisioner, store: WorldStore
 ) -> None:
-    """Abbruch vor dem Stopp: Die laufende Welt bekommt sofort eine Regeldatei ohne @halt."""
+    """Abort before the stop: the running world immediately gets a rules file without @halt."""
     world_id = await _world(service, fake, players=b"Mia\n")
     ticket = service.begin_offline(world_id, "backing_up")
     assert service.announce_halt(world_id, NOW) is not None
@@ -607,7 +607,7 @@ async def test_abort_offline_writes_rules_without_halt(
     assert not any(call.startswith(("stop:", "start:")) for call in fake.calls)
 
 
-# 05-05 Task 2: Fehler-Benachrichtigung (D-16), Wiederanlauf, Liste (D-07, D-08, D-12, D-13)
+# 05-05 task 2: error notification (D-16), restart recovery, list (D-07, D-08, D-12, D-13)
 
 
 def _failed_notes(notifier: FakeNotifier) -> list[tuple[str, str, str]]:
@@ -740,9 +740,9 @@ async def test_list_backups_is_intersection_of_files_and_proofs(
     fake_files.put(ADMIN, f"{folder}/fremd.tar.gz", b"d" * 40)
     store.add_backup(_proof(world_id, good_old, f"{folder}/Burg-2026-10-22-1000.tar.gz", 10, created="2026-10-22"))
     store.add_backup(_proof(world_id, good_new, f"{folder}/Burg-2026-10-23-1000.tar.gz", 20, created="2026-10-23"))
-    # Gleiche file_id, aber andere Größe als im Nachweis: zählt nicht als Sicherung.
+    # Same file_id but different size than in the record: does not count as a backup.
     store.add_backup(_proof(world_id, resized, f"{folder}/Burg-2026-10-21-1000.tar.gz", 31, created="2026-10-21"))
-    # Nachweis ohne Datei (in Files gelöscht): erscheint nicht.
+    # Record without a file (deleted in Files): does not appear.
     store.add_backup(_proof(world_id, 999, f"{folder}/weg.tar.gz", 5, created="2026-10-20"))
 
     listing = await backup.list_backups(world_id, ADMIN)
@@ -759,7 +759,7 @@ async def test_list_backups_is_intersection_of_files_and_proofs(
 async def test_list_backups_only_own_files(
     backup: BackupService, service: WorldService, fake: FakeProvisioner, fake_files: FakeBackupFiles, store: WorldStore
 ) -> None:
-    """D-13: Datei und Nachweis eines anderen Verwalters bleiben unsichtbar."""
+    """D-13: file and record of another manager stay invisible."""
     world_id = await _world(service, fake, name="Burg")
     path = "Gameworld/Sicherungen/Burg/Burg-2026-10-23-1000.tar.gz"
     other = fake_files.put("papa", path, b"x" * 10)
@@ -787,8 +787,8 @@ async def test_list_backups_of_unknown_world_raises(backup: BackupService) -> No
 
 
 def test_halt_grace_covers_a_full_time_mod_tick() -> None:
-    # Der Zeit-Mod trennt erst im nächsten Takt nach ab; stoppt der Server vorher,
-    # sieht das Kind "Server shutting down." statt des Pausentexts (Abnahme 05-09).
+    # The time mod only disconnects in the next tick after from; if the server stops earlier,
+    # the child sees "Server shutting down." instead of the pause text (acceptance 05-09).
     match = re.search(r"^local TICK = (\d+)$", MOD_INIT_LUA, re.MULTILINE)
     assert match is not None
     assert int(match.group(1)) == 5

@@ -1,4 +1,4 @@
-"""Ordner- und Dateinamen der Sicherungen (D-01, D-02, D-05, Pitfall 4/5, T-05-05)."""
+"""Folder and file names of the backups (D-01, D-02, D-05, pitfall 4/5, T-05-05)."""
 
 from __future__ import annotations
 

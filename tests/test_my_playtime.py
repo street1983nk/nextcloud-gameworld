@@ -1,7 +1,7 @@
-"""GET /api/my/playtime: nur die eigene Restzeit, Opt-in und Schwelle 1 Minute (04-07, ZEIT-01).
+"""GET /api/my/playtime: only the own remaining time, opt-in and threshold of 1 minute (04-07, ZEIT-01).
 
-Die Uhr der Spielzeit-Rechnung ist im Test fest (TimeEngine mit clock), damit
-Restzeit, Fensterende und nächste Spielzeit genau prüfbar sind.
+The clock of the play time calculation is fixed in the test (TimeEngine with clock), so that
+remaining time, window end and next play time can be checked exactly.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from tests.conftest import appapi_headers
 from tests.test_service_lifecycle import FakeProvisioner
 
 BERLIN = ZoneInfo("Europe/Berlin")
-# Mittwoch, 21.10.2026 (Sommerzeit bis 25.10.)
+# Wednesday, 21.10.2026 (summer time until 25.10.)
 WED = date(2026, 10, 21)
 FRIEND = "gw-freund"
 KEYS = {"limited", "state", "remaining_minutes", "until_minute", "next"}
@@ -114,14 +114,14 @@ async def test_limit_with_window_until_19(client: httpx.AsyncClient, service: Wo
 async def test_rest_below_one_minute_counts_as_used_up(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """Pitfall 8: dieselbe Schwelle wie MIN_LEFT im Welt-Mod (60 s)."""
+    """Pitfall 8: the same threshold as MIN_LEFT in the world mod (60 s)."""
     del service
     _rules(store, "gw-kind", _daily(60, 540, 1140), used_s=60 * 60 - 30)
     data = (await _mine(client)).json()
     assert data["state"] == "aufgebraucht"
     assert data["remaining_minutes"] == 0
     assert data["until_minute"] is None
-    # Heute hat das Fenster schon begonnen: nächste Spielzeit Donnerstag 9 Uhr.
+    # Today the window has already started: next play time Thursday 9 o'clock.
     assert data["next"] == {"weekday": 4, "minute": 540, "days_ahead": 1}
 
 
@@ -181,7 +181,7 @@ async def test_remaining_never_exceeds_window_end(
 async def test_rules_without_limit_or_window(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """Regeln, aber heute ganzer Tag ohne Limit: keine Minuten, kein Ende (Tagesende = null)."""
+    """Rules, but today a whole day without limit: no minutes, no end (end of day = null)."""
     del service
     _rules(store, "gw-kind", _daily(None))
     data = (await _mine(client)).json()
@@ -189,12 +189,12 @@ async def test_rules_without_limit_or_window(
 
 
 async def test_answer_has_only_own_values(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
-    """T-04-37: keine Pläne, keine Verbrauchshistorie, nichts von einem zweiten Kind."""
+    """T-04-37: no plans, no usage history, nothing about a second child."""
     del service
     _rules(store, "gw-kind", _daily(60, 540, 1140), used_s=15 * 60)
     _rules(store, FRIEND, _daily(90, 600, 1200), used_s=20 * 60)
 
-    # Positivkontrolle: Das zweite Kind bekommt seine eigenen Werte.
+    # Positive control: the second child gets its own values.
     friend = (await _mine(client, FRIEND)).json()
     assert friend["remaining_minutes"] == 70
     assert friend["until_minute"] == 1200
@@ -210,7 +210,7 @@ async def test_answer_has_only_own_values(client: httpx.AsyncClient, service: Wo
 
 
 async def test_no_uid_from_browser(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
-    """T-04-38: Ein UID-Parameter wird ignoriert; die UID kommt aus der signierten Anfrage."""
+    """T-04-38: a UID parameter is ignored; the UID comes from the signed request."""
     del service
     _rules(store, FRIEND, _daily(90))
     response = await client.get(f"/api/my/playtime?nc_user={FRIEND}&uid={FRIEND}", headers=appapi_headers())
@@ -227,7 +227,7 @@ async def test_verwalter_is_free(client: httpx.AsyncClient, service: WorldServic
 
 
 async def test_admin_snapshot_is_free(client: httpx.AsyncClient, service: WorldService, store: WorldStore) -> None:
-    """Steht ein Konto im Verwalter-Schnappschuss, ist es freigestellt wie im Welt-Mod (A4)."""
+    """If an account is in the manager snapshot, it is exempt as in the world mod (A4)."""
     del service
     _rules(store, "gw-kind", _daily(60))
     store.set_meta("time_admins", json.dumps(["admin", "gw-kind"]))
@@ -261,7 +261,7 @@ async def test_role_failure_is_503(
 async def test_same_weekday_next_week_is_not_today(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """Nur mittwochs erlaubt und heute aufgebraucht: nächste Spielzeit in 7 Tagen, nicht "heute"."""
+    """Allowed on Wednesdays only and used up today: next play time in 7 days, not "heute"."""
     del service
     days = {weekday: DayRule(weekday == 3, 60 if weekday == 3 else None, None, None) for weekday in range(1, 8)}
     _rules(store, "gw-kind", WeekPlan(days), used_s=60 * 60)
@@ -273,10 +273,10 @@ async def test_same_weekday_next_week_is_not_today(
 async def test_holiday_today_next_start_same_weekday_later_clock_is_next_week(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, clock: Clock
 ) -> None:
-    """WR-01: Ferien nur heute (alles gesperrt), Normalplan Mi 17 bis 18 Uhr, jetzt 10 Uhr.
+    """WR-01: holidays today only (all blocked), normal plan Wed 17 to 18, now 10 o'clock.
 
-    Der nächste Start ist Mittwoch in einer Woche um 17 Uhr; die alte Rechnung aus
-    dem Token ``Mi-17:00`` sagte "heute" (days_ahead 0), weil 17 Uhr nach 10 Uhr liegt.
+    The next start is Wednesday in a week at 17:00; the old calculation from the
+    token ``Mi-17:00`` said "heute" (days_ahead 0) because 17:00 is after 10:00.
     """
     del service
     normal = {
@@ -295,7 +295,7 @@ async def test_holiday_today_next_start_same_weekday_later_clock_is_next_week(
 async def test_preset_daily_used_up_at_noon(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, clock: Clock
 ) -> None:
-    """Voreinstellung "Jeden Tag 1 Stunde" (9 bis 19 Uhr), mittags aufgebraucht: morgen ab 9 Uhr."""
+    """Default "Jeden Tag 1 Stunde" (9 to 19 o'clock), used up at noon: tomorrow from 9 o'clock."""
     del service
     _rules(store, "gw-kind", _daily(60, 540, 1140), used_s=60 * 60)
     clock.now = _at(12)

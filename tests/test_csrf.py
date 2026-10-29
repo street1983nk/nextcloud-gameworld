@@ -1,4 +1,4 @@
-"""JSON-Pflicht für zustandsändernde Anfragen (IN-08): Cross-Site-Formulare kommen nicht durch."""
+"""JSON requirement for state-changing requests (IN-08): cross-site forms do not get through."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _scope(method: str, user: str, headers: dict[str, str]) -> dict[str, object]
 @pytest.mark.parametrize(
     ("method", "user", "headers", "expected"),
     [
-        # Positivkontrollen: das eigene Frontend und AppAPI selbst.
+        # Positive controls: the own frontend and AppAPI itself.
         ("POST", "admin", {"content-type": "application/json"}, None),
         ("POST", "admin", {"content-type": "application/json; charset=utf-8"}, None),
         ("DELETE", "admin", {"content-type": "APPLICATION/JSON"}, None),
@@ -45,7 +45,7 @@ def _scope(method: str, user: str, headers: dict[str, str]) -> dict[str, object]
         ("PUT", "", {}, None),
         ("GET", "admin", {"content-type": FORM, "sec-fetch-site": "cross-site"}, None),
         ("HEAD", "admin", {}, None),
-        # Manipulierte Eingaben: alles, was ein Formular oder eine fremde Seite schicken kann.
+        # Manipulated inputs: everything a form or a foreign page can send.
         ("POST", "admin", {}, MSG_NOT_JSON),
         ("POST", "admin", {"content-type": FORM}, MSG_NOT_JSON),
         ("POST", "admin", {"content-type": "multipart/form-data; boundary=x"}, MSG_NOT_JSON),
@@ -87,7 +87,7 @@ def _headers(user: str, content_type: str, extra: dict[str, str] | None = None) 
 async def test_cross_site_form_cannot_end_running_pause(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """Der Angriff aus dem Dev-Stack-Beleg: Formular-POST auf /api/pause/end mit Sitzung des Verwalters."""
+    """The attack from the dev stack evidence: form POST to /api/pause/end with the manager's session."""
     del service
     started = await client.post("/api/pause", json={"minutes": 30}, headers=appapi_headers())
     assert started.status_code == 200
@@ -95,11 +95,11 @@ async def test_cross_site_form_cannot_end_running_pause(
         attack = await client.post("/api/pause/end", content=b"", headers=_headers("admin", content_type, extra))
         assert attack.status_code == 403, (content_type, attack.text)
         assert store.get_pause() is not None
-    # JSON, aber von einer fremden Seite (Sec-Fetch-Site): ebenfalls 403.
+    # JSON, but from a foreign page (Sec-Fetch-Site): also 403.
     foreign = await client.post("/api/pause/end", json={}, headers={**appapi_headers(), **CROSS})
     assert foreign.status_code == 403
     assert store.get_pause() is not None
-    # Positivkontrolle: dieselbe Anfrage wie das Frontend beendet die Pause.
+    # Positive control: the same request as the frontend ends the pause.
     ok = await client.post("/api/pause/end", json={}, headers=appapi_headers())
     assert ok.status_code == 200
     assert store.get_pause() is None
@@ -108,7 +108,7 @@ async def test_cross_site_form_cannot_end_running_pause(
 async def test_form_post_with_json_body_is_refused_before_parsing(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """text/plain mit JSON-Text (der klassische Formular-Trick) ändert die Link-Adresse nicht."""
+    """text/plain with JSON text (the classic form trick) does not change the link address."""
     del service
     body = json.dumps({"origin": "http://evil.example", "confirm": True}).encode()
     response = await client.post("/api/origin", content=body, headers=_headers("admin", "text/plain", CROSS))
@@ -136,7 +136,7 @@ async def test_kid_is_refused_either_way(client: httpx.AsyncClient, service: Wor
 
 
 async def test_appapi_calls_without_user_are_not_affected(client: httpx.AsyncClient) -> None:
-    """AppAPI selbst (talk_proxy ohne Nutzer) schickt kein JSON-Pflichtfeld mit; das bleibt erlaubt."""
+    """AppAPI itself (talk_proxy without a user) sends no JSON requirement field; that stays allowed."""
     response = await client.post("/talk/bot", content=b"x", headers=_headers("", "text/plain"))
     assert response.status_code == 200
 

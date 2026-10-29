@@ -1,4 +1,4 @@
-"""Das Tar für das Welt-Volume: Eigentümer, Modi, Spiel pro Preset, Status-Mod, Hash-Prüfung."""
+"""The tar for the world volume: owner, modes, game per preset, status mod, hash check."""
 
 import hashlib
 import io
@@ -15,14 +15,14 @@ from gameworld.provisioner.presets import MTG_KREATIV, PRESETS, Preset
 from gameworld.provisioner.spec import WorldPayload
 from gameworld.provisioner.status_mod import MOD_CONF, MOD_DIR, MOD_INIT_LUA
 
-# Ordner, die Luanti gehören (alles außer Weltordner und worldmods).
+# Directories owned by Luanti (everything except the world directory and worldmods).
 DIRS = [
     ".minetest",
     ".minetest/worlds",
     ".minetest/games",
 ]
 WORLD = ".minetest/worlds/world"
-# AR-23: Weltordner root:30000 mit Sticky-Bit, worldmods samt Mods root-eigen.
+# AR-23: world directory root:30000 with sticky bit, worldmods including mods root-owned.
 WORLD_DIR_RIGHTS = (0, 30000, 0o1775)
 ROOT_DIR_RIGHTS = (0, 0, 0o755)
 ROOT_FILE_RIGHTS = (0, 0, 0o644)
@@ -54,7 +54,7 @@ def _kreativ() -> WorldPayload:
 
 
 def _test_game(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Preset:
-    """Kleines Spiel-Zip mit Wurzelordner, wie es ContentDB ausliefert."""
+    """Small game zip with a root directory, as ContentDB delivers it."""
     path = tmp_path / "testspiel-1.zip"
     with zipfile.ZipFile(path, "w") as zipped:
         zipped.writestr("testspiel/game.conf", "title = Testspiel\n")
@@ -143,7 +143,7 @@ def test_preset_hash_matches_sha256sums(preset: Preset) -> None:
     assert f"{preset.game_sha256}  {preset.game_zip}" in sums
 
 
-# Zugangs-Mod und Zugangsdatei (03-01)
+# Access mod and access file (03-01)
 
 
 def _tar_members(raw: bytes) -> dict[str, tarfile.TarInfo]:
@@ -220,7 +220,7 @@ def test_time_mod_and_rules_are_in_every_world() -> None:
     rules = members[f".minetest/worlds/world/{time_mod.RULES_FILE_NAME}"]
     assert (rules.uid, rules.gid, rules.mode) == (0, 0, 0o444)
     assert _tar_read(raw, f".minetest/worlds/world/{time_mod.RULES_FILE_NAME}") == RULES
-    # Das Zählbuch gehört dem Mod und steht nie im Tar.
+    # The ledger belongs to the mod and is never in the tar.
     assert not any(name.endswith(time_mod.LEDGER_FILE_NAME) for name in members)
 
 
@@ -279,7 +279,7 @@ def test_access_tar_has_exactly_the_access_file() -> None:
     assert _tar_read(raw, access_mod.ACCESS_FILE_NAME) == ACCESS
 
 
-# AR-23 (06-07): Weltordner und worldmods gehören root, Spielstand bleibt Luanti.
+# AR-23 (06-07): world directory and worldmods belong to root, the save game stays with Luanti.
 
 
 def _rights(member: tarfile.TarInfo) -> tuple[int, int, int]:
@@ -287,7 +287,7 @@ def _rights(member: tarfile.TarInfo) -> tuple[int, int, int]:
 
 
 def test_payload_hardens_world_dir_and_worldmods() -> None:
-    """Neue und wiederhergestellte Welten (beide über build_world_payload)."""
+    """New and restored worlds (both via build_world_payload)."""
     payload = archive.build_world_payload(MTG_KREATIV, "x\n", "gameid = minetest\n", ACCESS, RULES)
     raw = payload.archive.read()
     payload.archive.close()
@@ -305,14 +305,14 @@ def test_payload_hardens_world_dir_and_worldmods() -> None:
         assert _rights(members[name]) == ROOT_FILE_RIGHTS, name
     for name in (access_mod.ACCESS_FILE_NAME, time_mod.RULES_FILE_NAME):
         assert _rights(members[f"{WORLD}/{name}"]) == (0, 0, 0o444), name
-    # Was Luanti selbst neu schreibt, bleibt Luanti (sonst scheitert dessen Umbenennen).
+    # What Luanti rewrites itself stays with Luanti (otherwise its rename fails).
     assert _rights(members[f"{WORLD}/world.mt"]) == (30000, 30000, 0o644)
     for name in DIRS:
         assert _rights(members[name]) == (30000, 30000, 0o755), name
 
 
 def test_world_files_harden_worldmods_but_not_the_world_dir() -> None:
-    """Vor jedem Start: worldmods root-eigen; einen Eintrag für "." überginge Docker ohnehin."""
+    """Before every start: worldmods root-owned; an entry for "." would be skipped by Docker anyway."""
     members = _tar_members(archive.build_world_files(ACCESS, RULES))
     assert "." not in members
     directories = [name for name, member in members.items() if member.isdir()]

@@ -1,4 +1,4 @@
-"""Reiner Parser der Ereignisdatei und Cursor-Regel (Erstkontakt, Rücksprung, frische Datei)."""
+"""Pure parser of the event file and cursor rule (first contact, jump back, fresh file)."""
 
 from gameworld.events.parse import (
     FIRST_CONTACT_MAX_AGE,
@@ -46,13 +46,13 @@ def test_parse_rejects_missing_head_end_or_version() -> None:
 
 def test_parse_skips_invalid_lines() -> None:
     lines = [
-        "1 100 kick lena",  # unbekannte Art
-        "2 100 join " + "a" * 21,  # Name zu lang
-        "3 100 join le na",  # Leerzeichen im Namen
-        "4 100 join le%na",  # Fremdzeichen
-        "1234567890123 100 join lena",  # mehr als 12 Ziffern
-        "5 1234567890123 join lena",  # mehr als 12 Ziffern
-        "6 100 join lena ",  # Rest hinter dem Namen
+        "1 100 kick lena",  # unknown kind
+        "2 100 join " + "a" * 21,  # Name too long
+        "3 100 join le na",  # Space in the name
+        "4 100 join le%na",  # foreign character
+        "1234567890123 100 join lena",  # More than 12 digits
+        "5 1234567890123 join lena",  # More than 12 digits
+        "6 100 join lena ",  # Rest after the name
         "7 100 join lena",
     ]
     assert parse_events(_file(7, lines)) == (7, [Event(7, 100, "join", "lena")])
@@ -97,7 +97,7 @@ def test_fresh_boundary_exactly_max_age_counts() -> None:
 
 
 def test_plausible_keeps_recent_and_drops_far_past_and_future() -> None:
-    """IN-10: Zukunfts- und Uraltdaten aus einer manipulierten Datei fallen weg."""
+    """IN-10: future and ancient timestamps from a manipulated file are dropped."""
     now = 1_800_000_000
     events = [
         Event(1, now, "deny", "Jetzt"),

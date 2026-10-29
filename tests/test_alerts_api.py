@@ -1,4 +1,4 @@
-"""Verwalter-API für die Handy-Seiten: Fremdversuche, Rückblick, Einstellung, Basis-URL (04.1-04)."""
+"""Manager API for the phone pages: foreign attempts, review, setting, base URL (04.1-04)."""
 
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ def _household_today(zone: ZoneInfo = BERLIN) -> str:
 async def test_without_day_backend_uses_household_today(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, path: str
 ) -> None:
-    """IN-04: Ohne tag nimmt das Backend den heutigen Tag der Haushalts-Zeitzone, nicht die Uhr des Handys."""
+    """IN-04: without tag the backend takes today's day in the household time zone, not the phone's clock."""
     del service
-    # Eine Zeitzone weit weg von der Geräteuhr: Pacific/Kiritimati (UTC+14) liegt oft schon im Morgen.
+    # A time zone far from the device clock: Pacific/Kiritimati (UTC+14) is often already in tomorrow.
     store.set_meta("time_zone", "Pacific/Kiritimati")
     response = await client.get(path, headers=appapi_headers())
     assert response.status_code == 200, response.text
@@ -159,16 +159,16 @@ async def test_review_lists_kids_with_minutes_per_world(
 async def test_review_shows_only_kids_with_rules(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """IN-03 (Owner 22.10.2026): Ein eingeladenes Gastkind ohne Regeln erscheint im Rückblick nirgends."""
+    """IN-03 (owner 22.10.2026): an invited guest child without rules appears nowhere in the review."""
     del service
     store.insert_player(PlayerRow(nc_user="gast-kind", player_name="Gast", rotation=0))
-    # Auch eine ältere Zeile aus der Zeit vor IN-03 (ohne Regeln gezählt) bleibt unsichtbar.
+    # Even an older row from before IN-03 (counted without rules) stays invisible.
     store.book_usage(W1, DAY, {}, {}, play={"gw-kind": 600, "gast-kind": 1800})
     response = await client.get("/api/review", params={"day": "2026-10-21"}, headers=appapi_headers())
     assert response.status_code == 200, response.text
     assert [kid["nc_user"] for kid in response.json()["kids"]] == ["gw-kind"]
     assert "gast" not in response.text.casefold()
-    # Werden die Regeln entfernt, verschwindet auch das eigene Kind aus dem Rückblick.
+    # If the rules are removed, the own child disappears from the review as well.
     store.clear_child("gw-kind", keep_from=DAY)
     cleared = await client.get("/api/review", params={"day": "2026-10-21"}, headers=appapi_headers())
     assert cleared.json()["kids"] == []
@@ -243,7 +243,7 @@ async def test_origin_saved(client: httpx.AsyncClient, service: WorldService, st
 async def test_origin_first_wins_change_only_confirmed(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore
 ) -> None:
-    """WR-04: Ein Besuch über eine LAN-Adresse überschreibt nichts ohne Bestätigung."""
+    """WR-04: a visit via a LAN address overwrites nothing without confirmation."""
     del service
     await _origin(client, {"origin": "https://cloud.example"})
     asked = await _origin(client, {"origin": "https://neu.example"})
@@ -269,7 +269,7 @@ async def test_origin_https_never_replaced_by_http(
     response = await _origin(client, {"origin": "http://192.168.1.10", "confirm": confirm})
     assert response.status_code == 200
     assert response.json()["saved"] is False
-    # Ohne Rückfrage: http ersetzt https nie, darum fragt die Seite gar nicht.
+    # Without a prompt: http never replaces https, so the page does not ask at all.
     assert response.json()["confirm_needed"] is False
     assert store.get_meta(META_LINK_ORIGIN) == "https://cloud.example"
 
@@ -320,7 +320,7 @@ async def test_origin_rejected(
 async def test_kid_cannot_set_or_confirm_origin(
     client: httpx.AsyncClient, service: WorldService, store: WorldStore, confirm: bool
 ) -> None:
-    """Negativtest: Ein Kind setzt nichts, weder zuerst noch mit Bestätigung."""
+    """Negative test: a child sets nothing, neither first nor with confirmation."""
     del service
     for stored in (None, "https://cloud.example"):
         if stored is not None:
@@ -331,7 +331,7 @@ async def test_kid_cannot_set_or_confirm_origin(
 
 
 async def test_origin_change_race_never_overwrites_silently(store: WorldStore) -> None:
-    """Gleichzeitige Erstmeldungen: compare_and_set lässt nur eine gewinnen."""
+    """Concurrent first reports: compare_and_set lets only one win."""
     assert store.compare_and_set_meta(META_LINK_ORIGIN, None, "https://a.example")
     assert not store.compare_and_set_meta(META_LINK_ORIGIN, None, "https://b.example")
     assert not store.compare_and_set_meta(META_LINK_ORIGIN, "https://x.example", "https://b.example")

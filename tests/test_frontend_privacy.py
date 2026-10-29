@@ -1,4 +1,4 @@
-"""ZUGANG-01: Die Oberfläche bietet nirgends an, eine Welt öffentlich zu machen."""
+"""ZUGANG-01: the UI nowhere offers to make a world public."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import pytest
 
 FRONTEND_SRC = Path(__file__).resolve().parent.parent / "frontend" / "src"
 FORBIDDEN = ("announce", "serverlist", "public", "visibility", "öffentlich machen", "sichtbar machen")
-# Browser-API der Page Visibility (Polling nur bei sichtbarem Tab, 02-04): kein
-# Schalter für Weltsichtbarkeit, wird vor der Suche entfernt.
+# Browser API of the Page Visibility (polling only with a visible tab, 02-04): no
+# switch for world visibility, removed before the search.
 DOM_ALLOWED = ("document.visibilitystate", "'visibilitychange'")
 
 
@@ -25,7 +25,7 @@ def _text(path: Path) -> str:
 
 
 def test_dom_allowlist_does_not_hide_visibility_options() -> None:
-    """Gegenprobe: Ein Feld "visibility" bleibt verboten, nur die DOM-API ist ausgenommen."""
+    """Counter-check: a field "visibility" stays forbidden, only the DOM API is excepted."""
     sample = "document.visibilityState === 'visible'; addEventListener('visibilitychange'); { visibility: 'x' }"
     stripped = sample.lower()
     for allowed in DOM_ALLOWED:
