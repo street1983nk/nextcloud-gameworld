@@ -1,4 +1,4 @@
-"""Sitzungen des WebSocket-Proxys: Passcode, Grenzen, Verfall und Zähler-Log (04.2-07)."""
+"""Sessions of the WebSocket proxy: passcode, limits, expiry and counter log (04.2-07)."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _reason(excinfo: pytest.ExceptionInfo[SessionError]) -> str:
 
 def test_pos_create_passcode(registry: SessionRegistry) -> None:
     session = registry.create("gw-kind", W1, "Mia", TARGET)
-    # 16 Byte aus secrets.token_urlsafe ergeben 22 Zeichen, URL-sicher.
+    # 16 bytes from secrets.token_urlsafe give 22 characters, URL-safe.
     assert re.fullmatch(r"[A-Za-z0-9_-]{22}", session.passcode)
     assert (session.uid, session.world_id, session.player_name, session.target) == ("gw-kind", W1, "Mia", TARGET)
     other = registry.create("gw-kind2", W1, "Leo", TARGET)
@@ -45,7 +45,7 @@ def test_neg_create_busy_same_uid_and_world(registry: SessionRegistry) -> None:
     with pytest.raises(SessionError) as excinfo:
         registry.create("gw-kind", W1, "Mia", TARGET)
     assert _reason(excinfo) == "busy"
-    # Positivkontrollen: anderes Kind gleiche Welt, gleiches Kind andere Welt.
+    # Positive controls: another child same world, same child another world.
     registry.create("gw-kind2", W1, "Leo", TARGET)
     registry.create("gw-kind", W2, "Mia", TARGET2)
 
@@ -74,7 +74,7 @@ def test_neg_bind_unknown_passcode(registry: SessionRegistry) -> None:
     with pytest.raises(SessionError) as excinfo:
         registry.bind("A" * 22)
     assert _reason(excinfo) == "unknown"
-    # Positivkontrolle: der echte Passcode.
+    # Positive control: the real passcode.
     assert registry.bind(session.passcode) is session
 
 
@@ -84,7 +84,7 @@ def test_neg_bind_uid_mismatch(registry: SessionRegistry) -> None:
         registry.bind(session.passcode, uid="gw-kind2")
     assert _reason(excinfo) == "uid_mismatch"
     assert session.binds == 0
-    # Positivkontrolle: gleiche Identität.
+    # Positive control: same identity.
     assert registry.bind(session.passcode, uid="gw-kind") is session
 
 
@@ -94,7 +94,7 @@ def test_neg_unbound_session_expires(registry: SessionRegistry, clock: FakeClock
     with pytest.raises(SessionError) as excinfo:
         registry.bind(session.passcode)
     assert _reason(excinfo) == "unknown"
-    # Verfallen gibt (uid, world_id) frei.
+    # Expiry frees (uid, world_id).
     registry.create("gw-kind", W1, "Mia", TARGET)
 
 
@@ -102,7 +102,7 @@ def test_pos_unbound_session_before_expiry(registry: SessionRegistry, clock: Fak
     session = registry.create("gw-kind", W1, "Mia", TARGET)
     clock.advance(UNBOUND_SECONDS - 1)
     assert registry.bind(session.passcode) is session
-    # Gebunden verfällt sie nicht über die Uhr (das regelt der Leerlauf im Relais).
+    # Once bound it does not expire by the clock (the idle timeout in the relay handles that).
     clock.advance(UNBOUND_SECONDS * 10)
     with pytest.raises(SessionError):
         registry.create("gw-kind", W1, "Mia", TARGET)
@@ -113,13 +113,13 @@ def test_pos_release_after_last_unbind(registry: SessionRegistry) -> None:
     registry.bind(session.passcode)
     registry.bind(session.passcode)
     registry.unbind(session.passcode)
-    # Ein BIND läuft noch: weiterhin belegt.
+    # A BIND is still running: still occupied.
     with pytest.raises(SessionError):
         registry.create("gw-kind", W1, "Mia", TARGET)
     registry.unbind(session.passcode)
     again = registry.create("gw-kind", W1, "Mia", TARGET)
     assert again.passcode != session.passcode
-    # Der alte Passcode ist danach wertlos.
+    # The old passcode is worthless afterwards.
     with pytest.raises(SessionError) as excinfo:
         registry.bind(session.passcode)
     assert _reason(excinfo) == "unknown"
@@ -147,7 +147,7 @@ def test_neg_bind_after_guard_end(registry: SessionRegistry) -> None:
 def test_pos_guard_per_session_uses_ticket_name(registry: SessionRegistry) -> None:
     session = registry.create("gw-kind", W1, "Mia", TARGET)
     assert session.guard.expected_name == "Mia"
-    # Zwei BINDs teilen denselben Wächter.
+    # Two BINDs share the same guard.
     assert registry.bind(session.passcode).guard is registry.bind(session.passcode).guard
 
 
@@ -173,7 +173,7 @@ def test_pos_end_log_newaddr_counts_per_uid_world(
     with pytest.raises(SessionError):
         registry.create("gw-kind", W1, "Mia", TARGET)
     registry.create("gw-kind2", W1, "Leo", TARGET)
-    # Verfall ohne BIND schreibt die Zeile ebenfalls, beim nächsten Aufruf.
+    # Expiry without BIND writes the line as well, at the next call.
     clock.advance(UNBOUND_SECONDS)
     session = registry.create("gw-kind", W1, "Mia", TARGET)
     registry.bind(session.passcode)
@@ -181,9 +181,9 @@ def test_pos_end_log_newaddr_counts_per_uid_world(
     lines = [record.getMessage() for record in caplog.records if "play session end" in record.getMessage()]
     assert sorted(lines) == sorted(
         [
-            "play session end binds=0 newaddr=2",  # gw-kind, verfallen (zwei create-Aufrufe bis dahin)
-            "play session end binds=0 newaddr=1",  # gw-kind2, verfallen
-            "play session end binds=1 newaddr=3",  # gw-kind, drittes create
+            "play session end binds=0 newaddr=2",  # gw-kind, expired (two create calls until then)
+            "play session end binds=0 newaddr=1",  # gw-kind2, expired
+            "play session end binds=1 newaddr=3",  # gw-kind, third create
         ]
     )
 
@@ -193,7 +193,7 @@ def test_neg_unbind_unknown_is_harmless(registry: SessionRegistry) -> None:
     session = registry.create("gw-kind", W1, "Mia", TARGET)
     registry.bind(session.passcode)
     registry.unbind(session.passcode)
-    # Doppeltes unbind zählt nicht ins Negative und gibt nichts Fremdes frei.
+    # Double unbind does not count into the negative and frees nothing foreign.
     registry.unbind(session.passcode)
     other = registry.create("gw-kind2", W1, "Leo", TARGET)
     registry.unbind(session.passcode)

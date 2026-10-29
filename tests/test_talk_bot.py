@@ -1,4 +1,4 @@
-"""Gameworld-Bot (TALK-02): Registrierung, Freischaltung je Raum, Senden, Webhook-Route."""
+"""Gameworld bot (TALK-02): registration, enabling per room, sending, webhook route."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ CHAT = "Geheimnis aus dem Kinderchat 4711"
 
 @pytest.fixture(autouse=True)
 def _no_world_teardown(monkeypatch: pytest.MonkeyPatch) -> None:
-    """enabled_handler räumt Welten ab (06-08); hier nie gegen den echten Docker-Proxy."""
+    """enabled_handler cleans up worlds (06-08); never against the real Docker proxy here."""
     fake = FakeWorlds()
     monkeypatch.setattr(lifecycle, "get_service", lambda: fake)
 
@@ -90,7 +90,7 @@ async def test_register_only_with_bots_available(monkeypatch: pytest.MonkeyPatch
 
 
 async def test_register_already_known_bot_keeps_stored_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Talk 34: Bot mit gleicher URL, anderem Geheimnis (am Dev-Stack belegt, OCS 996).
+    # Talk 34: bot with the same URL, different secret (occupied on the dev stack, OCS 996).
     monkeypatch.setattr(talk_bot.BOT, "enabled_handler", AsyncMock(side_effect=NextcloudException(996, "x")))
     monkeypatch.setattr(talk_bot, "aget_bot_secret", AsyncMock(return_value=b"altes-geheimnis"))
     nc: Any = MagicMock()
@@ -148,7 +148,7 @@ def _fake_user_nc(monkeypatch: pytest.MonkeyPatch, bots: list[FakeBotInfo]) -> t
 
 
 async def test_ensure_enabled_closes_client_also_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """WR-05: Suchen und Freischalten in einem Client, der immer geschlossen wird."""
+    """WR-05: search and enable in one client that is always closed."""
     nc, acting = _fake_user_nc(monkeypatch, [FakeBotInfo(9, f"http://nc/ocs/v2.php{SUFFIX}")])
     nc.talk.enable_bot = AsyncMock(side_effect=RuntimeError("weg"))
     sender = talk_bot.NcBot()
@@ -239,7 +239,7 @@ async def test_send_401_forgets_room_so_it_is_enabled_again(monkeypatch: pytest.
     assert nc.talk.enable_bot.await_count == 2
 
 
-# TalkService: Freischaltung je Raum
+# TalkService: enabling per room
 
 
 @pytest.fixture
@@ -337,7 +337,7 @@ async def test_disable_unregisters_bot_and_ignores_errors(monkeypatch: pytest.Mo
     nc.ui.top_menu.unregister.assert_awaited_once()
 
 
-# Webhook-Route
+# Webhook route
 
 
 async def test_webhook_with_valid_appapi_auth_answers_200_and_logs_nothing(
@@ -356,7 +356,7 @@ async def test_webhook_with_valid_appapi_auth_answers_200_and_logs_nothing(
 async def test_webhook_refuses_every_logged_in_account(
     client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture, user: str
 ) -> None:
-    """IN-01: Über den Nutzer-Proxy erreicht jedes Konto die Route; nur AppAPI ohne Nutzer gilt."""
+    """IN-01: Via the user proxy every account reaches the route; only AppAPI without a user counts."""
     caplog.set_level(logging.DEBUG)
     response = await client.post("/talk/bot", headers=appapi_headers(user), json={"x": CHAT})
     assert response.status_code == 403

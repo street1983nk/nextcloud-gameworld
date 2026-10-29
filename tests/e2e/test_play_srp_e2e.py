@@ -1,15 +1,15 @@
-"""Live-Beleg 04.2-09: SRP-Uebernahme durch den Proxy (Variante A, D-10) gegen eine echte Welt.
+"""Live proof 04.2-09: SRP takeover by the proxy (variant A, D-10) against a real world.
 
-Aufbau wie test_play_proxy_e2e.py (dieselben Fixtures und Helfer importiert, nicht kopiert):
-Die ExApp laeuft als echter uvicorn-Server im Modus dev, der Weg ist der des Browsers
-(Ticket, /play/launch, /play/ws mit NEWADDR und BIND). Der Unterschied: GAMEWORLD_PLAY_AUTH
-steht hier auf proxy_srp, und das Kind meldet sich mit dem wertlosen Platzhalter-Passwort an.
+Setup like test_play_proxy_e2e.py (the same fixtures and helpers imported, not copied):
+the ExApp runs as a real uvicorn server in mode dev, the path is that of the browser
+(ticket, /play/launch, /play/ws with NEWADDR and BIND). The difference: GAMEWORLD_PLAY_AUTH
+is set to proxy_srp here, and the child logs in with the worthless placeholder password.
 
-Positivkontrolle: Login gelingt, /play/launch liefert password null. Gegenprobe: im
-password-Modus lehnt dieselbe Welt das Platzhalter-Passwort ab (die Uebernahme ist die
-Ursache des Erfolgs). Negativtests: fremder Name, FIRST_SRP und ein RELIABLE(SPLIT) mit
-SRP-Inhalt beenden die Sitzung vor der Welt. A1: nach dem Login werden INIT2 und
-CLIENT_READY ueber das Relais angenommen (keine Verschluesselung nach SRP).
+Positive control: login succeeds, /play/launch returns password null. Control: in
+password mode the same world rejects the placeholder password (the takeover is the
+cause of the success). Negative tests: foreign name, FIRST_SRP and a RELIABLE(SPLIT) with
+SRP content end the session before the world. A1: after the login INIT2 and
+CLIENT_READY are accepted via the relay (no encryption after SRP).
 """
 
 from __future__ import annotations
@@ -52,14 +52,14 @@ def _reliable(command: int, payload: bytes, seq: int, peer_id: int = 1, channel:
 
 
 def _reliable_split_srp_a(seq: int, peer_id: int = 1, channel: int = 1) -> bytes:
-    """RELIABLE(SPLIT), dessen Chunk 0 mit dem SRP_BYTES_A-Kommando beginnt."""
+    """RELIABLE(SPLIT) whose chunk 0 starts with the SRP_BYTES_A command."""
     chunk0 = struct.pack(">H", TOSERVER_SRP_BYTES_A) + b"\x00" * 16
     split = struct.pack(">BHHH", 2, 7, 2, 0) + chunk0
     return struct.pack(">IHB", PROTO, peer_id, channel) + struct.pack(">BH", 3, seq) + split
 
 
 async def _send_raw_until_closed(relay: RelayServer, launch: Launch, packet: bytes) -> WsDatagramSocket:
-    """Sendet ein selbst gebautes Paket ueber das Relais, bis der Server schliesst (Waechter greift)."""
+    """Sends a self-built packet via the relay until the server closes (guard takes effect)."""
 
     def run() -> WsDatagramSocket:
         sock = WsDatagramSocket(launch.url, relay.origin)
@@ -77,8 +77,8 @@ async def _send_raw_until_closed(relay: RelayServer, launch: Launch, packet: byt
     return await anyio.to_thread.run_sync(run)
 
 
-# Der gameworld_access-Mod sperrt den sofortigen Wiederbeitritt kurz (Phase 3, K6); darum
-# wiederholen die Live-Joins, bis der erwartete Zustand erreicht ist oder das Fenster endet.
+# The gameworld_access mod blocks an immediate rejoin briefly (phase 3, K6); therefore
+# the live joins repeat until the expected state is reached or the window ends.
 REJOIN_WINDOW = 20.0
 
 
@@ -120,7 +120,7 @@ async def test_variante_a_positiv_gegenprobe_und_a1(
     name, real_password = await _invite(relay, world_id, "gw-kind")
     assert real_password != PLACEHOLDER_PASSWORD
 
-    # Variante A: /play/launch gibt kein Passwort heraus (password null).
+    # Variant A: /play/launch hands out no password (password null).
     monkeypatch.setenv("GAMEWORLD_PLAY_AUTH", "proxy_srp")
     issued = await relay.http.post(
         "/api/my/play-ticket", json={"world_id": world_id}, headers=appapi_headers("gw-kind")
@@ -134,14 +134,14 @@ async def test_variante_a_positiv_gegenprobe_und_a1(
     assert launched.status_code == 200, launched.text
     assert launched.json()["password"] is None, "Variante A liefert kein Passwort an den Browser"
 
-    # Positivkontrolle: Login mit dem Platzhalter-Passwort gelingt, weil der Proxy SRP uebernimmt.
+    # Positive control: login with the placeholder password succeeds because the proxy takes over SRP.
     accepted = await _join_retry(
         relay, "gw-kind", world_id, name, PLACEHOLDER_PASSWORD, lambda r: r["result"] == "auth_accept"
     )
     assert accepted["result"] == "auth_accept", accepted
 
-    # Gegenprobe: im password-Modus lehnt dieselbe Welt das Platzhalter-Passwort ab (Stage M).
-    # Die Uebernahme ist also die Ursache des Erfolgs, kein Umgehen der Passwortpruefung.
+    # Control: in password mode the same world rejects the placeholder password (stage M).
+    # The takeover is thus the cause of the success, not a bypass of the password check.
     monkeypatch.setenv("GAMEWORLD_PLAY_AUTH", "password")
     denied = await _join_retry(
         relay, "gw-kind", world_id, name, PLACEHOLDER_PASSWORD, lambda r: r.get("code") == "WRONG_PASSWORD"
@@ -150,8 +150,8 @@ async def test_variante_a_positiv_gegenprobe_und_a1(
     assert denied.get("stage") == "M", denied
     assert denied["code"] == "WRONG_PASSWORD", denied
 
-    # A1: nach dem Login werden INIT2 und CLIENT_READY ueber das Relais angenommen (keine
-    # Verschluesselung nach SRP). Zuletzt, weil der volle Beitritt die Rejoin-Sperre ausloest.
+    # A1: after the login INIT2 and CLIENT_READY are accepted via the relay (no
+    # encryption after SRP). Last, because the full join triggers the rejoin block.
     monkeypatch.setenv("GAMEWORLD_PLAY_AUTH", "proxy_srp")
     held = await _session_retry(relay, "gw-kind", world_id, name, PLACEHOLDER_PASSWORD, 2.0)
     assert held["result"] in {"held", "kicked"}, held
@@ -170,7 +170,7 @@ async def test_fremder_name_beendet_vor_srp_ersatz(
     sibling, _sibling_pw = await _invite(relay, world_id, "gw-kind2")
     assert sibling != name
 
-    # Ticket des Kindes, INIT mit dem Namen des eingeladenen Geschwisters: Abbruch vor jedem SRP-Ersatz.
+    # Ticket of the child, INIT with the name of the invited sibling: abort before any SRP replacement.
     forged = await _relay_join(relay, "gw-kind", world_id, name=sibling, password=PLACEHOLDER_PASSWORD)
     assert forged["result"] in {"timeout", "no_peer_id"}, forged
     sock = relay.sockets[-1]
@@ -178,7 +178,7 @@ async def test_fremder_name_beendet_vor_srp_ersatz(
     assert sock.close_code == 1008, sock.close_code
     lines = _wait_relay_end(caplog, 1)
     assert any(line.endswith("reason=guard_name_mismatch") for line in lines), lines
-    # Der Geschwistername hat die Welt nie erreicht (kein SRP fuer ein fremdes Konto).
+    # The sibling's name never reached the world (no SRP for a foreign account).
     assert re.search(rf"\b{re.escape(sibling)}\b", _world_log(world_id)) is None
 
 
@@ -189,14 +189,14 @@ async def test_first_srp_und_split_beenden_sitzung(
     world_id, _port = await create_running_world(relay.http, "mtg_kreativ", MTG_READY)
     await _invite(relay, world_id, "gw-kind")
 
-    # FIRST_SRP (Registrierung/Passwortaenderung) ueber das Relais: der Waechter beendet die Sitzung.
+    # FIRST_SRP (registration/password change) via the relay: the guard ends the session.
     launch_first = await _launch(relay, "gw-kind", world_id)
     first_packet = _reliable(TOSERVER_FIRST_SRP, b"\x00" * 8, seq=65501)
     sock_first = await _send_raw_until_closed(relay, launch_first, first_packet)
     assert sock_first.closed_by_server, "FIRST_SRP haette die Sitzung beenden muessen"
     assert sock_first.close_code == 1008, sock_first.close_code
 
-    # RELIABLE(SPLIT) mit SRP_BYTES_A-Inhalt vor AUTH_ACCEPT: die Sitzung endet, die Welt erhaelt nichts.
+    # RELIABLE(SPLIT) with SRP_BYTES_A content before AUTH_ACCEPT: the session ends, the world receives nothing.
     launch_split = await _launch(relay, "gw-kind", world_id)
     split_packet = _reliable_split_srp_a(seq=65501)
     sock_split = await _send_raw_until_closed(relay, launch_split, split_packet)
@@ -206,5 +206,5 @@ async def test_first_srp_und_split_beenden_sitzung(
     lines = _wait_relay_end(caplog, 2)
     assert any(line.endswith("reason=guard_first_srp") for line in lines), lines
     assert any(line.endswith("reason=guard_split_before_auth") for line in lines), lines
-    # Die Welt hat kein Paket aus diesen Sitzungen bekommen: frames_out blieb 0.
+    # The world received no packet from these sessions: frames_out stayed 0.
     assert all("frames_out=0" in line for line in lines if "guard_" in line), lines

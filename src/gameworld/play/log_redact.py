@@ -1,17 +1,17 @@
-"""Schwärzt die Query von /play/ws in uvicorn-Logzeilen (T-04.2-36).
+"""Redacts the query of /play/ws in uvicorn log lines (T-04.2-36).
 
-Das WebSocket-Ticket steht als ``?t=<Ticket>`` in der URL, weil Browser beim
-WebSocket-Aufbau keine eigenen Header setzen können. uvicorn schreibt Pfad samt
-Query in seine Logzeilen; ohne diesen Filter landete jedes Ticket im Log.
+The WebSocket ticket is in the URL as ``?t=<ticket>``, because browsers cannot set
+their own headers when opening a WebSocket. uvicorn writes the path including the
+query into its log lines; without this filter every ticket would end up in the log.
 
-uvicorn loggt WebSocket-Zeilen ("WebSocket /play/ws?..." [accepted], 403 oder
-Status) über den Logger ``uvicorn.error`` und HTTP-Zugriffe über ``uvicorn.access``.
-Der Filter hängt darum an beiden Loggern. Es sind Logger-Filter und keine
-Handler-Filter, weil uvicorns dictConfig beim Start die Handler ersetzt, die
-Filter der Logger aber stehen lässt.
+uvicorn logs WebSocket lines ("WebSocket /play/ws?..." [accepted], 403 or
+status) via the logger ``uvicorn.error`` and HTTP accesses via ``uvicorn.access``.
+The filter therefore attaches to both loggers. They are logger filters and not
+handler filters, because uvicorn's dictConfig replaces the handlers at startup but
+leaves the loggers' filters in place.
 
-Andere Pfade und Query-Strings bleiben unverändert, und der Filter verschluckt
-nie eine Zeile.
+Other paths and query strings stay unchanged, and the filter never
+swallows a line.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import re
 WS_PATH = "/play/ws"
 REDACTED = "<redacted>"
 
-# Pfad endet auf /play/ws, danach ? und die Query bis zum Leerzeichen oder Anführungszeichen.
+# Path ends with /play/ws, then ? and the query up to the space or quotation mark.
 _WS_QUERY = re.compile(r"(/play/ws)\?[^\s\"']+")
 _LOGGERS = ("uvicorn.access", "uvicorn.error")
 
@@ -35,7 +35,7 @@ def _redact_arg(value: str) -> str:
 
 
 class RedactWsQueryFilter(logging.Filter):
-    """Ersetzt in Argumenten und Nachricht jede Query von /play/ws durch ``<redacted>``."""
+    """Replaces every query of /play/ws in arguments and message with ``<redacted>``."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
@@ -46,7 +46,7 @@ class RedactWsQueryFilter(logging.Filter):
 
 
 def install_ws_query_redaction() -> None:
-    """Hängt den Filter einmal an uvicorn.access und uvicorn.error (idempotent)."""
+    """Attaches the filter once to uvicorn.access and uvicorn.error (idempotent)."""
     for name in _LOGGERS:
         logger = logging.getLogger(name)
         if not any(isinstance(existing, RedactWsQueryFilter) for existing in logger.filters):

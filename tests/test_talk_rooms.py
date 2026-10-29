@@ -1,4 +1,4 @@
-"""OCS-Zugriff auf Talk-Räume (TALK-01): Pfade, Kodierung, Fehlerabbildung."""
+"""OCS access to Talk rooms (TALK-01): paths, encoding, error mapping."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from gameworld.talk.rooms import (
 )
 from tests.conftest import assert_closed, install_fake_nc
 
-ROOM_TOKEN = "abc123"  # noqa: S105 (Raum-Token, kein Geheimnis)
+ROOM_TOKEN = "abc123"  # noqa: S105 (room token, not a secret)
 
 
 def fake_nc() -> Any:
@@ -188,7 +188,7 @@ def test_singleton() -> None:
     assert get_talk_rooms() is get_talk_rooms()
 
 
-# WR-05: Jeder Ablauf schließt seinen Client, auch im Fehlerfall.
+# WR-05: every flow closes its client, also on error.
 
 
 async def test_create_uses_one_client_and_closes_it(nc: Any) -> None:

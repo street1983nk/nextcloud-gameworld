@@ -1,17 +1,17 @@
-"""MTP-Pakete des Luanti-Clients lesen und vor der Anmeldung prüfen, rein und nur mit struct.
+"""Read MTP packets of the Luanti client and check them before login, pure and only with struct.
 
-Ein Datagramm hat einen 7-Byte-Kopf ``u32 0x4F457403 | u16 peer_id | u8 channel``, dann ein Paket:
-``u8 type`` mit 0 CONTROL (``u8 controltype`` plus Daten), 1 ORIGINAL (``u16 command`` plus Daten),
-2 SPLIT (``u16 seqnum | u16 chunk_count | u16 chunk_num`` plus Chunk-Daten; das Kommando steht in den
-ersten zwei Byte von Chunk 0) und 3 RELIABLE (``u16 seqnum`` plus genau ein inneres Paket, nie
-wieder RELIABLE). Quellen: luanti-org/luanti, Tag 5.17.0, ``src/network/mtp/internal.h`` (Layout der
-Typen) und ``src/network/networkprotocol.h`` (Kommandos); bewährt in ``tests/e2e/luanti_probe.py``
-gegen einen echten 5.17.0-Server. Ein leeres ORIGINAL ohne Kommando ist erlaubt: Der Client sendet
-es beim Verbinden als Dummy, damit der Server eine peer_id vergibt (``Connection::Connect``).
+A datagram has a 7 byte header ``u32 0x4F457403 | u16 peer_id | u8 channel``, then a packet:
+``u8 type`` with 0 CONTROL (``u8 controltype`` plus data), 1 ORIGINAL (``u16 command`` plus data),
+2 SPLIT (``u16 seqnum | u16 chunk_count | u16 chunk_num`` plus chunk data; the command is in the
+first two bytes of chunk 0) and 3 RELIABLE (``u16 seqnum`` plus exactly one inner packet, never
+RELIABLE again). Sources: luanti-org/luanti, tag 5.17.0, ``src/network/mtp/internal.h`` (layout of the
+types) and ``src/network/networkprotocol.h`` (commands); proven in ``tests/e2e/luanti_probe.py``
+against a real 5.17.0 server. An empty ORIGINAL without a command is allowed: the client sends
+it on connect as a dummy so that the server assigns a peer_id (``Connection::Connect``).
 
-``ClientGuard`` entscheidet je Datagramm vom Browser, ob es weitergeleitet wird oder die Sitzung
-endet. Er entscheidet immer nach ``inner_ptype``, damit ein SPLIT im RELIABLE nie als gewöhnliches
-Kommando durchrutscht. Jeder Lesefehler beendet die Sitzung, nichts wird ungeprüft durchgereicht.
+``ClientGuard`` decides per datagram from the browser whether it is forwarded or the session
+ends. It always decides by ``inner_ptype``, so that a SPLIT inside RELIABLE never slips through as an ordinary
+command. Every read error ends the session, nothing is passed through unchecked.
 """
 
 import enum
@@ -49,12 +49,12 @@ REASON_ENDED = "ended"
 
 
 class MtpError(ValueError):
-    """Ein Datagramm ist kein lesbares MTP-Paket."""
+    """A datagram is not a readable MTP packet."""
 
 
 @dataclass(frozen=True)
 class Parsed:
-    """Ein gelesenes Datagramm; ``inner_ptype`` ist bei RELIABLE der Typ des inneren Pakets."""
+    """A datagram that was read; ``inner_ptype`` is the type of the inner packet for RELIABLE."""
 
     channel: int
     peer_id: int
@@ -74,7 +74,7 @@ def _u16(data: bytes, offset: int) -> int:
 
 
 def parse(datagram: bytes) -> Parsed:
-    """Liest Kopf und Typ; RELIABLE genau eine Ebene tief, sonst MtpError."""
+    """Reads head and type; RELIABLE exactly one level deep, otherwise MtpError."""
     if len(datagram) < HEADER.size + 1:
         raise MtpError("Paket zu kurz")
     proto, peer_id, channel = HEADER.unpack_from(datagram)
@@ -100,7 +100,7 @@ def parse(datagram: bytes) -> Parsed:
         payload = body[1:]
     elif inner_ptype == PT_ORIGINAL:
         if len(body) == 1:
-            payload = b""  # Verbindungs-Dummy ohne Kommando
+            payload = b""  # connection dummy without a command
         else:
             command = _u16(body, 1)
             payload = body[3:]
@@ -112,7 +112,7 @@ def parse(datagram: bytes) -> Parsed:
             raise MtpError("SPLIT-Nummern ungültig")
         payload = body[7:]
         if chunk_num == 0:
-            # Ein Chunk 0 mit weniger als zwei Byte würde das Kommando über zwei Chunks verteilen.
+            # A chunk 0 with fewer than two bytes would spread the command over two chunks.
             split_command = _u16(payload, 0)
         split_chunk = (split_seq, chunk_count, chunk_num)
     else:
@@ -131,10 +131,10 @@ def parse(datagram: bytes) -> Parsed:
 
 
 def rewrite_payload(datagram: bytes, new_payload: bytes) -> bytes:
-    """Ersetzt nur die Nutzlast eines RELIABLE(ORIGINAL)-Kommandopakets.
+    """Replaces only the payload of a RELIABLE(ORIGINAL) command packet.
 
-    Kopf (7 Byte), RELIABLE-Typ samt seqnum, ORIGINAL-Typ und Kommando bleiben erhalten;
-    jede andere Struktur (nacktes ORIGINAL, SPLIT, CONTROL, ORIGINAL ohne Kommando) wirft MtpError.
+    Head (7 bytes), RELIABLE type with seqnum, ORIGINAL type and command are kept;
+    any other structure (bare ORIGINAL, SPLIT, CONTROL, ORIGINAL without a command) raises MtpError.
     """
     parsed = parse(datagram)
     if parsed.ptype != PT_RELIABLE or parsed.inner_ptype != PT_ORIGINAL or parsed.command is None:
@@ -146,7 +146,7 @@ def rewrite_payload(datagram: bytes, new_payload: bytes) -> bytes:
 
 
 def init_player_name(payload: bytes) -> str:
-    """Spielername aus der Nutzlast von TOSERVER_INIT (nach dem Kommando): str16 ab Offset 7."""
+    """Player name from the payload of TOSERVER_INIT (after the command): str16 from offset 7."""
     length = _u16(payload, INIT_NAME_OFFSET)
     start = INIT_NAME_OFFSET + 2
     raw = payload[start : start + length]
@@ -159,7 +159,7 @@ def init_player_name(payload: bytes) -> str:
 
 
 class Verdict(enum.Enum):
-    """Weiterleiten oder Sitzung beenden."""
+    """Forward or end the session."""
 
     FORWARD = "forward"
     END = "end"
@@ -167,7 +167,7 @@ class Verdict(enum.Enum):
 
 @dataclass(frozen=True)
 class GuardResult:
-    """Entscheidung mit festem ASCII-Grund (wird als Zähler geloggt, nie mit Paketinhalt)."""
+    """Decision with a fixed ASCII reason (logged as a counter, never with packet content)."""
 
     verdict: Verdict
     reason: str
@@ -177,12 +177,12 @@ _FORWARD = GuardResult(Verdict.FORWARD, REASON_OK)
 
 
 class ClientGuard:
-    """Prüft Datagramme vom Browser, bevor sie den Welt-Server erreichen.
+    """Checks datagrams from the browser before they reach the world server.
 
-    Regeln: TOSERVER_INIT nur mit exakt dem Ticket-Namen; TOSERVER_FIRST_SRP (Registrierung,
-    Passwortänderung) nie; SRP_BYTES_A/M erst nach geprüftem INIT; jedes SPLIT (nackt oder im
-    RELIABLE) erst nach echtem AUTH_ACCEPT und dann nie mit SRP-Kommando in Chunk 0. Nach dem ersten
-    END bleibt der Wächter beendet.
+    Rules: TOSERVER_INIT only with exactly the ticket name; TOSERVER_FIRST_SRP (registration,
+    password change) never; SRP_BYTES_A/M only after a checked INIT; any SPLIT (bare or inside
+    RELIABLE) only after a real AUTH_ACCEPT and then never with an SRP command in chunk 0. After the first
+    END the guard stays ended.
     """
 
     def __init__(self, expected_name: str) -> None:
@@ -196,7 +196,7 @@ class ClientGuard:
         return GuardResult(Verdict.END, reason)
 
     def check(self, datagram: bytes) -> GuardResult:
-        """Entscheidet über ein Datagramm vom Browser."""
+        """Decides on a datagram from the browser."""
         if self.ended:
             return GuardResult(Verdict.END, REASON_ENDED)
         try:
@@ -226,10 +226,10 @@ class ClientGuard:
         return _FORWARD
 
     def observe_server(self, datagram: bytes) -> None:
-        """Merkt sich ein echtes AUTH_ACCEPT vom Server; alles andere schaltet nichts frei.
+        """Remembers a real AUTH_ACCEPT from the server; everything else releases nothing.
 
-        Freigeschaltet wird nur nach geprüftem INIT, damit ein AUTH_ACCEPT nie für einen
-        ungeprüften Namen gilt. Lesefehler bei Server-Paketen werden ignoriert.
+        It is released only after a checked INIT, so that an AUTH_ACCEPT never counts for an
+        unchecked name. Read errors on server packets are ignored.
         """
         try:
             parsed = parse(datagram)

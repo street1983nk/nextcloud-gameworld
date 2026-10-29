@@ -1,17 +1,17 @@
-"""Relais zwischen einer WebSocket-Verbindung nach ``BIND OK`` und der Welt per UDP (04.2-07).
+"""Relay between a WebSocket connection after ``BIND OK`` and the world via UDP (04.2-07).
 
-Je BIND ein eigener UDP-Socket, verbunden (``remote_addr``) mit dem Ziel aus der Sitzung.
-Der Kopf eines Frames wird nur geprüft (``target_allowed``), nie als Ziel benutzt; so ist
-der Proxy weder offenes UDP-Relais ins Heimnetz noch Verstärker. Ein verbundener
-UDP-Socket nimmt außerdem nur Antworten genau dieses Ziels an.
+One UDP socket per BIND, connected (``remote_addr``) to the destination from the session.
+The head of a frame is only checked (``target_allowed``), never used as a destination; so
+the proxy is neither an open UDP relay into the home network nor an amplifier. A connected
+UDP socket also accepts only replies from exactly this destination.
 
-Richtung Welt je Frame: Größe, Kopf, Zielregel, Paketrate, ClientGuard (Plan 05); erst
-dann ``sendto``. Richtung Browser: Datagramme der Welt werden vom Wächter beobachtet
-(AUTH_ACCEPT) und mit dem virtuellen Server als Quelle verpackt. Ohne Datagramm der Welt
-für IDLE_SECONDS endet das Relais. Der Abbau läuft immer im ``finally``.
+Towards the world per frame: size, head, destination rule, packet rate, ClientGuard (plan 05); only
+then ``sendto``. Towards the browser: datagrams of the world are observed by the guard
+(AUTH_ACCEPT) and wrapped with the virtual server as source. Without a datagram from the world
+for IDLE_SECONDS the relay ends. Teardown always runs in the ``finally``.
 
-Logs nur mit Zählern und festen Gründen, nie mit Spielername, Passcode, Ticket oder
-Paketinhalt; die Zahlen sind Messwerte für Plan 08 und 10.
+Logs only with counters and fixed reasons, never with player name, passcode, ticket or
+packet content; the numbers are measurements for plans 08 and 10.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ END_IDLE = "idle"
 END_SOCKET = "socket_closed"
 END_SRP_TAKEOVER = "srp_takeover"
 
-# Gründe, die auf einen fehlerhaften oder böswilligen Client deuten: Abschluss mit 1008.
+# Reasons that point to a faulty or malicious client: close with 1008.
 _POLICY_ENDS = frozenset({END_TEXT, END_FRAME_SIZE, END_FRAME, END_SRP_TAKEOVER})
 
 ProtocolFactory = Callable[[], asyncio.DatagramProtocol]
@@ -57,7 +57,7 @@ EndpointFactory = Callable[[ProtocolFactory, Session], Awaitable[asyncio.Datagra
 
 @dataclass
 class RelayStats:
-    """Zähler eines BIND; ``end_reason`` ist eine feste ASCII-Konstante."""
+    """Counters of a BIND; ``end_reason`` is a fixed ASCII constant."""
 
     frames_in: int = 0
     frames_out: int = 0
@@ -72,7 +72,7 @@ class RelayStats:
 
 
 class TokenBucket:
-    """Paketrate Richtung Welt: ``rate`` Pakete je Sekunde, Spitzen bis ``burst``."""
+    """Packet rate towards the world: ``rate`` packets per second, bursts up to ``burst``."""
 
     def __init__(self, rate: float, burst: float, clock: Callable[[], float] = time.monotonic) -> None:
         self._rate = rate
@@ -92,21 +92,21 @@ class TokenBucket:
 
 
 class _WorldProtocol(asyncio.DatagramProtocol):
-    """Legt Datagramme der Welt in eine begrenzte Warteschlange; None heißt Socket zu."""
+    """Puts datagrams of the world into a bounded queue; None means socket closed."""
 
     def __init__(self, queue: asyncio.Queue[bytes | None], stats: RelayStats) -> None:
         self._queue = queue
         self._stats = stats
 
     def datagram_received(self, data: bytes, addr: tuple[str | Any, int]) -> None:
-        del addr  # Der Socket ist mit dem Sitzungsziel verbunden, andere Absender kommen nicht an.
+        del addr  # The socket is connected to the session destination, other senders do not get through.
         try:
             self._queue.put_nowait(data)
         except asyncio.QueueFull:
             self._stats.dropped_queue += 1
 
     def error_received(self, exc: Exception) -> None:
-        # ICMP "Port nicht erreichbar" (Welt gerade weg): kein Abbruch, der Leerlauf regelt das.
+        # ICMP "port unreachable" (world just gone): no abort, the idle timeout handles it.
         del exc
 
     def connection_lost(self, exc: Exception | None) -> None:
@@ -116,7 +116,7 @@ class _WorldProtocol(asyncio.DatagramProtocol):
 
 
 async def open_world_endpoint(protocol_factory: ProtocolFactory, session: Session) -> asyncio.DatagramTransport:
-    """Eigener UDP-Socket je BIND, verbunden mit dem Ziel der Sitzung (nie aus dem Frame)."""
+    """Own UDP socket per BIND, connected to the destination of the session (never from the frame)."""
     loop = asyncio.get_running_loop()
     transport, _protocol = await loop.create_datagram_endpoint(protocol_factory, remote_addr=session.target)
     return transport
@@ -148,7 +148,7 @@ async def _to_world(ws: WebSocket, session: Session, transport: asyncio.Datagram
         result = session.guard.check(payload)
         if result.verdict is Verdict.END:
             return f"guard_{result.reason}"
-        # Variante A: erst der Wächter (Name, FIRST_SRP), dann der SRP-Ersatz, dann sendto.
+        # Variant A: first the guard (name, FIRST_SRP), then the SRP replacement, then sendto.
         out = payload
         if session.takeover is not None:
             try:
@@ -163,7 +163,7 @@ async def _to_world(ws: WebSocket, session: Session, transport: asyncio.Datagram
 async def _to_browser(ws: WebSocket, session: Session, queue: asyncio.Queue[bytes | None], stats: RelayStats) -> str:
     while True:
         try:
-            # Modulvariable je Runde lesen: Tests setzen IDLE_SECONDS herunter.
+            # Read the module variable each round: tests lower IDLE_SECONDS.
             async with asyncio.timeout(IDLE_SECONDS):
                 data = await queue.get()
         except TimeoutError:
@@ -191,7 +191,7 @@ async def relay(
     registry: SessionRegistry,
     endpoint_factory: EndpointFactory = open_world_endpoint,
 ) -> None:
-    """Leitet bis zum ersten Endgrund weiter; gibt den BIND immer frei und schließt die Verbindung."""
+    """Forwards until the first end reason; always releases the BIND and closes the connection."""
     started = time.monotonic()
     transport: asyncio.DatagramTransport | None = None
     tasks: list[asyncio.Task[str]] = []
@@ -206,7 +206,7 @@ async def relay(
         try:
             stats.end_reason = next(iter(done)).result()
         except WebSocketDisconnect:
-            # Senden an einen inzwischen geschlossenen Browser.
+            # Sending to a browser that has been closed in the meantime.
             stats.end_reason = END_CLIENT_CLOSED
     finally:
         for task in tasks:

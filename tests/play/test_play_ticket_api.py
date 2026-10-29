@@ -1,13 +1,13 @@
-"""Negativtest-Matrix Ticket und Spielstart mit Positivkontrollen (04.2-06, D-02/D-09/D-10/D-11).
+"""Negative test matrix ticket and game start with positive controls (04.2-06, D-02/D-09/D-10/D-11).
 
-Jede Bedrohung aus der Owner-Liste hat einen eigenen test_neg_-Test; daneben steht
-jeweils eine Positivkontrolle (test_pos_ oder im selben Test), die zeigt, dass die
-Ablehnung an der geprüften Bedingung liegt und nicht an einem kaputten Aufbau.
+Every threat from the owner list has its own test_neg_ test; next to it stands
+a positive control (test_pos_ or in the same test) that shows that the
+rejection is due to the checked condition and not to a broken setup.
 
-/play/launch wird über eine eigens gebaute App mit
-``AppAPIAuthMiddleware(disable_for=play_disable_for("dev"))`` geprüft: So läuft der
-echte Dev-Weg ohne AppAPI-Identität, und die Herkunftsprüfungen im Handler stehen
-ohne die JSON-Middleware davor allein.
+/play/launch is checked via a purpose-built app with
+``AppAPIAuthMiddleware(disable_for=play_disable_for("dev"))``: this way the
+real dev path runs without AppAPI identity, and the origin checks in the handler stand
+alone without the JSON middleware in front.
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def service(store: WorldStore, fake: FakeProvisioner, monkeypatch: pytest.Monkey
 
 
 def _play_app(service: WorldService, mode: PlayMode) -> FastAPI:
-    """Aufbau wie main.py, aber mit festem Modus; die Test-APP hängt vom Modus beim ersten Import ab."""
+    """Setup like main.py, but with a fixed mode; the test APP depends on the mode at first import."""
     app = FastAPI()
     app.add_middleware(JsonOnlyChangesMiddleware)
     app.add_middleware(AppAPIAuthMiddleware, disable_for=play_disable_for(mode))
@@ -97,7 +97,7 @@ def _play_app(service: WorldService, mode: PlayMode) -> FastAPI:
 
 @pytest.fixture
 async def dev_client(service: WorldService) -> AsyncIterator[httpx.AsyncClient]:
-    """Echter Dev-Weg: Auth-Middleware nimmt play und play/* aus, api/* bleibt geschützt."""
+    """Real dev path: auth middleware exempts play and play/*, api/* stays protected."""
     transport = httpx.ASGITransport(app=_play_app(service, "dev"))
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
         yield http
@@ -105,7 +105,7 @@ async def dev_client(service: WorldService) -> AsyncIterator[httpx.AsyncClient]:
 
 @pytest.fixture
 async def harp_client(service: WorldService, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
-    """HaRP-Weg: Auth-Middleware überall an, /play/launch bindet an die UID der Signatur."""
+    """HaRP path: auth middleware on everywhere, /play/launch binds to the UID of the signature."""
     monkeypatch.setenv("GAMEWORLD_BROWSER_SPIKE", "harp")
     transport = httpx.ASGITransport(app=_play_app(service, "harp"))
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
@@ -121,7 +121,7 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
 
 @pytest.fixture
 def profiles(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, tuple[str, ...]]:
-    """Änderbare Gruppen der Selbstauskunft; gw-papa ist anfangs Verwalter."""
+    """Changeable groups of the self-report; gw-papa is a manager at first."""
     del app_env
     groups: dict[str, tuple[str, ...]] = {PAPA: ("admin",)}
 
@@ -185,7 +185,7 @@ async def test_pos_build_from_env(
     await _invite(client, W1, "gw-kind")
     monkeypatch.setenv("GAMEWORLD_PLAY_BUILD", "a")
     assert (await _ticket(client)).json()["play_path"] == "/exapps/gameworld/play/?build=a"
-    # Unbekannter Build fällt auf b zurück.
+    # Unknown build falls back to b.
     monkeypatch.setenv("GAMEWORLD_PLAY_BUILD", "../x")
     assert (await _ticket(client)).json()["play_path"] == "/exapps/gameworld/play/?build=b"
 
@@ -198,7 +198,7 @@ async def test_neg_kind_fremde_welt(client: httpx.AsyncClient, service: WorldSer
     assert denied.status_code == 403
     assert denied.json() == {"detail": TEXT_NICHT_EINGELADEN}
     assert "ticket" not in denied.json()
-    # Positivkontrolle: dasselbe Konto für die eigene Welt.
+    # Positive control: the same account for the own world.
     assert (await _ticket(client, W2, "gw-kind2")).status_code == 200
 
 
@@ -219,20 +219,20 @@ async def test_neg_ex_verwalter(
     profiles: dict[str, tuple[str, ...]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verwalter über die Gruppe admin in W1, dann aus der Gruppe genommen: kein Ticket mehr."""
+    """Manager via the group admin in W1, then removed from the group: no ticket anymore."""
     del service
     fake_directory.users[PAPA] = ("Papa", True)
     fake_directory.groups["admin"].append(PAPA)
     await _invite(client, W1, "admin", kind="group")
-    # Positivkontrolle: als aktiver Verwalter über my_worlds in W1.
+    # Positive control: as an active manager via my_worlds in W1.
     assert (await _ticket(client, W1, PAPA)).status_code == 200
 
     fake_directory.groups["admin"].remove(PAPA)
     profiles[PAPA] = ()
-    # Rollencache (CACHE_SECONDS) ist abgelaufen: frischer Dienst mit derselben Selbstauskunft.
+    # Role cache (CACHE_SECONDS) has expired: fresh service with the same self-report.
     lookup = roles.get_role_service()._lookup  # pyright: ignore[reportPrivateUsage]
     monkeypatch.setattr(roles, "_role_service", roles.RoleService(lookup))
-    # Verwalter-Besuch gleicht ab (Drossel frisch) und nimmt gw-papa aus W1.
+    # Manager visit reconciles (throttle fresh) and removes gw-papa from W1.
     monkeypatch.setattr(access_service, "SYNC_STATE", access_service.SyncState())
     assert (await client.get("/api/worlds", headers=appapi_headers())).status_code == 200
     assert PAPA not in store.world_access(W1)
@@ -243,11 +243,11 @@ async def test_neg_ex_verwalter(
 
 
 async def test_neg_verwalter_ohne_einladung(client: httpx.AsyncClient, service: WorldService) -> None:
-    """D-11: Auch ein aktiver Verwalter bekommt nur Tickets für Welten aus my_worlds."""
+    """D-11: Even an active manager gets tickets only for worlds from my_worlds."""
     del service
     await _invite(client, W1, "gw-kind")
     assert (await _ticket(client, W1, "admin")).status_code == 403
-    # Positivkontrolle: eingeladen, dann 200.
+    # Positive control: invited, then 200.
     await _invite(client, W1, "admin")
     assert (await _ticket(client, W1, "admin")).status_code == 200
 
@@ -271,14 +271,14 @@ async def test_neg_gefaelschte_signatur(client: httpx.AsyncClient, service: Worl
     }
     response = await client.post("/api/my/play-ticket", json={"world_id": W1}, headers=forged)
     assert response.status_code == 401
-    # Positivkontrolle: echte Signatur.
+    # Positive control: real signature.
     assert (await _ticket(client)).status_code == 200
 
 
 async def test_neg_ohne_konto_im_dev_modus(
     client: httpx.AsyncClient, dev_client: httpx.AsyncClient, service: WorldService
 ) -> None:
-    """Im Modus dev bleibt api/* geschützt: ohne Signatur 401, mit Signatur 200."""
+    """In mode dev api/* stays protected: without a signature 401, with a signature 200."""
     del service
     await _invite(client, W1, "gw-kind")
     response = await dev_client.post("/api/my/play-ticket", json={"world_id": W1})
@@ -294,7 +294,7 @@ async def test_neg_deaktiviertes_konto(
     assert fake_directory.users["gw-aus"][1] is False
     await _invite(client, W1, "familie", kind="group")
     assert (await _ticket(client, W1, "gw-aus")).status_code == 403
-    # Positivkontrolle: aktives Mitglied derselben Gruppe.
+    # Positive control: active member of the same group.
     assert (await _ticket(client, W1, "gw-kind")).status_code == 200
 
 
@@ -323,7 +323,7 @@ async def test_neg_welt_gestoppt(client: httpx.AsyncClient, service: WorldServic
     await _invite(client, W2, "gw-kind")
     fake.containers[W1] = (30015, "exited")
     assert (await _ticket(client, W1)).status_code == 409
-    # Positivkontrolle: die laufende zweite Welt.
+    # Positive control: the running second world.
     assert (await _ticket(client, W2)).status_code == 200
 
 
@@ -342,7 +342,7 @@ async def test_neg_csrf_cross_site(client: httpx.AsyncClient, service: WorldServ
         headers = {**appapi_headers("gw-kind"), "Sec-Fetch-Site": site}
         response = await client.post("/api/my/play-ticket", json={"world_id": W1}, headers=headers)
         assert response.status_code == 403
-    # Positivkontrolle: same-origin.
+    # Positive control: same-origin.
     headers = {**appapi_headers("gw-kind"), "Sec-Fetch-Site": "same-origin"}
     assert (await client.post("/api/my/play-ticket", json={"world_id": W1}, headers=headers)).status_code == 200
 
@@ -420,7 +420,7 @@ async def test_neg_launch_abgelaufen(
     late = await _token(client)
     clock.advance(61)
     assert (await _launch(dev_client, late)).status_code == 403
-    # Positivkontrolle: frisches Ticket nach 59 s.
+    # Positive control: fresh ticket after 59 s.
     fresh = await _token(client)
     clock.advance(59)
     assert (await _launch(dev_client, fresh)).status_code == 200
@@ -458,7 +458,7 @@ async def test_neg_launch_herkunft(
     refused = await _launch(dev_client, token, headers)
     assert refused.status_code == 403
     assert "password" not in refused.text
-    # Positivkontrolle: Die Ablehnung lag am Header; das Ticket wurde vor dem Lesen nicht verbraucht.
+    # Positive control: the rejection was due to the header; the ticket was not consumed before reading.
     assert (await _launch(dev_client, token)).status_code == 200
 
 
@@ -490,7 +490,7 @@ async def test_neg_launch_zu_grosser_body(dev_client: httpx.AsyncClient, service
 
 
 class _CountingBody:
-    """Gestreamter Body, der mitzählt, wie viele Chunks der Server tatsächlich gezogen hat."""
+    """Streamed body that counts how many chunks the server actually pulled."""
 
     def __init__(self, chunks: list[bytes]) -> None:
         self._chunks = chunks
@@ -503,7 +503,7 @@ class _CountingBody:
 
 
 def _huge_body() -> _CountingBody:
-    # 1000 Chunks zu je 1024 Bytes: komplett gelesen wären es 1000 gezogene Chunks.
+    # 1000 chunks of 1024 bytes each: read completely it would be 1000 pulled chunks.
     return _CountingBody([b"a" * 1024] * 1000)
 
 
@@ -511,7 +511,7 @@ def _huge_body() -> _CountingBody:
 async def test_neg_launch_content_length_zu_gross(
     dev_client: httpx.AsyncClient, service: WorldService, length: str
 ) -> None:
-    """CR-01: Ein zu großer Content-Length wird abgelehnt, bevor ein Byte des Bodys gelesen wird."""
+    """CR-01: An oversized Content-Length is rejected before a byte of the body is read."""
     del service
     body = _CountingBody([b'{"ticket": "x"}'])
     response = await dev_client.post("/play/launch", content=body, headers={**GOOD, "Content-Length": length})
@@ -522,13 +522,13 @@ async def test_neg_launch_content_length_zu_gross(
 @pytest.mark.parametrize(
     "extra",
     [None, b"10", b"abc", b"\xb2"],
-    # Das Byte 0xB2 kommt bei Starlette (latin-1) als "²" an: Unicode-Ziffer, die isdigit() bejaht.
+    # Starlette (latin-1) receives the byte 0xB2 as "²": a Unicode digit that isdigit() accepts.
     ids=["chunked", "zu_klein", "nicht_numerisch", "unicode_ziffer"],
 )
 async def test_neg_launch_stream_zu_gross(
     dev_client: httpx.AsyncClient, service: WorldService, extra: bytes | None
 ) -> None:
-    """CR-01: Ohne verlässlichen Content-Length bricht der Stream nach wenigen Chunks ab, statt alles zu puffern."""
+    """CR-01: Without a reliable Content-Length the stream aborts after a few chunks instead of buffering everything."""
     del service
     body = _huge_body()
     headers = [(name.encode(), value.encode()) for name, value in GOOD.items()]
@@ -540,7 +540,7 @@ async def test_neg_launch_stream_zu_gross(
 
 
 async def test_neg_play_ticket_stream_zu_gross(client: httpx.AsyncClient, service: WorldService) -> None:
-    """CR-01: Derselbe Abbruch gilt für die Ticket-Ausgabe hinter der AppAPI-Signatur."""
+    """CR-01: The same abort applies to ticket issuing behind the AppAPI signature."""
     del service
     await _invite(client, W1, "gw-kind")
     body = _huge_body()
@@ -558,7 +558,7 @@ def _padded(token: str, size: int) -> bytes:
 async def test_pos_launch_body_genau_max(
     client: httpx.AsyncClient, dev_client: httpx.AsyncClient, service: WorldService
 ) -> None:
-    """Grenze inklusive: genau MAX_BODY Bytes starten, ein Byte mehr nicht, und das Ticket bleibt dann unverbraucht."""
+    """Limit inclusive: exactly MAX_BODY bytes start, one byte more does not, and the ticket then stays unconsumed."""
     del service
     await _invite(client, W1, "gw-kind")
     exact = await _token(client)
@@ -567,7 +567,7 @@ async def test_pos_launch_body_genau_max(
     kept = await _token(client)
     too_big = await dev_client.post("/play/launch", content=_padded(kept, MAX_BODY + 1), headers=GOOD)
     assert too_big.status_code == 413
-    # Positivkontrolle: Der Abbruch lag vor redeem, das Ticket ist weiter einlösbar.
+    # Positive control: the abort came before redeem, the ticket is still redeemable.
     assert (await _launch(dev_client, kept)).status_code == 200
 
 
@@ -578,7 +578,7 @@ async def test_neg_launch_nach_ausladen(
     await _invite(client, W1, "gw-kind")
     kept = await _token(client)
     revoked = await _token(client)
-    # Positivkontrolle ohne Ausladen.
+    # Positive control without uninviting.
     assert (await _launch(dev_client, kept)).status_code == 200
     removed = await client.post(
         f"/api/worlds/{W1}/invites/remove", json={"kind": "user", "target": "gw-kind"}, headers=appapi_headers()
@@ -600,7 +600,7 @@ async def test_neg_launch_nach_umbenennen(
     )
     assert renamed.status_code == 200
     assert (await _launch(dev_client, token)).status_code == 409
-    # Positivkontrolle: neues Ticket mit dem neuen Namen.
+    # Positive control: new ticket with the new name.
     response = await _launch(dev_client, await _token(client))
     assert response.status_code == 200
     assert response.json()["player_name"] == "Mia2"
@@ -613,7 +613,7 @@ async def test_neg_launch_welt_inzwischen_gestoppt(
     await _invite(client, W1, "gw-kind")
     kept = await _token(client)
     token = await _token(client)
-    # Positivkontrolle: vor dem Stoppen klappt der Start.
+    # Positive control: before stopping, the start works.
     assert (await _launch(dev_client, kept)).status_code == 200
     stopped = await client.post(f"/api/worlds/{W1}/stop", headers=appapi_headers())
     assert stopped.status_code == 200, stopped.text
@@ -625,17 +625,17 @@ async def test_neg_launch_welt_inzwischen_gestoppt(
 async def test_neg_launch_harp_fremde_uid(
     client: httpx.AsyncClient, harp_client: httpx.AsyncClient, service: WorldService
 ) -> None:
-    """Modus harp: Das Ticket gilt nur für das Konto, das es geholt hat (uid_mismatch, verbrannt)."""
+    """Mode harp: The ticket applies only to the account that fetched it (uid_mismatch, burnt)."""
     del service
     await _invite(client, W1, "gw-kind")
     await _invite(client, W1, "gw-kind2")
     stolen = await _token(client)
     foreign = await _launch(harp_client, stolen, {**GOOD, **appapi_headers("gw-kind2")})
     assert foreign.status_code == 403, foreign.text
-    # Verbrannt: auch das richtige Konto kann es danach nicht mehr einlösen.
+    # Burnt: even the right account cannot redeem it afterwards.
     owner = await _launch(harp_client, stolen, {**GOOD, **appapi_headers("gw-kind")})
     assert owner.status_code == 403
-    # Positivkontrolle: neues Ticket, richtiges Konto.
+    # Positive control: new ticket, right account.
     fresh = await _token(client)
     ok = await _launch(harp_client, fresh, {**GOOD, **appapi_headers("gw-kind")})
     assert ok.status_code == 200, ok.text
@@ -644,25 +644,25 @@ async def test_neg_launch_harp_fremde_uid(
 async def test_neg_launch_harp_ohne_signatur(
     client: httpx.AsyncClient, harp_client: httpx.AsyncClient, service: WorldService
 ) -> None:
-    """Modus harp: /play/launch ohne Signatur scheitert schon an der Middleware."""
+    """Mode harp: /play/launch without a signature already fails at the middleware."""
     del service
     await _invite(client, W1, "gw-kind")
     token = await _token(client)
     assert (await _launch(harp_client, token)).status_code == 401
-    # Positivkontrolle: dasselbe Ticket mit Signatur des eigenen Kontos.
+    # Positive control: the same ticket with the signature of the own account.
     assert (await _launch(harp_client, token, {**GOOD, **appapi_headers("gw-kind")})).status_code == 200
 
 
 async def test_neg_launch_harp_ohne_identitaet(
     dev_client: httpx.AsyncClient, client: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Modus harp an einer App ohne Identität (Fehlkonfiguration): 401 statt ungebundenem Ticket."""
+    """Mode harp on an app without identity (misconfiguration): 401 instead of an unbound ticket."""
     del service
     await _invite(client, W1, "gw-kind")
     token = await _token(client)
     monkeypatch.setenv("GAMEWORLD_BROWSER_SPIKE", "harp")
     assert (await _launch(dev_client, token)).status_code == 401
-    # Positivkontrolle: Modus dev, dasselbe Ticket (401 kam vor dem Einlösen).
+    # Positive control: mode dev, the same ticket (401 came before redeeming).
     monkeypatch.setenv("GAMEWORLD_BROWSER_SPIKE", "dev")
     assert (await _launch(dev_client, token)).status_code == 200
 
@@ -673,7 +673,7 @@ async def test_neg_launch_keine_fremden_daten(
     del service
     await _invite(client, W1, "gw-kind")
     await _invite(client, W1, "gw-kind2")
-    # Positivkontrolle: Der Verwalter sieht beide in der Spielerliste.
+    # Positive control: the manager sees both in the player list.
     players = (await client.get(f"/api/worlds/{W1}/players", headers=appapi_headers())).json()["players"]
     other = next(p for p in players if p["nc_user"] == "gw-kind2")
     own = next(p for p in players if p["nc_user"] == "gw-kind")
@@ -699,12 +699,12 @@ async def test_neg_log_ohne_geheimnisse(
     response = await _launch(dev_client, token)
     assert response.status_code == 200
     ws_ticket = response.json()["ws_ticket"]
-    # Abgelehnte Wege loggen ebenfalls.
+    # Rejected paths log as well.
     assert (await _launch(dev_client, token)).status_code == 403
     assert (await _launch(dev_client, ws_ticket)).status_code == 403
-    # Positivkontrolle: Die Aufzeichnung fängt die Ereignisse dieses Moduls.
-    assert "Spielstart freigegeben" in caplog.text
-    assert "Spielstart abgelehnt: used_or_unknown" in caplog.text
+    # Positive control: the recording catches the events of this module.
+    assert "play start granted" in caplog.text
+    assert "play start refused: used_or_unknown" in caplog.text
     everything = caplog.text + " ".join(repr(record.args) for record in caplog.records)
     for secret in (token, ws_ticket, password):
         assert secret not in everything

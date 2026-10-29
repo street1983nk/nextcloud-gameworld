@@ -1,17 +1,17 @@
-"""Live-Beleg 04.2-08: WebSocket-Relais von Gameworld zu einer echten Luanti-5.17.0-Welt.
+"""Live proof 04.2-08: WebSocket relay from Gameworld to a real Luanti 5.17.0 world.
 
-Erfolgskriterium 2 des Browser-Spikes: Der Browser-Weg ändert nichts an den Regeln der
-Welt. Die Mods (gameworld_access, gameworld_time) entscheiden weiter im Prejoin, der
-Server prüft das Passwort selbst, und ein fremder Spielername kommt nie bis zur Welt.
+Success criterion 2 of the browser spike: the browser path changes nothing about the rules of the
+world. The mods (gameworld_access, gameworld_time) keep deciding in the prejoin, the
+server checks the password itself, and a foreign player name never reaches the world.
 
-Aufbau wie im Dev-Weg (Plan 08): Die ExApp läuft als echter uvicorn-Server in einem
-Thread, mit eigener App im Modus dev (disable_for nur play und play/*), der Ablauf ist
-der des Browsers: Ticket über /api/my/play-ticket (AppAPI-signiert), /play/launch mit
-Origin, dann /play/ws mit NEWADDR und BIND. Der Join selbst ist luanti_probe.join, nur
-der Transport ist gegen tests/e2e/ws_datagram.py getauscht.
+Setup as on the dev path (plan 08): the ExApp runs as a real uvicorn server in a
+thread, with its own app in mode dev (disable_for only play and play/*), the flow is
+that of the browser: ticket via /api/my/play-ticket (AppAPI-signed), /play/launch with
+origin, then /play/ws with NEWADDR and BIND. The join itself is luanti_probe.join, only
+the transport is swapped for tests/e2e/ws_datagram.py.
 
-Nextcloud-Verzeichnis und Geheimnis sind die Fakes aus tests/conftest.py; Welt, Mods,
-Relais und Join sind echt. Seriell, je Test eine MTG-kreativ-Welt.
+Nextcloud directory and secret are the fakes from tests/conftest.py; world, mods,
+relay and join are real. Serial, one MTG creative world per test.
 """
 
 from __future__ import annotations
@@ -52,17 +52,17 @@ from tests.e2e.ws_datagram import WsDatagramSocket
 pytestmark = [pytest.mark.docker, pytest.mark.usefixtures("docker_cleanup")]
 
 BERLIN = ZoneInfo("Europe/Berlin")
-# Passt nie: Das Alphabet der echten Passwörter kennt kein "0" und kein "1".
+# Never matches: the alphabet of real passwords has no "0" and no "1".
 WRONG_PASSWORD = "0000-1111-0000"  # noqa: S105
 VIRTUAL = ("10.77.0.1", 30000)
-# Der Zeit-Mod liest die Regeldatei spätestens alle 5 s neu.
+# The time mod re-reads the rule file at least every 5 s.
 MOD_RELOAD = 15.0
 SERVER_START = 10.0
 
 
 @dataclass
 class RelayServer:
-    """Echter HTTP- und WebSocket-Server der ExApp im Modus dev."""
+    """Real HTTP and WebSocket server of the ExApp in mode dev."""
 
     port: int
     http: httpx.AsyncClient
@@ -80,7 +80,7 @@ def _free_port() -> int:
 
 
 def _e2e_app() -> FastAPI:
-    """Aufbau wie main.py, aber mit festem Modus dev und ohne Lifespan (kein Nextcloud)."""
+    """Setup like main.py, but with a fixed mode dev and without lifespan (no Nextcloud)."""
     app = FastAPI()
     app.add_middleware(JsonOnlyChangesMiddleware)
     app.add_middleware(AppAPIAuthMiddleware, disable_for=play_disable_for("dev"))
@@ -137,7 +137,7 @@ async def _invite(relay: RelayServer, world_id: str, target: str) -> tuple[str, 
 
 
 async def _session_free(uid: str, world_id: str) -> None:
-    """Wartet, bis die vorige Sitzung derselben UID und Welt im Relais abgebaut ist."""
+    """Waits until the previous session of the same UID and world is torn down in the relay."""
     registry = sessions_module.get_session_registry()
     deadline = time.monotonic() + 5.0
     while (uid, world_id) in registry._active:  # pyright: ignore[reportPrivateUsage]
@@ -155,7 +155,7 @@ class Launch:
 
 
 async def _launch(relay: RelayServer, uid: str, world_id: str) -> Launch:
-    """Weg des Browsers bis vor den WebSocket: Ticket (signiert), dann /play/launch mit Origin."""
+    """The browser's path up to the WebSocket: ticket (signed), then /play/launch with origin."""
     await _session_free(uid, world_id)
     issued = await relay.http.post("/api/my/play-ticket", json={"world_id": world_id}, headers=appapi_headers(uid))
     assert issued.status_code == 200, issued.text
@@ -182,7 +182,7 @@ def _factory(relay: RelayServer, launch: Launch) -> Callable[[], DatagramSocket]
 async def _relay_join(
     relay: RelayServer, uid: str, world_id: str, name: str | None = None, password: str | None = None
 ) -> dict[str, object]:
-    """Ein Join über das Relais; Name und Passwort aus /play/launch, außer der Test setzt sie."""
+    """A join via the relay; name and password from /play/launch, unless the test sets them."""
     launch = await _launch(relay, uid, world_id)
     try:
         return await anyio.to_thread.run_sync(
@@ -203,7 +203,7 @@ async def _relay_join(
 async def _relay_join_until(
     relay: RelayServer, uid: str, world_id: str, accept: Callable[[dict[str, object]], bool]
 ) -> dict[str, object]:
-    """Wiederholt den Join über das Relais, bis ``accept`` passt (Mod lädt Regeln alle 5 s)."""
+    """Repeats the join via the relay until ``accept`` fits (the mod loads rules every 5 s)."""
     deadline = time.monotonic() + MOD_RELOAD
     while True:
         result = await _relay_join(relay, uid, world_id)
@@ -238,7 +238,7 @@ async def test_auth_accept_ueber_relais_und_falsches_passwort(
     world_id, port = await create_running_world(relay.http, "mtg_kreativ", MTG_READY)
     name, password = await _invite(relay, world_id, "gw-kind")
 
-    # Positivkontrolle: Ticket, Launch (Variante B liefert das eigene Passwort), Relais, AUTH_ACCEPT.
+    # Positive control: ticket, launch (variant B delivers the own password), relay, AUTH_ACCEPT.
     launch = await _launch(relay, "gw-kind", world_id)
     assert (launch.player_name, launch.password) == (name, password)
     accepted = await _relay_join(relay, "gw-kind", world_id)
@@ -247,34 +247,34 @@ async def test_auth_accept_ueber_relais_und_falsches_passwort(
     assert sock.sent >= 4, "Dummy, INIT, SRP A und M gingen über das Relais"
     assert sock.received >= 3, "SET_PEER_ID, HELLO, SRP B und AUTH_ACCEPT kamen über das Relais"
 
-    # Gegenprobe Passwort: Der Server prüft weiter selbst.
+    # Control password: the server keeps checking itself.
     wrong = await _relay_join(relay, "gw-kind", world_id, password=WRONG_PASSWORD)
     assert wrong["result"] == "denied", wrong
     assert wrong["code"] == "WRONG_PASSWORD", wrong
-    # Derselbe Fall direkt per UDP (ohne Relais) gibt dieselbe Antwort.
+    # The same case directly via UDP (without relay) gives the same answer.
     direct = join(HOST, port, name, WRONG_PASSWORD)
     assert (direct["result"], direct["code"]) == ("denied", "WRONG_PASSWORD"), direct
 
-    # Live-Frage (a): Das leere RELIABLE(ORIGINAL), mit dem der 5.17-Client verbindet,
-    # geht durch Wächter und Relais; der Server antwortet mit SET_PEER_ID.
+    # Live question (a): the empty RELIABLE(ORIGINAL) with which the 5.17 client connects
+    # passes through guard and relay; the server answers with SET_PEER_ID.
     empty_launch = await _launch(relay, "gw-kind", world_id)
     peer = await anyio.to_thread.run_sync(partial(_empty_reliable_peer_id, relay, empty_launch))
     assert peer > 1, peer
 
-    # Zählerzeilen (Open Question 2, Probe-Client): je Sitzung genau ein BIND. Der
-    # NEWADDR-Zähler läuft je Konto und Welt über alle Sitzungen weiter (Plan 07), je
-    # Sitzung also die Differenz zur vorigen Zeile: hier jeweils 1.
+    # Counter lines (open question 2, probe client): exactly one BIND per session. The
+    # NEWADDR counter continues per account and world across all sessions (plan 07), so per
+    # session the difference to the previous line: here 1 each.
     _wait_relay_end(caplog, 3)
     ends = _relay_lines(caplog, "play session end")
     assert ends == [f"play session end binds=1 newaddr={k}" for k in (1, 2, 3)], ends
 
 
 def _empty_reliable_peer_id(relay: RelayServer, launch: Launch) -> int:
-    """Sendet nur ein leeres RELIABLE(ORIGINAL) mit peer_id 0 und liest SET_PEER_ID."""
+    """Sends only an empty RELIABLE(ORIGINAL) with peer_id 0 and reads SET_PEER_ID."""
     sock = WsDatagramSocket(launch.url, relay.origin)
     relay.sockets.append(sock)
     sock.settimeout(1.0)
-    # Eigener Bau des Pakets: Kopf, RELIABLE (3) mit Seq 65500, ORIGINAL (1) ohne Kommando.
+    # Own build of the packet: head, RELIABLE (3) with seq 65500, ORIGINAL (1) without a command.
     packet = PROTO.to_bytes(4, "big") + b"\x00\x00" + b"\x00" + b"\x03" + (65500).to_bytes(2, "big") + b"\x01"
     deadline = time.monotonic() + 6.0
     try:
@@ -309,7 +309,7 @@ async def test_pause_ueber_relais_prejoin_abgelehnt(relay: RelayServer) -> None:
         ended = await relay.http.post("/api/pause/end", json={}, headers=appapi_headers())
         assert ended.status_code == 200, ended.text
 
-    # Positivkontrolle: Nach "Weiter" kommt das Kind über das Relais wieder hinein.
+    # Positive control: after "Weiter" the child gets back in via the relay.
     again = await _relay_join_until(relay, "gw-kind", world_id, lambda r: r["result"] == "auth_accept")
     assert again["result"] == "auth_accept", again
 
@@ -320,7 +320,7 @@ async def test_spielzeit_aufgebraucht_ueber_relais_und_verwalter_frei(relay: Rel
     await _invite(relay, world_id, "admin")
     assert (await _relay_join(relay, "gw-kind", world_id))["result"] == "auth_accept"
 
-    # Tageslimit 1 min, heute schon 2 min verbraucht; Verwalter-Schnappschuss wie im Spielzeit-e2e.
+    # Daily limit 1 min, 2 min already used today; manager snapshot as in the playtime e2e.
     plan = {"normal": [{"weekday": day, "allowed": True, "limit_minutes": 1} for day in range(1, 8)]}
     rules = await relay.http.post("/api/playtime/children/gw-kind", json=plan, headers=appapi_headers())
     assert rules.status_code == 200, rules.text
@@ -333,7 +333,7 @@ async def test_spielzeit_aufgebraucht_ueber_relais_und_verwalter_frei(relay: Rel
     assert denied["result"] == "denied", denied
     assert TEXT_LIMIT in str(denied["reason"]), denied
 
-    # D-11: Der Verwalter mit eigener Einladung kommt über das Relais hinein.
+    # D-11: the manager with an own invitation gets in via the relay.
     admin = await _relay_join(relay, "admin", world_id)
     assert admin["result"] == "auth_accept", admin
 
@@ -344,7 +344,7 @@ async def test_fremder_name_beendet_sitzung_vor_der_welt(relay: RelayServer, cap
     sibling, sibling_password = await _invite(relay, world_id, "gw-kind2")
     assert sibling != name
 
-    # Ticket des Kindes, INIT mit dem Namen des eingeladenen Geschwisters.
+    # Ticket of the child, INIT with the name of the invited sibling.
     forged = await _relay_join(relay, "gw-kind", world_id, name=sibling, password=sibling_password)
     assert forged["result"] in {"timeout", "no_peer_id"}, forged
     sock = relay.sockets[-1]
@@ -352,10 +352,10 @@ async def test_fremder_name_beendet_sitzung_vor_der_welt(relay: RelayServer, cap
     assert sock.close_code == 1008, sock.close_code
     lines = _wait_relay_end(caplog, 1)
     assert any(line.endswith("reason=guard_name_mismatch") for line in lines), lines
-    # Kein Join-Versuch mit dem Geschwisternamen hat die Welt erreicht.
+    # No join attempt with the sibling's name has reached the world.
     assert re.search(rf"\b{re.escape(sibling)}\b", _world_log(world_id)) is None
 
-    # Positivkontrolle des Log-Belegs: direkt per UDP mit falschem Passwort steht der Name im Welt-Log.
+    # Positive control of the log proof: directly via UDP with a wrong password the name is in the world log.
     direct = join(HOST, port, sibling, WRONG_PASSWORD)
     assert (direct["result"], direct["code"]) == ("denied", "WRONG_PASSWORD"), direct
     deadline = time.monotonic() + 5.0
@@ -363,6 +363,6 @@ async def test_fremder_name_beendet_sitzung_vor_der_welt(relay: RelayServer, cap
         assert time.monotonic() < deadline, "Welt-Log nennt den Namen auch beim direkten Versuch nicht"
         await anyio.sleep(0.2)
 
-    # Positivkontrolle Relais: Mit dem eigenen Namen geht es weiter.
+    # Positive control relay: with the own name it goes on.
     own = await _relay_join(relay, "gw-kind", world_id)
     assert own["result"] == "auth_accept", own

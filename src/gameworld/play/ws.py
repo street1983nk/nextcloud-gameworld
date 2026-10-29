@@ -1,21 +1,21 @@
-"""WebSocket-Endpunkt des Proxys ``/play/ws`` (04.2-07, D-01/D-02, RESEARCH Pattern 2).
+"""WebSocket endpoint of the proxy ``/play/ws`` (04.2-07, D-01/D-02, RESEARCH pattern 2).
 
-Prüfreihenfolge, jede Stufe schließt bei Fehler mit 1008 ohne Begründung mit Daten:
+Check order, each stage closes with 1008 on failure without a reason containing data:
 
-1. Schalter: Modus off schließt vor accept.
-2. Origin gegen GAMEWORLD_PLAY_ORIGINS vor accept (Cross-Site-WebSocket-Hijacking).
-   JsonOnlyChangesMiddleware greift bei WebSocket nicht (api/csrf.py), darum hier.
-3. Modus harp: Identität aus ``scope["username"]`` (AppAPIAuthMiddleware prüft auch
-   WebSocket-Scopes), leer schließt vor accept. Modus dev: ``disable_for`` nimmt play/*
-   aus der Middleware, dann trägt allein das Ein-Mal-Ticket.
-4. accept, erstes Kommando als Text binnen FIRST_COMMAND_SECONDS.
-5. ``parse_command``: NEWADDR löst das WS-Ticket ein, prüft die Einladung erneut, legt die
-   Sitzung an und antwortet mit ADDR; BIND bindet per Passcode und startet das Relais.
-   Alles andere schließt.
+1. Switch: mode off closes before accept.
+2. Origin against GAMEWORLD_PLAY_ORIGINS before accept (cross-site WebSocket hijacking).
+   JsonOnlyChangesMiddleware does not apply to WebSocket (api/csrf.py), hence here.
+3. Mode harp: identity from ``scope["username"]`` (AppAPIAuthMiddleware also checks
+   WebSocket scopes), empty closes before accept. Mode dev: ``disable_for`` takes play/*
+   out of the middleware, then the one-time ticket alone counts.
+4. accept, first command as text within FIRST_COMMAND_SECONDS.
+5. ``parse_command``: NEWADDR redeems the WS ticket, checks the invitation again, creates the
+   session and answers with ADDR; BIND binds by passcode and starts the relay.
+   Everything else closes.
 
-Die Welt kommt nur aus dem serverseitig gespeicherten Ticket, nie aus der URL. Ein
-UDP-Socket entsteht erst im Relais, also nur nach erfolgreichem BIND. Logs nennen nur
-feste Gründe, nie Ticket, Passcode, Spielername oder Header.
+The world comes only from the server-side stored ticket, never from the URL. A
+UDP socket only comes into being in the relay, i.e. only after a successful BIND. Logs name only
+fixed reasons, never ticket, passcode, player name or header.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ TargetResolver = Callable[[str], Awaitable[tuple[str, int] | None]]
 
 
 def get_target_resolver(service: ServiceDep) -> TargetResolver:
-    """UDP-Ziel einer laufenden Welt: (udp_host, Port aus list_worlds); Tests setzen eine Fake-Welt ein."""
+    """UDP destination of a running world: (udp_host, port from list_worlds); tests inject a fake world."""
 
     async def resolve(world_id: str) -> tuple[str, int] | None:
         view = next(
@@ -89,7 +89,7 @@ async def _newaddr(
     except TicketError as error:
         await _refuse(websocket, f"ticket_{error.reason}")
         return
-    # Die Einladung kann seit /play/launch weg sein; die Welt kommt nur aus dem Ticket.
+    # The invitation may be gone since /play/launch; the world comes only from the ticket.
     try:
         granted = await check_play_access(ticket.uid, ticket.world_id, roles, access, service)
     except HTTPException as exc:
@@ -109,10 +109,10 @@ async def _newaddr(
         await _refuse(websocket, f"session_{error.reason}")
         return
     if auth_variant() == "proxy_srp":
-        # Variante A: Das Passwort stammt nur aus check_play_access(ticket.uid), nie aus dem Client.
+        # Variant A: the password comes only from check_play_access(ticket.uid), never from the client.
         session.takeover = SrpTakeover(ticket.player_name, granted.entry.password)
     await websocket.send_text(format_addr(session.passcode))
-    # Der Client schließt nach ADDR selbst; normaler Abschluss.
+    # The client closes itself after ADDR; normal completion.
     await websocket.close()
 
 

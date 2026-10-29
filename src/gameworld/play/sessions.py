@@ -1,18 +1,18 @@
-"""Sitzungen des WebSocket-Proxys (04.2-07, D-01/D-02).
+"""Sessions of the WebSocket proxy (04.2-07, D-01/D-02).
 
-``NEWADDR`` legt nach eingelöstem WS-Ticket eine Sitzung an: Passcode mit 128 Bit
-(``secrets.token_urlsafe(16)``), gebunden an Konto (UID), Welt, Spielername und das
-UDP-Ziel der Welt. Das Ziel steht im eingefrorenen ``SessionKey`` und lässt sich nach
-``create`` nicht mehr ändern; der Proxy sendet nie an ein Ziel aus dem Frame.
+``NEWADDR`` creates a session after a redeemed WS ticket: passcode with 128 bits
+(``secrets.token_urlsafe(16)``), bound to account (UID), world, player name and the
+UDP destination of the world. The destination is in the frozen ``SessionKey`` and cannot be changed after
+``create``; the proxy never sends to a destination from the frame.
 
-Grenzen: höchstens eine Sitzung je (UID, Welt), höchstens BIND_LIMIT BINDs je
-Passcode (der Client öffnet je UDP-Socket eine eigene Verbindung, RESEARCH Pitfall 8),
-eine Sitzung ohne BIND verfällt nach UNBOUND_SECONDS. Nach dem letzten BIND-Ende ist
-die Sitzung vorbei und (UID, Welt) wieder frei.
+Limits: at most one session per (UID, world), at most BIND_LIMIT BINDs per
+passcode (the client opens its own connection per UDP socket, RESEARCH pitfall 8),
+a session without BIND expires after UNBOUND_SECONDS. After the last BIND ends,
+the session is over and (UID, world) is free again.
 
-Messwerte für RESEARCH Open Question 2 (wie viele WS-Verbindungen und BINDs öffnet der
-5.17-Client): Beim Sitzungsende genau eine Zeile ``play session end binds=<n>
-newaddr=<k>``, nur Zahlen, ohne UID, Spielername, Passcode oder Ticket.
+Measurements for RESEARCH open question 2 (how many WS connections and BINDs does the
+5.17 client open): at session end exactly one line ``play session end binds=<n>
+newaddr=<k>``, numbers only, without UID, player name, passcode or ticket.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ REASON_ENDED = "ended"
 
 @dataclass(frozen=True)
 class SessionKey:
-    """Unveränderliche Bindung einer Sitzung; ``target`` ist das einzige UDP-Ziel."""
+    """Immutable binding of a session; ``target`` is the only UDP destination."""
 
     uid: str
     world_id: str
@@ -54,7 +54,7 @@ class SessionKey:
 
 
 class Session:
-    """Eine Sitzung: feste Bindung (``key``), Zähler und ein Wächter für alle BINDs."""
+    """A session: fixed binding (``key``), counters and a guard for all BINDs."""
 
     __slots__ = ("active_binds", "binds", "created_at", "guard", "key", "takeover")
 
@@ -63,9 +63,9 @@ class Session:
         self.created_at = created_at
         self.binds = 0
         self.active_binds = 0
-        # Ein Wächter je Sitzung, nicht je BIND: ein zweiter Socket teilt den Namenszustand.
+        # One guard per session, not per BIND: a second socket shares the name state.
         self.guard = ClientGuard(key.player_name)
-        # Variante A (proxy_srp): ws.py hängt die SRP-Übernahme an, sonst None (Variante B).
+        # Variant A (proxy_srp): ws.py attaches the SRP takeover, otherwise None (variant B).
         self.takeover: SrpTakeover | None = None
 
     @property
@@ -90,7 +90,7 @@ class Session:
 
 
 class SessionError(Exception):
-    """Sitzung abgelehnt; ``reason`` ist eine der ASCII-Konstanten REASON_*, nie ein Wert."""
+    """Session rejected; ``reason`` is one of the ASCII constants REASON_*, never a value."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -98,7 +98,7 @@ class SessionError(Exception):
 
 
 class SessionRegistry:
-    """Offene Sitzungen im Speicher; jeder Aufruf räumt zuerst verfallene ab."""
+    """Open sessions in memory; every call first clears expired ones."""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
@@ -108,7 +108,7 @@ class SessionRegistry:
         self._lock = threading.Lock()
 
     def _end(self, session: Session) -> None:
-        """Entfernt die Sitzung und schreibt die Zählerzeile (nur Zahlen)."""
+        """Removes the session and writes the counter line (numbers only)."""
         pair = (session.uid, session.world_id)
         self._sessions.pop(session.passcode, None)
         if self._active.get(pair) == session.passcode:
@@ -125,12 +125,12 @@ class SessionRegistry:
             self._end(session)
 
     def create(self, uid: str, world_id: str, player_name: str, target: tuple[str, int]) -> Session:
-        """Neue Sitzung oder SessionError("busy"), solange (uid, world_id) eine aktive hat."""
+        """New session or SessionError("busy") as long as (uid, world_id) has an active one."""
         pair = (uid, world_id)
         with self._lock:
             now = self._clock()
             self._expire(now)
-            # Zählt jeden NEWADDR-Versuch nach eingelöstem Ticket, auch abgelehnte.
+            # Counts every NEWADDR attempt after a redeemed ticket, also rejected ones.
             self._newaddr[pair] = self._newaddr.get(pair, 0) + 1
             if pair in self._active:
                 raise SessionError(REASON_BUSY)
@@ -147,7 +147,7 @@ class SessionRegistry:
             return session
 
     def bind(self, passcode: str, uid: str | None = None) -> Session:
-        """Zählt einen BIND; ``uid`` None (Modus dev) prüft das Konto nicht."""
+        """Counts a BIND; ``uid`` None (mode dev) does not check the account."""
         with self._lock:
             self._expire(self._clock())
             session = self._sessions.get(passcode)
@@ -164,7 +164,7 @@ class SessionRegistry:
             return session
 
     def unbind(self, passcode: str) -> None:
-        """Ende eines BIND; nach dem letzten endet die Sitzung. Unbekannte Passcodes: nichts."""
+        """End of a BIND; after the last one the session ends. Unknown passcodes: nothing."""
         with self._lock:
             session = self._sessions.get(passcode)
             if session is None or session.active_binds == 0:
@@ -178,7 +178,7 @@ _session_registry: SessionRegistry | None = None
 
 
 def get_session_registry() -> SessionRegistry:
-    """FastAPI-Dependency: modulweites Singleton (Tests setzen eigene Instanzen per Override)."""
+    """FastAPI dependency: module-wide singleton (tests set their own instances via override)."""
     global _session_registry
     if _session_registry is None:
         _session_registry = SessionRegistry()

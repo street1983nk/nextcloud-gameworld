@@ -1,20 +1,20 @@
-"""Ticket-Weg des Browser-Spikes: Ausgabe, Schalterstatus und Spielstart (04.2-06).
+"""Ticket path of the browser spike: issuing, switch status and game start (04.2-06).
 
-D-02: Die Zugangsprüfung "eingeladen" steht vor dem ersten weitergeleiteten Paket
-und nutzt dieselbe Kette wie GET /api/my/worlds (``roles.profile(uid)`` und
-``access.my_worlds(profile)``); es gibt keinen neuen Zugriffspfad. D-11: Verwalter
-gehen denselben Weg mit denselben Regeln wie beim Luanti-Programm, ein Ticket gibt
-es also genau für die Welten, die my_worlds für sie liefert.
+D-02: the access check "invited" comes before the first forwarded packet
+and uses the same chain as GET /api/my/worlds (``roles.profile(uid)`` and
+``access.my_worlds(profile)``); there is no new access path. D-11: managers
+take the same path with the same rules as with the Luanti program, so a ticket exists
+exactly for the worlds that my_worlds returns for them.
 
-- POST /api/my/play-ticket: läuft immer hinter AppAPIAuthMiddleware (UID nur aus
-  der Signatur) und JsonOnlyChangesMiddleware (CSRF, IN-08).
-- GET /api/my/play-status: verrät nur, ob der Schalter an ist.
-- POST /play/launch: im Modus dev ohne AppAPI-Identität (disable_for play/*), darum
-  prüft der Handler Origin, Content-Type und Sec-Fetch-Site selbst, bevor er den
-  Body liest, und danach die Einladung erneut.
+- POST /api/my/play-ticket: always runs behind AppAPIAuthMiddleware (UID only from
+  the signature) and JsonOnlyChangesMiddleware (CSRF, IN-08).
+- GET /api/my/play-status: only reveals whether the switch is on.
+- POST /play/launch: in mode dev without AppAPI identity (disable_for play/*), so
+  the handler checks Origin, Content-Type and Sec-Fetch-Site itself before it reads the
+  body, and afterwards the invitation again.
 
-Logs nennen nur feste Ereignisnamen und Grund-Konstanten, nie Ticket- oder
-Passwortwerte und keine Spielernamen.
+Logs name only fixed event names and reason constants, never ticket or
+password values and no player names.
 """
 
 from __future__ import annotations
@@ -45,10 +45,10 @@ LOG = logging.getLogger(__name__)
 ENV_BUILD = "GAMEWORLD_PLAY_BUILD"
 _BUILDS: dict[str, Literal["a", "b"]] = {"a": "a", "b": "b"}
 
-# Größer ist kein gültiger Body dieser Routen. Größere Bodys werden schon am Content-Length bzw.
-# beim Streamen abgebrochen, nie komplett gepuffert (CR-01); gelesen wird erst nach den Herkunftsprüfungen.
+# Larger is not a valid body of these routes. Larger bodies are aborted already at Content-Length or
+# while streaming, never buffered completely (CR-01); reading happens only after the origin checks.
 MAX_BODY = 1024
-# Ziel des Spiels im Browser: der Proxy (Plan 07) leitet nur dorthin weiter.
+# Destination of the game in the browser: the proxy (plan 07) forwards only there.
 PLAY_ADDRESS = "10.77.0.1"
 PLAY_PORT = 30000
 
@@ -63,7 +63,7 @@ NO_STORE = {"Cache-Control": "no-store"}
 
 
 def play_build(environ: Mapping[str, str] = os.environ) -> Literal["a", "b"]:
-    """Build der Spielseite aus GAMEWORLD_PLAY_BUILD (nur a oder b, Vorgabe b), ohne Codeänderung umstellbar."""
+    """Build of the play page from GAMEWORLD_PLAY_BUILD (only a or b, default b), switchable without a code change."""
     return _BUILDS.get(environ.get(ENV_BUILD, "b"), "b")
 
 
@@ -90,7 +90,7 @@ class LaunchRequest(BaseModel):
 
 class LaunchOut(BaseModel):
     player_name: str
-    # Nur das eigene Passwort, pro Anfrage aus dem Geheimnis abgeleitet (Variante B); in Variante A None.
+    # Only the own password, derived per request from the secret (variant B); None in variant A.
     password: str | None
     ws_ticket: str
     ws_path: str
@@ -100,7 +100,7 @@ class LaunchOut(BaseModel):
 
 @dataclass(frozen=True)
 class PlayAccess:
-    """Ergebnis der Zugangsprüfung: eigener Eintrag aus my_worlds und UDP-Port der laufenden Welt."""
+    """Result of the access check: own entry from my_worlds and UDP port of the running world."""
 
     entry: MyWorld
     port: int
@@ -109,7 +109,7 @@ class PlayAccess:
 async def check_play_access(
     uid: str, world_id: str, roles: RoleService, access: AccessService, service: WorldService
 ) -> PlayAccess:
-    """Eigene, eingeladene, laufende Welt oder HTTPException (403 einheitlich, 409 aus, 503 Störung)."""
+    """Own, invited, running world or HTTPException (403 uniform, 409 off, 503 disturbance)."""
     try:
         profile = await roles.profile(uid)
         mine = await access.my_worlds(profile)
@@ -117,7 +117,7 @@ async def check_play_access(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
     entry = next((item for item in mine if item.world_id == world_id), None)
     if entry is None:
-        # Fremde und nicht vorhandene Welt bekommen dieselbe Antwort (keine Aufzählung).
+        # Foreign and non-existent worlds get the same answer (no enumeration).
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=TEXT_NICHT_EINGELADEN)
     view = next((item for item in await service.list_worlds() if item.id == world_id), None)
     if view is None or view.status != "running":
@@ -126,11 +126,11 @@ async def check_play_access(
 
 
 def _declared_too_large(value: str | None) -> bool:
-    """True, wenn ein gültiger Content-Length schon mehr als MAX_BODY ankündigt.
+    """True if a valid Content-Length already announces more than MAX_BODY.
 
-    Nur reine ASCII-Ziffern zählen; ein fehlender oder unsinniger Wert ist kein Fehler,
-    dann entscheidet allein der Stream-Weg. Mehr als 9 Ziffern sind sicher zu groß und
-    gehen gar nicht erst in int().
+    Only plain ASCII digits count; a missing or nonsensical value is no error,
+    then the stream path alone decides. More than 9 digits are certainly too large and
+    do not even go into int().
     """
     if value is None:
         return False
@@ -141,12 +141,12 @@ def _declared_too_large(value: str | None) -> bool:
 
 
 async def _read_body[T: BaseModel](request: Request, model: type[T]) -> T:
-    """Body höchstens bis MAX_BODY lesen und als ``model`` prüfen (CR-01).
+    """Read the body up to MAX_BODY at most and check it as ``model`` (CR-01).
 
-    Zuerst lehnt ein zu großer Content-Length ohne gelesenes Byte ab; danach wird
-    chunkweise gestreamt und sofort abgebrochen, sobald mehr als MAX_BODY Bytes da
-    sind. So puffert weder ein falscher noch ein fehlender Content-Length den
-    ganzen Body. Beide Fälle antworten mit 413 ohne Detail.
+    First an oversized Content-Length is rejected without a byte read; after that
+    it streams chunk by chunk and aborts immediately as soon as more than MAX_BODY bytes
+    are there. So neither a wrong nor a missing Content-Length buffers the
+    whole body. Both cases answer 413 without detail.
     """
     if _declared_too_large(request.headers.get("content-length")):
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE)
@@ -166,16 +166,16 @@ def _media_type(value: str) -> str:
 
 
 def _refuse_foreign(request: Request) -> None:
-    """Eigene Herkunftsprüfung für /play/launch; die Middleware greift im Modus dev nicht."""
+    """Own origin check for /play/launch; the middleware does not apply in mode dev."""
     headers = request.headers
     if not origin_allowed(headers.get("origin"), allowed_origins()):
-        LOG.info("Spielstart abgelehnt: origin")
+        LOG.info("play start refused: origin")
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=TEXT_FREMD)
     if _media_type(headers.get("content-type", "")) != JSON_TYPE:
-        LOG.info("Spielstart abgelehnt: content_type")
+        LOG.info("play start refused: content_type")
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=TEXT_FREMD)
     if headers.get("sec-fetch-site", "").strip().lower() in FOREIGN_FETCH_SITES:
-        LOG.info("Spielstart abgelehnt: fetch_site")
+        LOG.info("play start refused: fetch_site")
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=TEXT_FREMD)
 
 
@@ -197,20 +197,20 @@ async def play_ticket(
     body = await _read_body(request, PlayTicketRequest)
     granted = await check_play_access(uid, body.world_id, roles, access, service)
     token = tickets.issue("launch", uid=uid, world_id=body.world_id, player_name=granted.entry.player_name)
-    LOG.info("Spielstart vorbereitet")
+    LOG.info("play start prepared")
     response.headers.update(NO_STORE)
     return PlayTicketOut(ticket=token, play_path=f"{play_base()}/play/?build={play_build()}")
 
 
 @status_router.get("/my/play-status")
 async def play_status(response: Response) -> PlayStatusOut:
-    """Nur der Schalter, keine Welten und keine Konten (USER-Route ^/api/my/.*)."""
+    """Only the switch, no worlds and no accounts (USER route ^/api/my/.*)."""
     response.headers.update(NO_STORE)
     return PlayStatusOut(enabled=play_mode() != "off")
 
 
 def _launch_uid(request: Request) -> str | None:
-    """Modus harp: UID aus der HaRP-Identität (Pflicht); Modus dev: keine UID-Bindung."""
+    """Mode harp: UID from the HaRP identity (mandatory); mode dev: no UID binding."""
     if play_mode() != "harp":
         return None
     uid = request.scope.get("username") or ""
@@ -234,20 +234,20 @@ async def launch(
     try:
         ticket = tickets.redeem(body.ticket, "launch", uid=uid)
     except TicketError as error:
-        # Nur die Grund-Konstante, nie der Wert.
-        LOG.info("Spielstart abgelehnt: %s", error.reason)
+        # Only the reason constant, never the value.
+        LOG.info("play start refused: %s", error.reason)
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=TEXT_TICKET) from None
-    # Die Einladung kann seit der Ausgabe weg sein (T-04.2-27).
+    # The invitation may be gone since issuing (T-04.2-27).
     granted = await check_play_access(ticket.uid, ticket.world_id, roles, access, service)
     if granted.entry.player_name != ticket.player_name:
-        LOG.info("Spielstart abgelehnt: renamed")
+        LOG.info("play start refused: renamed")
         raise HTTPException(status.HTTP_409_CONFLICT, detail=TEXT_NAME_NEU)
     ws_token = tickets.issue("ws", uid=ticket.uid, world_id=ticket.world_id, player_name=granted.entry.player_name)
-    LOG.info("Spielstart freigegeben")
+    LOG.info("play start granted")
     response.headers.update({**NO_STORE, "Referrer-Policy": "no-referrer"})
     return LaunchOut(
         player_name=granted.entry.player_name,
-        # Nur das eigene Passwort, pro Anfrage aus dem Geheimnis abgeleitet.
+        # Only the own password, derived per request from the secret.
         password=granted.entry.password if auth_variant() == "password" else None,
         ws_ticket=ws_token,
         ws_path=f"{play_base()}/play/ws",

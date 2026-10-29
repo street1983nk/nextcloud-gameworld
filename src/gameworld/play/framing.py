@@ -1,27 +1,27 @@
-"""Binärkopf der Proxy-Nachrichten zwischen Browser (webshims emsocket) und Gameworld-Proxy, rein.
+"""Binary header of the proxy messages between browser (webshims emsocket) and Gameworld proxy, pure.
 
-Nach ``BIND OK`` trägt jede WebSocket-Binärnachricht genau ein UDP-Datagramm mit 24 Byte Kopf:
-``u32 BE 0x778B4CF6 | 16 Byte IPv6 | u16 BE Port | u16 BE Länge | Nutzdaten``. IPv4 steht als
-``::ffff:a.b.c.d`` im Kopf. Richtung Proxy ist die Adresse das Ziel, Richtung Browser die Quelle.
-Quelle: paradust7/webshims, Commit 70653a9, ``src/emsocket/proxy.js`` (encapsulate/unencapsulate,
-inet6_pton/inet6_ntop). Die Adresse im Kopf ist nur eine Angabe des Clients, das echte Ziel kommt
-immer aus der Sitzung (siehe ``commands.target_allowed``).
+After ``BIND OK`` every WebSocket binary message carries exactly one UDP datagram with a 24 byte header:
+``u32 BE 0x778B4CF6 | 16 byte IPv6 | u16 BE port | u16 BE length | payload``. IPv4 is stored as
+``::ffff:a.b.c.d`` in the header. Towards the proxy the address is the destination, towards the browser the source.
+Source: paradust7/webshims, commit 70653a9, ``src/emsocket/proxy.js`` (encapsulate/unencapsulate,
+inet6_pton/inet6_ntop). The address in the header is only a claim by the client, the real destination always
+comes from the session (see ``commands.target_allowed``).
 """
 
 import ipaddress
 import struct
 
 EP_MAGIC = 0x778B4CF6
-EP_HEADER = struct.Struct("!I16sHH")  # 24 Byte: Magic, IPv6, Port, Länge
+EP_HEADER = struct.Struct("!I16sHH")  # 24 bytes: magic, IPv6, port, length
 MAX_PAYLOAD = 1500
 
 
 class FrameError(ValueError):
-    """Ein Frame hat nicht das Format von webshims oder ist zu groß."""
+    """A frame does not have the webshims format or is too large."""
 
 
 def unpack(frame: bytes) -> tuple[str, int, bytes]:
-    """Zerlegt ein Frame in (Host, Port, Nutzdaten); IPv4-gemappte Adressen kommen als IPv4 heraus."""
+    """Splits a frame into (host, port, payload); IPv4-mapped addresses come out as IPv4."""
     if len(frame) < EP_HEADER.size:
         raise FrameError("Frame zu kurz")
     magic, raw_ip, port, length = EP_HEADER.unpack_from(frame)
@@ -37,7 +37,7 @@ def unpack(frame: bytes) -> tuple[str, int, bytes]:
 
 
 def pack(src_ip: str, src_port: int, payload: bytes) -> bytes:
-    """Baut ein Frame; IPv4-Adressen werden als ``::ffff:a.b.c.d`` eingetragen."""
+    """Builds a frame; IPv4 addresses are entered as ``::ffff:a.b.c.d``."""
     if len(payload) > MAX_PAYLOAD:
         raise FrameError("Nutzlast zu groß")
     if not 1 <= src_port <= 65535:

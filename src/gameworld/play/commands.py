@@ -1,12 +1,12 @@
-"""Textkommandos des WebSocket-Proxys und die feste Zielregel, rein.
+"""Text commands of the WebSocket proxy and the fixed destination rule, pure.
 
-Der Browser-Client (webshims emsocket) spricht vor den Binärnachrichten zwei Textkommandos:
-``NEWADDR`` holt eine Adresse samt Passcode, ``BIND <passcode> UDP <port>`` bindet einen UDP-Socket.
-Gameworld erkennt nur diese beiden in genau der Schreibweise, die der Client sendet. Alles andere,
-insbesondere das TCP-Weiterleitungskommando des Clients (curl für ContentDB und Serverliste) sowie
-JOIN und PING aus lwproxy, ergibt ``Rejected``: Kein Zweig dieses Moduls öffnet ein beliebiges Ziel.
-Quellen: paradust7/webshims, Commit 70653a9, ``src/emsocket/proxy.js`` (requestAssignment,
-ProxyLink.handleOpen); Semantik nach paradust7/lwproxy ``src/service/commands.rs``.
+The browser client (webshims emsocket) speaks two text commands before the binary messages:
+``NEWADDR`` fetches an address with a passcode, ``BIND <passcode> UDP <port>`` binds a UDP socket.
+Gameworld recognizes only these two in exactly the spelling the client sends. Everything else,
+in particular the client's TCP forwarding command (curl for ContentDB and server list) as well as
+JOIN and PING from lwproxy, yields ``Rejected``: no branch of this module opens an arbitrary destination.
+Sources: paradust7/webshims, commit 70653a9, ``src/emsocket/proxy.js`` (requestAssignment,
+ProxyLink.handleOpen); semantics after paradust7/lwproxy ``src/service/commands.rs``.
 """
 
 import re
@@ -21,12 +21,12 @@ PORT_RE = re.compile(r"[1-9][0-9]{0,4}")
 
 @dataclass(frozen=True)
 class NewAddr:
-    """Der Client fragt nach Adresse und Passcode."""
+    """The client asks for an address and passcode."""
 
 
 @dataclass(frozen=True)
 class Bind:
-    """Der Client bindet einen UDP-Socket mit dem Passcode seiner Sitzung."""
+    """The client binds a UDP socket with the passcode of its session."""
 
     passcode: str
     port: int
@@ -34,13 +34,13 @@ class Bind:
 
 @dataclass(frozen=True)
 class Rejected:
-    """Unbekanntes oder unzulässiges Kommando; ``reason`` ist eine feste ASCII-Konstante."""
+    """Unknown or inadmissible command; ``reason`` is a fixed ASCII constant."""
 
     reason: str
 
 
 def parse_command(text: str) -> NewAddr | Bind | Rejected:
-    """Erkennt NEWADDR und BIND, lehnt alles andere ab (Länge und ASCII zuerst)."""
+    """Recognizes NEWADDR and BIND, rejects everything else (length and ASCII first)."""
     if len(text) > MAX_COMMAND:
         return Rejected("too_long")
     if not text.isascii():
@@ -63,12 +63,12 @@ def parse_command(text: str) -> NewAddr | Bind | Rejected:
 
 
 def format_addr(passcode: str) -> str:
-    """Antwort auf NEWADDR: ``ADDR <adresse> <passcode> <joincode>``.
+    """Answer to NEWADDR: ``ADDR <address> <passcode> <joincode>``.
 
-    proxy.js (requestAssignment) teilt die Antwort an Leerzeichen und verlangt genau vier Tokens mit
-    ``ADDR`` vorn. Der Join-Code wird nur gespeichert und dient Einladungen zwischen Browsern, die
-    Gameworld nicht anbietet; ``-`` erfüllt das Format. Der Passcode wird geprüft, damit kein
-    Leerzeichen ein fünftes Token erzeugt.
+    proxy.js (requestAssignment) splits the answer at spaces and requires exactly four tokens with
+    ``ADDR`` first. The join code is only stored and serves invitations between browsers, which
+    Gameworld does not offer; ``-`` satisfies the format. The passcode is checked so that no
+    space produces a fifth token.
     """
     if not passcode.isascii() or not PASSCODE_RE.fullmatch(passcode):
         raise ValueError("Passcode ungültig")
@@ -76,10 +76,10 @@ def format_addr(passcode: str) -> str:
 
 
 def target_allowed(host: str, port: int) -> bool:
-    """True nur für das virtuelle Ziel 10.77.0.1:30000.
+    """True only for the virtual destination 10.77.0.1:30000.
 
-    Das echte Ziel kommt nie aus dem Kopf eines Frames, sondern aus der Sitzung (Ticket, Welt, Port).
-    Der Kopf wird nur geprüft, damit ein Client nichts anderes adressiert; so wird der Proxy weder
-    ein offenes UDP-Relais ins Heimnetz (SSRF) noch ein Verstärker (UDP-Amplification).
+    The real destination never comes from the head of a frame, but from the session (ticket, world, port).
+    The head is only checked so that a client addresses nothing else; this way the proxy becomes neither
+    an open UDP relay into the home network (SSRF) nor an amplifier (UDP amplification).
     """
     return (host, port) == VIRTUAL_SERVER

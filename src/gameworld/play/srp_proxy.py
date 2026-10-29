@@ -1,25 +1,25 @@
-"""SRP-Uebernahme durch den Proxy (Variante A, 04.2-09, D-10 bevorzugt).
+"""SRP takeover by the proxy (variant A, 04.2-09, D-10 preferred).
 
-Der Proxy ist selbst SRP-Client gegenueber der Welt: In ``TOSERVER_SRP_BYTES_A`` ersetzt er
-das A des Browsers durch sein eigenes A_p, reicht ``TOCLIENT_SRP_BYTES_S_B`` unveraendert
-durch und rechnet dabei mit dem echten Passwort des Ticket-Kontos den Beweis M_p, den er in
-``TOSERVER_SRP_BYTES_M`` einsetzt. Der Browser kennt nur ein wertloses Platzhalter-Passwort;
-das echte Spielpasswort verlaesst den Server nie.
+The proxy is itself an SRP client towards the world: in ``TOSERVER_SRP_BYTES_A`` it replaces
+the browser's A with its own A_p, passes ``TOCLIENT_SRP_BYTES_S_B`` through unchanged
+and meanwhile computes the proof M_p with the real password of the ticket account, which it inserts into
+``TOSERVER_SRP_BYTES_M``. The browser knows only a worthless placeholder password;
+the real play password never leaves the server.
 
-Die SRP-Rechnung (``SrpClient``, N und G) ist eine Wahrheit: ``N`` und ``G`` kommen aus
-``gameworld.provisioner.luanti_auth``, ``SrpClient`` wurde aus ``tests/e2e/luanti_probe.py``
-hierher verschoben (dort nur noch importiert).
+The SRP computation (``SrpClient``, N and G) is a single source of truth: ``N`` and ``G`` come from
+``gameworld.provisioner.luanti_auth``, ``SrpClient`` was moved here from ``tests/e2e/luanti_probe.py``
+(which now only imports it).
 
-Pflichtregeln (sonst Kontouebernahme, RESEARCH Pattern 4 und Threat-Register):
+Mandatory rules (otherwise account takeover, RESEARCH pattern 4 and threat register):
 
-- Der Namensvergleich steht im ``ClientGuard`` vor jedem Ersatz (relay.py), das Passwort
-  stammt nur aus ``check_play_access(ticket.uid)``.
-- ``TOSERVER_SRP_BYTES_M`` vor gesehenem ``S_B`` und ein zweites ``TOSERVER_SRP_BYTES_A``
-  mit anderer Sequenznummer nach ``S_B`` beenden die Sitzung.
-- Jedes SPLIT vor ``AUTH_ACCEPT`` und jedes SPLIT mit SRP-Kommando in Chunk 0 beenden die
-  Sitzung (Tiefenverteidigung, Entscheid nach ``inner_ptype`` und ``split_command``).
-- Ein Parse-Fehler beendet die Sitzung, nie wird ein Paket ungeprueft durchgereicht.
-- Resend derselben Sequenznummer liefert byte-gleich denselben Ersatz (Cache je seq).
+- The name comparison happens in the ``ClientGuard`` before any replacement (relay.py), the password
+  comes only from ``check_play_access(ticket.uid)``.
+- ``TOSERVER_SRP_BYTES_M`` before a seen ``S_B`` and a second ``TOSERVER_SRP_BYTES_A``
+  with a different sequence number after ``S_B`` end the session.
+- Any SPLIT before ``AUTH_ACCEPT`` and any SPLIT with an SRP command in chunk 0 end the
+  session (defense in depth, decision by ``inner_ptype`` and ``split_command``).
+- A parse error ends the session, a packet is never passed through unchecked.
+- A resend of the same sequence number returns the byte-identical replacement (cache per seq).
 """
 
 from __future__ import annotations
@@ -31,14 +31,14 @@ import struct
 from gameworld.play import mtp
 from gameworld.provisioner.luanti_auth import G, N
 
-# Wertloses Platzhalter-Passwort fuer den Browser; der Server kennt es nicht.
+# Worthless placeholder password for the browser; the server does not know it.
 PLACEHOLDER_PASSWORD = "gameworld"  # noqa: S105
 
 N_LEN = (N.bit_length() + 7) // 8
 
 
 def _bin(n: int) -> bytes:
-    """Big-Endian ohne fuehrende Nullen (mpz_to_bin)."""
+    """Big-endian without leading zeros (mpz_to_bin)."""
     return n.to_bytes((n.bit_length() + 7) // 8, "big")
 
 
@@ -63,13 +63,13 @@ def _str16(data: bytes) -> bytes:
 
 
 class SrpClient:
-    """Client-Seite von SRP-6a, wie Luanti sie erwartet (aus luanti_probe hierher verschoben).
+    """Client side of SRP-6a as Luanti expects it (moved here from luanti_probe).
 
-    ``secret`` ist fuer Tests injizierbar; ohne Angabe ein frischer 256-Bit-Zufallswert.
+    ``secret`` is injectable for tests; without it a fresh 256-bit random value.
     """
 
     def __init__(self, name: str, password: str, secret: int | None = None) -> None:
-        self.name = name  # Originalschreibweise fuer M, kleingeschrieben nur in x
+        self.name = name  # original spelling for M, lower-cased only in x
         self.password = password
         self.secret = secrets.randbits(256) if secret is None else secret
         self.public = pow(G, self.secret, N)
@@ -89,7 +89,7 @@ class SrpClient:
 
 
 class SrpTakeoverError(Exception):
-    """Die SRP-Sitzung ist zu beenden; ``reason`` ist eine feste ASCII-Konstante, nie ein Wert."""
+    """The SRP session must end; ``reason`` is a fixed ASCII constant, never a value."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -97,11 +97,11 @@ class SrpTakeoverError(Exception):
 
 
 class SrpTakeover:
-    """Uebernimmt die SRP-Anmeldung fuer genau einen Spielernamen und sein echtes Passwort.
+    """Takes over the SRP login for exactly one player name and its real password.
 
-    ``client_packet`` entscheidet ueber ein Datagramm vom Browser (ersetzen, unveraendert
-    durchreichen oder Sitzung beenden), ``server_packet`` liest S_B und AUTH_ACCEPT der Welt.
-    Das Passwort lebt nur im ``SrpClient`` im Speicher; ``__repr__`` nennt keine Werte.
+    ``client_packet`` decides on a datagram from the browser (replace, pass through
+    unchanged or end the session), ``server_packet`` reads S_B and AUTH_ACCEPT of the world.
+    The password lives only in the ``SrpClient`` in memory; ``__repr__`` names no values.
     """
 
     def __init__(self, player_name: str, password: str, secret: int | None = None) -> None:
@@ -117,7 +117,7 @@ class SrpTakeover:
         return "SrpTakeover()"
 
     def client_packet(self, datagram: bytes) -> bytes:
-        """Datagramm vom Browser: SRP ersetzen, sonst unveraendert; Verstoesse werfen SrpTakeoverError."""
+        """Datagram from the browser: replace SRP, otherwise unchanged; violations raise SrpTakeoverError."""
         try:
             parsed = mtp.parse(datagram)
         except mtp.MtpError as exc:
@@ -142,7 +142,7 @@ class SrpTakeover:
         if cached is not None:
             return cached
         if self._s_b_seen:
-            # Neue A-Sequenz nach S_B hiesse Auth-Neustart: nicht erlaubt.
+            # A new A sequence after S_B would mean an auth restart: not allowed.
             raise SrpTakeoverError("second_a")
         packet = mtp.rewrite_payload(datagram, _str16(self._srp.bytes_a()) + b"\x01")
         self._a_cache[seq] = packet
@@ -162,7 +162,7 @@ class SrpTakeover:
         return packet
 
     def server_packet(self, datagram: bytes) -> None:
-        """Datagramm der Welt: S_B rechnet M_p, AUTH_ACCEPT schaltet die Split-Regel frei."""
+        """Datagram from the world: S_B computes M_p, AUTH_ACCEPT releases the split rule."""
         try:
             parsed = mtp.parse(datagram)
         except mtp.MtpError as exc:
@@ -176,7 +176,7 @@ class SrpTakeover:
 
     @staticmethod
     def _read_s_b(payload: bytes) -> tuple[bytes, bytes]:
-        """Liest u16 Salzlaenge + Salz + u16 B-Laenge + B; jede falsche Laenge beendet die Sitzung."""
+        """Reads u16 salt length + salt + u16 B length + B; any wrong length ends the session."""
         try:
             salt_len = struct.unpack_from(">H", payload, 0)[0]
             salt = payload[2 : 2 + salt_len]

@@ -1,18 +1,18 @@
-"""Ein-Mal-Tickets des Browser-Spikes (04.2-06, D-02/D-09/D-10).
+"""One-time tickets of the browser spike (04.2-06, D-02/D-09/D-10).
 
-Ein Ticket ist ein Zufallswert mit 128 Bit (16 Bytes aus ``secrets``), gilt
-TICKET_SECONDS, ist genau einmal einlösbar und an Zweck, Konto (UID), Welt und
-Spielername gebunden. Zwei Zwecke:
+A ticket is a random value of 128 bits (16 bytes from ``secrets``), valid for
+TICKET_SECONDS, redeemable exactly once and bound to purpose, account (UID), world and
+player name. Two purposes:
 
-- ``launch``: von POST /api/my/play-ticket (signierte AppAPI-Anfrage) für die
-  Spielseite, einzulösen in POST /play/launch.
-- ``ws``: von /play/launch für die WebSocket-Verbindung des Proxys (Plan 07).
+- ``launch``: from POST /api/my/play-ticket (signed AppAPI request) for the
+  play page, to be redeemed in POST /play/launch.
+- ``ws``: from /play/launch for the proxy's WebSocket connection (plan 07).
 
-Einlösen entfernt das Ticket immer zuerst, auch wenn danach Ablauf, Zweck oder
-UID nicht passen: Ein abgelehntes Ticket ist verbrannt. Die Länge des Rohwerts
-wird vor jedem Wörterbuchzugriff geprüft.
+Redeeming always removes the ticket first, even if expiry, purpose or
+UID do not match afterwards: a rejected ticket is burnt. The length of the raw value
+is checked before any dictionary access.
 
-Das Modul loggt nichts; Tokenwerte gehören in kein Log.
+The module logs nothing; token values belong in no log.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ REASON_MALFORMED = "malformed"
 
 @dataclass(frozen=True)
 class Ticket:
-    """Bindung eines eingelösten Tickets; enthält den Tokenwert selbst nicht."""
+    """Binding of a redeemed ticket; does not contain the token value itself."""
 
     uid: str
     world_id: str
@@ -51,7 +51,7 @@ class Ticket:
 
 
 class TicketError(Exception):
-    """Ticket abgelehnt; ``reason`` ist eine der ASCII-Konstanten REASON_*, nie der Tokenwert."""
+    """Ticket rejected; ``reason`` is one of the ASCII constants REASON_*, never the token value."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -59,7 +59,7 @@ class TicketError(Exception):
 
 
 class TicketStore:
-    """Offene Tickets im Speicher, ältestes zuerst (Einfügereihenfolge des dict)."""
+    """Open tickets in memory, oldest first (insertion order of the dict)."""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
@@ -70,7 +70,7 @@ class TicketStore:
         return now - ticket.issued_at >= TICKET_SECONDS
 
     def issue(self, purpose: Purpose, *, uid: str, world_id: str, player_name: str) -> str:
-        """Neues Ticket; räumt Abgelaufene ab und hält höchstens MAX_OPEN_PER_UID je Konto offen."""
+        """New ticket; clears expired ones and keeps at most MAX_OPEN_PER_UID open per account."""
         with self._lock:
             now = self._clock()
             for token in [token for token, ticket in self._tickets.items() if self._expired(ticket, now)]:
@@ -85,7 +85,7 @@ class TicketStore:
             return token
 
     def redeem(self, token: str, purpose: Purpose, *, uid: str | None) -> Ticket:
-        """Löst genau einmal ein; ``uid`` None (Modus dev) prüft das Konto nicht."""
+        """Redeems exactly once; ``uid`` None (mode dev) does not check the account."""
         if not isinstance(token, str) or not 1 <= len(token) <= TOKEN_MAX:
             raise TicketError(REASON_MALFORMED)
         with self._lock:
@@ -106,7 +106,7 @@ _ticket_store: TicketStore | None = None
 
 
 def get_ticket_store() -> TicketStore:
-    """FastAPI-Dependency: modulweites Singleton (Tests setzen es je Test zurück)."""
+    """FastAPI dependency: module-wide singleton (tests reset it per test)."""
     global _ticket_store
     if _ticket_store is None:
         _ticket_store = TicketStore()

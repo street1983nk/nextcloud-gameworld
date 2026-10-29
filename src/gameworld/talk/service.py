@@ -1,14 +1,14 @@
-"""Talk-Raum je Welt: anlegen, Mitglieder abgleichen, nur lesen, löschen (TALK-01).
+"""Talk room per world: create, reconcile members, read-only, delete (TALK-01).
 
-Gameworld ist die Soll-Quelle: Mitglieder sind genau die Konten aus
-``world_access`` plus die Verwalter aus dem Schnappschuss (D-16). Alles
-andere entfernt der Abgleich. Welt-Abläufe hängen nie an Talk (D-20): Hooks
-laufen als verfolgte Tasks, Fehler bleiben je Welt isoliert, ein gescheitertes
-Löschen bleibt ``delete_pending`` und wird im 5-min-Abgleich wiederholt.
+Gameworld is the source of truth: members are exactly the accounts from
+``world_access`` plus the managers from the snapshot (D-16). Everything
+else is removed by the reconciliation. World flows never depend on Talk (D-20): hooks
+run as tracked tasks, errors stay isolated per world, a failed
+delete stays ``delete_pending`` and is repeated in the 5 min reconciliation.
 
-Sperr-Regel: Talk-Aufrufe nie unter ``worlds.mutation()``, Store-Zugriffe per
-``anyio.to_thread.run_sync``. Logs nur mit Welt-ID und Typname (T-04.1-27).
-Anruf-Einstellungen bleiben auf Talk-Standard (D-18).
+Lock rule: Talk calls never under ``worlds.mutation()``, store access via
+``anyio.to_thread.run_sync``. Logs only with world ID and type name (T-04.1-27).
+Call settings stay at the Talk default (D-18).
 """
 
 from __future__ import annotations
@@ -41,16 +41,16 @@ from gameworld.worlds.store import TALK_STATE_DELETE_PENDING, TALK_STATE_OK, Tal
 
 LOG = logging.getLogger(__name__)
 
-# Capability-Abfrage höchstens alle 5 Minuten (Pitfall 8).
+# Capability query at most every 5 minutes (pitfall 8).
 TALK_INTERVAL_SECONDS = 300.0
 ROOM_PREFIX = "Gameworld: "
-# So lange wartet das Herunterfahren auf offene Talk-Hooks, dann bricht es sie ab (IN-06).
+# For this long shutdown waits for open Talk hooks, then it aborts them (IN-06).
 SHUTDOWN_SECONDS = 5.0
 
 
 @dataclass
 class TalkState:
-    """Zwischengespeicherte Verfügbarkeit; modulweit, in Tests je Test frisch."""
+    """Cached availability; module-wide, fresh per test in tests."""
 
     checked_at: float | None = None
     available: bool = False
@@ -67,11 +67,11 @@ class TalkWorldStatus:
     has_room: bool
     read_only: bool
     owner_not_admin: bool
-    # Raum-Token für den Link in Talk; None ohne fertigen Raum.
+    # Room token for the link in Talk; None without a finished room.
     token: str | None = None
-    # Nextcloud-Konto des Raum-Owners, nur wenn er kein Verwalter mehr ist (D-27, D-19).
+    # Nextcloud account of the room owner, only if he is no longer a manager (D-27, D-19).
     owner_display: str | None = None
-    # Alter Raum ohne Moderator (Sperrfall, D-16): nur ein Nextcloud-Admin kann ihn per occ löschen.
+    # Old room without a moderator (blocked case, D-16): only a Nextcloud admin can delete it via occ.
     orphaned_token: str | None = None
 
 
@@ -91,7 +91,7 @@ def _now() -> str:
 
 
 class TalkService:
-    """Hält Räume und Mitglieder in Talk passend zu den Gameworld-Daten."""
+    """Keeps rooms and members in Talk in line with the Gameworld data."""
 
     def __init__(self, store: WorldStore, rooms: TalkRooms) -> None:
         self.store = store
@@ -99,7 +99,7 @@ class TalkService:
         self._tasks: set[asyncio.Task[None]] = set()
         self._locks: dict[str, asyncio.Lock] = {}
 
-    # Hilfen
+    # Helpers
 
     def _lock(self, world_id: str) -> asyncio.Lock:
         lock = self._locks.get(world_id)
@@ -113,9 +113,9 @@ class TalkService:
         return sorted(parse_admins(raw))
 
     async def is_available(self, acting_uid: str, *, fresh: bool = False) -> tuple[bool, bool]:
-        """(Talk da, Bots da); höchstens alle TALK_INTERVAL_SECONDS gefragt, Fehler heißt: nicht da.
+        """(Talk present, bots present); asked at most every TALK_INTERVAL_SECONDS, error means: not present.
 
-        ``fresh`` umgeht den Cache (nur der seltene Abgleich, reconcile_all).
+        ``fresh`` bypasses the cache (only the rare reconciliation, reconcile_all).
         """
         state = TALK_STATE
         now = monotonic()
@@ -124,7 +124,7 @@ class TalkService:
         try:
             talk, bots = await self._rooms.available(acting_uid)
         except Exception as exc:
-            LOG.warning("Talk-Verfügbarkeit nicht geprüft: %s", type(exc).__name__)
+            LOG.warning("Talk availability not checked: %s", type(exc).__name__)
             talk, bots = False, False
         state.checked_at = now
         state.available = talk
@@ -133,15 +133,15 @@ class TalkService:
 
     @staticmethod
     def _candidates(row: TalkRoomRow, admins: list[str]) -> list[str]:
-        """Handelndes Konto: Owner, falls noch Verwalter, sonst die Verwalter der Reihe nach."""
+        """Acting account: owner if still a manager, otherwise the managers in turn."""
         if row.owner_uid in admins:
             return [row.owner_uid, *(uid for uid in admins if uid != row.owner_uid)]
         return list(admins)
 
-    # Raum anlegen
+    # Create room
 
     async def ensure_room(self, world_id: str, acting_uid: str) -> None:
-        """Legt den Raum an, falls die Welt noch keinen hat, und gleicht die Mitglieder ab."""
+        """Creates the room if the world does not have one yet, and reconciles the members."""
         talk, bots = await self.is_available(acting_uid)
         if not talk:
             return
@@ -162,7 +162,7 @@ class TalkService:
                 await self._enable_bot(world_id, acting_uid)
 
     async def _replace_locked(self, world_id: str, acting_uid: str) -> bool:
-        """Neuer Raum für die bestehende Zeile (Sperrfall, Neuanlage); False ohne Welt oder Zeile."""
+        """New room for the existing row (blocked case, new creation); False without a world or row."""
         world = await anyio.to_thread.run_sync(self.store.get_world, world_id)
         if world is None:
             return False
@@ -173,24 +173,24 @@ class TalkService:
         return replaced
 
     async def _enable_bot(self, world_id: str, acting_uid: str) -> None:
-        """Gameworld-Bot im Raum freischalten (TALK-02); ein Fehler stört den Raum nicht."""
+        """Enable the Gameworld bot in the room (TALK-02); an error does not disturb the room."""
         row = await anyio.to_thread.run_sync(self.store.talk_room, world_id)
         if row is None or row.state != TALK_STATE_OK:
             return
         try:
             await get_bot().ensure_enabled(row.token, acting_uid)
         except Exception as exc:
-            LOG.warning("Bot für Welt %s nicht freigeschaltet: %s", world_id, type(exc).__name__)
+            LOG.warning("Bot for world %s not enabled: %s", world_id, type(exc).__name__)
 
-    # Mitglieder abgleichen
+    # Reconcile members
 
     async def sync_members(self, world_id: str) -> None:
-        """Soll = world_access plus Verwalter-Schnappschuss; leerer Schnappschuss: nichts tun (Pitfall 9)."""
+        """Target = world_access plus manager snapshot; empty snapshot: do nothing (pitfall 9)."""
         async with self._lock(world_id):
             await self._sync_locked(world_id)
 
     async def _acting_members(self, row: TalkRoomRow, admins: list[str]) -> tuple[str, list[RoomMember]] | None:
-        """Erstes Konto, das den Raum sieht; Raum für den Owner weg: Zeile löschen, Abgleich legt neu an."""
+        """First account that sees the room; room gone for the owner: delete the row, reconciliation creates anew."""
         candidates = self._candidates(row, admins)
         for acting in candidates:
             try:
@@ -198,7 +198,7 @@ class TalkService:
             except RoomGoneError:
                 continue
         if row.owner_uid in candidates:
-            LOG.warning("Talk-Raum der Welt %s fehlt in Talk, wird neu angelegt", row.world_id)
+            LOG.warning("Talk room of world %s is missing in Talk, it is recreated", row.world_id)
             await anyio.to_thread.run_sync(self.store.delete_talk_room, row.world_id)
         return None
 
@@ -226,7 +226,7 @@ class TalkService:
             wanted = member.actor_type == ACTOR_USERS and member.actor_id in want
             if wanted and (member.actor_id in admin_set or member.participant_type not in MODERATOR_TYPES):
                 continue
-            # Moderatoren erst zurückstufen (Pitfall 5); Kinder bleiben dann als Teilnehmer.
+            # Demote moderators first (pitfall 5); children then stay as participants.
             if member.participant_type in MODERATOR_TYPES:
                 await self._rooms.demote(acting, token, member.attendee_id)
             if not wanted:
@@ -245,10 +245,10 @@ class TalkService:
             ):
                 await self._rooms.promote(acting, token, member.attendee_id)
 
-    # Übernahme verwaister Räume (D-16, D-19)
+    # Taking over orphaned rooms (D-16, D-19)
 
     async def _successors(self, admins: list[str]) -> list[str]:
-        """Bestätigte Verwalter nach Dienstalter (verwalter_seen), danach noch nicht gesehene nach Konto-ID."""
+        """Confirmed managers by service age (verwalter_seen), then not yet seen ones by account ID."""
         seniority = await anyio.to_thread.run_sync(self.store.verwalter_seniority)
         admin_set = set(admins)
         ordered = [uid for uid in seniority if uid in admin_set]
@@ -256,13 +256,13 @@ class TalkService:
         return ordered + [uid for uid in admins if uid not in seen]
 
     async def _take_over_locked(self, world_id: str, admins: list[str]) -> None:
-        """Gibt jedem Raum einen handlungsfähigen Gameworld-Besitzer; nur mit bestätigtem Konto (CR-01).
+        """Gives every room a capable Gameworld owner; only with a confirmed account (CR-01).
 
-        Besitzer weg oder kein Verwalter mehr: der dienstälteste Verwalter, der den Raum
-        sieht, wird Besitzer und Moderator. Talk kennt keinen Owner-Wechsel (F-09): ein
-        Ex-Verwalter, der in Talk Owner bleibt, wird als ``former_owner`` gemeldet. Sieht
-        kein Verwalter den Raum (Sperrfall), entsteht ein neuer Raum; das alte Token bleibt
-        als ``orphaned_token`` stehen, löschen kann es nur ein Nextcloud-Admin per occ.
+        Owner gone or no longer a manager: the longest-serving manager who sees the room
+        becomes owner and moderator. Talk has no owner change (F-09): a
+        former manager who remains owner in Talk is reported as ``former_owner``. If
+        no manager sees the room (blocked case), a new room is created; the old token stays
+        as ``orphaned_token``, only a Nextcloud admin can delete it via occ.
         """
         row = await anyio.to_thread.run_sync(self.store.talk_room, world_id)
         if row is None or row.state != TALK_STATE_OK:
@@ -282,9 +282,9 @@ class TalkService:
             break
         if found is None:
             if row.owner_uid in admin_set:
-                # Raum für den Besitzer weg: der Abgleich löscht die Zeile und legt neu an.
+                # Room gone for the owner: the reconciliation deletes the row and creates anew.
                 return
-            LOG.warning("Talk-Raum der Welt %s hat keinen Moderator mehr, neuer Raum wird angelegt", world_id)
+            LOG.warning("Talk room of world %s has no moderator anymore, a new room is created", world_id)
             if await self._replace_locked(world_id, successors[0]):
                 await anyio.to_thread.run_sync(self.store.set_talk_orphaned, world_id, row.token)
             return
@@ -301,12 +301,12 @@ class TalkService:
         if owner not in admin_set:
             owner = candidate
             await self._promote_owner(row.token, owner, members, admin_set)
-            LOG.info("Talk-Raum der Welt %s hat einen neuen Gameworld-Besitzer", world_id)
+            LOG.info("Talk room of world %s has a new Gameworld owner", world_id)
         if owner != row.owner_uid or former != row.former_owner:
             await anyio.to_thread.run_sync(self.store.set_talk_owner, world_id, owner, former)
 
     async def _promote_owner(self, token: str, owner: str, members: list[RoomMember], admin_set: set[str]) -> None:
-        """Neuer Besitzer wird Moderator; befördert von einem Verwalter, der es schon ist."""
+        """New owner becomes moderator; promoted by a manager who already is one."""
         mine = next((m for m in members if m.actor_type == ACTOR_USERS and m.actor_id == owner), None)
         if mine is None or mine.participant_type != TYPE_USER:
             return
@@ -323,12 +323,12 @@ class TalkService:
         await self._rooms.promote(promoter, token, mine.attendee_id)
 
     async def recreate_room(self, world_id: str, acting_uid: str) -> bool:
-        """Raum neu anlegen (D-19): alten Raum samt Verlauf löschen, neuen ohne Ex-Verwalter anlegen.
+        """Recreate the room (D-19): delete the old room including history, create a new one without the former manager.
 
-        Nur auf ausdrücklichen Wunsch eines Verwalters (Route nach Bestätigung in der
-        Oberfläche), nie automatisch. False ohne Raum, Welt oder als Nicht-Verwalter;
-        Talk-Fehler gehen als ``TalkUnavailableError`` an den Aufrufer, scheitert schon das
-        Löschen, bleibt der alte Raum bestehen. Nie unter ``worlds.mutation()``.
+        Only at the express request of a manager (route after confirmation in the
+        UI), never automatically. False without a room, world or as a non-manager;
+        Talk errors go to the caller as ``TalkUnavailableError``, if even the
+        delete fails, the old room remains. Never under ``worlds.mutation()``.
         """
         talk, bots = await self.is_available(acting_uid)
         if not talk:
@@ -351,12 +351,12 @@ class TalkService:
                 await self._enable_bot(world_id, acting_uid)
         return True
 
-    # Nur lesen (D-17)
+    # Read-only (D-17)
 
     async def set_read_only(self, world_id: str, *, on: bool) -> bool:
-        """Merkt den Schalter und setzt ihn in Talk; False, wenn Talk ihn noch nicht übernommen hat.
+        """Remembers the switch and sets it in Talk; False if Talk has not accepted it yet.
 
-        Der Abgleich erzwingt den gemerkten Stand später ohnehin.
+        The reconciliation enforces the remembered state later anyway.
         """
         changed = await anyio.to_thread.run_sync(lambda: self.store.set_talk_read_only(world_id, on=on))
         if not changed:
@@ -371,14 +371,14 @@ class TalkService:
             try:
                 await self._rooms.set_read_only(self._candidates(row, admins)[0], row.token, on=on)
             except Exception as exc:
-                LOG.warning("Nur-lesen für Welt %s nicht gesetzt: %s", world_id, type(exc).__name__)
+                LOG.warning("Read-only for world %s not set: %s", world_id, type(exc).__name__)
                 return False
         return True
 
-    # Löschen (D-19)
+    # Delete (D-19)
 
     async def delete_room(self, world_id: str) -> None:
-        """Löscht den Raum der Welt; scheitert Talk, bleibt delete_pending für den Abgleich."""
+        """Deletes the room of the world; if Talk fails, delete_pending stays for the reconciliation."""
         async with self._lock(world_id):
             row = await anyio.to_thread.run_sync(self.store.talk_room, world_id)
             if row is None:
@@ -397,31 +397,31 @@ class TalkService:
                 return
             await anyio.to_thread.run_sync(self.store.delete_talk_room, world_id)
 
-    # 5-min-Abgleich
+    # 5 min reconciliation
 
     async def reconcile_all(self, acting_uid: str | None = None) -> None:
-        """Löscht offene Räume, legt fehlende an (Backfill D-16/D-20), gleicht alle ab.
+        """Deletes open rooms, creates missing ones (backfill D-16/D-20), reconciles all.
 
-        ``acting_uid`` ist das Konto, das Nextcloud gerade als Admin bestätigt hat
-        (notify.loop.verify_once, CR-01); nur so wird ein neuer Raum angelegt. Ohne
-        bestätigtes Konto im Schnappschuss legt der Abgleich keine Räume an.
+        ``acting_uid`` is the account that Nextcloud has just confirmed as admin
+        (notify.loop.verify_once, CR-01); only then is a new room created. Without a
+        confirmed account in the snapshot the reconciliation creates no rooms.
         """
         admins = await self._admins()
         if not admins:
             return
         acting = acting_uid if acting_uid in admins else None
-        # Frisch statt aus dem Cache: Cache und Wartung laufen beide im 300-s-Takt, ein
-        # knapp nicht abgelaufener Cache verschob das Nachlegen sonst um einen ganzen
-        # Takt (06-12, gemessen in der Regression 4.1 K6).
+        # Fresh instead of from the cache: cache and maintenance both run on the 300 s tick, a
+        # cache that has barely not expired would otherwise postpone the backfill by a whole
+        # tick (06-12, measured in regression 4.1 K6).
         talk, bots = await self.is_available(acting or admins[0], fresh=True)
         if not talk:
             return
         if bots:
-            # Einmal je Prozess; holt die Registrierung nach, wenn Talk später kam (Pitfall 8).
+            # Once per process; catches up the registration if Talk came later (pitfall 8).
             try:
                 await get_bot().register()
             except Exception as exc:
-                LOG.warning("Talk-Bot nicht registriert: %s", type(exc).__name__)
+                LOG.warning("Talk bot not registered: %s", type(exc).__name__)
         worlds = await anyio.to_thread.run_sync(self.store.list_worlds)
         rows = await anyio.to_thread.run_sync(self.store.list_talk_rooms)
         world_ids = {world.id for world in worlds}
@@ -433,11 +433,11 @@ class TalkService:
                 with_room.add(row.world_id)
         for world in worlds:
             if world.id in with_room:
-                # Übernahme nur mit bestätigtem Konto (CR-01, T-06-25).
+                # Takeover only with a confirmed account (CR-01, T-06-25).
                 work = self._reconcile_room(world.id, admins, bots=bots, take_over=acting is not None)
                 await self._isolated("Abgleich", world.id, work)
             elif acting is not None:
-                # Owner eines neuen Kinder-Raums wird nur ein bestätigter Verwalter (CR-01).
+                # Owner of a new children's room becomes only a confirmed manager (CR-01).
                 await self._isolated("Anlegen", world.id, self.ensure_room(world.id, acting))
 
     async def _reconcile_room(self, world_id: str, admins: list[str], *, bots: bool, take_over: bool) -> None:
@@ -459,9 +459,9 @@ class TalkService:
         try:
             await work
         except Exception as exc:
-            LOG.warning("Talk-%s für Welt %s gescheitert: %s", what, world_id, type(exc).__name__)
+            LOG.warning("Talk %s for world %s failed: %s", what, world_id, type(exc).__name__)
 
-    # Status für GET /api/talk
+    # Status for GET /api/talk
 
     async def status(self, acting_uid: str) -> TalkStatus:
         talk, bots = await self.is_available(acting_uid)
@@ -474,7 +474,7 @@ class TalkService:
             has_room = row is not None and row.state == TALK_STATE_OK
             owner_display: str | None = None
             if row is not None and has_room:
-                # former_owner: Ex-Verwalter bleibt Talk-Owner (D-19); sonst noch nicht übernommen.
+                # former_owner: former manager remains Talk owner (D-19); otherwise not yet taken over.
                 owner_display = row.former_owner or (row.owner_uid if row.owner_uid not in admins else None)
             owner_not_admin = owner_display is not None
             items.append(
@@ -491,7 +491,7 @@ class TalkService:
             )
         return TalkStatus(available=talk, bots=bots, worlds=items)
 
-    # Verfolgte Hooks: der Eltern-Request wartet nie auf Talk.
+    # Tracked hooks: the parent request never waits for Talk.
 
     def _spawn(self, what: str, world_id: str, work: Coroutine[Any, Any, None]) -> None:
         task = asyncio.get_running_loop().create_task(self._tracked(what, world_id, work))
@@ -515,15 +515,15 @@ class TalkService:
         self._spawn("Löschen", world_id, self.delete_room(world_id))
 
     async def drain(self) -> None:
-        """Wartet, bis alle verfolgten Hooks fertig sind (Tests, Herunterfahren)."""
+        """Waits until all tracked hooks are finished (tests, shutdown)."""
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
     async def shutdown(self, grace_seconds: float = SHUTDOWN_SECONDS) -> int:
-        """Beim Herunterfahren (IN-06): bis ``grace_seconds`` warten, dann offene Hooks abbrechen; Anzahl abgebrochen.
+        """On shutdown (IN-06): wait up to ``grace_seconds``, then abort open hooks; number aborted.
 
-        Ein abgebrochenes Löschen bleibt ``delete_pending`` und wird im nächsten
-        Abgleich nach dem Start wiederholt.
+        An aborted delete stays ``delete_pending`` and is repeated in the next
+        reconciliation after the start.
         """
         pending = set(self._tasks)
         if not pending:
@@ -540,7 +540,7 @@ _talk_service: TalkService | None = None
 
 
 def get_talk_service(store: WorldStore) -> TalkService:
-    """Modulweites Singleton zum Welt-Speicher; Tests setzen es je Test zurück."""
+    """Module-wide singleton to the world store; tests reset it per test."""
     global _talk_service
     if _talk_service is None or _talk_service.store is not store:
         _talk_service = TalkService(store, get_talk_rooms())
@@ -548,7 +548,7 @@ def get_talk_service(store: WorldStore) -> TalkService:
 
 
 async def shutdown_talk(grace_seconds: float = SHUTDOWN_SECONDS) -> int:
-    """Lifespan-Ende: offene Talk-Hooks abwarten oder abbrechen; ohne Dienst nichts (IN-06)."""
+    """Lifespan end: wait for or abort open Talk hooks; without a service nothing (IN-06)."""
     if _talk_service is None:
         return 0
     return await _talk_service.shutdown(grace_seconds)

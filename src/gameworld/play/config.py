@@ -1,14 +1,14 @@
-"""Reine Regeln des Browser-Spikes 04.2: Schalter, erlaubte Origins, disable_for, Header.
+"""Pure rules of the browser spike 04.2: switch, allowed origins, disable_for, headers.
 
-Nur stdlib. Jede Funktion nimmt ``environ`` (Vorgabe ``os.environ``), damit Tests
-ohne monkeypatch auskommen und der Modus je Aufruf frisch gelesen wird.
+Standard library only. Every function takes ``environ`` (default ``os.environ``), so that tests
+get by without monkeypatch and the mode is read fresh on each call.
 
-Schalter ``GAMEWORLD_BROWSER_SPIKE``:
+Switch ``GAMEWORLD_BROWSER_SPIKE``:
 
-- ``off`` (Vorgabe, auch für jeden unbekannten Wert): alle /play/-Routen geben 404.
-- ``dev``: Dev-Stack ohne AppAPI-Identität an /play/* (der PHP-Proxy kann kein
-  WebSocket-Upgrade); dort trägt allein das Ticket (ab Plan 06).
-- ``harp``: Die Auth-Middleware bleibt überall an, /play/* braucht die HaRP-Identität.
+- ``off`` (default, also for every unknown value): all /play/ routes give 404.
+- ``dev``: dev stack without AppAPI identity on /play/* (the PHP proxy cannot do a
+  WebSocket upgrade); there the ticket alone counts (from plan 06).
+- ``harp``: the auth middleware stays on everywhere, /play/* needs the HaRP identity.
 """
 
 from __future__ import annotations
@@ -33,9 +33,9 @@ DEFAULT_WWW = ".dev/luanti-wasm-www"
 DEFAULT_BASE = "/exapps/gameworld"
 DEFAULT_UDP_HOST = "127.0.0.1"
 
-# Muster für AppAPIAuthMiddleware(disable_for=...), per fnmatch gegen den Pfad ohne
-# führenden Schrägstrich geprüft. Sie dürfen nie api/* treffen: Die Ticket-Route
-# api/my/play-ticket braucht die AppAPI-Identität (tests/play/test_play_config.py).
+# Patterns for AppAPIAuthMiddleware(disable_for=...), checked with fnmatch against the path without
+# leading slash. They must never hit api/*: the ticket route
+# api/my/play-ticket needs the AppAPI identity (tests/play/test_play_config.py).
 DEV_DISABLE_FOR = ("play", "play/*")
 
 _MODES: dict[str, PlayMode] = {"off": "off", "dev": "dev", "harp": "harp"}
@@ -44,17 +44,17 @@ _WS_SCHEMES = {"http": "ws", "https": "wss"}
 
 
 def play_mode(environ: Mapping[str, str] = os.environ) -> PlayMode:
-    """Modus exakt wie gesetzt (kleingeschrieben, ohne Leerzeichen); Unbekanntes heißt off."""
+    """Mode exactly as set (lower-cased, without spaces); anything unknown means off."""
     return _MODES.get(environ.get(ENV_MODE, "off"), "off")
 
 
 def play_disable_for(mode: PlayMode) -> list[str]:
-    """Ausnahmen der Auth-Middleware: nur im Modus dev, nur play und play/*."""
+    """Exceptions of the auth middleware: only in mode dev, only play and play/*."""
     return list(DEV_DISABLE_FOR) if mode == "dev" else []
 
 
 def _normalize_origin(value: str) -> str | None:
-    """Kanonische Form schema://host[:port] oder None, wenn kein gültiger Origin."""
+    """Canonical form scheme://host[:port] or None if not a valid origin."""
     value = value.strip()
     if not value or "?" in value or "#" in value:
         return None
@@ -77,7 +77,7 @@ def _normalize_origin(value: str) -> str | None:
 
 
 def allowed_origins(environ: Mapping[str, str] = os.environ) -> frozenset[str]:
-    """Erlaubte Origins aus GAMEWORLD_PLAY_ORIGINS (kommagetrennt); leer heißt keiner."""
+    """Allowed origins from GAMEWORLD_PLAY_ORIGINS (comma-separated); empty means none."""
     result: set[str] = set()
     for entry in environ.get(ENV_ORIGINS, "").split(","):
         normalized = _normalize_origin(entry)
@@ -87,7 +87,7 @@ def allowed_origins(environ: Mapping[str, str] = os.environ) -> frozenset[str]:
 
 
 def origin_allowed(origin: str | None, allowed: frozenset[str]) -> bool:
-    """Origin-Header gegen die erlaubte Menge: gleiche Normalisierung, dann exakter Vergleich."""
+    """Origin header against the allowed set: same normalization, then exact comparison."""
     if origin is None:
         return False
     normalized = _normalize_origin(origin)
@@ -100,12 +100,12 @@ def _ws_form(origin: str) -> str:
 
 
 def security_headers(allowed: frozenset[str]) -> dict[str, str]:
-    """Header jeder Antwort der Spielroute (RESEARCH Pattern 3).
+    """Headers of every response of the play route (RESEARCH pattern 3).
 
-    COOP/COEP machen das Dokument crossOriginIsolated (SharedArrayBuffer), CORP erlaubt
-    die Unterressourcen nur vom gleichen Origin. connect-src nennt nur den eigenen
-    Origin und die ws(s)-Form der erlaubten Origins: Ein Default-Proxy fremder Hosts
-    wird so auch dann blockiert, wenn setProxy einmal fehlen sollte (D-01).
+    COOP/COEP make the document crossOriginIsolated (SharedArrayBuffer), CORP allows
+    the subresources only from the same origin. connect-src names only its own
+    origin and the ws(s) form of the allowed origins: a default proxy of foreign hosts
+    is thus blocked even if setProxy should ever be missing (D-01).
     """
     connect = " ".join(["'self'", *(_ws_form(origin) for origin in sorted(allowed))])
     csp = "; ".join(
@@ -128,26 +128,26 @@ def security_headers(allowed: frozenset[str]) -> dict[str, str]:
         "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff",
         "Permissions-Policy": "fullscreen=(self)",
-        # Nur für manual-install: der AppAPI-PHP-Proxy setzt sonst fullscreen 'none'.
+        # Only for manual-install: the AppAPI PHP proxy would otherwise set fullscreen 'none'.
         "Feature-Policy": "fullscreen 'self'",
     }
 
 
 def play_www_dir(environ: Mapping[str, str] = os.environ) -> Path:
-    """Verzeichnis mit den Build-Ordnern a und b, relativ zum Arbeitsverzeichnis (Repo-Root)."""
+    """Directory with the build folders a and b, relative to the working directory (repo root)."""
     return (Path.cwd() / environ.get(ENV_WWW, DEFAULT_WWW)).resolve()
 
 
 def play_base(environ: Mapping[str, str] = os.environ) -> str:
-    """Pfadpräfix der ExApp aus Browsersicht, ohne Schrägstrich am Ende."""
+    """Path prefix of the ExApp from the browser's view, without a trailing slash."""
     return environ.get(ENV_BASE, DEFAULT_BASE).rstrip("/")
 
 
 def udp_host(environ: Mapping[str, str] = os.environ) -> str:
-    """Zielhost der Welt-UDP-Ports für den Proxy (ab Plan 07)."""
+    """Destination host of the world UDP ports for the proxy (from plan 07)."""
     return environ.get(ENV_UDP_HOST, DEFAULT_UDP_HOST)
 
 
 def auth_variant(environ: Mapping[str, str] = os.environ) -> AuthVariant:
-    """password (Variante B, Vorgabe) oder proxy_srp (Variante A, Plan 09)."""
+    """password (variant B, default) or proxy_srp (variant A, plan 09)."""
     return _AUTH_VARIANTS.get(environ.get(ENV_AUTH, "password"), "password")

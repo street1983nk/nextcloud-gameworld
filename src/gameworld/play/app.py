@@ -1,8 +1,8 @@
-"""Einbindung des Browser-Spikes in die ExApp: Schalter-Dependency und Router-Registrierung.
+"""Wiring the browser spike into the ExApp: switch dependency and router registration.
 
-Die Ausnahmen der AppAPIAuthMiddleware (``play_disable_for``) dürfen nie api/*
-treffen: Die Ticket-Route ``api/my/play-ticket`` braucht die AppAPI-Identität des
-Kindes, nur /play/* läuft im Modus dev ohne sie (dort prüft das Ticket).
+The exceptions of the AppAPIAuthMiddleware (``play_disable_for``) must never hit
+api/*: the ticket route ``api/my/play-ticket`` needs the child's AppAPI identity,
+only /play/* runs without it in mode dev (there the ticket checks).
 """
 
 from __future__ import annotations
@@ -13,24 +13,24 @@ from gameworld.play.config import allowed_origins, play_mode, security_headers
 
 
 def require_play_enabled() -> None:
-    """404 im Modus off; der Modus wird je Anfrage gelesen, nicht beim Import."""
+    """404 in mode off; the mode is read per request, not at import."""
     if play_mode() == "off":
         raise HTTPException(status_code=404, headers=security_headers(allowed_origins()))
 
 
 def install_play(app: FastAPI) -> None:
-    """Bindet die Router des Spikes ein (Plan 07 hängt seinen Router hier an).
+    """Registers the spike's routers (plan 07 attaches its router here).
 
-    /api/my/play-ticket läuft immer hinter AppAPIAuthMiddleware und
-    JsonOnlyChangesMiddleware (CSRF IN-08); nur /play/launch prüft im Modus dev
-    Origin, Content-Type und Sec-Fetch-Site selbst (ticket_api.py).
+    /api/my/play-ticket always runs behind AppAPIAuthMiddleware and
+    JsonOnlyChangesMiddleware (CSRF IN-08); only /play/launch checks
+    Origin, Content-Type and Sec-Fetch-Site itself in mode dev (ticket_api.py).
     """
-    # Später Import: pages und ticket_api brauchen require_play_enabled aus diesem Modul.
+    # Late import: pages and ticket_api need require_play_enabled from this module.
     from gameworld.play import pages, ticket_api, ws
 
     app.include_router(pages.router)
     app.include_router(ticket_api.api_router)
     app.include_router(ticket_api.status_router)
     app.include_router(ticket_api.play_router)
-    # WebSocket-Proxy: prüft Schalter, Origin und Identität selbst vor accept.
+    # WebSocket proxy: checks switch, origin and identity itself before accept.
     app.include_router(ws.router)

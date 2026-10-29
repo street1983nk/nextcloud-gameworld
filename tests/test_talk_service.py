@@ -1,4 +1,4 @@
-"""TalkService (TALK-01): Raum je Welt, exakte Mitgliederliste, Abgleich, Löschen, Verfügbarkeit."""
+"""TalkService (TALK-01): room per world, exact member list, reconciliation, delete, availability."""
 
 from __future__ import annotations
 
@@ -90,11 +90,11 @@ async def test_sync_removes_outsiders_and_never_the_owner(
     removed = [c[2][1] for c in fake_talk.calls if c[0] == "remove_attendee"]
     assert len(removed) == 6
     assert set(removed) == {901, 902, 903, 904, 905, 906}
-    # Moderatoren erst zurückstufen, dann entfernen (Pitfall 5).
+    # Demote moderators first, then remove (pitfall 5).
     order = [(c[0], c[2][1]) for c in fake_talk.calls if c[0] in {"demote", "remove_attendee"}]
     assert order.index(("demote", 904)) < order.index(("remove_attendee", 904))
     assert order.index(("demote", 905)) < order.index(("remove_attendee", 905))
-    # Owner bleibt, auch wenn er nicht mehr Verwalter ist (D-27).
+    # The owner stays, even if he is no longer a manager (D-27).
     store.set_meta(META_TIME_ADMINS, json.dumps(["papa"]))
     await talk.sync_members(W1)
     assert _members(fake_talk, token)["admin"] == ("users", 1)
@@ -109,7 +109,7 @@ async def test_kid_moderator_is_demoted_and_uninvited_moderator_removed(
     fake_talk._retype(token, kid.attendee_id, 2)  # pyright: ignore[reportPrivateUsage]
     await talk.sync_members(W1)
     assert _members(fake_talk, token)["gw-kind"] == ("users", 3)
-    # Ausladen: erst zurückstufen, dann entfernen.
+    # Uninviting: demote first, then remove.
     fake_talk._retype(token, kid.attendee_id, 2)  # pyright: ignore[reportPrivateUsage]
     store.apply_world_access(W1, {})
     fake_talk.calls.clear()
@@ -321,7 +321,7 @@ def test_singleton_follows_store(store: WorldStore) -> None:
     assert get_talk_service(store) is first
 
 
-# IN-06: Herunterfahren bricht offene Hooks nach einer Frist ab.
+# IN-06: shutdown aborts open hooks after a deadline.
 
 
 async def test_shutdown_waits_for_quick_hooks_and_cancels_slow_ones(talk: TalkService) -> None:
@@ -353,7 +353,7 @@ async def test_shutdown_talk_without_service_is_noop(app_env: Path) -> None:
     assert await talk_service.shutdown_talk() == 0
 
 
-# Übernahme verwaister Räume (06-06, D-16/D-19). Gegenprobe über rohes SQLite, nicht über den Store.
+# Taking over orphaned rooms (06-06, D-16/D-19). Control via raw SQLite, not via the store.
 
 
 def _raw_room(app_env: Path, world_id: str = W1) -> tuple[str, str, str | None, str | None] | None:
@@ -368,7 +368,7 @@ def _raw_room(app_env: Path, world_id: str = W1) -> tuple[str, str, str | None, 
 
 
 def _ex_admin_room(store: WorldStore, *, senior: str = "admin") -> None:
-    """Danach sind nur admin und gw-lehrer Verwalter (gw-alt nicht mehr), ``senior`` zuerst gesehen."""
+    """Afterwards only admin and gw-lehrer are managers (gw-alt no longer), ``senior`` seen first."""
     junior = "gw-lehrer" if senior == "admin" else "admin"
     store.sync_verwalter_seen({senior}, "2026-01-01T00:00:00+00:00")
     store.sync_verwalter_seen({senior, junior}, "2026-02-01T00:00:00+00:00")
@@ -376,7 +376,7 @@ def _ex_admin_room(store: WorldStore, *, senior: str = "admin") -> None:
 
 
 async def _room_of_gw_alt(talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms) -> str:
-    """Raum der Welt W1 gehört gw-alt (damals Verwalter); W2 gibt es nicht."""
+    """The room of world W1 belongs to gw-alt (then a manager); W2 does not exist."""
     store.delete_world(W2)
     store.set_meta(META_TIME_ADMINS, json.dumps(["admin", "gw-alt", "gw-lehrer"]))
     await talk.ensure_room(W1, "gw-alt")
@@ -385,7 +385,7 @@ async def _room_of_gw_alt(talk: TalkService, store: WorldStore, fake_talk: FakeT
 
 
 def _blind(fake_talk: FakeTalkRooms, token: str, *, blind: set[str] | None) -> None:
-    """``blind``: diese Konten sehen den Raum nicht; None: niemand sieht ihn (Sperrfall)."""
+    """``blind``: these accounts do not see the room; None: nobody sees it (blocked case)."""
     original = fake_talk.participants
 
     async def participants(acting_uid: str, room: str) -> list[RoomMember]:
@@ -412,7 +412,7 @@ async def test_ex_admin_stays_talk_owner_room_goes_to_senior_admin(
     assert status[W1].owner_not_admin is True
     assert status[W1].owner_display == "gw-alt"
     assert status[W1].orphaned_token is None
-    # Nichts gelöscht: der Ex-Verwalter bleibt bis zur Neuanlage durch einen Verwalter.
+    # Nothing deleted: the former manager stays until a manager recreates the room.
     assert "delete" not in fake_talk.methods()
 
 
@@ -431,7 +431,7 @@ async def test_deleted_owner_room_goes_to_senior_admin_without_former_owner(
 ) -> None:
     token = await _room_of_gw_alt(talk, store, fake_talk)
     _ex_admin_room(store, senior="admin")
-    # Nextcloud hat gw-alt gelöscht, Talk hat ihn aus dem Raum entfernt.
+    # Nextcloud deleted gw-alt, Talk removed him from the room.
     fake_talk.rooms[token] = [m for m in fake_talk.rooms[token] if m.actor_id != "gw-alt"]
     await talk.reconcile_all("admin")
     assert _raw_room(app_env) == (token, "admin", None, None)
@@ -472,7 +472,7 @@ async def test_locked_room_gets_new_room_and_keeps_old_token_visible(
     assert new != old
     assert (owner, former, orphaned) == ("admin", None, old)
     assert _members(fake_talk, new)["admin"] == ("users", 1)
-    # Den alten Raum löscht nur ein Nextcloud-Admin per occ, Gameworld nicht.
+    # The old room is deleted only by a Nextcloud admin via occ, not by Gameworld.
     assert old in fake_talk.rooms
     assert not [c for c in fake_talk.calls if c[0] == "delete" and c[2] == (old,)]
     status = {w.world_id: w for w in (await talk.status("admin")).worlds}
@@ -492,7 +492,7 @@ async def test_without_confirmed_acting_nothing_is_taken_over(
     for acting in (None, "gw-alt", "gw-kind"):
         await talk.reconcile_all(acting)
         assert _raw_room(app_env) == before
-    # Auch der Sperrfall legt ohne bestätigtes Konto nichts an und löscht nichts.
+    # The blocked case too creates and deletes nothing without a confirmed account.
     _blind(fake_talk, token, blind=None)
     await talk.reconcile_all(None)
     assert _raw_room(app_env) == before
@@ -508,7 +508,7 @@ async def test_takeover_leaves_room_of_active_admin_alone(
     store.sync_verwalter_seen({"papa"}, "2026-01-01T00:00:00+00:00")
     store.sync_verwalter_seen({"papa", "admin"}, "2026-02-01T00:00:00+00:00")
     await talk.reconcile_all("admin")
-    # admin ist noch Verwalter: kein Umschreiben auf den dienstälteren papa.
+    # admin is still a manager: no rewriting to the longer-serving papa.
     assert _raw_room(app_env) == before
 
 
@@ -559,13 +559,13 @@ async def test_recreate_room_refuses_non_admin_and_keeps_room_on_talk_error(
 async def test_reconcile_all_checks_availability_fresh(
     talk: TalkService, store: WorldStore, fake_talk: FakeTalkRooms
 ) -> None:
-    """Der 5-min-Abgleich fragt Talk frisch (06-12, Regression 4.1 K6).
+    """The 5 min reconciliation asks Talk fresh (06-12, regression 4.1 K6).
 
-    Cache und Wartung liefen beide im 300-s-Takt; traf die Wartung den Cache knapp vor
-    Ablauf, galt "Talk aus" noch fünf Minuten weiter, und ein nach dem Wieder-
-    Aktivieren nachzulegender Raum kam erst nach bis zu zehn Minuten (gemessen 332 s
-    statt höchstens 330 s). Der Abgleich läuft selten, eine Capability-Abfrage mehr
-    kostet nichts.
+    Cache and maintenance both ran on the 300 s tick; if the maintenance hit the cache just before
+    expiry, "Talk off" still applied for another five minutes, and a room to be created after
+    re-enabling came only after up to ten minutes (measured 332 s
+    instead of at most 330 s). The reconciliation runs rarely, one more capability query
+    costs nothing.
     """
     fake_talk.talk = False
     await talk.ensure_room(W1, "admin")

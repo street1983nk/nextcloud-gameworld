@@ -1,10 +1,10 @@
-"""Talk-Räume über die OCS-API von spreed, im Namen eines Verwalters (TALK-01).
+"""Talk rooms via the OCS API of spreed, on behalf of a manager (TALK-01).
 
-ExApps haben für OCS keinen eigenen Systemnutzer, Talk verlangt einen
-angemeldeten Nutzer. Darum läuft jeder Aufruf als Verwalter, je Ablauf mit eigenem, kurzlebigem
-Client (``gameworld.nc.nc_as``, schließt seine Sessions, WR-05).
-Logs enthalten nur Statuscode oder Typname, nie Namen oder Teilnehmerlisten
-(T-04.1-27). Anruf-Einstellungen bleiben auf Talk-Standard (D-18).
+ExApps have no system user of their own for OCS, Talk requires a logged-in
+user. Therefore every call runs as a manager, per flow with its own short-lived
+client (``gameworld.nc.nc_as``, closes its sessions, WR-05).
+Logs contain only status code or type name, never names or participant lists
+(T-04.1-27). Call settings stay at the Talk default (D-18).
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ from gameworld.nc import nc_as
 LOG = logging.getLogger(__name__)
 
 BASE = "/ocs/v2.php/apps/spreed/api/v4/room"
-# Talk erlaubt Raumnamen bis 255 Zeichen.
+# Talk allows room names up to 255 characters.
 ROOM_NAME_MAX = 255
-# Teilnehmertypen aus spreed docs/constants.md.
+# Participant types from spreed docs/constants.md.
 TYPE_OWNER = 1
 TYPE_MODERATOR = 2
 TYPE_USER = 3
@@ -37,11 +37,11 @@ MSG_UNAVAILABLE = "Talk antwortet gerade nicht. Bitte später noch einmal versuc
 
 
 class TalkUnavailableError(Exception):
-    """Talk fehlt, verweigert den Aufruf oder antwortet nicht."""
+    """Talk is missing, refuses the call or does not answer."""
 
 
 class RoomGoneError(TalkUnavailableError):
-    """Talk kennt den Raum für das handelnde Konto nicht (404)."""
+    """Talk does not know the room for the acting account (404)."""
 
 
 @dataclass(frozen=True)
@@ -54,48 +54,48 @@ class RoomMember:
 
 class TalkRooms(Protocol):
     async def available(self, acting_uid: str) -> tuple[bool, bool]:
-        """(Talk da, Bots da) laut Capabilities."""
+        """(Talk present, bots present) according to capabilities."""
         ...
 
     async def create(self, acting_uid: str, name: str) -> str:
-        """Legt einen nicht auffindbaren Gruppenraum an; liefert den Token."""
+        """Creates a group room that cannot be found; returns the token."""
         ...
 
     async def participants(self, acting_uid: str, token: str) -> list[RoomMember]:
-        """Alle Teilnehmer des Raums."""
+        """All participants of the room."""
         ...
 
     async def add_user(self, acting_uid: str, token: str, uid: str) -> None:
-        """Fügt ein Nextcloud-Konto als Teilnehmer hinzu."""
+        """Adds a Nextcloud account as a participant."""
         ...
 
     async def remove_attendee(self, acting_uid: str, token: str, attendee_id: int) -> None:
-        """Entfernt einen Teilnehmer (vorher zurückstufen, Owner geht nicht)."""
+        """Removes a participant (demote first, the owner cannot be removed)."""
         ...
 
     async def promote(self, acting_uid: str, token: str, attendee_id: int) -> None:
-        """Macht einen Teilnehmer zum Moderator."""
+        """Makes a participant a moderator."""
         ...
 
     async def demote(self, acting_uid: str, token: str, attendee_id: int) -> None:
-        """Nimmt einem Moderator die Rechte."""
+        """Takes a moderator's rights away."""
         ...
 
     async def set_read_only(self, acting_uid: str, token: str, *, on: bool) -> None:
-        """Schaltet den Raum auf nur lesen oder zurück (D-17)."""
+        """Sets the room to read-only or back (D-17)."""
         ...
 
     async def ensure_private(self, acting_uid: str, token: str) -> None:
-        """Nie öffentlich, nie auffindbar."""
+        """Never public, never discoverable."""
         ...
 
     async def delete(self, acting_uid: str, token: str) -> None:
-        """Löscht den Raum; ist er schon weg, gilt das als Erfolg."""
+        """Deletes the room; if it is already gone, that counts as success."""
         ...
 
 
 def clean_room_name(name: str) -> str:
-    """Ohne Steuer- und Formatzeichen, höchstens 255 Zeichen."""
+    """Without control and format characters, at most 255 characters."""
     kept = "".join(ch for ch in name if not unicodedata.category(ch).startswith("C"))
     return kept.strip()[:ROOM_NAME_MAX]
 
@@ -106,14 +106,14 @@ def _path(token: str, suffix: str = "") -> str:
 
 def _unavailable(exc: Exception) -> TalkUnavailableError:
     if isinstance(exc, NextcloudException):
-        LOG.warning("Talk-Aufruf gescheitert: Status %s", exc.status_code)
+        LOG.warning("Talk call failed: status %s", exc.status_code)
     else:
-        LOG.warning("Talk-Aufruf gescheitert: %s", type(exc).__name__)
+        LOG.warning("Talk call failed: %s", type(exc).__name__)
     return TalkUnavailableError(MSG_UNAVAILABLE)
 
 
 class NcTalkRooms:
-    """OCS spreed v4, je Ablauf ein eigener, kurzlebiger Client als handelnder Verwalter (WR-05)."""
+    """OCS spreed v4, per flow its own short-lived client as the acting manager (WR-05)."""
 
     async def available(self, acting_uid: str) -> tuple[bool, bool]:
         try:
@@ -125,7 +125,7 @@ class NcTalkRooms:
         return talk, bots
 
     async def create(self, acting_uid: str, name: str) -> str:
-        """Anlegen und "nicht auffindbar" in einem Client; scheitert das zweite, wird der Raum entfernt."""
+        """Create and make "not discoverable" in one client; if the second fails, the room is removed."""
         try:
             async with nc_as(acting_uid) as nc:
                 try:
@@ -136,12 +136,12 @@ class NcTalkRooms:
                 try:
                     await nc.ocs("PUT", _path(token, "/listable"), params={"scope": 0})
                 except Exception as exc:
-                    # Kein auffindbarer Raum ohne Eintrag: wieder wegräumen, dann melden.
+                    # No discoverable room without an entry: clean it up again, then report.
                     error = _unavailable(exc)
                     try:
                         await nc.ocs("DELETE", _path(token))
                     except Exception as cleanup:
-                        LOG.warning("Talk-Raum nach Fehler nicht entfernt: %s", type(cleanup).__name__)
+                        LOG.warning("Talk room not removed after error: %s", type(cleanup).__name__)
                     raise error from None
         except TalkUnavailableError:
             raise
@@ -220,7 +220,7 @@ _rooms: TalkRooms | None = None
 
 
 def get_talk_rooms() -> TalkRooms:
-    """Modulweites Singleton; Tests setzen ein Fake ein."""
+    """Module-wide singleton; tests inject a fake."""
     global _rooms
     if _rooms is None:
         _rooms = NcTalkRooms()

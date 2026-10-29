@@ -1,12 +1,12 @@
-"""Gameworld-Bot in Talk: registrieren, je Raum freischalten, signiert senden (TALK-02).
+"""Gameworld bot in Talk: register, enable per room, send signed (TALK-02).
 
-Der Bot schreibt unter eigenem Namen "Gameworld", nie im Namen eines
-Elternteils (D-21 bis D-24). Registrierung und Geheimnis übernimmt nc_py_api
-(``AsyncTalkBot.enabled_handler``, Ablage in ``appconfig_ex``); gesendet wird
-HMAC-signiert über ``AsyncTalkBot.send_message`` ohne Nutzerkontext.
+The bot writes under its own name "Gameworld", never on behalf of a
+parent (D-21 to D-24). nc_py_api takes care of registration and secret
+(``AsyncTalkBot.enabled_handler``, stored in ``appconfig_ex``); messages are sent
+HMAC-signed via ``AsyncTalkBot.send_message`` without a user context.
 
-Ohne Talk oder ohne ``bots-v1`` passiert nichts (D-20, Pitfall 8). Logs
-nennen nur Statuscodes und Typnamen, nie Texte oder Namen (T-04.1-32).
+Without Talk or without ``bots-v1`` nothing happens (D-20, pitfall 8). Logs
+name only status codes and type names, never texts or names (T-04.1-32).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ LOG = logging.getLogger(__name__)
 # language: the description is English (fallback language en, D-25).
 BOT_DESCRIPTION = "Reports events from Gameworld worlds"
 BOT = AsyncTalkBot("/talk/bot", "Gameworld", BOT_DESCRIPTION)
-# So endet die URL, unter der AppAPI den Bot bei Talk einträgt (talk_proxy).
+# This is how the URL ends under which AppAPI registers the bot with Talk (talk_proxy).
 BOT_URL_SUFFIX = "/apps/app_api/api/v1/talk_proxy/gameworld/talk/bot"
 
 STATUS_CREATED = 201
@@ -35,7 +35,7 @@ STATUS_UNAUTHORIZED = 401
 
 
 class BotMissingError(Exception):
-    """Talk kennt den Gameworld-Bot (noch) nicht."""
+    """Talk does not (yet) know the Gameworld bot."""
 
 
 class _BotEntry(Protocol):
@@ -48,20 +48,20 @@ class _BotEntry(Protocol):
 
 class BotSender(Protocol):
     async def register(self) -> bool:
-        """Registriert den Bot einmal je Prozess, falls Talk Bots kann."""
+        """Registers the bot once per process, if Talk supports bots."""
         ...
 
     async def ensure_enabled(self, token: str, acting_uid: str) -> None:
-        """Schaltet den Bot im Raum frei (idempotent), als Verwalter."""
+        """Enables the bot in the room (idempotent), as a manager."""
         ...
 
     async def send(self, token: str, text: str, *, silent: bool) -> bool:
-        """Sendet eine Nachricht; True nur bei Erfolg."""
+        """Sends a message; True only on success."""
         ...
 
 
 def find_bot_id(bots: Iterable[_BotEntry]) -> int | None:
-    """Talk-ID des Gameworld-Bots aus der Admin-Liste; ohne Treffer None."""
+    """Talk ID of the Gameworld bot from the admin list; None without a match."""
     for entry in bots:
         if entry.url.endswith(BOT_URL_SUFFIX):
             return entry.bot_id
@@ -69,12 +69,12 @@ def find_bot_id(bots: Iterable[_BotEntry]) -> int | None:
 
 
 async def register(nc: AsyncNextcloudApp) -> bool:
-    """Registriert den Bot über AppAPI, aber nur, wenn Talk Bots anbietet.
+    """Registers the bot via AppAPI, but only if Talk offers bots.
 
-    Seit AppAPI 34 bringt jede Registrierung ein neues Geheimnis mit; steht der Bot
-    schon in Talk, lehnt Talk das ab ("same URL and a different secret"). Ist das
-    gespeicherte Geheimnis noch da, signiert der Bot damit weiter: dann gilt er als
-    registriert, statt alle 5 Minuten zu scheitern. Ohne Geheimnis bleibt der Fehler.
+    Since AppAPI 34 every registration brings a new secret; if the bot is already
+    in Talk, Talk rejects that ("same URL and a different secret"). If the stored
+    secret is still there, the bot keeps signing with it: then it counts as
+    registered instead of failing every 5 minutes. Without a secret the error stays.
     """
     if not await nc.talk.bots_available:
         return False
@@ -83,25 +83,25 @@ async def register(nc: AsyncNextcloudApp) -> bool:
     except NextcloudException as exc:
         if await aget_bot_secret(BOT.callback_url) is None:
             raise
-        LOG.info("Talk-Bot war schon registriert (Status %s), das gespeicherte Geheimnis gilt weiter", exc.status_code)
+        LOG.info("Talk bot was already registered (status %s), the stored secret still applies", exc.status_code)
     _forget_rooms()
     return True
 
 
 async def unregister(nc: AsyncNextcloudApp) -> None:
-    """Meldet den Bot beim Deaktivieren der ExApp ab."""
+    """Unregisters the bot when the ExApp is deactivated."""
     _forget_rooms()
     await BOT.enabled_handler(False, nc)
 
 
 def _forget_rooms() -> None:
-    """Nach Neu- oder Abmelden gelten Talk-ID und Freischaltungen nicht mehr."""
+    """After registering or unregistering, Talk ID and enablements no longer apply."""
     if isinstance(_bot, NcBot):
         _bot.forget()
 
 
 class NcBot:
-    """Echter Bot; merkt sich Registrierung, Bot-ID und freigeschaltete Räume im Prozess."""
+    """Real bot; remembers registration, bot ID and enabled rooms in the process."""
 
     def __init__(self) -> None:
         self._registered = False
@@ -118,17 +118,17 @@ class NcBot:
     async def ensure_enabled(self, token: str, acting_uid: str) -> None:
         if token in self._enabled:
             return
-        # Bot suchen und freischalten in einem kurzlebigen Client (WR-05).
+        # Find and enable the bot in one short-lived client (WR-05).
         async with nc_as(acting_uid) as nc:
             if self._bot_id is None:
                 self._bot_id = find_bot_id(await nc.talk.list_bots())
                 if self._bot_id is None:
                     raise BotMissingError
             try:
-                # nc_py_api setzt den Token roh in den Pfad.
+                # nc_py_api puts the token raw into the path.
                 await nc.talk.enable_bot(quote(token, safe=""), self._bot_id)
             except Exception:
-                # Bot womöglich neu registriert (neue Talk-ID): beim nächsten Mal neu suchen.
+                # Bot possibly re-registered (new Talk ID): search again next time.
                 self._bot_id = None
                 raise
         self._enabled.add(token)
@@ -141,15 +141,15 @@ class NcBot:
         try:
             response, _reference = await BOT.send_message(text, 0, silent=silent, token=quote(token, safe=""))
         except Exception as exc:
-            LOG.warning("Bot-Nachricht nicht gesendet: %s", type(exc).__name__)
+            LOG.warning("Bot message not sent: %s", type(exc).__name__)
             return False
         status = response.status_code
         if status == STATUS_CREATED:
             return True
         if status == STATUS_UNAUTHORIZED:
-            # Bot im Raum nicht (mehr) aktiv: beim nächsten Abgleich neu freischalten.
+            # Bot no longer active in the room: enable it again at the next reconciliation.
             self._enabled.discard(token)
-        LOG.warning("Bot-Nachricht nicht gesendet: Status %s", status)
+        LOG.warning("Bot message not sent: status %s", status)
         return False
 
 
@@ -157,7 +157,7 @@ _bot: BotSender | None = None
 
 
 def get_bot() -> BotSender:
-    """Modulweites Singleton; Tests setzen ein Fake ein."""
+    """Module-wide singleton; tests inject a fake."""
     global _bot
     if _bot is None:
         _bot = NcBot()

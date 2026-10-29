@@ -1,20 +1,20 @@
-"""Spielseite des Browser-Spikes und Auslieferung der luanti-wasm-Artefakte (04.2-02).
+"""Play page of the browser spike and delivery of the luanti-wasm artifacts (04.2-02).
 
-Das Spiel braucht ein eigenes Top-Level-Dokument mit COOP/COEP (crossOriginIsolated,
-RESEARCH Pattern 3); in der Nextcloud-Seite kann es nicht laufen. Jede Antwort dieses
-Routers trägt darum die Header aus ``security_headers`` (Cross-Origin-Embedder-Policy
-require-corp, Cross-Origin-Resource-Policy same-origin, CSP), auch jede 404.
+The game needs its own top-level document with COOP/COEP (crossOriginIsolated,
+RESEARCH pattern 3); it cannot run inside the Nextcloud page. Every response of this
+router therefore carries the headers from ``security_headers`` (Cross-Origin-Embedder-Policy
+require-corp, Cross-Origin-Resource-Policy same-origin, CSP), including every 404.
 
-Artefakte kommen nur aus ``play_www_dir()/<a|b>/``: Build-Ordner fest, Endungen aus
-einer Liste, Pfad nach ``resolve`` innerhalb des Build-Ordners, reguläre Datei. Alle
-Ablehnungen sind dieselbe 404 ohne Pfad im Text.
+Artifacts come only from ``play_www_dir()/<a|b>/``: build folder fixed, extensions from
+a list, path inside the build folder after ``resolve``, regular file. All
+rejections are the same 404 without a path in the text.
 
-Release-Ordner: build_www.sh legt launcher.js, luanti.js, worker.js und packs/ in
-``www/<release>/`` ab (release = 12 Hex-Zeichen, je Build zufällig), und launcher.js
-lädt sie über den relativen Pfad ``<release>/...``, aufgelöst gegen die URL des
-Dokuments (/play/). Darum gibt es zusätzlich ``/play/<release>/<datei>``: Der
-Release-Name bestimmt eindeutig den Build-Ordner, danach gelten dieselben Prüfungen.
-``/play/release/<a|b>`` nennt play.js den Release-Namen eines Builds.
+Release folder: build_www.sh puts launcher.js, luanti.js, worker.js and packs/ into
+``www/<release>/`` (release = 12 hex characters, random per build), and launcher.js
+loads them via the relative path ``<release>/...``, resolved against the URL of the
+document (/play/). Therefore there is additionally ``/play/<release>/<file>``: the
+release name uniquely determines the build folder, after that the same checks apply.
+``/play/release/<a|b>`` tells play.js the release name of a build.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ _RELEASE_RE = re.compile(RELEASE_PATTERN)
 
 
 class ReleaseConvertor(Convertor[str]):
-    """Pfadteil nur aus 12 kleinen Hex-Zeichen (Release-Name aus build_www.sh)."""
+    """Path part of only 12 lower-case hex characters (release name from build_www.sh)."""
 
     regex = RELEASE_PATTERN
 
@@ -45,8 +45,8 @@ class ReleaseConvertor(Convertor[str]):
         return value
 
 
-# Eigener Konverter statt {release}: Die Route trifft so nur Release-Namen und
-# verdeckt keine späteren /play/<wort>/...-Routen (Plan 06/07).
+# Own converter instead of {release}: the route thus only hits release names and
+# does not shadow later /play/<word>/... routes (plan 06/07).
 register_url_convertor("gwrelease", ReleaseConvertor())
 
 router = APIRouter(prefix="/play", dependencies=[Depends(require_play_enabled)])
@@ -64,7 +64,7 @@ STATIC_TYPES: dict[str, str] = {
     ".css": "text/css",
     ".html": "text/html",
 }
-# Relativ zum Arbeitsverzeichnis wie map_app_static (cwd = Repo-Root, main.py).
+# Relative to the working directory like map_app_static (cwd = repo root, main.py).
 WEBPLAY_DIR = "webplay"
 
 
@@ -94,9 +94,9 @@ async def play_script() -> FileResponse:
 
 
 def resolve_artifact(www: Path, build: str, path: str, release: str = "") -> tuple[Path, str] | None:
-    """Datei und Content-Type eines Artefakts oder None; rein bis auf das Dateisystem.
+    """File and content type of an artifact or None; pure except for the file system.
 
-    Mit ``release`` ist die Grenze der Release-Ordner, nicht der ganze Build-Ordner.
+    With ``release`` the boundary is the release folder, not the whole build folder.
     """
     if build not in BUILDS or (release and not _RELEASE_RE.fullmatch(release)):
         return None
@@ -114,7 +114,7 @@ def resolve_artifact(www: Path, build: str, path: str, release: str = "") -> tup
 
 
 def find_release(www: Path, build: str) -> str | None:
-    """Name des einzigen Release-Ordners eines Builds oder None (keiner oder mehrere)."""
+    """Name of the only release folder of a build or None (none or several)."""
     if build not in BUILDS:
         return None
     try:

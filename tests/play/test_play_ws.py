@@ -1,18 +1,18 @@
-"""Negativtest-Matrix WebSocket-Proxy /play/ws mit Fake-UDP-Welt und Positivkontrollen (04.2-07).
+"""Negative test matrix WebSocket proxy /play/ws with fake UDP world and positive controls (04.2-07).
 
-Jede Bedrohung aus RESEARCH "Known Threat Patterns" hat einen test_neg_-Test; daneben
-steht eine Positivkontrolle (test_pos_ oder im selben Test), die zeigt, dass die
-Ablehnung an der geprüften Bedingung liegt und nicht an einem kaputten Aufbau.
+Every threat from RESEARCH "Known Threat Patterns" has a test_neg_ test; next to it
+stands a positive control (test_pos_ or in the same test) that shows that the
+rejection is due to the checked condition and not to a broken setup.
 
-Gegenprobe unabhängig von der Umsetzung: Frames und MTP-Pakete baut dieser Test mit
-eigenem struct-Code nach dem Layout von webshims (proxy.js) und tests/e2e/luanti_probe.py,
-nie über framing.py oder mtp.py. Die Welt ist ein echter UDP-Socket auf 127.0.0.1, der
-jedes empfangene Datagramm aufzeichnet; "kommt nicht an" wird immer gegen ein danach
-gesendetes, ankommendes Paket oder gegen das Ende der Sitzung geprüft.
+Control independent of the implementation: this test builds frames and MTP packets with
+its own struct code after the layout of webshims (proxy.js) and tests/e2e/luanti_probe.py,
+never via framing.py or mtp.py. The world is a real UDP socket on 127.0.0.1 that
+records every received datagram; "does not arrive" is always checked against a packet sent
+afterwards that does arrive, or against the end of the session.
 
-WebSocket über starlette.testclient (httpx kann kein WS). Die App für die Modi dev und
-harp wird wie main.py gebaut, aber mit festem Modus; Einladungen laufen über die echte
-Haupt-App (Fixture client).
+WebSocket via starlette.testclient (httpx cannot do WS). The app for the modes dev and
+harp is built like main.py, but with a fixed mode; invitations go through the real
+main app (fixture client).
 """
 
 from __future__ import annotations
@@ -61,18 +61,18 @@ ORIGIN = "http://localhost:8092"
 ORIGIN_HEADERS = {"origin": ORIGIN}
 WS = "/play/ws"
 
-# Proxy-Kopf nach webshims proxy.js: u32 Magic | 16 Byte IPv6 | u16 Port | u16 Länge.
+# Proxy head after webshims proxy.js: u32 magic | 16 byte IPv6 | u16 port | u16 length.
 MAGIC = 0x778B4CF6
-# MTP nach luanti_probe.py: u32 Protokoll | u16 peer_id | u8 channel, dann Pakettyp.
+# MTP after luanti_probe.py: u32 protocol | u16 peer_id | u8 channel, then packet type.
 PROTO = 0x4F457403
 SERVER_REPLY = struct.pack(">IHB", PROTO, 1, 0) + b"\x01" + struct.pack(">H", 0x02) + b"hello-from-world"
 
 
-# --- unabhängige Paketbauer ------------------------------------------------------------------
+# --- independent packet builders -------------------------------------------------------------
 
 
 def _mapped(ip: str) -> bytes:
-    """IPv4 als ::ffff:a.b.c.d, 16 Byte."""
+    """IPv4 as ::ffff:a.b.c.d, 16 bytes."""
     return bytes(10) + b"\xff\xff" + bytes(int(part) for part in ip.split("."))
 
 
@@ -90,13 +90,13 @@ def _str16(data: bytes) -> bytes:
 
 
 def _init(name: str) -> bytes:
-    """TOSERVER_INIT 0x02 als ORIGINAL auf Kanal 1: ser_ver 29, Kompression 0, Protokoll 37..53, Name."""
+    """TOSERVER_INIT 0x02 as ORIGINAL on channel 1: ser_ver 29, compression 0, protocol 37..53, name."""
     body = struct.pack(">BHHH", 29, 0, 37, 53) + _str16(name.encode())
     return struct.pack(">IHB", PROTO, 0, 1) + b"\x01" + struct.pack(">H", 0x02) + body
 
 
 def _first_srp() -> bytes:
-    """TOSERVER_FIRST_SRP 0x50: Salt, Verifier, is_empty."""
+    """TOSERVER_FIRST_SRP 0x50: salt, verifier, is_empty."""
     body = _str16(b"s" * 16) + _str16(b"v" * 256) + b"\x00"
     return (
         struct.pack(">IHB", PROTO, 0, 1) + b"\x03" + struct.pack(">H", 65500) + b"\x01" + struct.pack(">H", 0x50) + body
@@ -104,7 +104,7 @@ def _first_srp() -> bytes:
 
 
 def _connect_dummy() -> bytes:
-    """Leeres RELIABLE(ORIGINAL) ohne Kommando, wie der Client beim Verbinden (peer_id-Vergabe)."""
+    """Empty RELIABLE(ORIGINAL) without a command, like the client on connect (peer_id assignment)."""
     return struct.pack(">IHB", PROTO, 0, 0) + b"\x03" + struct.pack(">H", 65500) + b"\x01"
 
 
@@ -116,11 +116,11 @@ def _parse_frame(frame: bytes) -> tuple[str, int, bytes]:
     return ".".join(str(b) for b in raw_ip[12:]), port, frame[24:]
 
 
-# --- Fake-UDP-Welt ---------------------------------------------------------------------------
+# --- fake UDP world --------------------------------------------------------------------------
 
 
 class FakeWorld:
-    """UDP-Server auf 127.0.0.1: zeichnet Datagramme auf, antwortet optional mit SERVER_REPLY."""
+    """UDP server on 127.0.0.1: records datagrams, optionally answers with SERVER_REPLY."""
 
     def __init__(self, *, reply: bool = True) -> None:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -140,7 +140,7 @@ class FakeWorld:
             except TimeoutError:
                 continue
             except ConnectionResetError:
-                # Windows meldet ein ICMP-Unreachable einer früheren Antwort beim nächsten recvfrom.
+                # Windows reports an ICMP unreachable of an earlier reply at the next recvfrom.
                 continue
             except OSError:
                 return
@@ -241,7 +241,7 @@ def _play_app(
     registry: SessionRegistry,
     worlds: dict[str, FakeWorld],
 ) -> FastAPI:
-    """Aufbau wie main.py mit festem Modus und eigenen Instanzen per Dependency-Override."""
+    """Setup like main.py with a fixed mode and own instances via dependency override."""
     app = FastAPI()
     app.add_middleware(JsonOnlyChangesMiddleware)
     app.add_middleware(AppAPIAuthMiddleware, disable_for=play_disable_for(mode))
@@ -281,7 +281,7 @@ def logs(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
     return caplog
 
 
-# --- Hilfen ----------------------------------------------------------------------------------
+# --- Helpers ---------------------------------------------------------------------------------
 
 
 async def _invite(client: httpx.AsyncClient, world_id: str, target: str) -> None:
@@ -298,7 +298,7 @@ async def _player_name(client: httpx.AsyncClient, user: str = "gw-kind", world_i
 
 
 async def _setup(client: httpx.AsyncClient, user: str = "gw-kind", world_id: str = W1) -> str:
-    """Lädt ``user`` in die Welt ein und liefert seinen Spielernamen."""
+    """Invites ``user`` into the world and returns his player name."""
     await _invite(client, world_id, user)
     return await _player_name(client, user, world_id)
 
@@ -308,7 +308,7 @@ def _ws_ticket(tickets: TicketStore, name: str, user: str = "gw-kind", world_id:
 
 
 def _newaddr(http: TestClient, token: str | None, headers: dict[str, str] | None = None, query: str = "") -> Message:
-    """Eine NEWADDR-Verbindung; liefert die erste Nachricht des Servers (ADDR oder close)."""
+    """One NEWADDR connection; returns the first message of the server (ADDR or close)."""
     url = WS if token is None else f"{WS}?t={token}{query}"
     with http.websocket_connect(url, headers=ORIGIN_HEADERS if headers is None else headers) as ws:
         ws.send_text("NEWADDR")
@@ -355,15 +355,15 @@ def _refusals(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [record.getMessage()[len(prefix) :] for record in caplog.records if record.getMessage().startswith(prefix)]
 
 
-# --- Positivkontrollen -----------------------------------------------------------------------
+# --- Positive controls -----------------------------------------------------------------------
 
 
 async def test_pos_end_to_end(
     client: httpx.AsyncClient, play: TestClient, worlds: dict[str, FakeWorld], logs: pytest.LogCaptureFixture
 ) -> None:
-    """Ticket, launch, NEWADDR, BIND, INIT kommt bei der Welt an, ihre Antwort kommt verpackt zurück."""
+    """Ticket, launch, NEWADDR, BIND, INIT arrives at the world, its answer comes back wrapped."""
     name = await _setup(client)
-    # Über die Spiel-App, damit ihr Ticket-Speicher (Override) das Launch-Ticket kennt.
+    # Via the play app, so that its ticket store (override) knows the launch ticket.
     ticket = play.post("/api/my/play-ticket", json={"world_id": W1}, headers=appapi_headers("gw-kind"))
     assert ticket.status_code == 200
     launch = play.post(
@@ -397,7 +397,7 @@ async def test_pos_allowed_origin_variants(
 async def test_pos_default_resolver(
     service: WorldService, fake: FakeProvisioner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Ohne den 2-s-Listencache, damit der Statuswechsel sofort sichtbar ist.
+    # Without the 2 s list cache, so that the status change is visible immediately.
     monkeypatch.setattr(world_service_module, "LIST_CACHE_SECONDS", 0.0)
     resolve = get_target_resolver(service)
     assert await resolve(W1) == ("127.0.0.1", 30015)
@@ -409,7 +409,7 @@ async def test_pos_default_resolver(
 async def test_pos_four_binds_share_session(
     client: httpx.AsyncClient, play: TestClient, tickets: TicketStore, worlds: dict[str, FakeWorld]
 ) -> None:
-    """Pitfall 8: Mehrere BINDs mit demselben Passcode sind erlaubt und teilen den Wächter."""
+    """Pitfall 8: Several BINDs with the same passcode are allowed and share the guard."""
     name = await _setup(client)
     passcode = _passcode(_newaddr(play, _ws_ticket(tickets, name)))
     with ExitStack() as stack:
@@ -420,7 +420,7 @@ async def test_pos_four_binds_share_session(
         assert len(worlds[W1].wait_for(2)) == 2
 
 
-# --- Origin und Schalter (vor accept) --------------------------------------------------------
+# --- Origin and switch (before accept) -------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -434,7 +434,7 @@ async def test_neg_origin_vor_accept(
     name = await _setup(client)
     token = _ws_ticket(tickets, name)
     assert _closed_before_accept(play, f"{WS}?t={token}", headers) == 1008
-    # Positivkontrolle: dasselbe Ticket mit erlaubtem Origin (vor accept wurde nichts eingelöst).
+    # Positive control: the same ticket with an allowed origin (nothing was redeemed before accept).
     _passcode(_newaddr(play, token))
 
 
@@ -449,7 +449,7 @@ async def test_neg_schalter_aus(
     _passcode(_newaddr(play, token))
 
 
-# --- Tickets bei NEWADDR ---------------------------------------------------------------------
+# --- Tickets at NEWADDR ----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("token", [None, "", "A" * 22, "x" * 65], ids=["ohne", "leer", "unbekannt", "zu_lang"])
@@ -496,7 +496,7 @@ async def test_neg_launch_ticket_statt_ws(
 async def test_neg_welt_id_aus_query_ignoriert(
     client: httpx.AsyncClient, play: TestClient, tickets: TicketStore, worlds: dict[str, FakeWorld]
 ) -> None:
-    """Die Welt kommt nur aus dem Ticket: world_id und w in der URL ändern das Ziel nicht."""
+    """The world comes only from the ticket: world_id and w in the URL do not change the destination."""
     name = await _setup(client)
     await _invite(client, W2, "gw-kind")
     token = _ws_ticket(tickets, name, world_id=W1)
@@ -520,7 +520,7 @@ async def test_neg_ausgeladen_nach_launch(
     name = await _setup(client)
     kept = _ws_ticket(tickets, name)
     revoked = _ws_ticket(tickets, name)
-    # Positivkontrolle vor dem Ausladen; danach Sitzung verfallen lassen (kein busy).
+    # Positive control before uninviting; afterwards let the session expire (no busy).
     _passcode(_newaddr(play, kept))
     session_clock.advance(60)
     removed = await client.post(
@@ -562,7 +562,7 @@ async def test_neg_umbenannt_nach_launch(
     _passcode(_newaddr(play, _ws_ticket(tickets, "Mia2")))
 
 
-# --- Modus harp ------------------------------------------------------------------------------
+# --- Mode harp -------------------------------------------------------------------------------
 
 
 async def test_neg_harp_fremde_identitaet_newaddr(
@@ -573,7 +573,7 @@ async def test_neg_harp_fremde_identitaet_newaddr(
     stolen = _ws_ticket(tickets, name)
     foreign = {**ORIGIN_HEADERS, **appapi_headers("gw-kind2")}
     assert _is_policy_close(_newaddr(harp, stolen, foreign))
-    # Positivkontrolle: frisches Ticket, gleiche Identität.
+    # Positive control: fresh ticket, same identity.
     own = {**ORIGIN_HEADERS, **appapi_headers("gw-kind")}
     _passcode(_newaddr(harp, _ws_ticket(tickets, name), own))
 
@@ -595,7 +595,7 @@ async def test_neg_harp_fremde_identitaet_bind(
 async def test_neg_harp_ohne_identitaet(
     client: httpx.AsyncClient, play: TestClient, tickets: TicketStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Modus harp an einer App ohne Identität (Fehlkonfiguration): Abbruch vor accept."""
+    """Mode harp on an app without identity (misconfiguration): abort before accept."""
     name = await _setup(client)
     token = _ws_ticket(tickets, name)
     monkeypatch.setenv("GAMEWORLD_BROWSER_SPIKE", "harp")
@@ -638,7 +638,7 @@ async def test_neg_fremde_kommandos(
     with play.websocket_connect(f"{WS}?t={token}", headers=ORIGIN_HEADERS) as ws:
         ws.send_text(command)
         assert _is_policy_close(ws.receive())
-    # Positivkontrolle: dasselbe Ticket ist noch gültig (Kommando wurde vor dem Einlösen abgelehnt).
+    # Positive control: the same ticket is still valid (command was rejected before redeeming).
     _passcode(_newaddr(play, token))
 
 
@@ -652,7 +652,7 @@ async def test_neg_binaer_als_erstes(client: httpx.AsyncClient, play: TestClient
         assert _bind(play, stack, passcode)[1] == "BIND OK"
 
 
-# --- Relais: Ziele, Wächter, Frames ----------------------------------------------------------
+# --- Relay: destinations, guard, frames ------------------------------------------------------
 
 
 async def test_neg_fremde_ziele_verworfen(
@@ -662,7 +662,7 @@ async def test_neg_fremde_ziele_verworfen(
     worlds: dict[str, FakeWorld],
     logs: pytest.LogCaptureFixture,
 ) -> None:
-    """Kein offenes Relais: 192.168.0.1:53 und 127.0.0.1:<Weltport> werden verworfen, die Sitzung bleibt."""
+    """No open relay: 192.168.0.1:53 and 127.0.0.1:<world port> are discarded, the session stays."""
     name = await _setup(client)
     passcode = _passcode(_newaddr(play, _ws_ticket(tickets, name)))
     with ExitStack() as stack:
@@ -670,7 +670,7 @@ async def test_neg_fremde_ziele_verworfen(
         ws.send_bytes(_frame("192.168.0.1", 53, b"dns-probe"))
         ws.send_bytes(_frame("127.0.0.1", worlds[W1].port, _init(name)))
         ws.send_bytes(_frame("10.77.0.1", 30001, _init(name)))
-        # Positivkontrolle danach auf derselben Verbindung.
+        # Positive control afterwards on the same connection.
         ws.send_bytes(_to_world(_connect_dummy()))
         assert worlds[W1].wait_for(1) == [_connect_dummy()]
         assert ws.receive_bytes()
@@ -692,7 +692,7 @@ async def test_neg_geschwistername(
     await asyncio.sleep(0.2)
     assert not any(b"Leo" in datagram for datagram in worlds[W1].received)
     assert worlds[W1].received == []
-    # Die Sitzung ist zu Ende: der Passcode trägt keinen weiteren BIND.
+    # The session is over: the passcode carries no further BIND.
     with ExitStack() as stack:
         assert _bind(play, stack, passcode)[1] == "BIND FAILED"
 
@@ -730,7 +730,7 @@ async def test_neg_kaputte_frames(
     passcode = _passcode(_newaddr(play, _ws_ticket(tickets, name)))
     with ExitStack() as stack:
         ws, _answer = _bind(play, stack, passcode)
-        # Positivkontrolle auf derselben Verbindung vor dem kaputten Frame.
+        # Positive control on the same connection before the broken frame.
         ws.send_bytes(_to_world(_connect_dummy()))
         assert worlds[W1].wait_for(1) == [_connect_dummy()]
         assert ws.receive_bytes()
@@ -748,7 +748,7 @@ async def test_neg_text_nach_bind(client: httpx.AsyncClient, play: TestClient, t
         assert _is_policy_close(ws.receive())
 
 
-# --- Grenzen ---------------------------------------------------------------------------------
+# --- Limits ----------------------------------------------------------------------------------
 
 
 async def test_neg_zweite_sitzung_gleiche_welt(
@@ -760,7 +760,7 @@ async def test_neg_zweite_sitzung_gleiche_welt(
         _bind(play, stack, passcode)
         assert _is_policy_close(_newaddr(play, _ws_ticket(tickets, name)))
         assert _refusals(logs) == ["session_busy"]
-    # Positivkontrolle: nach dem Ende der ersten Sitzung geht es wieder.
+    # Positive control: after the end of the first session it works again.
     _wait_log(logs, "play session end")
     _passcode(_newaddr(play, _ws_ticket(tickets, name)))
 
@@ -772,9 +772,9 @@ async def test_neg_zwanzig_parallele_newaddr(
     logs: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """20 gleichzeitige NEWADDR eines Kontos mit je eigenem, gültigem WS-Ticket: höchstens eine Sitzung."""
-    # Das Ticket-Limit je Konto würde ältere Tickets verdrängen; hier sollen alle 20 gültig sein,
-    # damit die Grenze der Sitzungen allein geprüft wird.
+    """20 simultaneous NEWADDR of one account, each with its own valid WS ticket: at most one session."""
+    # The per-account ticket limit would displace older tickets; here all 20 should be valid,
+    # so that the session limit alone is checked.
     monkeypatch.setattr(tickets_module, "MAX_OPEN_PER_UID", 20)
     name = await _setup(client)
     tokens = [_ws_ticket(tickets, name) for _ in range(20)]
@@ -789,7 +789,7 @@ async def test_neg_zwanzig_parallele_newaddr(
     assert len(granted) == 1
     _passcode(granted[0])
     assert all(_is_policy_close(answer) for answer in answers if answer["type"] != "websocket.send")
-    # Positivkontrolle der Ursache: alle 19 Ablehnungen wegen busy, keine wegen des Tickets.
+    # Positive control of the cause: all 19 rejections due to busy, none due to the ticket.
     assert sorted(_refusals(logs)) == ["session_busy"] * 19
 
 
@@ -814,7 +814,7 @@ async def test_neg_leerlauf(
     assert closed["code"] == 1000
     assert 0.4 <= time.monotonic() - started < 3
     assert "reason=idle" in logs.text
-    # Positivkontrolle: die Sitzung ist frei, ein neuer NEWADDR geht.
+    # Positive control: the session is free, a new NEWADDR works.
     _passcode(_newaddr(play, _ws_ticket(tickets, name)))
 
 
@@ -822,7 +822,7 @@ def test_neg_paketrate() -> None:
     clock = FakeClock()
     bucket = relay.TokenBucket(rate=10, burst=3, clock=clock)
     assert [bucket.take() for _ in range(4)] == [True, True, True, False]
-    # Positivkontrolle: nach 0,1 s ist wieder genau ein Paket frei.
+    # Positive control: after 0.1 s exactly one packet is free again.
     clock.advance(0.1)
     assert [bucket.take() for _ in range(2)] == [True, False]
 
@@ -845,13 +845,13 @@ async def test_neg_log_ohne_geheimnisse(
         assert worlds[W1].wait_for(1)
         assert ws.receive_bytes()
     _wait_log(caplog, "play session end")
-    # Positivkontrolle: die Aufzeichnung fängt die Ereignisse des Proxys.
+    # Positive control: the recording catches the events of the proxy.
     assert "play ws refused: ticket_used_or_unknown" in caplog.text
     assert "play relay end" in caplog.text
     everything = caplog.text + " ".join(repr(record.args) for record in caplog.records)
     for secret in (token, passcode):
         assert secret not in everything
-    # Konto und Spielername: keine Zeile der Proxy-Module nennt sie.
+    # Account and player name: no line of the proxy modules names them.
     proxy = [record for record in caplog.records if record.name.startswith("gameworld.play")]
     assert proxy
     proxy_text = " ".join(record.getMessage() + repr(record.args) for record in proxy)
