@@ -1,22 +1,22 @@
-"""Minimaler Luanti-Join-Prober (MTP über UDP) mit SRP-Client, nur für Tests.
+"""Minimal Luanti join prober (MTP over UDP) with an SRP client, for tests only.
 
-Belegt Negativ- und Positiv-Join gegen echte Welten ohne Luanti-Client
-(Success Criterion 2 der Phase 3). Übernommen aus dem getesteten Spike unter
-``.planning/phases/03-zugang-und-rollen/spike/``. ``session()`` (Phase 4,
-Spike ``.planning/phases/04-spielzeitlimits/spike/session_probe.py``) tritt
-vollständig bis ``on_joinplayer`` bei, hält die Sitzung und schneidet Chat
-und Trennen mit.
+Proves negative and positive joins against real worlds without a Luanti client
+(success criterion 2 of phase 3). Taken over from the tested spike under
+``.planning/phases/03-zugang-und-rollen/spike/``. ``session()`` (phase 4,
+spike ``.planning/phases/04-spielzeitlimits/spike/session_probe.py``) joins
+completely up to ``on_joinplayer``, holds the session and records chat
+and disconnects.
 
-Ablauf wie der echte Client (Luanti 5.17.0: ``src/network/mtp/internal.h``,
+Flow like the real client (Luanti 5.17.0: ``src/network/mtp/internal.h``,
 ``src/network/mtp/threads.cpp``, ``src/client/client.cpp`` sendInit/startAuth,
 ``src/network/serverpackethandler.cpp`` handleCommand_Init/SrpBytesA/SrpBytesM):
 
-1. Dummy-Paket zuverlässig mit peer_id 0, der Server antwortet SET_PEER_ID.
-2. TOSERVER_INIT (0x02) auf Kanal 1, Antwort TOCLIENT_HELLO (0x02) oder ACCESS_DENIED (0x0A).
-3. Optional SRP: TOSERVER_SRP_BYTES_A (0x51) und _M (0x52), Antwort AUTH_ACCEPT (0x03) oder ACCESS_DENIED.
+1. Dummy packet reliably with peer_id 0, the server answers SET_PEER_ID.
+2. TOSERVER_INIT (0x02) on channel 1, answer TOCLIENT_HELLO (0x02) or ACCESS_DENIED (0x0A).
+3. Optional SRP: TOSERVER_SRP_BYTES_A (0x51) and _M (0x52), answer AUTH_ACCEPT (0x03) or ACCESS_DENIED.
 
-SRP-Client nach ``src/util/srp.cpp``: u = H(pad(A)|pad(B)), k = H(N|pad(g)),
-S = (B - k*g^x)^(a + u*x) mod N, K = H(S), M = H(H(N) xor H(g), H(Name), Salz, A, B, K).
+SRP client according to ``src/util/srp.cpp``: u = H(pad(A)|pad(B)), k = H(N|pad(g)),
+S = (B - k*g^x)^(a + u*x) mod N, K = H(S), M = H(H(N) xor H(g), H(name), salt, A, B, K).
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _str16(data: bytes) -> bytes:
 
 
 class DatagramSocket(Protocol):
-    """Was Probe von einem Socket braucht; UDP oder das WebSocket-Relais (tests/e2e/ws_datagram.py)."""
+    """What Probe needs from a socket; UDP or the WebSocket relay (tests/e2e/ws_datagram.py)."""
 
     def sendto(self, data: bytes, address: tuple[str, int], /) -> int: ...
 
@@ -71,12 +71,12 @@ SocketFactory = Callable[[], DatagramSocket]
 
 
 def udp_socket() -> DatagramSocket:
-    """Vorgabe: echter UDP-Socket wie bisher."""
+    """Default: real UDP socket as before."""
     return socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 
 class Probe:
-    """Eine UDP-Verbindung im MTP-Protokoll, gerade genug für Init und SRP."""
+    """A UDP connection in the MTP protocol, just enough for init and SRP."""
 
     def __init__(self, host: str, port: int, timeout: float = 3.0, sock_factory: SocketFactory = udp_socket) -> None:
         self.addr = (host, port)
@@ -86,7 +86,7 @@ class Probe:
         self.seq = {0: SEQ_INITIAL, 1: SEQ_INITIAL, 2: SEQ_INITIAL}
 
     def send_raw(self, channel: int, body: bytes) -> None:
-        """Ein MTP-Paket ohne Zuverlässigkeitsschicht (ACK, PING, DISCO)."""
+        """An MTP packet without a reliability layer (ACK, PING, DISCO)."""
         self.sock.sendto(struct.pack(">IHB", PROTO, self.peer_id, channel) + body, self.addr)
 
     def send_reliable(self, channel: int, command: int, payload: bytes = b"") -> None:
@@ -98,7 +98,7 @@ class Probe:
         self.send_raw(channel, b"\x01" + struct.pack(">H", command) + payload)
 
     def recv_command(self, deadline: float) -> tuple[int, bytes]:
-        """Nächstes Nutzpaket (Kommando, Daten); quittiert zuverlässige Pakete."""
+        """Next payload packet (command, data); acknowledges reliable packets."""
         while time.monotonic() < deadline:
             try:
                 data, _ = self.sock.recvfrom(65535)
@@ -113,7 +113,7 @@ class Probe:
         raise TimeoutError("keine Antwort vom Server")
 
     def handle(self, channel: int, body: bytes) -> tuple[int, bytes] | None:
-        """Verarbeitet ein Paket; liefert (Kommando, Daten) bei einem Nutzpaket."""
+        """Processes a packet; returns (command, data) for a payload packet."""
         ptype = body[0]
         if ptype == 3:  # RELIABLE
             seq = struct.unpack(">H", body[1:3])[0]
@@ -126,7 +126,7 @@ class Probe:
         if ptype == 1:  # ORIGINAL
             command = struct.unpack(">H", body[1:3])[0]
             return command, body[3:]
-        return None  # SPLIT kommt bei Init und SRP nicht vor
+        return None  # SPLIT does not occur during init and SRP
 
     def close(self) -> None:
         try:
@@ -152,15 +152,15 @@ def join(
     timeout: float = 6.0,
     sock_factory: SocketFactory = udp_socket,
 ) -> dict[str, object]:
-    """Ein Join-Versuch; ``result`` ist denied, hello, auth_accept, no_peer_id oder unexpected.
+    """One join attempt; ``result`` is denied, hello, auth_accept, no_peer_id or unexpected.
 
-    Ohne Passwort endet der Versuch nach HELLO (``auth_mechs`` 2 heißt: SRP-Konto vorhanden).
-    ``sock_factory`` tauscht nur den Transport (Vorgabe UDP), die Protokoll-Logik bleibt gleich.
+    Without a password the attempt ends after HELLO (``auth_mechs`` 2 means: SRP account exists).
+    ``sock_factory`` only swaps the transport (default UDP), the protocol logic stays the same.
     """
     probe = Probe(host, port, sock_factory=sock_factory)
     deadline = time.monotonic() + timeout
     try:
-        probe.send_reliable(0, 0)  # Dummy, der Server vergibt die peer_id
+        probe.send_reliable(0, 0)  # Dummy, the server assigns the peer_id
         while probe.peer_id == 0 and time.monotonic() < deadline:
             try:
                 data, _ = probe.sock.recvfrom(65535)
@@ -216,14 +216,14 @@ PING_SECONDS = 3.0
 
 
 def _wide(data: bytes, offset: int) -> tuple[str, int]:
-    """wstring aus dem Protokoll: u16 Länge in Zeichen, dann UTF-16BE."""
+    """wstring from the protocol: u16 length in characters, then UTF-16BE."""
     length = struct.unpack(">H", data[offset : offset + 2])[0]
     raw = data[offset + 2 : offset + 2 + 2 * length]
     return raw.decode("utf-16-be", "replace"), offset + 2 + 2 * length
 
 
 def _chat(data: bytes) -> str:
-    """Text einer TOCLIENT_CHAT_MESSAGE: u8 Version, u8 Typ, wstring Absender, wstring Text, u64 Zeit."""
+    """Text of a TOCLIENT_CHAT_MESSAGE: u8 version, u8 type, wstring sender, wstring text, u64 time."""
     try:
         _sender, offset = _wide(data, 2)
         message, _ = _wide(data, offset)
@@ -241,15 +241,15 @@ def session(
     timeout: float = 8.0,
     sock_factory: SocketFactory = udp_socket,
 ) -> dict[str, object]:
-    """Vollständiger Join bis ``on_joinplayer``, dann bis ``hold`` Sekunden halten oder bis zum Kick.
+    """Full join up to ``on_joinplayer``, then hold for ``hold`` seconds or until the kick.
 
-    Nach AUTH_ACCEPT wie der echte Client: TOSERVER_INIT2 (Kanal 1, zuverlässig,
-    Sprache) und TOSERVER_CLIENT_READY (Version, Formspec-Version); danach
-    zuverlässige Pakete quittieren, alle 3 s CONTROL PING senden, Chat (0x2F)
-    und ACCESS_DENIED (0x0A) mitschneiden. ``result`` ist held, kicked, denied
-    (vor dem Betreten), unexpected oder no_peer_id; ``events`` ist eine Liste
-    von ``{"t": Sekunden seit CLIENT_READY, "kind": "chat" | "kick", "text": ...}``.
-    ``timeout`` gilt für die Anmeldung bis AUTH_ACCEPT, ``hold`` danach.
+    After AUTH_ACCEPT like the real client: TOSERVER_INIT2 (channel 1, reliable,
+    language) and TOSERVER_CLIENT_READY (version, formspec version); afterwards
+    acknowledge reliable packets, send CONTROL PING every 3 s, record chat (0x2F)
+    and ACCESS_DENIED (0x0A). ``result`` is held, kicked, denied
+    (before entering), unexpected or no_peer_id; ``events`` is a list
+    of ``{"t": seconds since CLIENT_READY, "kind": "chat" | "kick", "text": ...}``.
+    ``timeout`` applies to the login up to AUTH_ACCEPT, ``hold`` afterwards.
     """
     probe = Probe(host, port, sock_factory=sock_factory)
     events: list[dict[str, object]] = []
@@ -321,12 +321,12 @@ def session(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI für Abnahmeskripte: ein Join-Versuch, Ergebnis als JSON auf stdout.
+    """CLI for acceptance scripts: one join attempt, result as JSON on stdout.
 
-    Das Passwort erscheint nie in der Ausgabe; ``reason`` stammt vom Server.
-    Exit 0 auch bei ``denied``: Die Bewertung macht der Aufrufer (jq).
-    Mit ``--hold SEKUNDEN`` (Passwort nötig) läuft statt des Join-Versuchs eine
-    Sitzung bis ``on_joinplayer``, die so lange gehalten wird (session()).
+    The password never appears in the output; ``reason`` comes from the server.
+    Exit 0 even for ``denied``: the caller does the evaluation (jq).
+    With ``--hold SECONDS`` (password required) a session up to ``on_joinplayer``
+    is run instead of the join attempt and held for that long (session()).
     """
     parser = argparse.ArgumentParser(description="Luanti-Join-Prober (nur Tests)")
     parser.add_argument("host")
@@ -359,12 +359,12 @@ def main(argv: list[str] | None = None) -> int:
 def hold_then_rejoin(
     host: str, port: int, name: str, password: str, hold: float, rejoin_after: float, timeout: float = 8.0
 ) -> dict[str, object]:
-    """Sitzung halten, trennen und nach ``rejoin_after`` Sekunden im SELBEN Prozess erneut beitreten.
+    """Hold the session, disconnect and rejoin after ``rejoin_after`` seconds in the SAME process.
 
-    Für die Wiederbeitritts-Sperre (K6): Zwei getrennte Prober-Aufrufe brauchen je
-    einen Prozessstart (uv), dessen Dauer schwankt und die 2-s-Sperre des Mods
-    manchmal schon überschreitet. Hier ist der Abstand zwischen Trennen und neuem
-    Versuch gemessen (``gap_s``), der Aufrufer prüft ihn mit.
+    For the rejoin block (K6): two separate prober calls each need
+    a process start (uv), whose duration fluctuates and sometimes already exceeds
+    the mod's 2 s block. Here the gap between disconnect and new
+    attempt is measured (``gap_s``), the caller checks it as well.
     """
     held = session(host, port, name, password, hold, timeout=timeout)
     left_at = time.monotonic()

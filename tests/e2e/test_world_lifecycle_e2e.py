@@ -1,4 +1,4 @@
-"""Zwei parallele Welten, Stoppen, Starten, Löschen und Instanz-Schutz gegen den echten Proxy."""
+"""Two parallel worlds, stop, start, delete and instance protection against the real proxy."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ async def test_two_parallel_worlds_stop_start_delete(client: httpx.AsyncClient, 
 
 
 async def test_foreign_instance_container_is_untouchable(client: httpx.AsyncClient, api: docker.DockerClient) -> None:
-    # Eine Welt der Test-Instanz anlegen, damit Instanz-ID und Provisioner feststehen.
+    # Create a world of the test instance so that instance ID and provisioner are fixed.
     own = await _create(client, "Eigene Welt")
     foreign = api.containers.create(
         LUANTI_IMAGE,
@@ -113,7 +113,7 @@ async def test_foreign_instance_container_is_untouchable(client: httpx.AsyncClie
             response = await client.request(method, f"/api/worlds/{FOREIGN_WORLD}{suffix}", headers=appapi_headers())
             assert response.status_code == 404, f"{method} {suffix}: {response.text}"
 
-        # Auch direkt am Provisioner der Test-Instanz bleibt der Fremd-Container unangetastet.
+        # Even directly on the provisioner of the test instance the foreign container stays untouched.
         own_container = _container(api, str(own["id"]))
         provisioner = DockerProvisioner(docker_url(), own_container.labels["gameworld.instance"])
         with pytest.raises(WorldNotFoundError):

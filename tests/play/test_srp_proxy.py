@@ -1,10 +1,10 @@
-"""SRP-Uebernahme durch den Proxy (Variante A, 04.2-09), rein gegen eine unabhaengige Server-Seite.
+"""SRP takeover by the proxy (variant A, 04.2-09), purely against an independent server side.
 
-Die Server-Seite ist hier von Hand nach ``src/util/srp.cpp`` nachgebaut (b zufaellig,
-B = k*v + g^b, S = (A*v^u)^b, M-Pruefung), und die MTP-Pakete werden mit eigenem struct
-gebaut, nicht mit ``mtp.rewrite_payload`` oder ``framing.pack`` (Gegenprobe nie mit dem
-Muster der Umsetzung). Positivkontrolle: der Proxy rechnet mit dem echten Passwort, die
-Server-Seite akzeptiert M_p. Gegenprobe: ein anderes Passwort wird abgelehnt.
+The server side is rebuilt here by hand after ``src/util/srp.cpp`` (b random,
+B = k*v + g^b, S = (A*v^u)^b, M check), and the MTP packets are built with an own struct,
+not with ``mtp.rewrite_payload`` or ``framing.pack`` (counter-check never with the
+implementation's own pattern). Positive control: the proxy computes with the real password, the
+server side accepts M_p. Counter-check: a different password is rejected.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ REAL_PW = "Sonne-Baum-42"
 PLAYER = "Mia"
 
 
-# --- unabhaengige Hilfen, bewusst ohne mtp/framing ---
+# --- independent helpers, deliberately without mtp/framing ---
 
 
 def _bin(n: int) -> bytes:
@@ -60,36 +60,36 @@ def _head(peer_id: int = 1, channel: int = 1) -> bytes:
 
 
 def _reliable(command: int, payload: bytes, seq: int, channel: int = 1) -> bytes:
-    """RELIABLE(ORIGINAL command) mit Nutzlast, so wie der echte Client sendet."""
+    """RELIABLE(ORIGINAL command) with payload, as the real client sends it."""
     return _head(channel=channel) + struct.pack(">BH", 3, seq) + b"\x01" + struct.pack(">H", command) + payload
 
 
 def _reliable_split(chunk0: bytes, seq: int, chunk_num: int = 0, chunk_count: int = 2, split_seq: int = 7) -> bytes:
-    """RELIABLE(SPLIT): inneres Paket ist ein SPLIT, dessen Chunk die ersten Bytes traegt."""
+    """RELIABLE(SPLIT): the inner packet is a SPLIT whose chunk carries the first bytes."""
     split = struct.pack(">BHHH", 2, split_seq, chunk_count, chunk_num) + chunk0
     return _head() + struct.pack(">BH", 3, seq) + split
 
 
 def _naked_split(chunk0: bytes, seq: int = 0, chunk_num: int = 0, chunk_count: int = 2, split_seq: int = 7) -> bytes:
-    """Nacktes SPLIT ohne RELIABLE-Huelle; ``seq`` wird ignoriert (kein RELIABLE-seqnum)."""
+    """Bare SPLIT without a RELIABLE wrapper; ``seq`` is ignored (no RELIABLE seqnum)."""
     del seq
     return _head() + struct.pack(">BHHH", 2, split_seq, chunk_count, chunk_num) + chunk0
 
 
 def _a_payload(bytes_a: bytes) -> bytes:
-    """Nutzlast von SRP_BYTES_A: u16 Laenge + A + based_on-Byte 0x01."""
+    """Payload of SRP_BYTES_A: u16 length + A + based_on byte 0x01."""
     return _str16(bytes_a) + b"\x01"
 
 
 def _extract_srp_value(packet: bytes) -> bytes:
-    """Liest den ersten str16-Wert aus der Nutzlast eines RELIABLE(ORIGINAL)-Pakets (A oder M)."""
-    body = packet[7 + 3 + 3 :]  # Kopf 7 + RELIABLE 3 + ORIGINAL 3
+    """Reads the first str16 value from the payload of a RELIABLE(ORIGINAL) packet (A or M)."""
+    body = packet[7 + 3 + 3 :]  # Head 7 + RELIABLE 3 + ORIGINAL 3
     length = struct.unpack(">H", body[:2])[0]
     return body[2 : 2 + length]
 
 
 class SrpServer:
-    """Server-Seite von SRP-6a nach srp.cpp, unabhaengig vom Proxy-Code gebaut."""
+    """Server side of SRP-6a after srp.cpp, built independently of the proxy code."""
 
     def __init__(self, name: str, verifier: str) -> None:
         self.name = name
@@ -101,7 +101,7 @@ class SrpServer:
         self.public = (k * self.v + pow(G, self.b, N)) % N
 
     def s_b_payload(self) -> bytes:
-        """Nutzlast von TOCLIENT_SRP_BYTES_S_B: u16 Salzlaenge + Salz + u16 B-Laenge + B."""
+        """Payload of TOCLIENT_SRP_BYTES_S_B: u16 salt length + salt + u16 B length + B."""
         return _str16(self.salt) + _str16(_bin(self.public))
 
     def verify(self, bytes_a: bytes, bytes_m: bytes) -> bool:
@@ -117,7 +117,7 @@ class SrpServer:
 def _run_takeover(
     takeover: SrpTakeover, server: SrpServer, a_seq: int = 65501, m_seq: int = 65502
 ) -> tuple[bytes, bytes]:
-    """Spielt A -> S_B -> M durch; liefert (A_p, M_p) aus den ersetzten Paketen."""
+    """Plays through A -> S_B -> M; returns (A_p, M_p) from the replaced packets."""
     a_packet = takeover.client_packet(_reliable(mtp.TOSERVER_SRP_BYTES_A, _a_payload(b"client-A-ignored"), a_seq))
     a_p = _extract_srp_value(a_packet)
     takeover.server_packet(_reliable(mtp.TOCLIENT_SRP_BYTES_S_B, server.s_b_payload(), seq=1))
@@ -126,7 +126,7 @@ def _run_takeover(
     return a_p, m_p
 
 
-# --- SrpClient Regression (verschoben aus luanti_probe) ---
+# --- SrpClient regression (moved from luanti_probe) ---
 
 
 def test_srp_client_secret_injectable_and_deterministic() -> None:
@@ -145,7 +145,7 @@ def test_srp_client_matches_independent_server() -> None:
     assert server.verify(client.bytes_a(), proof)
 
 
-# --- SrpTakeover Positivkontrolle und Gegenprobe ---
+# --- SrpTakeover positive control and counter-check ---
 
 
 def test_takeover_login_succeeds_with_real_password() -> None:
@@ -156,7 +156,7 @@ def test_takeover_login_succeeds_with_real_password() -> None:
 
 
 def test_takeover_login_fails_with_other_password() -> None:
-    # Das Konto am Server hat ein anderes Passwort als der Proxy ableitet.
+    # The account on the server has a different password than the proxy derives.
     server = SrpServer(PLAYER, make_verifier(PLAYER, "ein-anderes-pw", SALT))
     takeover = SrpTakeover(PLAYER, REAL_PW)
     a_p, m_p = _run_takeover(takeover, server)
@@ -217,7 +217,7 @@ def test_second_a_with_other_seq_after_s_b_ends_session() -> None:
 def test_server_parse_error_ends_session() -> None:
     takeover = SrpTakeover(PLAYER, REAL_PW)
     with pytest.raises(SrpTakeoverError):
-        takeover.server_packet(b"\x00\x01")  # kein gueltiger MTP-Kopf
+        takeover.server_packet(b"\x00\x01")  # no valid MTP head
 
 
 def test_client_parse_error_ends_session() -> None:
@@ -232,22 +232,22 @@ def test_repr_hides_password() -> None:
     assert PLACEHOLDER_PASSWORD not in repr(takeover)
 
 
-# --- Split-Tabelle (RELIABLE(SPLIT) und nacktes SPLIT), mit Positivkontrolle ---
+# --- Split table (RELIABLE(SPLIT) and bare SPLIT), with a positive control ---
 
 _A = struct.pack(">H", mtp.TOSERVER_SRP_BYTES_A)
 _M = struct.pack(">H", mtp.TOSERVER_SRP_BYTES_M)
 _FIRST = struct.pack(">H", mtp.TOSERVER_FIRST_SRP)
 
-# Jeder Fall: (Baufunktion, Chunk-0-Bytes, nach_auth, soll_enden)
+# Each case: (build function, chunk 0 bytes, after_auth, should_end)
 _SPLIT_CASES = [
-    # Vor AUTH_ACCEPT endet jedes SPLIT, egal welcher Inhalt (Tiefenverteidigung).
+    # Before AUTH_ACCEPT every SPLIT ends, whatever the content (defense in depth).
     pytest.param(_reliable_split, _A, False, True, id="reliable_split_A_before_auth"),
     pytest.param(_reliable_split, _M, False, True, id="reliable_split_M_before_auth"),
     pytest.param(_reliable_split, _FIRST, False, True, id="reliable_split_first_srp_before_auth"),
     pytest.param(_reliable_split, b"\x00\x2f", False, True, id="reliable_split_harmlos_before_auth"),
     pytest.param(_naked_split, _A, False, True, id="naked_split_A_before_auth"),
     pytest.param(_naked_split, _FIRST, False, True, id="naked_split_first_srp_before_auth"),
-    # Nach AUTH_ACCEPT: SPLIT mit SRP-Kommando in Chunk 0 bleibt verboten.
+    # After AUTH_ACCEPT: SPLIT with an SRP command in chunk 0 stays forbidden.
     pytest.param(_reliable_split, _A, True, True, id="reliable_split_A_after_auth"),
     pytest.param(_naked_split, _M, True, True, id="naked_split_M_after_auth"),
 ]
@@ -265,7 +265,7 @@ def test_split_rules(build, chunk0: bytes, after_auth: bool, should_end: bool) -
 
 
 def test_reliable_split_chunk1_after_auth_passes_unchanged() -> None:
-    """Positivkontrolle: ein harmloser RELIABLE(SPLIT) Chunk 1 nach AUTH_ACCEPT geht unveraendert durch."""
+    """Positive control: a harmless RELIABLE(SPLIT) chunk 1 after AUTH_ACCEPT passes unchanged."""
     takeover = SrpTakeover(PLAYER, REAL_PW)
     takeover.server_packet(_reliable(mtp.TOCLIENT_AUTH_ACCEPT, b"", seq=2))
     packet = _reliable_split(b"nutzdaten-chunk-eins", seq=65510, chunk_num=1, chunk_count=2)
@@ -273,7 +273,7 @@ def test_reliable_split_chunk1_after_auth_passes_unchanged() -> None:
 
 
 def test_rewrite_payload_rejects_non_reliable_original() -> None:
-    # Ein nacktes ORIGINAL ist kein RELIABLE(ORIGINAL) und darf nicht umgeschrieben werden.
+    # A bare ORIGINAL is not a RELIABLE(ORIGINAL) and must not be rewritten.
     original = _head() + b"\x01" + struct.pack(">H", mtp.TOSERVER_SRP_BYTES_A) + _a_payload(b"A" * 32)
     with pytest.raises(MtpError):
         mtp.rewrite_payload(original, _a_payload(b"B" * 32))

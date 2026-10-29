@@ -1,10 +1,10 @@
-"""Live-Nachweis O-12: Die Wiederbeitritts-Sperre fängt den Rejoin-Absturz von Luanti 5.17.0 ab.
+"""Live proof O-12: the rejoin block catches the rejoin crash of Luanti 5.17.0.
 
-Ohne Sperre stürzt eine Welt ab, wenn derselbe Name binnen etwa 0,2 s nach dem
-Verlassen wieder beitritt (04-RESEARCH.md Pitfall 1, MTG und VoxeLibre). Mit
-Sperre lehnt gameworld_access den zweiten Join im Prejoin mit einem Wartetext
-ab, der Container läuft weiter, StartedAt bleibt gleich. Seriell, höchstens
-eine VoxeLibre-Welt gleichzeitig.
+Without the block a world crashes when the same name rejoins within about 0.2 s after
+leaving (04-RESEARCH.md pitfall 1, MTG and VoxeLibre). With
+the block gameworld_access rejects the second join in prejoin with a waiting text,
+the container keeps running, StartedAt stays the same. Serial, at most
+one VoxeLibre world at a time.
 """
 
 from __future__ import annotations
@@ -33,13 +33,13 @@ from tests.e2e.time_helpers import (
 
 pytestmark = [pytest.mark.docker, pytest.mark.usefixtures("docker_cleanup")]
 
-# Festes Testpasswort für Wegwerfwelten, kein Geheimnis.
+# Fixed test password for throwaway worlds, not a secret.
 MIA_PASSWORD = "Sonne-Baum-42"  # noqa: S105
 WAIT_TEXT = "einen Moment warten"
 REJOIN_GAP = 0.2
 COOLDOWN_PAUSE = 2.5
 ROUNDS = 5
-# Die erste Sitzung einer frischen Welt darf länger brauchen (Definitionen, Medien).
+# The first session of a fresh world may take longer (definitions, media).
 FIRST_TIMEOUT = 30.0
 
 
@@ -53,7 +53,7 @@ def api() -> Iterator[docker.DockerClient]:
 
 
 def _rejoin_round(port: int) -> None:
-    """Sitzung 2 s halten, schließen, nach 0,2 s erneut beitreten: Wartetext statt Absturz."""
+    """Hold session for 2 s, close, rejoin after 0.2 s: waiting text instead of a crash."""
     held = session(HOST, port, "Mia", MIA_PASSWORD, hold=2, timeout=FIRST_TIMEOUT)
     assert held["result"] == "held", held
     time.sleep(REJOIN_GAP)
@@ -86,7 +86,7 @@ async def test_mtg_rejoin_guard_prevents_crash(
     await anyio.sleep(5)
     _assert_alive(api, world_id, started)
 
-    # Gegenprobe: Nach 2,5 s Pause klappt der Beitritt wieder.
+    # Counter-check: after a 2.5 s pause the join works again.
     await anyio.sleep(COOLDOWN_PAUSE)
     again = session(HOST, port, "Mia", MIA_PASSWORD, hold=3, timeout=FIRST_TIMEOUT)
     assert again["result"] == "held", again

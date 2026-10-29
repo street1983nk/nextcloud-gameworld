@@ -1,12 +1,12 @@
-"""Ende-zu-Ende: Tageslimit und Zeitfenster pro Kind aus der Datenbank bis in den Spielserver.
+"""End to end: daily limit and time window per child from the database to the game server.
 
-Anders als test_time_mod_e2e schreibt hier NICHT der Test die Regeldatei, sondern
-die ExApp: Der Verwalter setzt Regeln per POST /api/playtime, die Einladung und der
-15-s-Takt (hier vom Test per service.tick_time getrieben, ASGI ohne Lifespan) halten
-die Regeldatei aktuell, der Mod aus 04-01 setzt durch.
+Unlike test_time_mod_e2e, here the test does NOT write the rules file, the ExApp does:
+the manager sets rules via POST /api/playtime, the invitation and the
+15 s tick (driven here by the test via service.tick_time, ASGI without lifespan) keep
+the rules file current, the mod from 04-01 enforces it.
 
-Belegt Success Criterion 1 (per API), 5 und 6 (Regeln aus der Datenbank, über
-Neustart und über mehrere Welten) samt Positivkontrolle. Seriell, MTG kreativ.
+Proves success criterion 1 (via API), 5 and 6 (rules from the database, across
+restart and across several worlds) including a positive control. Serial, MTG creative.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ BERLIN = ZoneInfo("Europe/Berlin")
 
 
 async def _midnight_guard() -> None:
-    """Läuft ein Zeittest nahe 00:00, bis 00:01 warten: Ein Fenster darf nie über 24:00 laufen."""
+    """If a time test runs near 00:00, wait until 00:01: a window must never run past 24:00."""
     now = datetime.now(BERLIN)
     if now.hour == 23 and now.minute >= 50:
         target = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
@@ -66,7 +66,7 @@ def _day(weekday: int, *, allowed: bool = True, limit: int | None = None, ws: in
 
 
 def _tomorrow_weekday() -> int:
-    """ISO-Wochentag von morgen in Berlin (für den erwarteten Kindersatz)."""
+    """ISO weekday of tomorrow in Berlin (for the expected child sentence)."""
     return (datetime.now(BERLIN).date() + timedelta(days=1)).isoweekday()
 
 
@@ -110,7 +110,7 @@ def _usage(app_env: Path, nc_user: str) -> int:
 
 
 def _rules_cap(world_id: str, name: str) -> int | None:
-    """Deckel eines Spielers aus der Regeldatei der Welt (docker get_archive)."""
+    """Cap of a player from the world's rules file (docker get_archive)."""
     api = docker_api()
     try:
         [container] = api.containers.list(all=True, filters={"label": [f"gameworld.world_id={world_id}"]})
@@ -138,7 +138,7 @@ async def _tick(service: WorldService) -> None:
 async def _hold_with_ticks(
     service: WorldService, port: int, name: str, password: str, hold: float
 ) -> dict[str, object]:
-    """Hält eine Sitzung und treibt währenddessen den Zeittakt (ASGI ohne Lifespan)."""
+    """Holds a session and drives the time tick meanwhile (ASGI without lifespan)."""
     result: dict[str, object] = {}
 
     async def run() -> None:
@@ -160,7 +160,7 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     kind_name, kind_pw = await _invite(client, world_a, "gw-kind")
     ctrl_name, ctrl_pw = await _invite(client, world_a, "gw-kind2")
 
-    # (1) Tageslimit 2 min: Vorwarnung, Trennen; zweites Konto ohne Regeln hält (Positivkontrolle).
+    # (1) Daily limit 2 min: advance warning, disconnect; second account without rules holds (positive control).
     await _set_rules(client, "gw-kind", _every_day(limit=2))
     port = await _port(client, world_a)
     kind_result: dict[str, object] = {}
@@ -187,21 +187,21 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert kind_result["result"] == "kicked", kind_result
     assert 105 <= float(str(kind_result["after_s"])) <= 135, kind_result
     assert any("Noch 1 Minute." in chat for chat in _chats(kind_result)), kind_result
-    # Ganzer Tag ohne Startzeit: "Morgen kannst du wieder spielen.", ohne Uhrzeit.
+    # Whole day without a start time: "Morgen kannst du wieder spielen.", without a time of day.
     assert kid_text("limit", 1, _tomorrow_weekday(), 0) in str(kind_result["reason"]), kind_result
     assert TEXT_LIMIT in str(kind_result["reason"]), kind_result
     assert ctrl_result["result"] == "held", ctrl_result
     assert 105 <= _usage(app_env, "gw-kind") <= 135
     assert _usage(app_env, "gw-kind2") == 0
 
-    # Rejoin nach der 2-s-Sperre scheitert mit demselben Text.
+    # Rejoin after the 2 s block fails with the same text.
     await anyio.sleep(COOLDOWN_PAUSE)
     denied = join(HOST, port, kind_name, kind_pw)
     assert denied["result"] == "denied", denied
     assert TEXT_LIMIT in str(denied["reason"]), denied
     await _no_error_worlds(client)
 
-    # (2) Neustart: Regeln kommen aus der Datenbank, der Join scheitert weiter (Success Criterion 6).
+    # (2) Restart: rules come from the database, the join keeps failing (success criterion 6).
     restarted = await client.post(f"/api/worlds/{world_a}/restart", headers=appapi_headers())
     assert restarted.status_code == 200, restarted.text
     world = await wait_for_status(client, world_a, "running", MTG_READY)
@@ -212,16 +212,16 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert TEXT_LIMIT in str(denied["reason"]), denied
     await _no_error_worlds(client)
 
-    # (3) Zwei Welten, ein Kontingent: Deckel in Welt B sinkt mit dem Verbrauch in Welt A (O-03).
-    # Entfernen und neu Setzen behält den heutigen Verbrauch (WR-04, Owner-Entscheid): rund 2 min
-    # sind schon verbraucht, das neue Limit von 5 min lässt also rund 3 min übrig.
+    # (3) Two worlds, one allowance: the cap in world B drops with the usage in world A (O-03).
+    # Removing and setting again keeps today's usage (WR-04, owner decision): about 2 min
+    # are already used, so the new limit of 5 min leaves about 3 min.
     used_before = _usage(app_env, "gw-kind")
     await _clear_rules(client, "gw-kind")
     assert _usage(app_env, "gw-kind") == used_before
     await _set_rules(client, "gw-kind", _every_day(limit=5))
     world_b, _ = await create_running_world(client, "mtg_kreativ", MTG_READY)
     await _invite(client, world_b, "gw-kind")
-    # Direkt nach der Einladung, noch vor jedem Takt: die Regeldatei der Welt B trägt das Kind.
+    # Right after the invitation, before any tick: the rules file of world B carries the child.
     assert _rules_cap(world_b, kind_name) is not None
 
     port_a = await _port(client, world_a)
@@ -234,7 +234,7 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert abs(cap_b - (300 - usage)) <= 10, (cap_b, usage)
     await _no_error_worlds(client)
 
-    # (4) Zeitfenster: am Fensterende getrennt mit "Jetzt ist keine Spielzeit." (plus Tagesbezug).
+    # (4) Time window: disconnected at the window end with "Jetzt ist keine Spielzeit." (plus day reference).
     await _midnight_guard()
     await _clear_rules(client, "gw-kind")
     now_minute = datetime.now(BERLIN).hour * 60 + datetime.now(BERLIN).minute
@@ -244,11 +244,11 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert window["result"] == "kicked", window
     assert float(str(window["after_s"])) < 200, window
     assert TEXT_FENSTER in str(window["reason"]), window
-    # Fenster ab 0 Uhr heißt: keine echte Startzeit, also ohne Uhrzeit.
+    # Window from 0:00 means: no real start time, so without a time of day.
     assert kid_text("fenster", 1, _tomorrow_weekday(), 0) in str(window["reason"]), window
     await _no_error_worlds(client)
 
-    # (5) Opt-in: ohne Regeln bleibt das Kind verbunden.
+    # (5) Opt-in: without rules the child stays connected.
     await anyio.sleep(COOLDOWN_PAUSE)
     await _clear_rules(client, "gw-kind")
     port_a = await _port(client, world_a)
@@ -257,7 +257,7 @@ async def test_playtime_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert free["result"] == "held", free
     await _no_error_worlds(client)
 
-    # Aufräumen: beide Welten löschen (das Cleanup-Fixture entfernt die Volumes sicherheitshalber).
+    # Cleanup: delete both worlds (the cleanup fixture removes the volumes for safety).
     for world_id in (world_a, world_b):
         deleted = await client.delete(f"/api/worlds/{world_id}", headers=appapi_headers())
         assert deleted.status_code == 204, deleted.text

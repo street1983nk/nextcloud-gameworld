@@ -1,4 +1,4 @@
-"""Durchstich: HTTP-POST bis zum laufenden, gehärteten, privaten Luanti-Container."""
+"""Walking skeleton: HTTP POST up to the running, hardened, private Luanti container."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ async def test_create_world_runs_hardened_private_container(client: httpx.AsyncC
     created = response.json()
     assert re.fullmatch(r"[0-9a-f]{12}", created["id"])
     assert 30015 <= created["port"] <= 30019
-    # Seit 03-05 verlässt der Weltschlüssel die API nicht mehr; er bleibt in DB und conf.
+    # Since 03-05 the world key no longer leaves the API; it stays in the DB and conf.
     assert "world_key" not in created
     row = WorldStore(app_env / "gameworld.sqlite3").get_world(created["id"])
     assert row is not None
@@ -108,7 +108,7 @@ async def test_create_world_runs_hardened_private_container(client: httpx.AsyncC
     assert "world_key" not in mine[0]
     assert mine[0]["invited_players"] == []
 
-    # Frisch gestartete Welt mit Zugangs-Mod: kein Hinweis "Neustart nötig", sobald sie läuft.
+    # Freshly started world with the access mod: no "restart needed" hint once it runs.
     deadline = time.monotonic() + 30.0
     world = mine[0]
     while time.monotonic() < deadline:

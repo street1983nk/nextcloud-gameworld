@@ -1,14 +1,14 @@
-"""Ende-zu-Ende: Pause aller Welten (ELTERN-01) von der Verwalter-API bis in den Spielserver.
+"""End to end: pause of all worlds (ELTERN-01) from the manager API to the game server.
 
-Der Verwalter löst per POST /api/pause eine Pause aus; die ExApp schreibt sofort
-``@pause`` in die Regeldatei, der Zeit-Mod aus 04.1-01 warnt 30 s vorher im Chat
-und trennt dann mit dem Pausentext. Belegt Success Criterion 1 per API und
-Prober: Vorwarnung, Trennen eines Kindes ohne und eines Kindes mit Regeln,
-Beitrittssperre während der Pause, ein eingeladener Verwalter bleibt verbunden
-(Positivkontrolle), die Pausenzeit erscheint nicht in time_usage, "Weiter" öffnet
-ohne Neustart, "Für heute Schluss" sperrt mit dem Schluss-Text. Nebenbei belegt
-er die Ereignisdatei aus 04.1-01/02 (Kopf, join, leave, deny). Seriell, eine
-MTG-kreativ-Welt.
+The manager triggers a pause via POST /api/pause; the ExApp immediately writes
+``@pause`` into the rules file, the time mod from 04.1-01 warns 30 s before in chat
+and then disconnects with the pause text. Proves success criterion 1 via API and
+prober: advance warning, disconnect of a child without and a child with rules,
+join block during the pause, an invited manager stays connected
+(positive control), the pause time does not appear in time_usage, "Weiter" opens
+without a restart, "Für heute Schluss" blocks with the closing text. On the side it
+proves the event file from 04.1-01/02 (head, join, leave, deny). Serial, one
+MTG creative world.
 """
 
 from __future__ import annotations
@@ -50,15 +50,15 @@ COOLDOWN_PAUSE = 3.0
 TICK_EVERY = 5.0
 BERLIN = ZoneInfo("Europe/Berlin")
 NOT_INVITED = "nicht eingeladen"
-# Kinder halten länger, als die Pause bis zum Trennen braucht; der Verwalter noch länger.
+# Children hold longer than the pause needs to disconnect; the manager even longer.
 KID_HOLD = 90.0
 ADMIN_HOLD = 75.0
-# Zeit zwischen Start der Sitzungen und dem Auslösen: alle sind sicher verbunden.
+# Time between the start of the sessions and the trigger: all are safely connected.
 JOIN_SETTLE = 6.0
 
 
 async def _midnight_guard() -> None:
-    """Nahe 00:00 bis 00:01 warten: "Für heute Schluss" und Tagesverbrauch hängen am lokalen Tag."""
+    """Wait near 00:00 to 00:01: "Für heute Schluss" and daily usage depend on the local day."""
     now = datetime.now(BERLIN)
     if now.hour == 23 and now.minute >= 50:
         target = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
@@ -113,11 +113,11 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     rules_name, rules_pw = await _invite(client, world_id, "gw-kind2")
     admin_name, admin_pw = await _invite(client, world_id, "admin")
 
-    # Kind mit Regeln: heute erlaubt, Limit 120 min, ganzer Tag (morgen ohne Startzeit).
+    # Child with rules: allowed today, limit 120 min, whole day (tomorrow without a start time).
     plan = {"normal": [{"weekday": day, "allowed": True, "limit_minutes": 120} for day in range(1, 8)]}
     rules = await client.post("/api/playtime/children/gw-kind2", json=plan, headers=appapi_headers())
     assert rules.status_code == 200, rules.text
-    # Verwalter-Schnappschuss: GET /api/playtime als admin füllt meta time_admins (admin ist frei).
+    # Manager snapshot: GET /api/playtime as admin fills meta time_admins (admin is exempt).
     listed = await client.get("/api/playtime", headers=appapi_headers())
     assert listed.status_code == 200, listed.text
     assert '"admin"' in (WorldStore(app_env / "gameworld.sqlite3").get_meta("time_admins") or "")
@@ -132,7 +132,7 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     finally:
         api.close()
 
-    # (1) Pause während drei laufender Sitzungen.
+    # (1) Pause during three running sessions.
     results: dict[str, dict[str, object]] = {"kind": {}, "rules": {}, "admin": {}}
     ended_at: dict[str, float] = {}
     posted: dict[str, object] = {}
@@ -164,10 +164,10 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
         assert TEXT_PAUSE in str(result["reason"]), result
         assert any(TEXT_PAUSE_SOON in chat for chat in _chats(result)), result
         assert 25.0 <= ended_at[key] - posted_at <= 40.0, (key, ended_at[key] - posted_at)
-    # Positivkontrolle: der eingeladene Verwalter bleibt verbunden.
+    # Positive control: the invited manager stays connected.
     assert results["admin"]["result"] == "held", results["admin"]
 
-    # (2) Beitrittssperre während der Pause; ein Fremder bekommt weiter den Zugangstext.
+    # (2) Join block during the pause; a stranger still gets the access text.
     await anyio.sleep(COOLDOWN_PAUSE)
     denied = join(HOST, port, kind_name, kind_pw)
     assert denied["result"] == "denied", denied
@@ -176,7 +176,7 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert stranger["result"] == "denied", stranger
     assert NOT_INVITED in str(stranger["reason"]), stranger
 
-    # Ereignisdatei: Kopf, join und leave des Kindes, deny des Fremden (Beleg 04.1-01/02).
+    # Event file: head, join and leave of the child, deny of the stranger (evidence 04.1-01/02).
     await anyio.sleep(1.0)
     parsed = parse_events(_events_file(app_env, world_id))
     assert parsed is not None
@@ -186,7 +186,7 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert ("leave", kind_name) in kinds, events
     assert ("deny", "Fremder") in kinds, events
 
-    # (3) Pausenzeit zählt nicht: zwei Takte mit Abstand, der Verbrauch steht.
+    # (3) Pause time does not count: two ticks apart, the usage stands.
     await _tick(service)
     used = _usage(app_env, "gw-kind2")
     assert used > 0, "Positivkontrolle: vor der Pause wurde gespielt"
@@ -195,7 +195,7 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert _usage(app_env, "gw-kind2") == used
     assert _usage(app_env, "gw-kind") == 0
 
-    # (4) Weiter: Pause sofort vorbei, das Kind kommt ohne Neustart hinein.
+    # (4) Resume: pause over immediately, the child gets in without a restart.
     ended = await _post(client, "/end")
     assert ended["active"] is False, ended
     accepted = join(HOST, port, kind_name, kind_pw)
@@ -207,7 +207,7 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     finally:
         api.close()
 
-    # (5) Für heute Schluss: Kind mit Regeln abgelehnt mit dem Schluss-Text (morgen ganzer Tag, Minute 0).
+    # (5) "Für heute Schluss": child with rules rejected with the closing text (tomorrow whole day, minute 0).
     await anyio.sleep(COOLDOWN_PAUSE)
     schluss = await _post(client, "/schluss")
     assert schluss["art"] == "schluss", schluss
@@ -216,6 +216,6 @@ async def test_pause_e2e(client: httpx.AsyncClient, app_env: Path) -> None:
     assert pause_text("schluss", 0) in str(locked["reason"]), locked
     assert _usage(app_env, "gw-kind2") == used
 
-    # Aufräumen: Pause beenden, Welt löschen (das Cleanup-Fixture entfernt Reste).
+    # Cleanup: end the pause, delete the world (the cleanup fixture removes leftovers).
     await _post(client, "/end")
     await delete_world(client, world_id)

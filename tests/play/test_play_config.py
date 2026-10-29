@@ -1,4 +1,4 @@
-"""Reine Regeln des Browser-Spikes: Schalter, Origins, disable_for, Header (04.2-02)."""
+"""Pure rules of the browser spike: switch, origins, disable_for, header (04.2-02)."""
 
 from __future__ import annotations
 
@@ -23,12 +23,12 @@ from gameworld.play.config import (
 @pytest.mark.parametrize(
     ("environ", "expected"),
     [
-        # Positivkontrollen: die drei bekannten Modi.
+        # Positive controls: the three known modes.
         ({}, "off"),
         ({"GAMEWORLD_BROWSER_SPIKE": "off"}, "off"),
         ({"GAMEWORLD_BROWSER_SPIKE": "dev"}, "dev"),
         ({"GAMEWORLD_BROWSER_SPIKE": "harp"}, "harp"),
-        # Manipulierte Eingaben: alles Unbekannte bleibt aus.
+        # Tampered inputs: everything unknown stays off.
         ({"GAMEWORLD_BROWSER_SPIKE": "DEV"}, "off"),
         ({"GAMEWORLD_BROWSER_SPIKE": "on"}, "off"),
         ({"GAMEWORLD_BROWSER_SPIKE": "1"}, "off"),
@@ -46,8 +46,8 @@ def test_play_disable_for_only_in_dev() -> None:
     assert play_disable_for("harp") == []
 
 
-# Unabhängige Gegenprobe mit fnmatch direkt (so prüft AppAPIAuthMiddleware den Pfad
-# ohne führenden Schrägstrich): Die Ticket-Route und jede api/*-Route bleiben geschützt.
+# Independent counter-check with fnmatch directly (this is how AppAPIAuthMiddleware checks the path
+# without a leading slash): the ticket route and every api/* route stay protected.
 PROTECTED = [
     "api/my/play-ticket",
     "api/my/worlds",
@@ -70,7 +70,7 @@ def test_disable_for_never_hits_protected(path: str) -> None:
 
 @pytest.mark.parametrize("path", ["play", "play/", "play/ws", "play/launch", "play/static/a/luanti.wasm"])
 def test_disable_for_hits_play_paths(path: str) -> None:
-    # Positivkontrolle: ohne Treffer hier wäre die Gegenprobe oben wertlos.
+    # Positive control: without a hit here the counter-check above would be worthless.
     assert any(fnmatch(path, pattern) for pattern in play_disable_for("dev"))
 
 
@@ -82,7 +82,7 @@ def test_allowed_origins_normalized() -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        # Manipulierte Eingaben: fremdes Schema, Pfad, Query, Fragment, Zugangsdaten, leer.
+        # Tampered inputs: foreign scheme, path, query, fragment, credentials, empty.
         "",
         " , ",
         "ftp://host.example",
@@ -111,12 +111,12 @@ ALLOWED = frozenset({"http://localhost:8092", "https://host.ts.net"})
 @pytest.mark.parametrize(
     ("origin", "expected"),
     [
-        # Positivkontrollen.
+        # Positive controls.
         ("http://localhost:8092", True),
         ("https://host.ts.net", True),
         ("https://HOST.ts.net", True),
         ("https://host.ts.net/", True),
-        # Manipulierte Eingaben.
+        # Tampered inputs.
         (None, False),
         ("null", False),
         ("", False),

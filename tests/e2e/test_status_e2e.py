@@ -1,4 +1,4 @@
-"""Live-Nachweis gegen den echten Proxy: Der Status kommt aus Docker, Neustart, Bereitschaft."""
+"""Live proof against the real proxy: the status comes from Docker, restart, readiness."""
 
 from __future__ import annotations
 
@@ -44,18 +44,18 @@ async def _world(client: httpx.AsyncClient, world_id: str) -> dict[str, object]:
     return worlds[world_id]
 
 
-# Testhelfer: Die Frist ist bewusst Teil der Schnittstelle (Plan 02-05), daher ASYNC109 aus.
+# Test helper: the deadline is deliberately part of the interface (plan 02-05), hence ASYNC109 off.
 async def wait_for_status(
     client: httpx.AsyncClient,
     world_id: str,
     expected: str,
     timeout: float = 10.0,  # noqa: ASYNC109
 ) -> dict[str, object]:
-    """Fragt GET /api/worlds alle 0,5 s, bis der Status erscheint.
+    """Polls GET /api/worlds every 0.5 s until the status appears.
 
-    Die Weltenliste wird 2 s zwischengespeichert; Änderungen von außen
-    (container.stop, container.kill) erscheinen deshalb erst verzögert.
-    Änderungen über die API verwerfen den Cache selbst.
+    The world list is cached for 2 s; changes from outside
+    (container.stop, container.kill) therefore appear only with a delay.
+    Changes via the API discard the cache themselves.
     """
     deadline = time.monotonic() + timeout
     seen: list[str] = []
@@ -93,7 +93,7 @@ async def test_status_comes_from_docker_and_restart_works(
 
     ready = await wait_for_status(client, world_id, "running", READY_TIMEOUT)
     assert ready["status_text"] == "Läuft"
-    # WELT-03: RAM aus docker stats (Kreativ-Preset 512 MiB), noch niemand online.
+    # WELT-03: RAM from docker stats (creative preset 512 MiB), nobody online yet.
     used = ready["memory_used_bytes"]
     assert isinstance(used, int)
     assert 0 < used <= MTG_LIMIT
@@ -101,7 +101,7 @@ async def test_status_comes_from_docker_and_restart_works(
     assert ready["players"] == []
     container = _container(api, world_id)
 
-    # Stop von außen: Das Dashboard zeigt "Gestoppt", die Datenbank bleibt unverändert.
+    # Stop from outside: the dashboard shows "Gestoppt", the database stays unchanged.
     container.stop(timeout=30)
     stopped = await wait_for_status(client, world_id, "stopped")
     assert (stopped["status"], stopped["status_text"]) == ("stopped", "Gestoppt")
@@ -114,7 +114,7 @@ async def test_status_comes_from_docker_and_restart_works(
     assert started.status_code == 200, started.text
     await wait_for_status(client, world_id, "running", READY_TIMEOUT)
 
-    # SIGKILL von außen: Fehler mit Klartext und Exit-Code.
+    # SIGKILL from outside: error with plain text and exit code.
     container.kill()
     killed = await wait_for_status(client, world_id, "error")
     assert killed["status"] == "error"
@@ -144,7 +144,7 @@ async def test_restart_of_running_world_gets_new_start_time(
 
     restarted = await client.post(f"/api/worlds/{world_id}/restart", headers=appapi_headers())
     assert restarted.status_code == 200, restarted.text
-    # Direkt nach dem Neustart ist die Status-Datei älter als StartedAt, also höchstens "starting".
+    # Right after the restart the status file is older than StartedAt, so at most "starting".
     assert restarted.json()["status"] in {"starting", "running"}
     await wait_for_status(client, world_id, "running", READY_TIMEOUT)
     after = parse_docker_time(_started_at(_container(api, world_id)))

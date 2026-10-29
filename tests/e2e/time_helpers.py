@@ -1,8 +1,8 @@
-"""Gemeinsame Hilfen der e2e-Tests von Phase 4 (Spielzeit und Wiederbeitritts-Sperre).
+"""Shared helpers of the phase 4 e2e tests (play time and rejoin block).
 
-Übernommen aus test_access_e2e.py (dort unverändert): laufende Welt über die
-API erzeugen, Zugangs- und Regeldatei per put_archive schreiben, Zählbuch
-lesen, Containerzustand und Startzeitpunkt aus Docker.
+Taken over from test_access_e2e.py (unchanged there): create a running world via the
+API, write access and rules file via put_archive, read the ledger,
+container state and start time from Docker.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ VOXELIBRE_READY = 90.0
 
 
 async def create_running_world(client: httpx.AsyncClient, preset: str, ready_seconds: float) -> tuple[str, int]:
-    """Welt über die API anlegen und warten, bis sie läuft; (world_id, port)."""
+    """Create a world via the API and wait until it runs; (world_id, port)."""
     created = await client.post("/api/worlds", json={"name": "Zeitwelt", "preset": preset}, headers=appapi_headers())
     assert created.status_code == 201, created.text
     body = created.json()
@@ -47,13 +47,13 @@ def provisioner(app_env: Path) -> DockerProvisioner:
 
 
 def write_access(app_env: Path, world_id: str, generation: int, players: dict[str, str]) -> None:
-    """Zugangsdatei mit SRP-Verifiern aus Spielername -> Passwort in die Welt schreiben."""
+    """Write an access file with SRP verifiers from player name -> password into the world."""
     entries = {name: make_verifier(name, password) for name, password in players.items()}
     provisioner(app_env).write_world_files(world_id, build_access_tar(render_access_file(generation, entries)))
 
 
 def write_rules(app_env: Path, world_id: str, content: bytes) -> None:
-    """Regeldatei des Zeit-Mods direkt in die Welt schreiben (wie später die ExApp)."""
+    """Write the rules file of the time mod directly into the world (as the ExApp does later)."""
     provisioner(app_env).write_world_files(world_id, build_time_tar(content))
 
 
@@ -82,7 +82,7 @@ def _container(api: docker.DockerClient, world_id: str) -> Container:
 
 
 def started_at(api: docker.DockerClient, world_id: str) -> str:
-    """StartedAt aus docker inspect; ändert sich nur, wenn der Container neu startet."""
+    """StartedAt from docker inspect; changes only when the container restarts."""
     return str((_container(api, world_id).attrs.get("State") or {}).get("StartedAt") or "")
 
 

@@ -1,4 +1,4 @@
-"""Spielseite und Artefakt-Auslieferung hinter dem Spike-Schalter (04.2-02)."""
+"""Play page and artifact delivery behind the spike switch (04.2-02)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ RELEASE_B = "ba9876543210"
 
 @pytest.fixture
 def www(app_env: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Artefakt-Verzeichnis mit Build a und b, dazu Köder außerhalb der Build-Ordner."""
+    """Artifact directory with builds a and b, plus a decoy outside the build folders."""
     root = app_env / "www"
     for build in ("a", "b"):
         (root / build).mkdir(parents=True)
@@ -116,7 +116,7 @@ async def test_static_js(client: httpx.AsyncClient, dev: Path) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        # Manipulierte Pfade: Ausbruch, kodierter Ausbruch, fremde Endung, fremder Build.
+        # Tampered paths: breakout, encoded breakout, foreign extension, foreign build.
         "/play/static/../secret",
         "/play/static/a/..%2F..%2Fpyproject.toml",
         "/play/static/a/..%2F..%2Fescape.wasm",
@@ -134,7 +134,7 @@ async def test_static_js(client: httpx.AsyncClient, dev: Path) -> None:
 )
 async def test_static_rejects(client: httpx.AsyncClient, dev: Path, path: str) -> None:
     del dev
-    # Starlette leitet /play/static/a nach /play/static/a/ um; maßgeblich ist das Ende der Kette.
+    # Starlette redirects /play/static/a to /play/static/a/; the end of the chain is what counts.
     response = await client.get(path, headers=appapi_headers("gw-kind"), follow_redirects=True)
     assert response.status_code == 404
     assert b"geheim" not in response.content
@@ -151,10 +151,10 @@ async def test_static_404_carries_headers(client: httpx.AsyncClient, dev: Path) 
 
 
 async def test_api_stays_protected_in_dev(client: httpx.AsyncClient, dev: Path) -> None:
-    """Gegenprobe: Ohne AppAPI-Header kommt im Modus dev nichts unter api/* durch.
+    """Counter-check: without an AppAPI header nothing under api/* gets through in mode dev.
 
-    Die Middleware liest den Modus beim Import von main; geprüft wird hier die Wirkung
-    auf api/*, die in jedem Modus geschützt bleibt.
+    The middleware reads the mode on import of main; what is checked here is the effect
+    on api/*, which stays protected in every mode.
     """
     del dev
     response = await client.get("/api/my/worlds")
@@ -181,11 +181,11 @@ async def test_release_name_rejects_foreign_build(client: httpx.AsyncClient, dev
 
 
 async def test_release_name_needs_exactly_one(client: httpx.AsyncClient, dev: Path) -> None:
-    # Zwei Release-Ordner in a: unklar, welcher gilt, also keiner.
+    # Two release folders in a: unclear which applies, so none.
     (dev / "a" / "cccccccccccc").mkdir()
     response = await client.get("/play/release/a", headers=appapi_headers("gw-kind"))
     assert response.status_code == 404
-    # Positivkontrolle im selben Aufbau: b hat genau einen.
+    # Positive control in the same setup: b has exactly one.
     response = await client.get("/play/release/b", headers=appapi_headers("gw-kind"))
     assert response.status_code == 200
 
@@ -193,7 +193,7 @@ async def test_release_name_needs_exactly_one(client: httpx.AsyncClient, dev: Pa
 @pytest.mark.parametrize(
     ("path", "content", "media_type"),
     [
-        # Positivkontrollen: Der Release-Name wählt den Build.
+        # Positive controls: the release name selects the build.
         (f"/play/{RELEASE_A}/luanti.wasm", b"wasm-a", "application/wasm"),
         (f"/play/{RELEASE_B}/luanti.wasm", b"wasm-b", "application/wasm"),
         (f"/play/{RELEASE_B}/worker.js", b"// worker b\n", "text/javascript"),
@@ -213,7 +213,7 @@ async def test_release_files(client: httpx.AsyncClient, dev: Path, path: str, co
 @pytest.mark.parametrize(
     "path",
     [
-        # Manipulierte Pfade: fremder Release, Großschreibung, falsche Länge, Ausbruch, Endung.
+        # Tampered paths: foreign release, capitalization, wrong length, breakout, extension.
         "/play/cccccccccccc/luanti.wasm",
         "/play/0123456789AB/luanti.wasm",
         "/play/0123456789a/luanti.wasm",

@@ -1,13 +1,13 @@
-"""Ende-zu-Ende: Zeitfenster pro Welt (ZEIT-05) mit Verwalter-Freistellung bis in den Spielserver.
+"""End to end: time window per world (ZEIT-05) with manager exemption up to the game server.
 
-Der Verwalter setzt das Wochen-Zeitfenster einer Welt per POST
-/api/playtime/worlds/{id}/window; die ExApp schreibt die Welt-Zeile der
-Regeldatei, der Zeit-Mod aus 04-01 setzt durch. Belegt Success Criterion 4:
-außerhalb des Fensters kommt ein Kind nicht hinein, am Fensterende wird es mit
-Vorwarnung getrennt, die Welt läuft weiter (O-05: Container running, StartedAt
-und desired_state unverändert). Eingeladene Verwalter stehen mit "frei" in der
-Regeldatei und kommen auch außerhalb hinein (O-11/A4); ein nicht eingeladener
-Name bekommt weiter den Zugangstext (T-04-30). Seriell, MTG kreativ.
+The manager sets the weekly time window of a world via POST
+/api/playtime/worlds/{id}/window; the ExApp writes the world row of the
+rules file, the time mod from 04-01 enforces it. Proves success criterion 4:
+outside the window a child does not get in, at the window end it is disconnected with
+advance warning, the world keeps running (O-05: container running, StartedAt
+and desired_state unchanged). Invited managers are in the rules file with "frei"
+and also get in outside the window (O-11/A4); a name that is not invited
+still gets the access text (T-04-30). Serial, MTG creative.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ NOT_INVITED = "nicht eingeladen"
 
 
 async def _midnight_guard() -> None:
-    """Läuft der Test nahe 00:00, bis 00:01 warten: Ein Fenster darf nie über 24:00 laufen."""
+    """If the test runs near 00:00, wait until 00:01: a window must never run past 24:00."""
     now = datetime.now(BERLIN)
     if now.hour == 23 and now.minute >= 50:
         target = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
@@ -100,7 +100,7 @@ async def test_world_window_e2e(client: httpx.AsyncClient, app_env: Path) -> Non
     kind_name, kind_pw = await _invite(client, world_id, "gw-kind")
     admin_name, admin_pw = await _invite(client, world_id, "admin")
 
-    # Verwalter-Schnappschuss: GET /api/playtime als admin füllt meta time_admins.
+    # Manager snapshot: GET /api/playtime as admin fills meta time_admins.
     listed = await client.get("/api/playtime", headers=appapi_headers())
     assert listed.status_code == 200, listed.text
     assert "admin" not in [child["nc_user"] for child in listed.json()["children"]]
@@ -112,7 +112,7 @@ async def test_world_window_e2e(client: httpx.AsyncClient, app_env: Path) -> Non
     finally:
         api.close()
 
-    # (1) Geschlossen: Fenster nur morgen 10:00 bis 12:00, heute zu.
+    # (1) Closed: window only tomorrow 10:00 to 12:00, closed today.
     today = datetime.now(BERLIN).date()
     tomorrow = today + timedelta(days=1)
     await _set_window(client, world_id, {tomorrow.isoweekday(): (600, 720)})
@@ -126,13 +126,13 @@ async def test_world_window_e2e(client: httpx.AsyncClient, app_env: Path) -> Non
     held = session(HOST, port, admin_name, admin_pw, hold=10.0, timeout=JOIN_TIMEOUT)
     assert held["result"] == "held", held
 
-    # Zugangstext gewinnt: ein Fremder erfährt nichts über das Fenster (T-04-30).
+    # Access text wins: a stranger learns nothing about the window (T-04-30).
     stranger = join(HOST, port, "Fremder")
     assert stranger["result"] == "denied", stranger
     assert NOT_INVITED in str(stranger["reason"]), stranger
     assert TEXT_WELT not in str(stranger["reason"]), stranger
 
-    # (2) Fensterende live: heute 00:00 bis jetzt plus 3 Minuten.
+    # (2) Window end live: today 00:00 until now plus 3 minutes.
     await _midnight_guard()
     now = datetime.now(BERLIN)
     end_minute = now.hour * 60 + now.minute + 3
@@ -166,10 +166,10 @@ async def test_world_window_e2e(client: httpx.AsyncClient, app_env: Path) -> Non
     warned = [e for e in events if e.get("kind") == "chat" and TEXT_WARN_1 in str(e.get("text"))]
     assert warned, kind_result
     assert float(str(warned[0]["t"])) < kick_at, kind_result
-    # Der Verwalter hält über das Fensterende hinaus (frei).
+    # The manager holds beyond the window end (frei).
     assert admin_result["result"] == "held", admin_result
 
-    # (3) Die Welt läuft weiter: Container running, StartedAt und desired_state unverändert (O-05).
+    # (3) The world keeps running: container running, StartedAt and desired_state unchanged (O-05).
     api = docker_api()
     try:
         assert container_status(api, world_id) == "running"
@@ -181,7 +181,7 @@ async def test_world_window_e2e(client: httpx.AsyncClient, app_env: Path) -> Non
     assert world["status"] == "running", world
     assert world["time_window"] is not None
 
-    # (4) Fenster entfernen: Das Kind kommt ohne Neustart wieder hinein.
+    # (4) Remove window: the child gets in again without a restart.
     await anyio.sleep(COOLDOWN_PAUSE)
     cleared = await client.delete(f"/api/playtime/worlds/{world_id}/window", headers=appapi_headers())
     assert cleared.status_code == 200, cleared.text
@@ -193,8 +193,8 @@ async def test_world_window_e2e(client: httpx.AsyncClient, app_env: Path) -> Non
     finally:
         api.close()
 
-    # (5) Welt löschen: keine Welt-Fenster und keine Zählbuchstände der Welt mehr.
-    # Positivkontrolle: vor dem Löschen stehen Fenster und (nach einem Takt) Zählbuchstände da.
+    # (5) Delete world: no world windows and no ledger states of the world any more.
+    # Positive control: before deletion windows and (after a tick) ledger states are there.
     await _set_window(client, world_id, {today.isoweekday(): (0, 1440)})
     await anyio.to_thread.run_sync(worlds_api.get_service().tick_time)
     assert _db_rows(app_env, "SELECT weekday FROM world_windows WHERE world_id = ?", world_id) != []

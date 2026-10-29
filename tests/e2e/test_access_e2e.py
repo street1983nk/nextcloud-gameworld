@@ -1,10 +1,10 @@
-"""Live-Nachweis ZUGANG-03: Nur Eingeladene kommen in echte Luanti-Welten (MTG und VoxeLibre).
+"""Live proof ZUGANG-03: only invited players get into real Luanti worlds (MTG and VoxeLibre).
 
-Der Join-Prober (tests/e2e/luanti_probe.py) spricht das Luanti-Protokoll über
-UDP wie ein echter Client. Die Zugangsdatei schreibt hier der Test selbst per
-put_archive (DockerProvisioner.write_world_files), um Grenzfälle wie halbe
-Dateien zu prüfen; echte Einladungen über die API belegt
-test_invite_join_e2e.py (03-03). Seriell, höchstens eine VoxeLibre-Welt gleichzeitig.
+The join prober (tests/e2e/luanti_probe.py) speaks the Luanti protocol over
+UDP like a real client. The access file is written here by the test itself via
+put_archive (DockerProvisioner.write_world_files) to check edge cases such as half
+files; real invitations via the API are evidenced by
+test_invite_join_e2e.py (03-03). Serial, at most one VoxeLibre world at a time.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ HOST = "127.0.0.1"
 MTG_READY = 30.0
 VOXELIBRE_READY = 90.0
 STATE_TIMEOUT = 10.0
-# Feste Testpasswörter für Wegwerfwelten, kein Geheimnis.
+# Fixed test passwords for throwaway worlds, not a secret.
 MIA_PASSWORD = "Sonne-Baum-42"  # noqa: S105
 LEO_PASSWORD = "Tiger-Wolke-17"  # noqa: S105
 NOT_INVITED = "nicht eingeladen"
@@ -111,20 +111,20 @@ async def test_fresh_world_is_closed_and_invitation_opens_it(client: httpx.Async
     created = await _create_running(client, "mtg_kreativ", MTG_READY)
     world_id, port = str(created["id"]), int(str(created["port"]))
 
-    # (1) Frische Welt ist zu (A0): Fremde scheitern serverseitig vor der Anmeldung.
+    # (1) A fresh world is closed (A0): strangers fail server-side before login.
     assert_denied(join(HOST, port, "Fremder"), "CUSTOM_STRING", NOT_INVITED)
 
-    # (2) Mia eingeladen, Datei in die laufende Welt.
+    # (2) Mia invited, file into the running world.
     _invite(app_env, world_id, 1, {"Mia": MIA_PASSWORD})
     assert_denied(join(HOST, port, "Fremder"), "CUSTOM_STRING", NOT_INVITED)
-    # Vor dem ersten Konto "Mia": falsche Schreibweise bekommt den deutschen Hinweis (Pitfall 3).
+    # Before the first account "Mia": a wrong spelling gets the German hint (pitfall 3).
     assert_denied(join(HOST, port, "mia", MIA_PASSWORD), "CUSTOM_STRING", CASE_HINT)
     hello = join(HOST, port, "Mia")
     assert (hello["result"], hello["auth_mechs"]) == ("hello", 2), hello
     assert join(HOST, port, "Mia", MIA_PASSWORD)["result"] == "auth_accept"
     assert_denied(join(HOST, port, "Mia", "Falsch-Wort-11"), "WRONG_PASSWORD")
-    # Der Weltschlüssel (default_password) öffnet ein provisioniertes Konto nicht (A9).
-    # Seit 03-05 nicht mehr in der API-Antwort, deshalb aus der Datenbank gelesen.
+    # The world key (default_password) does not open a provisioned account (A9).
+    # Since 03-05 no longer in the API response, hence read from the database.
     row = WorldStore(app_env / "gameworld.sqlite3").get_world(world_id)
     assert row is not None
     assert_denied(join(HOST, port, "Mia", row.world_key), "WRONG_PASSWORD")
@@ -138,23 +138,23 @@ async def test_half_file_revocation_state_and_restart(
     _invite(app_env, world_id, 1, {"Mia": MIA_PASSWORD})
     assert join(HOST, port, "Mia", MIA_PASSWORD)["result"] == "auth_accept"
 
-    # (3) Halbe Datei (Kopf ohne Schlusszeile): Der alte Stand bleibt (A6).
+    # (3) Half file (head without a closing line): the old state stays (A6).
     half = f"{ACCESS_HEADER} 2\nLeo {make_verifier('Leo', LEO_PASSWORD)}\n".encode("ascii")
     _write_access(app_env, world_id, half)
     assert join(HOST, port, "Mia", MIA_PASSWORD)["result"] == "auth_accept"
     assert_denied(join(HOST, port, "Leo", LEO_PASSWORD), "CUSTOM_STRING", NOT_INVITED)
 
-    # Widerruf: Nur noch Leo (Generation 2); Mia scheitert beim nächsten Join.
+    # Revocation: only Leo remains (generation 2); Mia fails on the next join.
     _invite(app_env, world_id, 2, {"Leo": LEO_PASSWORD})
     assert_denied(join(HOST, port, "Mia", MIA_PASSWORD), "CUSTOM_STRING", NOT_INVITED)
     assert join(HOST, port, "Leo", LEO_PASSWORD)["result"] == "auth_accept"
 
-    # (4) Der Mod meldet die geladene Generation in der State-Datei (Takt 5 s).
+    # (4) The mod reports the loaded generation in the state file (tick 5 s).
     wait_for_state(api, world_id, "2")
 
-    # (5) Neustart: _launch schreibt die Datei aus der DB neu. Seit 03-03 ist der
-    # Zustand aus der DB maßgeblich (Schema 3): Diese Welt hat keine Einladungen,
-    # Leo stand nur in der Test-Datei und ist danach draußen, Generation 0.
+    # (5) Restart: _launch rewrites the file from the DB. Since 03-03 the state
+    # from the DB is authoritative (schema 3): this world has no invitations,
+    # Leo was only in the test file and is out afterwards, generation 0.
     restarted = await client.post(f"/api/worlds/{world_id}/restart", headers=appapi_headers())
     assert restarted.status_code == 200, restarted.text
     await wait_for_status(client, world_id, "running", MTG_READY)
@@ -168,7 +168,7 @@ async def test_five_wrong_passwords_lock_the_name(client: httpx.AsyncClient, app
     world_id, port = str(created["id"]), int(str(created["port"]))
     _invite(app_env, world_id, 3, {"Leo": LEO_PASSWORD})
 
-    # (6) Fünf Fehlversuche sperren den Namen, danach hilft auch das richtige Passwort nicht (A10).
+    # (6) Five failed attempts block the name, afterwards even the right password does not help (A10).
     for attempt in range(5):
         assert_denied(join(HOST, port, "Leo", f"Falsch-Wort-{attempt}"), "WRONG_PASSWORD")
     assert_denied(join(HOST, port, "Leo", LEO_PASSWORD), "CUSTOM_STRING", LOCKED)
@@ -178,7 +178,7 @@ async def test_voxelibre_world_enforces_invitations(client: httpx.AsyncClient, a
     created = await _create_running(client, "voxelibre_sanft", VOXELIBRE_READY)
     world_id, port = str(created["id"]), int(str(created["port"]))
     try:
-        # (7) VoxeLibre registriert keinen eigenen Auth-Handler: dieselbe Durchsetzung greift.
+        # (7) VoxeLibre registers no auth handler of its own: the same enforcement applies.
         assert_denied(join(HOST, port, "Fremder"), "CUSTOM_STRING", NOT_INVITED)
         _invite(app_env, world_id, 1, {"Mia": MIA_PASSWORD})
         assert join(HOST, port, "Mia", MIA_PASSWORD)["result"] == "auth_accept"

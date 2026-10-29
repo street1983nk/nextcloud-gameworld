@@ -1,14 +1,14 @@
-"""Live-Nachweis D-09 gegen echtes Luanti: Chat-Hinweis und Trennen vor dem Cold-Backup.
+"""Live proof D-09 against real Luanti: chat notice and disconnect before the cold backup.
 
-Der Unit-Test belegt den Halt nur als Lua-String. Hier sitzt Mia per Prober
-(tests/e2e/luanti_probe.session) wirklich in der Welt; der echte WorldService
-liest über ``players_online`` die Status-Datei und ruft ``announce_halt`` auf
-(setzt ``@halt`` und schreibt die Regeldatei sofort). Der Zeit-Mod sendet den
-Chat-Hinweis und trennt ab dem Zeitpunkt ``ab``. Negativkontrolle: Während des
-Halts wird ein Beitritt abgelehnt. Positivkontrolle: Nach ``clear_halt`` kommt
-Mia wieder hinein. Die erwarteten Texte stehen als Literale im Test, nicht aus
-time_mod importiert (Gegenprobe unabhängig vom Renderer). Spielpasswörter
-werden nie ausgegeben.
+The unit test proves the halt only as a Lua string. Here Mia really sits in the world
+via the prober (tests/e2e/luanti_probe.session); the real WorldService
+reads the status file via ``players_online`` and calls ``announce_halt``
+(sets ``@halt`` and writes the rules file immediately). The time mod sends the
+chat notice and disconnects from the time ``from`` on. Negative control: during the
+halt a join is rejected. Positive control: after ``clear_halt`` Mia
+gets back in. The expected texts are literals in the test, not imported from
+time_mod (counter-check independent of the renderer). Game passwords
+are never printed.
 """
 
 from __future__ import annotations
@@ -35,9 +35,9 @@ TEXT_HALT = "Die Welt macht kurz Pause. Gleich geht es weiter."
 JOIN_TIMEOUT = 30.0
 SESSION_HOLD = HALT_LEAD_SECONDS + 15.0
 ONLINE_TIMEOUT = 20.0
-# Der Zeit-Mod prüft im 5-s-Takt; ein Kick vor ``ab`` darf höchstens so früh kommen.
+# The time mod checks every 5 s; a kick before ``from`` may come at most this early.
 MOD_TICK_SLACK = 2.0
-# Nach einem Trennen sperrt der Mod kurz den Wiederbeitritt (K6); danach erst prüfen.
+# After a disconnect the mod briefly blocks the rejoin (K6); only check after that.
 REJOIN_COOLDOWN = 3.0
 CLEAR_TIMEOUT = 15.0
 SHORT_HOLD = 3.0
@@ -65,7 +65,7 @@ def _events(result: dict[str, object], kind: str) -> list[dict[str, object]]:
 
 
 def _public(result: dict[str, object]) -> dict[str, object]:
-    """Ergebnis ohne Ereignisliste für Fehlermeldungen (Passwörter stehen nie darin)."""
+    """Result without the event list for error messages (passwords never appear in it)."""
     return {key: value for key, value in result.items() if key != "events"}
 
 
@@ -93,7 +93,7 @@ async def test_halt_notice_and_kick(client: httpx.AsyncClient, app_env: Path, mi
     name, password = await _invite(client, world_id, mia)
     assert name == "Mia"
 
-    # (1) Mia ist verbunden, der echte Lesepfad der Status-Datei zählt sie, dann der Halt.
+    # (1) Mia is connected, the real read path of the status file counts her, then the halt.
     result: dict[str, object] = {}
     ended_at: list[float] = []
     halt_at: list[int] = []
@@ -122,13 +122,13 @@ async def test_halt_notice_and_kick(client: httpx.AsyncClient, app_env: Path, mi
     assert float(str(chats[0]["t"])) < float(str(kicks[0]["t"])), "Hinweis kam nach dem Trennen"
     assert ended_at[0] >= halt_at[0] - MOD_TICK_SLACK, (ended_at[0], halt_at[0])
 
-    # (2) Negativkontrolle: Während des Halts wird ein Beitritt abgelehnt.
+    # (2) Negative control: during the halt a join is rejected.
     await anyio.sleep(REJOIN_COOLDOWN)
     denied = await anyio.to_thread.run_sync(partial(session, HOST, port, name, password, SHORT_HOLD, JOIN_TIMEOUT))
     assert denied["result"] == "denied", _public(denied)
     assert TEXT_HALT in str(denied["reason"]), _public(denied)
 
-    # (3) Positivkontrolle: Nach clear_halt plus push_time kommt Mia wieder hinein (Mod lädt im Takt nach).
+    # (3) Positive control: after clear_halt plus push_time Mia gets back in (the mod reloads on its tick).
     await anyio.to_thread.run_sync(_clear_halt, service, world_id)
     deadline = time.monotonic() + CLEAR_TIMEOUT
     accepted: dict[str, object] = {}

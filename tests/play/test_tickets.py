@@ -1,4 +1,4 @@
-"""Ein-Mal-Tickets des Browser-Spikes: Zweck, Ablauf, UID-Bindung, Einmaligkeit (04.2-06)."""
+"""One-time tickets of the browser spike: purpose, flow, UID binding, single use (04.2-06)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ W1 = "aaaaaaaaaaa1"
 
 
 class FakeClock:
-    """Uhr zum Vorstellen ohne sleep."""
+    """Clock for presentation without sleep."""
 
     def __init__(self) -> None:
         self.now = 1000.0
@@ -30,7 +30,7 @@ class FakeClock:
 
 
 class RecordingDict(dict[str, Ticket]):
-    """Merkt jeden Schlüssel, mit dem das Ticket-Wörterbuch befragt wird."""
+    """Remembers every key with which the ticket dictionary is queried."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -75,7 +75,7 @@ def test_constants() -> None:
 
 def test_pos_issue_and_redeem(store: TicketStore, clock: FakeClock) -> None:
     token = _issue(store)
-    # secrets.token_urlsafe(16): 128 Bit als 22 Zeichen Base64url.
+    # secrets.token_urlsafe(16): 128 bits as 22 characters of base64url.
     assert len(token) == 22
     ticket = store.redeem(token, "launch", uid="gw-kind")
     assert ticket == Ticket(uid="gw-kind", world_id=W1, player_name="Mia", purpose="launch", issued_at=clock.now)
@@ -113,7 +113,7 @@ def test_neg_redeem_after_expiry(store: TicketStore, clock: FakeClock) -> None:
     with pytest.raises(TicketError) as info:
         store.redeem(token, "launch", uid="gw-kind")
     assert info.value.reason == "expired"
-    # Abgelaufen ist auch verbrannt.
+    # Expired is also burned.
     clock.advance(-61)
     with pytest.raises(TicketError) as again:
         store.redeem(token, "launch", uid="gw-kind")
@@ -142,7 +142,7 @@ def test_neg_uid_mismatch_burns(store: TicketStore) -> None:
     with pytest.raises(TicketError) as info:
         store.redeem(token, "launch", uid="gw-kind2")
     assert info.value.reason == "uid_mismatch"
-    # Positivkontrolle wäre jetzt gw-kind; das Ticket ist aber verbrannt.
+    # The positive control would now be gw-kind; but the ticket is burned.
     with pytest.raises(TicketError) as again:
         store.redeem(token, "launch", uid="gw-kind")
     assert again.value.reason == "used_or_unknown"
@@ -164,7 +164,7 @@ def test_neg_malformed_token_never_touches_dict(store: TicketStore, token: str) 
 
 
 def test_pos_recording_dict_sees_valid_length(store: TicketStore) -> None:
-    """Positivkontrolle der Aufzeichnung: ein gültig langer Token erreicht das Wörterbuch."""
+    """Positive control of the recording: a token of valid length reaches the dictionary."""
     recording = RecordingDict()
     store._tickets = recording  # pyright: ignore[reportPrivateUsage]
     with pytest.raises(TicketError):

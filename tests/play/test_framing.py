@@ -1,11 +1,11 @@
-"""Binärkopf der Proxy-Nachrichten: Golden Vector, Gegenprobe und manipulierte Frames."""
+"""Binary head of the proxy messages: golden vector, counter-check and tampered frames."""
 
 import pytest
 
 from gameworld.play.framing import EP_HEADER, EP_MAGIC, MAX_PAYLOAD, FrameError, pack, unpack
 
-# Von Hand nach webshims proxy.js (encapsulate) ausgeschrieben, nicht mit pack erzeugt:
-# Magic | ::ffff:10.77.0.1 | Port 30000 | Länge 3 | "abc"
+# Written out by hand after webshims proxy.js (encapsulate), not produced with pack:
+# magic | ::ffff:10.77.0.1 | port 30000 | length 3 | "abc"
 GOLDEN = bytes.fromhex("778b4cf6" + "00" * 10 + "ffff" + "0a4d0001" + "7530" + "0003" + "616263")
 
 
@@ -43,20 +43,20 @@ def test_pack_unpack_are_inverse(host: str, port: int, payload: bytes) -> None:
 
 
 def test_ipv4_mapped_is_normalized() -> None:
-    """Ein Kopf mit ::ffff:10.77.0.1 kommt als 10.77.0.1 heraus (Grundlage für target_allowed)."""
+    """A head with ::ffff:10.77.0.1 comes out as 10.77.0.1 (basis for target_allowed)."""
     assert unpack(_frame() + b"abc")[0] == "10.77.0.1"
 
 
 @pytest.mark.parametrize(
     "frame",
     [
-        # Positivkontrolle steht in test_golden_vector_unpack; hier nur Manipulationen.
-        GOLDEN[:23],  # 23 Byte, Kopf unvollständig
+        # The positive control is in test_golden_vector_unpack; here only tampering.
+        GOLDEN[:23],  # 23 bytes, head incomplete
         b"",
-        _frame(magic="778b4cf7") + b"abc",  # falsche Magic
-        _frame(length=3) + b"ab",  # Längenfeld 3, nur 2 Nutzbytes
-        _frame(length=3) + b"abcd",  # Längenfeld 3, 4 Nutzbytes
-        _frame(length=MAX_PAYLOAD + 1) + b"\x00" * (MAX_PAYLOAD + 1),  # zu groß
+        _frame(magic="778b4cf7") + b"abc",  # wrong magic
+        _frame(length=3) + b"ab",  # Length field 3, only 2 payload bytes
+        _frame(length=3) + b"abcd",  # Length field 3, 4 payload bytes
+        _frame(length=MAX_PAYLOAD + 1) + b"\x00" * (MAX_PAYLOAD + 1),  # too large
     ],
 )
 def test_unpack_rejects_manipulated_frames(frame: bytes) -> None:

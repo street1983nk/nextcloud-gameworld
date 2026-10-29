@@ -1,16 +1,16 @@
-"""Datagramm-Socket über das WebSocket-Relais von Gameworld, nur für Tests (04.2-08).
+"""Datagram socket over Gameworld's WebSocket relay, for tests only (04.2-08).
 
-Bildet die Socket-Schnittstelle nach, die ``luanti_probe.Probe`` braucht (sendto,
-recvfrom, settimeout, close), und spricht dabei das Protokoll des Browser-Clients
-(paradust7/webshims ``src/emsocket/proxy.js``): eine erste Verbindung mit ``NEWADDR``
-(Antwort ``ADDR <ip> <passcode> <joincode>``, danach schließt der Server), eine zweite
-mit ``BIND <passcode> UDP 30000`` (Antwort ``BIND OK``), dann je Binärnachricht ein
-Datagramm mit 24 Byte Kopf ``u32 Magic | 16 Byte IPv6 | u16 Port | u16 Länge``.
+Reproduces the socket interface that ``luanti_probe.Probe`` needs (sendto,
+recvfrom, settimeout, close), speaking the protocol of the browser client
+(paradust7/webshims ``src/emsocket/proxy.js``): a first connection with ``NEWADDR``
+(answer ``ADDR <ip> <passcode> <joincode>``, then the server closes), a second one
+with ``BIND <passcode> UDP 30000`` (answer ``BIND OK``), then one datagram per binary message
+with a 24 byte head ``u32 magic | 16 byte IPv6 | u16 port | u16 length``.
 
-Der Kopf wird hier mit eigenem struct gebaut, nicht mit ``gameworld.play.framing``
-(Gegenprobe nie mit dem Muster der Umsetzung). Schließt der Server das Relais (etwa
-weil der Wächter einen fremden Namen erkennt), verhält sich der Socket wie ein UDP-Socket
-ohne Gegenstelle: sendto verwirft still, recvfrom läuft in den Timeout.
+The head is built here with an own struct, not with ``gameworld.play.framing``
+(counter-check never with the implementation's own pattern). If the server closes the relay (for example
+because the guard recognizes a foreign name), the socket behaves like a UDP socket
+without a peer: sendto silently discards, recvfrom runs into the timeout.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ CONNECT_SECONDS = 5.0
 
 
 class RelayRefusedError(ConnectionError):
-    """NEWADDR oder BIND wurde abgelehnt; ``code`` ist der Abschlusscode des Servers."""
+    """NEWADDR or BIND was refused; ``code`` is the close code of the server."""
 
     def __init__(self, stage: str, code: int | None) -> None:
         super().__init__(f"{stage} abgelehnt (Code {code})")
@@ -46,13 +46,13 @@ def _head(host: str, port: int, length: int) -> bytes:
 
 
 def _close_code(conn: ClientConnection) -> int | None:
-    """Code aus dem Close-Frame des Servers (None, solange offen)."""
+    """Code from the server's close frame (None while open)."""
     code = conn.close_code
     return None if code is None else int(code)
 
 
 def request_passcode(url: str, origin: str) -> str:
-    """Erste Verbindung: NEWADDR, Passcode aus ADDR; RelayRefusedError bei Ablehnung."""
+    """First connection: NEWADDR, passcode from ADDR; RelayRefusedError on refusal."""
     with connect(url, origin=Origin(origin), open_timeout=CONNECT_SECONDS) as conn:
         conn.send("NEWADDR")
         try:
@@ -68,7 +68,7 @@ def request_passcode(url: str, origin: str) -> str:
 
 
 class WsDatagramSocket:
-    """Socket-Ersatz für Probe über NEWADDR und BIND am Gameworld-Proxy."""
+    """Socket stand-in for Probe via NEWADDR and BIND at the Gameworld proxy."""
 
     def __init__(self, url: str, origin: str) -> None:
         passcode = request_passcode(url, origin)
@@ -90,7 +90,7 @@ class WsDatagramSocket:
 
     @property
     def close_code(self) -> int | None:
-        """Abschlusscode des Servers, sobald das Relais geschlossen ist."""
+        """Close code of the server once the relay is closed."""
         return _close_code(self._conn)
 
     def settimeout(self, value: float | None, /) -> None:
@@ -113,7 +113,7 @@ class WsDatagramSocket:
         while True:
             remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
             if self.closed_by_server:
-                # Wie UDP ohne Gegenstelle: nichts kommt mehr.
+                # Like UDP without a peer: nothing comes any more.
                 if remaining is not None:
                     time.sleep(remaining)
                 raise TimeoutError("Relais geschlossen")

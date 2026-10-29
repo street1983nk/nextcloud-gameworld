@@ -1,25 +1,25 @@
-"""AR-23 (D-21, 06-07): Luanti 5.17.0 im gehärteten Weltordner, gegen den echten Docker-Proxy.
+"""AR-23 (D-21, 06-07): Luanti 5.17.0 in the hardened world directory, against the real Docker proxy.
 
-Erst Spike (Rechte von Hand gesetzt, Commit 7032359), jetzt dauerhafter Beleg
-für die echte Erzeugung: Eine über die API angelegte Welt hat den Weltordner
-root:30000 Modus 1775 (Sticky-Bit, Gruppen-Schreibrecht für Luanti), worldmods
-mit allen Unterordnern root:root 0755, Mod-Dateien root 0644, Zugangs- und
-Regeldatei root 0444; world.mt bleibt Luanti. Belegt wird zweierlei:
+First a spike (permissions set by hand, commit 7032359), now lasting proof
+for the real creation: a world created via the API has the world directory
+root:30000 mode 1775 (sticky bit, group write permission for Luanti), worldmods
+with all subfolders root:root 0755, mod files root 0644, access and
+rules file root 0444; world.mt stays with Luanti. Two things are proven:
 
-1. Luanti läuft damit sauber: startet über den normalen Startpfad, lässt einen
-   eingeladenen Spieler 10 s spielen und schreibt map.sqlite,
-   players.sqlite/auth.sqlite, env_meta.txt und das Zählbuch des Zeit-Mods
-   (per eigener Temp-Datei und Umbenennen); im Containerlog steht kein
-   "Permission denied" und kein "ERROR[Main]".
-2. Ein Prozess mit Luantis Rechten (uid 30000, keine Capabilities) kann
-   Zugangsdatei, Regeldatei und worldmods weder löschen noch umbenennen noch
-   überschreiben; eigene Dateien im Weltordner anlegen und umbenennen kann er.
+1. Luanti runs cleanly with it: starts via the normal start path, lets an
+   invited player play for 10 s and writes map.sqlite,
+   players.sqlite/auth.sqlite, env_meta.txt and the ledger of the time mod
+   (via its own temp file and rename); the container log has no
+   "Permission denied" and no "ERROR[Main]".
+2. A process with Luanti's rights (uid 30000, no capabilities) can neither delete
+   nor rename nor overwrite the access file, rules file and worldmods; it can
+   create and rename its own files in the world directory.
 
-Gegenprobe unabhängig von der Umsetzung (T-06-32): eigener Docker-Client,
-eigene Literale, Prüfungen über einen kurzlebigen Hilfscontainer aus dem
-gepinnten Luanti-Image (User 30000:30000, Volume eingehängt, ``sh -c``), nie
-über exec und nie über den DockerProvisioner. Spielpasswörter werden nie
-ausgegeben.
+Counter-check independent of the implementation (T-06-32): own Docker client,
+own literals, checks via a short-lived helper container from the
+pinned Luanti image (user 30000:30000, volume mounted, ``sh -c``), never
+via exec and never via the DockerProvisioner. Game passwords are never
+printed.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from tests.e2e.time_helpers import HOST, MTG_READY, create_running_world
 
 pytestmark = [pytest.mark.docker, pytest.mark.usefixtures("docker_cleanup")]
 
-# Eigene Literale, bewusst nicht aus gameworld.provisioner importiert.
+# Own literals, deliberately not imported from gameworld.provisioner.
 IMAGE = "ghcr.io/luanti-org/luanti@sha256:db682caec367977ac2661c81e3cdbd1f1dbbae596f6fa7d791c0031107d59947"
 DATA = "/var/lib/minetest"
 WORLD = f"{DATA}/.minetest/worlds/world"
@@ -48,10 +48,10 @@ LUANTI = 30000
 HOLD = 10.0
 JOIN_TIMEOUT = 30.0
 HELPER_SECONDS = 60
-# Dateien, die Luanti selbst schreibt (Spielstand) plus das Zählbuch des Zeit-Mods.
+# Files that Luanti writes itself (save game) plus the ledger of the time mod.
 WRITTEN_BY_LUANTI = ("map.sqlite", "env_meta.txt", "gameworld_time_used.txt")
 PLAYER_DBS = ("players.sqlite", "auth.sqlite")
-# Schreibversuche als uid 30000, die scheitern müssen (Name -> Shell-Befehl).
+# Write attempts as uid 30000 that must fail (name -> shell command).
 ATTACKS = {
     "rm_access": "rm -f gameworld_access.txt",
     "mv_access": "mv gameworld_access.txt ar23_moved.txt",
@@ -61,7 +61,7 @@ ATTACKS = {
     "new_in_worldmods": "printf x > worldmods/ar23_evil.lua",
     "write_mod": "printf x > worldmods/gameworld_access/init.lua",
 }
-# Positivkontrolle: so legt Luanti seine Temp-Dateien an.
+# Positive control: this is how Luanti creates its temp files.
 OWN_FILE = "printf x > ar23_probe.tmp && mv ar23_probe.tmp ar23_probe.txt && rm ar23_probe.txt"
 STAT_PATHS = (
     ".",
@@ -90,7 +90,7 @@ def _world_container(api: docker.DockerClient, world_id: str) -> Container:
 
 
 def run_as_luanti(api: docker.DockerClient, volume: str, script: str) -> str:
-    """Kurzlebiger Hilfscontainer mit Luantis Rechten; liefert stdout, räumt sich immer weg."""
+    """Short-lived helper container with Luanti's rights; returns stdout, always cleans itself up."""
     helper = api.containers.create(
         IMAGE,
         entrypoint=["sh", "-c"],
@@ -126,7 +126,7 @@ def _mtimes(api: docker.DockerClient, volume: str) -> dict[str, int]:
 
 
 def stat_rights(api: docker.DockerClient, volume: str) -> dict[str, str]:
-    """``Pfad -> "uid:gid modus"`` aus ``stat`` im Hilfscontainer (oktal, ohne führende Null)."""
+    """``path -> "uid:gid mode"`` from ``stat`` in the helper container (octal, without a leading zero)."""
     out = run_as_luanti(api, volume, f"stat -c 'S %n %u:%g %a' {' '.join(STAT_PATHS)}")
     rights: dict[str, str] = {}
     for line in out.splitlines():
@@ -137,7 +137,7 @@ def stat_rights(api: docker.DockerClient, volume: str) -> dict[str, str]:
 
 
 def attack_results(api: docker.DockerClient, volume: str) -> dict[str, int]:
-    """Exit-Code je Schreibversuch als uid 30000 plus Positivkontrolle ``own_file``."""
+    """Exit code per write attempt as uid 30000 plus positive control ``own_file``."""
     steps = [f'( {command} ) </dev/null >/dev/null 2>&1; echo "R {name} $?"' for name, command in ATTACKS.items()]
     steps.append(f'( {OWN_FILE} ) >/dev/null 2>&1; echo "R own_file $?"')
     steps.append("rm -f ar23_over.txt")
@@ -195,11 +195,11 @@ async def test_new_world_is_hardened_and_luanti_still_writes(
     await _stop(client, world_id)
 
     volume = str(_world_container(api, world_id).name)
-    # Echte Erzeugung, nichts von Hand gesetzt.
+    # Real creation, nothing set by hand.
     assert_hardened(stat_rights(api, volume))
     before = _mtimes(api, volume)
 
-    # Normaler Startpfad (_launch schreibt Mods, Zugangs- und Regeldatei neu).
+    # Normal start path (_launch rewrites mods, access and rules file).
     started = await client.post(f"/api/worlds/{world_id}/start", headers=appapi_headers())
     assert started.status_code == 200, started.text
     world = await wait_for_status(client, world_id, "running", MTG_READY)
@@ -219,12 +219,12 @@ async def test_new_world_is_hardened_and_luanti_still_writes(
         assert after[written] > before.get(written, 0), (written, before, after)
     assert any(db in after and after[db] > before.get(db, 0) for db in PLAYER_DBS), (before, after)
 
-    # Nach dem Start (worldmods frisch eingespielt) weiter gehärtet, dann die Schreibversuche.
+    # After the start (worldmods freshly applied) still hardened, then the write attempts.
     rights = stat_rights(api, volume)
     print(f"AR-23 Rechte nach dem Spiel: {rights}")
     assert_hardened(rights)
     codes = attack_results(api, volume)
     print(f"AR-23 Exit-Codes als uid 30000: {codes}")
     assert_luanti_locked_out(codes)
-    # Nach den Angriffen: Dateien und Rechte unverändert.
+    # After the attacks: files and permissions unchanged.
     assert_hardened(stat_rights(api, volume))

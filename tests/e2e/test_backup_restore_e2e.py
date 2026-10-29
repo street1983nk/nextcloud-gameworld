@@ -1,22 +1,22 @@
-"""Live-Nachweis BACKUP-01/02 gegen den echten Docker-Proxy (Erfolgskriterien 2 und 3).
+"""Live proof BACKUP-01/02 against the real Docker proxy (success criteria 2 and 3).
 
-Roundtrip: Mia spielt vor der Sicherung, Leo danach; dann wird die Welt
-zerstört (Zufallsbytes als map.sqlite plus ein heißes map.sqlite-journal) und aus
-der ersten Sicherung wiederhergestellt. Die Gegenprobe läuft über ein
-unabhängiges Muster (tests/e2e/backup_helpers.py): eigener Docker-Client für
-Container-Zustand, Ereignisse und Dateien, Python-sqlite3 nur lesend; nie über
-den DockerProvisioner der ExApp. Byte-Gleichheit von map.sqlite wird bewusst
-nicht geprüft (RESEARCH A8), wohl aber Integrität und Blockzahl.
+Roundtrip: Mia plays before the backup, Leo after it; then the world is
+destroyed (random bytes as map.sqlite plus a hot map.sqlite-journal) and restored from
+the first backup. The counter-check runs through an
+independent pattern (tests/e2e/backup_helpers.py): own Docker client for
+container state, events and files, Python sqlite3 read-only; never through
+the ExApp's DockerProvisioner. Byte equality of map.sqlite is deliberately
+not checked (RESEARCH A8), but integrity and block count are.
 
-Negativfälle: manipulierte Sicherungen mit korrektem eigenen Nachweis (damit
-die Inhaltsprüfung und nicht der Hash greift) und eine nachträglich getauschte
-Datei (Hash passt nicht) lassen die Welt unverändert laufen. Code aus einer
-Sicherung (worldmods/x/init.lua) wird verworfen, nie eingespielt (05-06).
+Negative cases: tampered backups with a correct own record (so that
+the content check and not the hash takes effect) and a file swapped afterwards
+(hash does not match) leave the world running unchanged. Code from a
+backup (worldmods/x/init.lua) is discarded, never applied (05-06).
 
-Absturz: Der Prozess "stirbt" im Tausch nach mark_swap und remove_world; ein
-neuer Dienst auf derselben Datenbank (boot_reconcile plus recover_jobs) zeigt
-RESTORE_INTERRUPTED, nicht delete-only, und ein erneuter Restore gelingt.
-Seriell, Kreativ-Preset wegen des RAM-Bedarfs. Spielpasswörter werden nie ausgegeben.
+Crash: the process "dies" in the swap after mark_swap and remove_world; a
+new service on the same database (boot_reconcile plus recover_jobs) shows
+RESTORE_INTERRUPTED, not delete-only, and a repeated restore succeeds.
+Serial, creative preset because of the RAM demand. Game passwords are never printed.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ ADMIN = "admin"
 HOLD = 5.0
 JOIN_TIMEOUT = 30.0
 READY_TIMEOUT = 60.0
-# Eigene Literale (unabhängig von den Konstanten der Umsetzung).
+# Own literals (independent of the implementation's constants).
 WORLD_PATH = "/var/lib/minetest/.minetest/worlds/world"
 LEDGER = "gameworld_time_used.txt"
 MANIFEST = "gameworld-backup.json"
@@ -76,7 +76,7 @@ NEGATIVE_CASES = ("traversal", "symlink", "foreign_preset", "swapped")
 
 
 class SimulatedCrash(BaseException):
-    """Prozessabbruch mitten im Tausch: keine Exception, damit kein Fehlerpfad sie fängt."""
+    """Process abort in the middle of the swap: no exception, so that no error path catches it."""
 
 
 @pytest.fixture
@@ -115,7 +115,7 @@ async def _invite(client: httpx.AsyncClient, world_id: str, target: str) -> tupl
 
 
 async def _play(port: int, credentials: tuple[str, str]) -> None:
-    """Spielstandwirksamer Beitritt: bis on_joinplayer, HOLD Sekunden halten, dann trennen."""
+    """Join that counts for the save game: up to on_joinplayer, hold HOLD seconds, then disconnect."""
     name, password = credentials
     result = await anyio.to_thread.run_sync(partial(session, HOST, port, name, password, HOLD, JOIN_TIMEOUT))
     assert result["result"] == "held", {key: value for key, value in result.items() if key != "events"}
@@ -186,7 +186,7 @@ def _first_backup(app_env: Path, world_id: str) -> BackupRow:
 
 
 def _container_events(api: docker.DockerClient, container_id: str, since: int, until: int) -> list[str]:
-    """Aktionen der Docker-Ereignisse dieses Containers in zeitlicher Folge (eigener Client)."""
+    """Actions of the Docker events of this container in chronological order (own client)."""
     events: Any = api.events(since=since, until=until, decode=True, filters={"container": container_id})
     return [str(event.get("Action") or event.get("status")) for event in events if event.get("Type") == "container"]
 
@@ -199,7 +199,7 @@ async def _backup_watched(
     monkeypatch: pytest.MonkeyPatch,
     app_env: Path,
 ) -> list[str]:
-    """Sicherung mit Bestätigung; liefert den Container-Zustand, den der eigene Client beim Snapshot sah."""
+    """Backup with confirmation; returns the container state the own client saw at the snapshot."""
     seen: list[str] = []
     original: Callable[..., Any] = service.provisioner.snapshot_to
 
@@ -217,7 +217,7 @@ async def _backup_watched(
     return seen
 
 
-# Roundtrip (Erfolgskriterium 3) mit Snapshot am gestoppten Container (Erfolgskriterium 2)
+# Roundtrip (success criterion 3) with a snapshot on the stopped container (success criterion 2)
 
 
 async def test_backup_restore_roundtrip(
@@ -237,7 +237,7 @@ async def test_backup_restore_roundtrip(
     leo = await _invite(client, world_id, "gw-leo")
     assert (mia[0], leo[0]) == ("Mia", "Leo")
 
-    # (1) Mia spielt, dann Sicherung; der eigene Client belegt den gestoppten Container.
+    # (1) Mia plays, then backup; the own client evidences the stopped container.
     await _play(port, mia)
     container_id = str(_container(api, world_id).id)
     since = int(time.time()) - 30
@@ -250,7 +250,7 @@ async def test_backup_restore_roundtrip(
     assert "archive-path" in actions[died:restarted], f"kein Lesen zwischen Stopp und Start: {actions}"
     await _wait_status(service, world_id, "running")
 
-    # Archiv in der Attrappe: Manifest und Karte ja, Mod-Laufzeitdateien und worldmods nein.
+    # Archive in the dummy: manifest and map yes, mod runtime files and worldmods no.
     [(uid, backup_path)] = files.uploads
     assert uid == ADMIN
     archive = files.read_bytes(ADMIN, backup_path)
@@ -266,7 +266,7 @@ async def test_backup_restore_roundtrip(
     assert blocks_in_backup > 0
     assert "Mia" in players_in(extract_member(archive, "world/players.sqlite", backup_dir / "players.sqlite"))
 
-    # (2) Leo spielt danach, dann Zerstörung bei gestoppter Welt über den eigenen Client.
+    # (2) Leo plays afterwards, then destruction with the world stopped via the own client.
     await _play(port, leo)
     await service.stop_world(world_id)
     stopped = _container(api, world_id)
@@ -284,14 +284,14 @@ async def test_backup_restore_roundtrip(
     assert "Leo" in players_in(broken / "players.sqlite")
     ledger_before = (broken / LEDGER).read_bytes()
 
-    # (3) Wiederherstellen der ersten Sicherung.
+    # (3) Restore of the first backup.
     proof = _first_backup(app_env, world_id)
     assert proof.path == backup_path
     await backups.start_restore(world_id, ADMIN, proof.file_id, confirm=True, confirm_disconnect=True)
     await backups.drain()
     assert _job(app_env, world_id)[:2] == ("restore", "ok"), _job(app_env, world_id)
 
-    # (4) Gegenprobe vor dem ersten Start: eigener Client, sqlite3 nur lesend.
+    # (4) Counter-check before the first start: own client, sqlite3 read-only.
     restored_container = _container(api, world_id)
     assert restored_container.status in {"created", "exited"}, restored_container.status
     after = copy_out(api, str(restored_container.id), WORLD_PATH, tmp_path / "after")
@@ -308,13 +308,13 @@ async def test_backup_restore_roundtrip(
     safety_players = extract_member(safety_archive, "world/players.sqlite", tmp_path / "safety" / "players.sqlite")
     assert "Leo" in players_in(safety_players)
 
-    # (5) Die wiederhergestellte Welt läuft und Mia kommt hinein.
+    # (5) The restored world runs and Mia gets in.
     await service.start_world(world_id)
     await _wait_status(service, world_id, "running")
     await _play(port, mia)
 
 
-# Manipulierte Sicherungen (T-05-40): die Welt bleibt unverändert und läuft
+# Tampered backups (T-05-40): the world stays unchanged and running
 
 
 async def _world_with_backup(
@@ -329,7 +329,7 @@ async def _world_with_backup(
 
 
 def _register_forged(app_env: Path, files: LocalFolderFiles, world_id: str, folder: str, data: bytes, kind: str) -> int:
-    """Gefälschte Datei mit korrektem eigenen Nachweis (SHA passt), damit die Inhaltsprüfung greift."""
+    """Forged file with a correct own record (SHA matches), so that the content check takes effect."""
     entry = files.put(ADMIN, f"{folder}/gefaelscht-{kind}.tar.gz", data)
     _store(app_env).add_backup(
         BackupRow(
@@ -363,7 +363,7 @@ async def test_manipulated_backup_is_rejected(
     folder = proof.path.rsplit("/", 1)[0]
     real_map = extract_member(files.read_bytes(ADMIN, proof.path), "world/map.sqlite", tmp_path / "map.sqlite")
     if case == "swapped":
-        # Nachträglich in Files getauscht: gleiche Größe, anderer Inhalt, der Nachweis passt nicht mehr.
+        # Swapped in Files afterwards: same size, different content, the record no longer matches.
         original = bytearray(files.read_bytes(ADMIN, proof.path))
         original[len(original) // 2] ^= 0xFF
         files.replace_bytes(ADMIN, proof.path, bytes(original))
@@ -402,7 +402,7 @@ async def test_lua_in_backup_is_dropped_not_installed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Code aus einer Sicherung landet nie in der Welt (05-06: verworfen statt abgelehnt)."""
+    """Code from a backup never lands in the world (05-06: discarded instead of rejected)."""
     world_id, _port, service, backups = await _world_with_backup(client, app_env, api, monkeypatch)
     proof = _first_backup(app_env, world_id)
     folder = proof.path.rsplit("/", 1)[0]
@@ -423,7 +423,7 @@ async def test_lua_in_backup_is_dropped_not_installed(
     assert integrity_ok(world / "map.sqlite")
 
 
-# Absturz mitten im Tausch (T-05-33, D-15)
+# Crash in the middle of the swap (T-05-33, D-15)
 
 
 async def test_crash_during_swap_recovers_as_restore_interrupted(
@@ -445,7 +445,7 @@ async def test_crash_during_swap_recovers_as_restore_interrupted(
     await _wait_status(crashed, world_id, "running")
     proof = _first_backup(app_env, world_id)
 
-    # Fehlerinjektion: Nach mark_swap und remove_world stirbt der Prozess beim Neuaufbau.
+    # Error injection: after mark_swap and remove_world the process dies during the rebuild.
     removed: list[str] = []
     original_remove = crashed.provisioner.remove_world
 
@@ -458,7 +458,7 @@ async def test_crash_during_swap_recovers_as_restore_interrupted(
 
     monkeypatch.setattr(crashed.provisioner, "remove_world", remove_world)
     monkeypatch.setattr(crashed.provisioner, "create_world_container", create_world_container)
-    # Ein toter Prozess schreibt nichts mehr: kein mark_restore_interrupted aus dem Fehlerpfad.
+    # A dead process writes nothing any more: no mark_restore_interrupted from the error path.
     monkeypatch.setattr(crashed, "mark_restore_interrupted", lambda _world_id: None)
 
     await backups.start_restore(world_id, ADMIN, proof.file_id, confirm=True, confirm_disconnect=True)
@@ -470,7 +470,7 @@ async def test_crash_during_swap_recovers_as_restore_interrupted(
     assert row.op_state == "restoring_swap", "Zustand wie nach einem echten Prozesstod"
     assert _job(app_env, world_id)[:2] == ("restore", "running")
 
-    # Neustart des Dienstes: boot_reconcile, dann recover_jobs eines frischen BackupService.
+    # Service restart: boot_reconcile, then recover_jobs of a fresh BackupService.
     rebooted = fresh_service()
     await _boot(rebooted)
     recovered = _backups(rebooted, app_env)
@@ -483,7 +483,7 @@ async def test_crash_during_swap_recovers_as_restore_interrupted(
     assert _job(app_env, world_id) == ("restore", "failed", TEXT_RESTORE_INTERRUPTED_JOB)
     assert _containers(api, world_id) == 0, "eine unterbrochene Welt wird nie halb gestartet"
 
-    # Erneuter Restore über den frischen Dienst gelingt, Mia ist da.
+    # A repeated restore through the fresh service succeeds, Mia is there.
     await recovered.start_restore(world_id, ADMIN, proof.file_id, confirm=True, confirm_disconnect=True)
     await recovered.drain()
     assert _job(app_env, world_id)[:2] == ("restore", "ok"), _job(app_env, world_id)

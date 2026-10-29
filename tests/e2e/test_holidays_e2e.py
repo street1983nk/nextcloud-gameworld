@@ -1,14 +1,14 @@
-"""Ende-zu-Ende: Wochentag, automatische Ferienumschaltung und Zeitzone im Spielserver.
+"""End to end: weekday, automatic holiday switching and time zone in the game server.
 
-Der Verwalter pflegt Wochenplan, Ferienplan, Haushalts-Ferien und Zeitzone per
-API; die ExApp schreibt die Regeldatei sofort in die laufende Welt (ohne
-Neustart), der Mod aus 04-01 setzt durch. Belegt Success Criterion 2
-(Wochenplan pro Wochentag, ohne UI) und 3 (Ferien mit Umschaltung am lokalen
-Datum) samt Zeitzonen-Einstellung (O-02, O-08). Seriell, MTG kreativ.
+The manager maintains weekly plan, holiday plan, household holidays and time zone via
+the API; the ExApp writes the rules file into the running world immediately (without
+restart), the mod from 04-01 enforces it. Proves success criterion 2
+(weekly plan per weekday, without UI) and 3 (holidays with switching on the local
+date) including the time zone setting (O-02, O-08). Serial, MTG creative.
 
-Die Erwartungen rechnet der Test selbst mit zoneinfo (lokaler Tag, Tagesgrenzen,
-Wochentag), unabhängig von ``playtime.plan``; nur die Kindersätze kommen als
-Vertrag aus ``time_mod.kid_text`` (derselbe Satzbau wie im Welt-Mod).
+The test computes the expectations itself with zoneinfo (local day, day boundaries,
+weekday), independent of ``playtime.plan``; only the child sentences come as a
+contract from ``time_mod.kid_text`` (the same sentence structure as in the world mod).
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ KIRITIMATI = "Pacific/Kiritimati"
 
 
 async def _midnight_guard() -> None:
-    """Nahe 00:00 bis 00:01 warten: Heute und morgen dürfen sich im Test nicht verschieben."""
+    """Wait near 00:00 to 00:01: today and tomorrow must not shift during the test."""
     now = datetime.now(BERLIN)
     if now.hour == 23 and now.minute >= 50:
         target = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
@@ -48,7 +48,7 @@ def _local_today(zone: ZoneInfo) -> date:
 
 
 def _day_bounds(day: date, zone: ZoneInfo) -> tuple[int, int]:
-    """Lokaler Tag als Epoch: 00:00 bis Folgetag 00:00 (eigene Rechnung des Tests)."""
+    """Local day as epoch: 00:00 to next day 00:00 (the test's own calculation)."""
     start = datetime.combine(day, time(0), tzinfo=zone)
     end = datetime.combine(day + timedelta(days=1), time(0), tzinfo=zone)
     return int(start.timestamp()), int(end.timestamp())
@@ -66,7 +66,7 @@ def _day(weekday: int, *, allowed: bool, limit: int | None = None, ws: int | Non
 
 
 def _only_tomorrow(tomorrow_weekday: int) -> list[dict[str, object]]:
-    """Nur morgen erlaubt, 10:00 bis 12:00, Limit 60 min; alle anderen Tage nicht erlaubt."""
+    """Allowed tomorrow only, 10:00 to 12:00, limit 60 min; all other days not allowed."""
     return [
         _day(wd, allowed=True, limit=60, ws=600, we=720) if wd == tomorrow_weekday else _day(wd, allowed=False)
         for wd in range(1, 8)
@@ -74,7 +74,7 @@ def _only_tomorrow(tomorrow_weekday: int) -> list[dict[str, object]]:
 
 
 def _every_day_free() -> list[dict[str, object]]:
-    """Jeden Tag erlaubt, ganzer Tag, ohne Limit."""
+    """Allowed every day, whole day, without a limit."""
     return [_day(wd, allowed=True) for wd in range(1, 8)]
 
 
@@ -111,7 +111,7 @@ async def _set_zone(client: httpx.AsyncClient, name: str) -> httpx.Response:
 
 
 def _rules_line(world_id: str, name: str) -> list[str]:
-    """Zeile eines Spielers aus der Regeldatei der Welt (docker get_archive)."""
+    """Row of a player from the world's rules file (docker get_archive)."""
     api = docker_api()
     try:
         [container] = api.containers.list(all=True, filters={"label": [f"gameworld.world_id={world_id}"]})
@@ -158,13 +158,13 @@ async def test_holidays_e2e(client: httpx.AsyncClient) -> None:
     today = _local_today(BERLIN)
     tomorrow = today + timedelta(days=1)
 
-    # (1) Wochenplan: nur morgen erlaubt; heute lehnt der Server ab: "Morgen ab 10 Uhr kannst du wieder spielen."
+    # (1) Weekly plan: allowed tomorrow only; today the server refuses: "Morgen ab 10 Uhr kannst du wieder spielen."
     await _set_rules(client, {"normal": _only_tomorrow(tomorrow.isoweekday())})
     await _denied_with(port, kind_name, kind_pw, kid_text("tag", 1, tomorrow.isoweekday(), 600))
 
-    # (2) Ferien heute: Ferienplan gilt ohne Zutun und ohne Neustart.
+    # (2) Holidays today: the holiday plan applies without any action and without restart.
     await _set_rules(client, {"normal": _only_tomorrow(tomorrow.isoweekday()), "holiday": _every_day_free()})
-    # Ferienplan gesetzt, aber noch kein Zeitraum: weiter Normalplan.
+    # Holiday plan set, but no period yet: the normal plan still applies.
     await _denied_with(port, kind_name, kind_pw, TEXT_TAG)
     holiday_id = await _add_holiday(client, today, today, "Heute frei")
     listed = (await client.get("/api/playtime", headers=appapi_headers())).json()
@@ -176,21 +176,21 @@ async def test_holidays_e2e(client: httpx.AsyncClient) -> None:
     assert _started(world_id) == first_start, "Die Welt wurde neu gestartet"
     line = _rules_line(world_id, kind_name)
     assert line[4] == "ok", line
-    assert int(line[1]) == -1, line  # ohne Limit
+    assert int(line[1]) == -1, line  # without a limit
     assert (int(line[2]), int(line[3])) == _day_bounds(today, BERLIN), line
 
-    # (3) Ferien entfernt: sofort wieder der Normalplan.
+    # (3) Holidays removed: the normal plan again immediately.
     await _remove_holiday(client, holiday_id)
     assert _rules_line(world_id, kind_name)[4] == "tag"
     await _denied_with(port, kind_name, kind_pw, TEXT_TAG)
 
-    # (4) Ferien von vorgestern bis gestern: am heutigen Datum gilt der Normalplan.
+    # (4) Holidays from the day before yesterday to yesterday: on today's date the normal plan applies.
     past_id = await _add_holiday(client, today - timedelta(days=2), today - timedelta(days=1), "Vorbei")
     listed = (await client.get("/api/playtime", headers=appapi_headers())).json()
     assert [item["active"] for item in listed["holidays"]] == [False], listed["holidays"]
     await _denied_with(port, kind_name, kind_pw, TEXT_TAG)
 
-    # (5) Zeitzone: die Tagesgrenzen folgen sofort der neuen Zone (jeden Tag frei, damit sie sichtbar sind).
+    # (5) Time zone: the day boundaries follow the new zone immediately (free every day so they are visible).
     await _set_rules(client, {"normal": _every_day_free()})
     berlin_line = _rules_line(world_id, kind_name)
     assert (int(berlin_line[2]), int(berlin_line[3])) == _day_bounds(_local_today(BERLIN), BERLIN), berlin_line
@@ -212,7 +212,7 @@ async def test_holidays_e2e(client: httpx.AsyncClient) -> None:
     assert (await client.get("/api/playtime", headers=appapi_headers())).json()["time_zone"] == "Europe/Berlin"
     assert _started(world_id) == first_start, "Die Welt wurde neu gestartet"
 
-    # Aufräumen: Ferien, Regeln, Welt.
+    # Cleanup: holidays, rules, world.
     await _remove_holiday(client, past_id)
     cleared = await client.delete("/api/playtime/children/gw-kind", headers=appapi_headers())
     assert cleared.status_code == 200, cleared.text

@@ -1,9 +1,9 @@
-"""Live-Nachweis beider Presets gegen den echten Proxy (WELT-01).
+"""Live proof of both presets against the real proxy (WELT-01).
 
-Die Tests laufen seriell und erzeugen höchstens eine VoxeLibre-Welt
-gleichzeitig (RAM-Regel des Heimservers). Geprüft werden Spiel, Speicherlimit,
-Sanft-Schalter, der Welt-Mod gameworld_status unter Mod-Security und die
-Neuerzeugung einer VoxeLibre-Welt nach Entfernen ihres Containers (Pitfall 2).
+The tests run serially and create at most one VoxeLibre world
+at a time (RAM rule of the home server). Checked are game, memory limit,
+gentle switch, the world mod gameworld_status under mod security and the
+re-creation of a VoxeLibre world after removing its container (pitfall 2).
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def _read_file(container: Container, path: str) -> str:
 
 
 def _wait_for_status_file(container: Container, timeout: float) -> float:
-    """Wartet, bis der Mod die Spielerliste geschrieben hat; liefert die Wartezeit."""
+    """Waits until the mod has written the player list; returns the wait time."""
     started = time.monotonic()
     deadline = started + timeout
     while time.monotonic() < deadline:
@@ -128,7 +128,7 @@ async def test_kreativ_world_keeps_512_mib_and_writes_status_file(
 async def test_recreated_voxelibre_world_keeps_its_game(client: httpx.AsyncClient, api: docker.DockerClient) -> None:
     created, _ = await _create(client, {"name": "Abenteuer Neu", "preset": "voxelibre_sanft"})
     world_id = str(created["id"])
-    # Von außen entfernen, das Volume mit den Weltdaten bleibt.
+    # Remove from outside, the volume with the world data stays.
     _container(api, world_id).remove(force=True, v=False)
 
     started = time.monotonic()

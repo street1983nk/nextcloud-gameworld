@@ -1,13 +1,14 @@
-"""Hilfen der Backup-e2e-Tests (Phase 5): Files-Attrappe und unabhängige Prüfwerkzeuge.
+"""Helpers of the backup e2e tests (phase 5): Files dummy and independent check tools.
 
-``LocalFolderFiles`` erfüllt das BackupFiles-Protocol auf einem lokalen Ordner je
-Konto; den echten Nextcloud-Weg belegt Plan 09. Alle Prüfhelfer arbeiten
-bewusst NICHT über den Provisioner der ExApp (Owner-Regel "Gegenprobe nie mit
-dem Muster der Umsetzung"): Dateien kommen über einen eigenen Docker-Client
-(``api.api.get_archive``) aus dem Container, SQLite-Dateien werden nur lesend
-(``mode=ro``) mit der Standardbibliothek geöffnet. Auch die gefälschten
-Sicherungen baut dieses Modul selbst (eigenes Manifest, eigenes Tar), nicht über
-den Archiv-Kern. Spielpasswörter erscheinen hier nie.
+``LocalFolderFiles`` satisfies the BackupFiles protocol on a local folder per
+account; plan 09 evidences the real Nextcloud path. All check helpers deliberately
+do NOT go through the ExApp's provisioner (owner rule
+"Gegenprobe nie mit dem Muster der Umsetzung", i.e. never verify with the implementation's own pattern):
+files come out of the container through an own Docker client
+(``api.api.get_archive``), SQLite files are opened read-only
+(``mode=ro``) with the standard library. This module also builds the forged
+backups itself (own manifest, own tar), not through the archive core.
+Game passwords never appear here.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ import docker
 
 from gameworld.backup.files import MSG_FILE_GONE, MSG_NAME_EXHAUSTED, MSG_UPLOAD_INCOMPLETE, FilesEntry, FilesError
 
-# Eigene Literale statt Konstanten der Umsetzung (unabhängige Gegenprobe).
+# Own literals instead of constants of the implementation (independent counter-check).
 MANIFEST = "gameworld-backup.json"
 WORLD = "world"
 LUANTI_UID = 30000
@@ -36,10 +37,10 @@ MAX_SUFFIX = 99
 
 
 class LocalFolderFiles:
-    """BackupFiles-Attrappe: ``root/<uid>/<Ordnerpfad>/<Name>``, file_id fortlaufend.
+    """BackupFiles dummy: ``root/<uid>/<folder path>/<name>``, file_id incrementing.
 
-    ``uploads`` protokolliert jeden gelungenen Upload als (uid, Pfad), damit Tests
-    belegen können, dass etwa keine vor-restore-Sicherung entstand.
+    ``uploads`` records every successful upload as (uid, path), so that tests
+    can prove that, for example, no pre-restore backup was created.
     """
 
     def __init__(self, root: Path) -> None:
@@ -110,34 +111,34 @@ class LocalFolderFiles:
     async def delete_own(self, uid: str, path: str) -> None:
         self._local(uid, path).unlink(missing_ok=True)
 
-    # Nur für Tests
+    # Tests only
 
     def read_bytes(self, uid: str, path: str) -> bytes:
         return self._local(uid, path).read_bytes()
 
     def replace_bytes(self, uid: str, path: str, data: bytes) -> None:
-        """Tauscht den Inhalt einer abgelegten Datei aus (Manipulation durch einen Verwalter in Files)."""
+        """Replaces the content of a stored file (tampering by a manager in Files)."""
         local = self._local(uid, path)
         assert local.is_file(), "nur vorhandene Dateien tauschen"
         local.write_bytes(data)
 
     def put(self, uid: str, path: str, data: bytes) -> FilesEntry:
-        """Legt eine Datei direkt ab (gefälschte Sicherung) und liefert ihren Eintrag."""
+        """Puts a file in place directly (forged backup) and returns its record."""
         local = self._local(uid, path)
         local.parent.mkdir(parents=True, exist_ok=True)
         local.write_bytes(data)
         return self._entry(uid, path)
 
 
-# Unabhängige Prüfhelfer (eigener Docker-Client, sqlite3 nur lesend)
+# Independent check helpers (own Docker client, sqlite3 read-only)
 
 
 def copy_out(api: docker.DockerClient, container: str, path: str, dest_dir: Path) -> Path:
-    """Holt ``path`` (Datei oder Ordner) über den eigenen Client aus dem Container nach ``dest_dir``.
+    """Fetches ``path`` (file or folder) from the container into ``dest_dir`` via the own client.
 
-    Rohes ``GET /containers/{id}/archive``, eigenes Entpacken mit dem
-    data-Filter (keine Links nach außen, keine absoluten Pfade). Liefert den
-    lokalen Pfad des Ziels (``dest_dir/<Basisname>``).
+    Raw ``GET /containers/{id}/archive``, own extraction with the
+    data filter (no links pointing outside, no absolute paths). Returns the
+    local path of the target (``dest_dir/<basename>``).
     """
     stream, _stat = api.api.get_archive(container, path)
     raw = b"".join(stream)
@@ -148,7 +149,7 @@ def copy_out(api: docker.DockerClient, container: str, path: str, dest_dir: Path
 
 
 def put_files(api: docker.DockerClient, container: str, target_dir: str, files: dict[str, bytes]) -> None:
-    """Legt Dateien über den eigenen Client in den Container (Zerstörung im Test)."""
+    """Puts files into the container via the own client (destruction in the test)."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as tar:
         for name, data in files.items():
@@ -165,7 +166,7 @@ def _read_only(db: Path) -> sqlite3.Connection:
 
 
 def players_in(players_sqlite: Path) -> set[str]:
-    """Spielernamen aus players.sqlite (Tabelle ``player``), nur lesend."""
+    """Player names from players.sqlite (table ``player``), read-only."""
     connection = _read_only(players_sqlite)
     try:
         return {str(row[0]) for row in connection.execute("SELECT name FROM player")}
@@ -174,7 +175,7 @@ def players_in(players_sqlite: Path) -> set[str]:
 
 
 def integrity_ok(db: Path) -> bool:
-    """PRAGMA integrity_check ergibt genau ``ok``; eine unlesbare Datei ergibt False."""
+    """PRAGMA integrity_check yields exactly ``ok``; an unreadable file yields False."""
     try:
         connection = _read_only(db)
     except sqlite3.Error:
@@ -189,7 +190,7 @@ def integrity_ok(db: Path) -> bool:
 
 
 def block_count(map_sqlite: Path) -> int:
-    """Anzahl gespeicherter Kartenblöcke (Tabelle ``blocks``), nur lesend."""
+    """Number of stored map blocks (table ``blocks``), read-only."""
     connection = _read_only(map_sqlite)
     try:
         return int(connection.execute("SELECT COUNT(*) FROM blocks").fetchone()[0])
@@ -198,13 +199,13 @@ def block_count(map_sqlite: Path) -> int:
 
 
 def member_names(archive: bytes) -> list[str]:
-    """Namen aller Einträge eines tar.gz."""
+    """Names of all entries of a tar.gz."""
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
         return tar.getnames()
 
 
 def extract_member(archive: bytes, name: str, dest: Path) -> Path:
-    """Eine reguläre Datei aus einem tar.gz nach ``dest`` schreiben (eigener Entpacker)."""
+    """Write a regular file from a tar.gz to ``dest`` (own extractor)."""
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
         member = tar.getmember(name)
         assert member.isfile(), name
@@ -222,11 +223,11 @@ def manifest_of(archive: bytes) -> dict[str, object]:
         return dict(json.loads(handle.read()))
 
 
-# Tar-Fälscher für Negativtests
+# Tar forger for negative tests
 
 
 def minimal_map() -> bytes:
-    """Kleine gültige SQLite-Datei mit Tabelle ``blocks`` (Luanti-Altschema), ein Block."""
+    """Small valid SQLite file with table ``blocks`` (old Luanti schema), one block."""
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "map.sqlite"
         connection = sqlite3.connect(path)
@@ -252,11 +253,11 @@ def _other_preset(preset: str) -> str:
 
 
 def forged_backup(kind: str, world_id: str, preset: str, *, map_bytes: bytes | None = None) -> bytes:
-    """Eine manipulierte Sicherung als tar.gz, jeweils mit gültiger ``world/map.sqlite``.
+    """A tampered backup as tar.gz, each with a valid ``world/map.sqlite``.
 
-    ``traversal``: Eintrag ``world/../x``; ``symlink``: Link ``world/link`` nach
-    außen; ``lua``: Code in ``world/worldmods/x/init.lua``; ``foreign_preset``:
-    Manifest mit anderer Spielart.
+    ``traversal``: entry ``world/../x``; ``symlink``: link ``world/link`` pointing
+    outside; ``lua``: code in ``world/worldmods/x/init.lua``; ``foreign_preset``:
+    manifest with a different game type.
     """
     if kind not in FORGED_KINDS:
         msg = f"unbekannter Fälschungsfall: {kind}"

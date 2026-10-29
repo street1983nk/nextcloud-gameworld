@@ -1,4 +1,4 @@
-"""Setup-Check gegen den echten, gescopten Dev-Proxy."""
+"""Setup check against the real, scoped dev proxy."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
-"""Negativ- und Positivtests der Log-Schwärzung von /play/ws (T-04.2-36).
+"""Negative and positive tests of the log redaction of /play/ws (T-04.2-36).
 
-Die Zeilen werden wie bei uvicorn 0.54 gebaut (gleiche msg und args, gleiche
-Formatter), damit der Test den echten Formatweg prüft und nicht nur den Filter.
+The lines are built as in uvicorn 0.54 (same msg and args, same
+formatter), so that the test checks the real format path and not just the filter.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 @pytest.fixture(autouse=True)
 def keep_loggers() -> Iterator[None]:
-    """Level, Handler, Filter und propagate der uvicorn-Logger nach jedem Test wiederherstellen."""
+    """Restore level, handler, filter and propagate of the uvicorn loggers after every test."""
     saved = {
         name: (logger.level, list(logger.handlers), list(logger.filters), logger.propagate, logger.disabled)
         for name in LOGGERS
@@ -82,7 +82,7 @@ def test_neg_http_access_ohne_ticket(path: str, expected: str) -> None:
 
 
 def test_neg_bereits_formatierte_zeile() -> None:
-    """Auch eine fertig formatierte msg ohne args verliert die Query."""
+    """Even a fully formatted msg without args loses the query."""
     line = _format(
         _record("uvicorn.error", f'{CLIENT} - "WebSocket /play/ws?t={TICKET_VALUE}" [accepted]', ()), redact=True
     )
@@ -93,7 +93,7 @@ def test_neg_bereits_formatierte_zeile() -> None:
 @pytest.mark.parametrize("path", ["/play/launch", "/api/my/worlds?x=1", "/play/wsx?t=1", "/play/ws"])
 @pytest.mark.parametrize("name", ["uvicorn.access", "uvicorn.error"])
 def test_pos_andere_pfade_unveraendert(path: str, name: str) -> None:
-    """Positivkontrolle: Andere Pfade bleiben byte-gleich, der Filter verschluckt keine Zeile."""
+    """Positive control: other paths stay byte-identical, the filter swallows no line."""
     if name == "uvicorn.access":
         args: tuple[object, ...] = (CLIENT, "POST", path, "1.1", 200)
         msg = HTTP_ACCESS
@@ -107,7 +107,7 @@ def test_pos_andere_pfade_unveraendert(path: str, name: str) -> None:
 
 
 def test_neg_ueberlebt_uvicorn_dictconfig() -> None:
-    """Der Filter sitzt am Logger, uvicorns dictConfig (wie in uvicorn.run) ersetzt nur Handler."""
+    """The filter sits on the logger, uvicorn's dictConfig (as in uvicorn.run) only replaces handlers."""
     install_ws_query_redaction()
     logging.config.dictConfig(copy.deepcopy(uvicorn.config.LOGGING_CONFIG))
     sink = io.StringIO()

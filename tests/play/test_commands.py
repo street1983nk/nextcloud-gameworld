@@ -1,4 +1,4 @@
-"""Textkommandos des Proxys und die feste Zielregel, jeweils mit Positivkontrolle."""
+"""Text commands of the proxy and the fixed target rule, each with a positive control."""
 
 import secrets
 
@@ -17,7 +17,7 @@ from gameworld.play.commands import (
 )
 from gameworld.play.framing import pack, unpack
 
-PASSCODE = "abcdEFGH_-12345678901"  # 21 Zeichen aus [A-Za-z0-9_-]
+PASSCODE = "abcdEFGH_-12345678901"  # 21 characters from [A-Za-z0-9_-]
 
 
 def test_virtual_addresses() -> None:
@@ -28,7 +28,7 @@ def test_virtual_addresses() -> None:
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        # Positivkontrollen: genau das, was webshims proxy.js sendet.
+        # Positive controls: exactly what webshims proxy.js sends.
         ("NEWADDR", NewAddr()),
         (f"BIND {PASSCODE} UDP 30000", Bind(PASSCODE, 30000)),
         (f"BIND {PASSCODE} UDP 1", Bind(PASSCODE, 1)),
@@ -42,7 +42,7 @@ def test_accepted_commands(text: str, expected: NewAddr | Bind) -> None:
 
 
 def test_real_token_urlsafe_passcode_is_accepted() -> None:
-    """Plan 07 erzeugt Passcodes mit secrets.token_urlsafe(16); die Regel muss sie tragen."""
+    """Plan 07 creates passcodes with secrets.token_urlsafe(16); the rule must accept them."""
     for _ in range(50):
         passcode = secrets.token_urlsafe(16)
         assert parse_command(f"BIND {passcode} UDP 30000") == Bind(passcode, 30000)
@@ -51,7 +51,7 @@ def test_real_token_urlsafe_passcode_is_accepted() -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        # Positivkontrollen stehen in test_accepted_commands; hier alles, was abgelehnt werden muss.
+        # Positive controls are in test_accepted_commands; here everything that must be rejected.
         "PROXY IPV4 TCP 1.1.1.1 443",
         "PROXY IPV4 UDP 10.77.0.1 30000",
         "PROXY IPV6 TCP ::1 80",
@@ -82,13 +82,13 @@ def test_real_token_urlsafe_passcode_is_accepted() -> None:
         f"BIND {PASSCODE}  UDP 30000",
         f"BIND {PASSCODE} UDP 30000 extra",
         f"BIND {PASSCODE}\tUDP 30000",
-        "BIND " + "a" * 15 + " UDP 30000",  # Passcode zu kurz
-        "BIND " + "a" * 65 + " UDP 30000",  # Passcode zu lang
-        "BIND abcdEFGH.12345678901 UDP 30000",  # Zeichen außerhalb [A-Za-z0-9_-]
+        "BIND " + "a" * 15 + " UDP 30000",  # Passcode too short
+        "BIND " + "a" * 65 + " UDP 30000",  # Passcode too long
+        "BIND abcdEFGH.12345678901 UDP 30000",  # Characters outside [A-Za-z0-9_-]
         "BIND abcdEFGH/12345678901 UDP 30000",
         "BIND abcdEFGH=12345678901 UDP 30000",
         "BIND ä UDP 1",
-        f"BIND {PASSCODE} UDP 3" + chr(0x0660),  # arabisch-indische Ziffer Null
+        f"BIND {PASSCODE} UDP 3" + chr(0x0660),  # Arabic-Indic digit zero
         "N" * (MAX_COMMAND + 1),
         "BIND " + "a" * 250,
     ],
@@ -112,10 +112,10 @@ def test_rejected_reason_is_ascii_constant_without_input() -> None:
 
 
 def test_format_addr_has_four_tokens() -> None:
-    """proxy.js teilt die Antwort an Leerzeichen und verlangt genau vier Tokens mit ADDR vorn.
+    """proxy.js splits the answer at spaces and demands exactly four tokens with ADDR first.
 
-    Der Join-Code (viertes Token) wird nur gespeichert und für Einladungen zwischen Browsern
-    genutzt, die Gameworld nicht anbietet; ein "-" erfüllt das Format.
+    The join code (fourth token) is only stored and used for invitations between browsers
+    that Gameworld does not offer; a "-" satisfies the format.
     """
     line = format_addr(PASSCODE)
     assert line == f"ADDR 10.77.0.2 {PASSCODE} -"
@@ -135,16 +135,16 @@ def test_format_addr_rejects_bad_passcode(passcode: str) -> None:
 @pytest.mark.parametrize(
     ("host", "port", "allowed"),
     [
-        # Positivkontrolle: das virtuelle Ziel.
+        # Positive control: the virtual target.
         ("10.77.0.1", 30000, True),
-        # Manipulierte Ziele.
+        # Tampered targets.
         ("10.77.0.1", 30001, False),
         ("10.77.0.1", 0, False),
         ("10.77.0.2", 30000, False),
         ("127.0.0.1", 30000, False),
         ("192.168.0.1", 53, False),
         ("::1", 30000, False),
-        ("::ffff:10.77.0.1", 30000, False),  # nur unpack normalisiert, siehe unten
+        ("::ffff:10.77.0.1", 30000, False),  # only unpack normalizes, see below
         ("10.077.0.1", 30000, False),
         ("", 30000, False),
     ],
@@ -154,7 +154,7 @@ def test_target_allowed(host: str, port: int, allowed: bool) -> None:
 
 
 def test_mapped_target_is_allowed_after_unpack() -> None:
-    """Der Client schickt das Ziel als ::ffff:10.77.0.1; unpack macht daraus 10.77.0.1."""
+    """The client sends the target as ::ffff:10.77.0.1; unpack turns it into 10.77.0.1."""
     frame = bytes.fromhex("778b4cf6" + "00" * 10 + "ffff0a4d0001" + "7530" + "0000")
     host, port, _ = unpack(frame)
     assert target_allowed(host, port) is True

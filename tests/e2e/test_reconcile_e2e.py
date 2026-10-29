@@ -1,10 +1,10 @@
-"""Live-Nachweis PLATT-02 gegen den echten Proxy: Reboot- und Update-Simulation.
+"""Live proof PLATT-02 against the real proxy: reboot and update simulation.
 
-Ein echter Docker-Neustart würde die übrigen Stacks der Maschine unterbrechen
-(RESEARCH Open Question 3). Der Reboot wird deshalb simuliert: Welt-Container
-von außen stoppen (wie beim Daemon-Shutdown) und einen NEUEN WorldService aus
-derselben Datenbank bauen, so wie eine neu gestartete ExApp. Kreativ-Preset
-wegen des RAM-Bedarfs.
+A real Docker restart would interrupt the other stacks of the machine
+(RESEARCH open question 3). The reboot is therefore simulated: stop world containers
+from outside (as on daemon shutdown) and build a NEW WorldService from
+the same database, like a restarted ExApp. Creative preset
+because of the RAM demand.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def api() -> Iterator[docker.DockerClient]:
 
 
 def fresh_service() -> WorldService:
-    """Wie eine neu gestartete ExApp: neuer Store, neuer Provisioner, gleiche Datenbank."""
+    """Like a restarted ExApp: new store, new provisioner, same database."""
     settings = load_settings()
     store = WorldStore(settings.storage_dir / "gameworld.sqlite3")
     store.migrate()
@@ -84,7 +84,7 @@ async def _wait_status(service: WorldService, world_id: str, expected: str, with
 
 
 async def _boot(service: WorldService) -> None:
-    """boot_reconcile wiederholen, bis es gelingt (wie reconcile_forever)."""
+    """Repeat boot_reconcile until it succeeds (like reconcile_forever)."""
     deadline = time.monotonic() + 10.0
     while time.monotonic() < deadline:
         if await service.boot_reconcile():
@@ -94,7 +94,7 @@ async def _boot(service: WorldService) -> None:
 
 
 async def _two_worlds(service: WorldService) -> tuple[str, str]:
-    """Welt A läuft, Welt B ist per Elternklick gestoppt."""
+    """World A runs, world B was stopped by a parent's click."""
     world_a = await service.create_world("Welt A", PRESET)
     world_b = await service.create_world("Welt B", PRESET)
     await service.stop_world(world_b.id)
@@ -109,7 +109,7 @@ async def test_boot_restarts_desired_running_worlds_after_reboot(api: docker.Doc
     id_a = str(_container(api, world_a).id)
     id_b = str(_container(api, world_b).id)
 
-    # Daemon-Shutdown simulieren: A wird von außen beendet, B war schon gestoppt.
+    # Simulate daemon shutdown: A is terminated from outside, B was already stopped.
     _container(api, world_a).stop(timeout=30)
     assert _state(_container(api, world_a)) == "exited"
 
@@ -135,7 +135,7 @@ async def test_update_keeps_worlds_visible(api: docker.DockerClient, app_env: Pa
     before = {view.id: (view.preset, view.status) for view in await first.list_worlds()}
     containers = {world_id: str(_container(api, world_id).id) for world_id in (world_a, world_b)}
 
-    # Neue ExApp-Version: neuer Prozess, gleiche Datenbank im persistenten Volume.
+    # New ExApp version: new process, same database in the persistent volume.
     updated = fresh_service()
     await _boot(updated)
     await _wait_status(updated, world_a, "running")
@@ -157,7 +157,7 @@ async def test_boot_recreates_missing_container_from_volume(api: docker.DockerCl
     old_preset = old.labels["gameworld.preset"]
     old_volume = _volume_name(old)
 
-    # docker rm von außen, Volume bleibt.
+    # docker rm from outside, volume stays.
     old.remove(force=True, v=False)
 
     rebooted = fresh_service()
@@ -184,7 +184,7 @@ async def test_killed_world_restarts_on_boot_but_not_periodically(api: docker.Do
     assert container.attrs["State"]["ExitCode"] == 137
     assert container.attrs["State"]["OOMKilled"] is False
 
-    # Periodisch: nie neu starten, nur Zustand zeigen.
+    # Periodic: never restart, only show state.
     await first.periodic_reconcile()
     await asyncio.sleep(1.0)
     await first.periodic_reconcile()
@@ -192,7 +192,7 @@ async def test_killed_world_restarts_on_boot_but_not_periodically(api: docker.Do
     crashed = await _wait_status(first, created.id, "error", within=10.0)
     assert "unerwartet beendet" in crashed.status_text
 
-    # Neuer Prozess (Reboot): Der Boot-Abgleich startet die Welt wieder.
+    # New process (reboot): the boot reconciliation starts the world again.
     rebooted = fresh_service()
     await _boot(rebooted)
     await _wait_status(rebooted, created.id, "running")

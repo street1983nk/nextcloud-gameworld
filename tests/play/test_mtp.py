@@ -1,7 +1,7 @@
-"""MTP-Parser und ClientGuard: Spielername gegen Ticket, FIRST_SRP, SPLIT vor der Anmeldung.
+"""MTP parser and ClientGuard: player name against ticket, FIRST_SRP, SPLIT before login.
 
-Die Testpakete werden hier von Hand nach dem Layout aus tests/e2e/luanti_probe.py gebaut (gegen einen
-echten 5.17.0-Server bewährt), nie mit mtp.py selbst: Gegenprobe nie mit dem Muster der Umsetzung.
+The test packets are built here by hand after the layout from tests/e2e/luanti_probe.py (proven against a
+real 5.17.0 server), never with mtp.py itself: counter-check never with the implementation's own pattern.
 """
 
 import struct
@@ -74,7 +74,7 @@ def control_disco(channel: int = 0) -> bytes:
 
 
 def init_payload(name: bytes) -> bytes:
-    """INIT-Nutzlast wie luanti_probe.join: ser_ver, compression, proto min/max, Name als str16."""
+    """INIT payload like luanti_probe.join: ser_ver, compression, proto min/max, name as str16."""
     return struct.pack(">BH", 29, 0) + struct.pack(">HH", 37, 53) + struct.pack(">H", len(name)) + name
 
 
@@ -91,7 +91,7 @@ def srp_m() -> bytes:
 
 
 def server_auth_accept() -> bytes:
-    """Echtes AUTH_ACCEPT vom Server: RELIABLE auf Kanal 0 mit ORIGINAL 0x03 und Nutzdaten."""
+    """Real AUTH_ACCEPT from the server: RELIABLE on channel 0 with ORIGINAL 0x03 and payload."""
     return head(0, peer=1) + b"\x03" + struct.pack(">H", 65500) + original_body(0x03, b"\x00" * 21)
 
 
@@ -106,7 +106,7 @@ def authed_guard() -> ClientGuard:
     return guard
 
 
-# ---------------------------------------------------------------- Konstanten und parse
+# ---------------------------------------------------------------- Constants and parse
 
 
 def test_constants_match_luanti_probe() -> None:
@@ -168,7 +168,7 @@ def test_parse_control_has_no_command(datagram: bytes) -> None:
 
 
 def test_parse_empty_reliable_original_is_connect_dummy() -> None:
-    """Der echte Client sendet beim Verbinden ein leeres RELIABLE(ORIGINAL) ohne Kommando."""
+    """The real client sends an empty RELIABLE(ORIGINAL) without a command on connecting."""
     parsed = parse(head(0, peer=0) + b"\x03" + struct.pack(">H", 65500) + b"\x01")
     assert parsed.inner_ptype == PT_ORIGINAL
     assert parsed.command is None
@@ -179,21 +179,21 @@ def test_parse_empty_reliable_original_is_connect_dummy() -> None:
     "datagram",
     [
         b"",
-        b"\x4f\x45\x74\x03\x00",  # 5 Byte
-        head(),  # Kopf ohne Typ
-        struct.pack(">IHB", 0x4F457404, 2, 1) + original_body(0x02),  # falsche PROTO-ID
-        head() + b"\x04",  # unbekannter Typ
-        head() + b"\x01\x02",  # ORIGINAL mit halbem Kommando
-        head() + b"\x03\x00",  # RELIABLE ohne vollständige Sequenznummer
-        head() + b"\x03\x00\x01",  # RELIABLE ohne inneres Paket
-        head() + b"\x03\x00\x01\x03\x00\x02" + original_body(0x02),  # RELIABLE im RELIABLE
-        head() + b"\x02\x00\x01\x00\x02",  # SPLIT mit halbem Kopf
+        b"\x4f\x45\x74\x03\x00",  # 5 bytes
+        head(),  # Head without a type
+        struct.pack(">IHB", 0x4F457404, 2, 1) + original_body(0x02),  # wrong PROTO ID
+        head() + b"\x04",  # unknown type
+        head() + b"\x01\x02",  # ORIGINAL with half a command
+        head() + b"\x03\x00",  # RELIABLE without a complete sequence number
+        head() + b"\x03\x00\x01",  # RELIABLE without an inner packet
+        head() + b"\x03\x00\x01\x03\x00\x02" + original_body(0x02),  # RELIABLE inside RELIABLE
+        head() + b"\x02\x00\x01\x00\x02",  # SPLIT with half a head
         split(1, 0, 0, b"ab"),  # chunk_count 0
         split(1, 2, 2, b"ab"),  # chunk_num == chunk_count
         reliable_split(1, 1, 1, 2, 5, b"ab"),  # chunk_num > chunk_count
-        split(1, 2, 0, b"\x50"),  # Chunk 0 mit nur einem Kommandobyte
-        reliable_split(1, 1, 1, 2, 0, b""),  # Chunk 0 ohne Kommando
-        head() + b"\x00",  # CONTROL ohne Untertyp
+        split(1, 2, 0, b"\x50"),  # Chunk 0 with only one command byte
+        reliable_split(1, 1, 1, 2, 0, b""),  # Chunk 0 without a command
+        head() + b"\x00",  # CONTROL without a subtype
     ],
 )
 def test_parse_rejects_unreadable(datagram: bytes) -> None:
@@ -211,11 +211,11 @@ def test_init_player_name() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        init_payload(b"Mia")[:-1],  # Längenfeld über Restlänge
+        init_payload(b"Mia")[:-1],  # Length field beyond the remaining length
         struct.pack(">BH", 29, 0) + struct.pack(">HH", 37, 53) + struct.pack(">H", 200) + b"Mia",
-        struct.pack(">BH", 29, 0) + struct.pack(">HH", 37, 53),  # kein Längenfeld
+        struct.pack(">BH", 29, 0) + struct.pack(">HH", 37, 53),  # no length field
         b"",
-        init_payload(b"\xff\xfe"),  # kein UTF-8
+        init_payload(b"\xff\xfe"),  # not UTF-8
     ],
 )
 def test_init_player_name_rejects_bad_payload(payload: bytes) -> None:
@@ -223,16 +223,16 @@ def test_init_player_name_rejects_bad_payload(payload: bytes) -> None:
         init_player_name(payload)
 
 
-# ---------------------------------------------------------------- ClientGuard: Spielername
+# ---------------------------------------------------------------- ClientGuard: player name
 
 
 @pytest.mark.parametrize(
     ("datagram", "verdict", "reason"),
     [
-        # Positivkontrollen: eigener Name, unzuverlässig und zuverlässig gesendet.
+        # Positive controls: own name, sent unreliably and reliably.
         (init("Mia"), Verdict.FORWARD, "ok"),
         (reliable(1, 65500, 0x02, init_payload(b"Mia")), Verdict.FORWARD, "ok"),
-        # Manipulierte Eingaben: Geschwistername und andere Schreibweisen.
+        # Tampered inputs: sibling name and other spellings.
         (init("Leo"), Verdict.END, "name_mismatch"),
         (init("mia"), Verdict.END, "name_mismatch"),
         (init("MIA"), Verdict.END, "name_mismatch"),
@@ -263,14 +263,14 @@ def test_second_init_with_other_name_ends() -> None:
 
 
 def test_guard_stays_ended() -> None:
-    """Nach einem END wird nichts mehr weitergeleitet, auch kein gültiges Paket."""
+    """After an END nothing is forwarded any more, not even a valid packet."""
     guard = ClientGuard("Mia")
     assert guard.check(init("Leo")).verdict is Verdict.END
     assert guard.check(init("Mia")).verdict is Verdict.END
     assert guard.check(control_ping()).verdict is Verdict.END
 
 
-# ---------------------------------------------------------------- ClientGuard: SRP-Kommandos
+# ---------------------------------------------------------------- ClientGuard: SRP commands
 
 
 def _fresh() -> ClientGuard:
@@ -291,7 +291,7 @@ def test_first_srp_always_ends(make_guard: Callable[[], ClientGuard], datagram: 
 
 
 def test_connect_dummy_before_init_is_forwarded() -> None:
-    """Positivkontrolle: das leere RELIABLE(ORIGINAL) beim Verbinden muss vor dem INIT durch."""
+    """Positive control: the empty RELIABLE(ORIGINAL) on connecting must pass before the INIT."""
     datagram = head(0, peer=0) + b"\x03" + struct.pack(">H", 65500) + b"\x01"
     result = ClientGuard("Mia").check(datagram)
     assert (result.verdict, result.reason) == (Verdict.FORWARD, "ok")
@@ -300,10 +300,10 @@ def test_connect_dummy_before_init_is_forwarded() -> None:
 @pytest.mark.parametrize(
     ("with_init", "datagram", "verdict", "reason"),
     [
-        # Positivkontrollen: SRP nach geprüftem Namen.
+        # Positive controls: SRP after a checked name.
         (True, srp_a(), Verdict.FORWARD, "ok"),
         (True, srp_m(), Verdict.FORWARD, "ok"),
-        # Anmeldung ohne geprüften Namen.
+        # Login without a checked name.
         (False, srp_a(), Verdict.END, "auth_before_init"),
         (False, srp_m(), Verdict.END, "auth_before_init"),
     ],
@@ -327,9 +327,9 @@ def test_bare_split_before_auth_ends() -> None:
 @pytest.mark.parametrize(
     ("with_init", "datagram", "verdict", "reason"),
     [
-        # Positivkontrolle in derselben Tabelle: RELIABLE(ORIGINAL INIT "Mia").
+        # Positive control in the same table: RELIABLE(ORIGINAL INIT "Mia").
         (False, reliable(1, 65500, 0x02, init_payload(b"Mia")), Verdict.FORWARD, "ok"),
-        # RELIABLE(SPLIT) vor AUTH_ACCEPT, vor dem INIT.
+        # RELIABLE(SPLIT) before AUTH_ACCEPT, before the INIT.
         (
             False,
             reliable_split(1, 1, 1, 2, 0, struct.pack(">H", 0x02) + init_payload(b"Leo")),
@@ -338,7 +338,7 @@ def test_bare_split_before_auth_ends() -> None:
         ),
         (False, reliable_split(1, 1, 1, 2, 0, struct.pack(">H", 0x50) + b"\x00" * 8), Verdict.END, "split_before_auth"),
         (False, reliable_split(1, 1, 1, 2, 1, b"\x00" * 8), Verdict.END, "split_before_auth"),
-        # RELIABLE(SPLIT) vor AUTH_ACCEPT, nach gültigem INIT.
+        # RELIABLE(SPLIT) before AUTH_ACCEPT, after a valid INIT.
         (
             True,
             reliable_split(1, 1, 1, 2, 0, struct.pack(">H", 0x02) + init_payload(b"Leo")),
@@ -361,12 +361,12 @@ def test_reliable_split_before_auth(with_init: bool, datagram: bytes, verdict: V
 @pytest.mark.parametrize(
     ("datagram", "verdict", "reason"),
     [
-        # Positivkontrollen nach AUTH_ACCEPT: große Pakete des Spiels gehen durch.
+        # Positive controls after AUTH_ACCEPT: large game packets pass.
         (reliable_split(1, 2, 3, 2, 1, b"\x00" * 8), Verdict.FORWARD, "ok"),
         (reliable_split(1, 2, 3, 2, 0, struct.pack(">H", TOSERVER_REQUEST_MEDIA) + b"\x00" * 8), Verdict.FORWARD, "ok"),
         (split(3, 2, 1, b"\x00" * 8), Verdict.FORWARD, "ok"),
         (split(3, 2, 0, struct.pack(">H", TOSERVER_REQUEST_MEDIA) + b"\x00"), Verdict.FORWARD, "ok"),
-        # Passwortänderung oder Anmeldung versteckt im Split.
+        # Password change or login hidden in the split.
         (reliable_split(1, 2, 3, 2, 0, struct.pack(">H", 0x50) + b"\x00" * 8), Verdict.END, "srp_in_split"),
         (reliable_split(1, 2, 3, 2, 0, struct.pack(">H", 0x51) + b"\x00" * 8), Verdict.END, "srp_in_split"),
         (reliable_split(1, 2, 3, 2, 0, struct.pack(">H", 0x52) + b"\x00" * 8), Verdict.END, "srp_in_split"),
@@ -383,10 +383,10 @@ def test_reliable_split_after_auth(datagram: bytes, verdict: Verdict, reason: st
     "server_packet",
     [
         server_hello(),
-        server_auth_accept()[:-25],  # zerstört, Kommando fehlt
+        server_auth_accept()[:-25],  # destroyed, command missing
         b"\x00\x01",
-        struct.pack(">IHB", 0x4F457404, 1, 0) + b"\x03" + struct.pack(">H", 1) + original_body(0x03),  # falsche PROTO
-        head(0, peer=1) + split_body(1, 2, 0, struct.pack(">H", 0x03) + b"\x00"),  # 0x03 nur im Split-Teil
+        struct.pack(">IHB", 0x4F457404, 1, 0) + b"\x03" + struct.pack(">H", 1) + original_body(0x03),  # wrong PROTO
+        head(0, peer=1) + split_body(1, 2, 0, struct.pack(">H", 0x03) + b"\x00"),  # 0x03 only in the split part
         head(0, peer=1) + b"\x03" + struct.pack(">H", 1) + original_body(0x0A, b"\x00"),  # ACCESS_DENIED
     ],
 )
@@ -399,7 +399,7 @@ def test_non_auth_accept_does_not_unlock(server_packet: bytes) -> None:
 
 
 def test_auth_accept_unlocks_split() -> None:
-    """Positivkontrolle zu test_non_auth_accept_does_not_unlock: echtes AUTH_ACCEPT schaltet frei."""
+    """Positive control for test_non_auth_accept_does_not_unlock: a real AUTH_ACCEPT unlocks."""
     guard = ClientGuard("Mia")
     assert guard.check(init("Mia")).verdict is Verdict.FORWARD
     guard.observe_server(server_auth_accept())
@@ -414,8 +414,8 @@ def test_auth_accept_without_checked_name_does_not_unlock() -> None:
 
 
 def test_split_never_reaches_command_branches() -> None:
-    """Ein RELIABLE(SPLIT), dessen Chunk-Daten wie INIT mit fremdem Namen aussehen, wird nach Split-Regel
-    entschieden: nach AUTH_ACCEPT FORWARD (kein name_mismatch), weil der Kommando-Zweig nie erreicht wird."""
+    """A RELIABLE(SPLIT) whose chunk data looks like INIT with a foreign name is decided by the split rule:
+    after AUTH_ACCEPT FORWARD (no name_mismatch), because the command branch is never reached."""
     guard = authed_guard()
     datagram = reliable_split(1, 2, 3, 2, 0, struct.pack(">H", 0x02) + init_payload(b"Leo"))
     assert parse(datagram).inner_ptype == PT_SPLIT
@@ -424,13 +424,13 @@ def test_split_never_reaches_command_branches() -> None:
     assert (result.verdict, result.reason) == (Verdict.FORWARD, "ok")
 
 
-# ---------------------------------------------------------------- ClientGuard: Rest
+# ---------------------------------------------------------------- ClientGuard: rest
 
 
 @pytest.mark.parametrize(
     "datagram",
     [
-        b"\x4f\x45\x74\x03\x00",  # 5 Byte
+        b"\x4f\x45\x74\x03\x00",  # 5 bytes
         struct.pack(">IHB", 0x4F457404, 2, 1) + original_body(0x02, init_payload(b"Mia")),
         b"",
         head() + b"\x07",
@@ -449,7 +449,7 @@ def test_unreadable_ends(datagram: bytes) -> None:
         control_disco(),
         reliable(0, 65501, TOSERVER_PLAYERPOS, b"\x00" * 12),
         original(TOSERVER_PLAYERPOS, b"\x00" * 12),
-        head(0, peer=0) + b"\x03" + struct.pack(">H", 65500) + b"\x01",  # Verbindungs-Dummy
+        head(0, peer=0) + b"\x03" + struct.pack(">H", 65500) + b"\x01",  # Connection dummy
     ],
 )
 def test_other_packets_after_init_are_forwarded(datagram: bytes) -> None:
