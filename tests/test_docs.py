@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -187,11 +188,29 @@ def test_readmes_language_switch_and_sections() -> None:
         assert "img.shields.io" in text
         assert "actions/workflows/image.yml" in text
         assert "AGPL--3.0--or--later" in text
-        assert "Nextcloud-32--35" in text
+        assert "Nextcloud-33--35" in text
         assert "\n## Screenshots\n" in text
         assert "docs/install" in text
         assert "docs/privacy" in text
         assert "gameworld-orphans.sh" in text
+
+
+def test_minimum_nextcloud_version_matches_info_xml() -> None:
+    """The Gameworld minimum (info.xml min-version) is the one every public text names (owner decision 29.10.2026)."""
+    root = ElementTree.parse(ROOT / "appinfo" / "info.xml").getroot()  # noqa: S314 - own, versioned file
+    node = root.find("./dependencies/nextcloud")
+    assert node is not None
+    low, high = node.get("min-version", ""), node.get("max-version", "")
+    assert low.isdigit()
+    assert high.isdigit()
+    # The requirement line reads "Nextcloud <min> to|bis|à <max>"; HaRP's own "NC 32+" statements do not match.
+    requirement = re.compile(r"Nextcloud (\d+) (?:to|bis|à) (\d+)")
+    # Exactly one requirement line per README and install guide, one per language in the store listing.
+    expected = dict.fromkeys(READMES, 1) | {INSTALL: 1, INSTALL_DE: 1, STORE_LISTING: 3}
+    for path, count in expected.items():
+        assert requirement.findall(_read(path)) == [(low, high)] * count, path.name
+    for path in READMES:
+        assert re.findall(r"Nextcloud-(\d+)--(\d+)", _read(path)) == [(low, high)], path.name
 
 
 def test_readme_mermaid_identical() -> None:

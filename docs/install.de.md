@@ -20,7 +20,7 @@ Die Oberfläche von Gameworld ist auf Deutsch.
 
 Voraussetzungen:
 
-- Nextcloud 32 bis 35 mit der App AppAPI und einem HaRP-Deploy-Daemon. Der ältere Docker Socket Proxy als Deploy-Daemon ist in AppAPI veraltet und wird nicht unterstützt.
+- Nextcloud 33 bis 35 mit der App AppAPI und einem HaRP-Deploy-Daemon. Der ältere Docker Socket Proxy als Deploy-Daemon ist in AppAPI veraltet und wird nicht unterstützt.
 - Docker auf dem Server mit Engine-API 1.44 oder neuer.
 - Ein UDP-Portbereich auf dem Server, ein Port pro Welt (Standard 30000 bis 30019).
 

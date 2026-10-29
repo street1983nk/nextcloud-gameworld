@@ -20,7 +20,7 @@ The Gameworld interface follows the language of the Nextcloud account (German, E
 
 Requirements:
 
-- Nextcloud 32 to 35 with the AppAPI app and a HaRP deploy daemon. The older Docker Socket Proxy as deploy daemon is deprecated in AppAPI and not supported.
+- Nextcloud 33 to 35 with the AppAPI app and a HaRP deploy daemon. The older Docker Socket Proxy as deploy daemon is deprecated in AppAPI and not supported.
 - Docker on the server with Engine API 1.44 or newer.
 - A UDP port range on the server, one port per world (default 30000 to 30019).
 

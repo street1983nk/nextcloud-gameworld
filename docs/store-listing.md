@@ -80,7 +80,7 @@ Private Luanti game worlds for families and schools, on your own Nextcloud serve
 
 ### Before you install
 
-- Nextcloud 32 to 35 with AppAPI and a HaRP deploy daemon
+- Nextcloud 33 to 35 with AppAPI and a HaRP deploy daemon
 - The scoped docker-socket-proxy in the same Docker network as Gameworld, set up by the admin (guide below)
 - Interface: German
 
@@ -127,7 +127,7 @@ Private Luanti-Spielwelten für Familien und Schulen, auf dem eigenen Nextcloud-
 
 ### Vor der Installation
 
-- Nextcloud 32 bis 35 mit AppAPI und einem HaRP-Deploy-Daemon
+- Nextcloud 33 bis 35 mit AppAPI und einem HaRP-Deploy-Daemon
 - Der gescopte docker-socket-proxy im selben Docker-Netz wie Gameworld, eingerichtet vom Admin (Anleitung unten)
 - Oberfläche: Deutsch
 
@@ -174,7 +174,7 @@ Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre pro
 
 ### Avant l'installation
 
-- Nextcloud 32 à 35 avec AppAPI et un démon de déploiement HaRP
+- Nextcloud 33 à 35 avec AppAPI et un démon de déploiement HaRP
 - Le docker-socket-proxy restreint dans le même réseau Docker que Gameworld, mis en place par l'administrateur (guide ci-dessous, en anglais)
 - Interface : allemand
 

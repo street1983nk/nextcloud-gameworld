@@ -111,7 +111,7 @@ def test_environment_defaults() -> None:
 def test_nextcloud_window() -> None:
     nextcloud = _root().find("./dependencies/nextcloud")
     assert nextcloud is not None
-    assert nextcloud.get("min-version") == "32"
+    assert nextcloud.get("min-version") == "33"
     assert nextcloud.get("max-version") == "35"
 
 

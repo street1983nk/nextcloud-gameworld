@@ -5,7 +5,7 @@
 [![Image build](https://img.shields.io/github/actions/workflow/status/street1983nk/nextcloud-gameworld/image.yml?label=image%20build)](https://github.com/street1983nk/nextcloud-gameworld/actions/workflows/image.yml)
 [![Release](https://img.shields.io/github/v/release/street1983nk/nextcloud-gameworld)](https://github.com/street1983nk/nextcloud-gameworld/releases)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
-[![Nextcloud](https://img.shields.io/badge/Nextcloud-32--35-0082c9)](https://apps.nextcloud.com/apps/gameworld)
+[![Nextcloud](https://img.shields.io/badge/Nextcloud-33--35-0082c9)](https://apps.nextcloud.com/apps/gameworld)
 
 Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre propre serveur
 Nextcloud, en tant qu'External App (ExApp). Les parents créent un monde en un clic, invitent
@@ -78,7 +78,7 @@ invitation, vue enfant, sauvegardes, temps de jeu, vue mobile).
 
 ## Prérequis
 
-- Nextcloud 32 à 35 avec AppAPI et un démon de déploiement HaRP
+- Nextcloud 33 à 35 avec AppAPI et un démon de déploiement HaRP
 - API Docker Engine 1.44 ou plus récente
 - Un `tecnativa/docker-socket-proxy` restreint dans le même réseau Docker que Gameworld
 
