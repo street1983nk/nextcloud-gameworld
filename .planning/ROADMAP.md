@@ -382,26 +382,26 @@ Plans:
 **Wave 9** *(blocked on Wave 8 completion)*
 
 - [x] 06-17-PLAN.md , i18n-Fundament Oberfläche (D-25): eigenes Wörterbuch-Modul de/en/fr, Kontosprache, reine JS-Module und Prüfskripte
-- [ ] 06-18-PLAN.md , Backend-Texte nach Kontosprache (D-25): Übersetzung an der API-Grenze, /api/me language, Katalog EN/FR
+- [x] 06-18-PLAN.md , Backend-Texte nach Kontosprache (D-25): Übersetzung an der API-Grenze, /api/me language, Katalog EN/FR
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06-19-PLAN.md , Oberfläche Verwalter-Kern dreisprachig (Weltliste, Einladen, Spielerliste, Sicherungen)
-- [ ] 06-20-PLAN.md , Oberfläche Einstellungen und Admin-Abschnitte dreisprachig (B1, B3, B4, Setup-Check, Zeitzone)
-- [ ] 06-21-PLAN.md , Oberfläche Kinder-Ansicht, Spielzeit, Pause, Rückblick, Shell dreisprachig
-- [ ] 06-22-PLAN.md , Spieltexte pro Welt (D-27): Schema 9, Weltsprache-API, Mod-Texte de/en/fr, deutsche Mods byte-gleich
+- [x] 06-19-PLAN.md , Oberfläche Verwalter-Kern dreisprachig (Weltliste, Einladen, Spielerliste, Sicherungen)
+- [x] 06-20-PLAN.md , Oberfläche Einstellungen und Admin-Abschnitte dreisprachig (B1, B3, B4, Setup-Check, Zeitzone)
+- [x] 06-21-PLAN.md , Oberfläche Kinder-Ansicht, Spielzeit, Pause, Rückblick, Shell dreisprachig
+- [x] 06-22-PLAN.md , Spieltexte pro Welt (D-27): Schema 9, Weltsprache-API, Mod-Texte de/en/fr, deutsche Mods byte-gleich
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 06-23-PLAN.md , Benachrichtigungen in Empfängersprache, Talk-Bot in Weltsprache
+- [x] 06-23-PLAN.md , Benachrichtigungen in Empfängersprache, Talk-Bot in Weltsprache
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 06-24-PLAN.md , Sprachauswahl je Welt, i18n-Strukturtest und Umlaut-Audit, Bundle, Abnahme K8 plus Regression
+- [x] 06-24-PLAN.md , Sprachauswahl je Welt, i18n-Strukturtest und Umlaut-Audit, Bundle, Abnahme K8 plus Regression
 
 **Wave 13** *(blocked on Wave 12 completion; Läufe innerhalb der Welle seriell, RAM-Regel)*
 
-- [ ] 06-25-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 1: access, api, backup, events, notify, i18n, Wurzelmodule, samt zugehöriger Log-Tests
+- [x] 06-25-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 1: access, api, backup, events, notify, i18n, Wurzelmodule, samt zugehöriger Log-Tests
 - [ ] 06-26-PLAN.md , Kommentare/Docstrings und Log-Meldungen Englisch (D-26, D-29) Teil 2: play, playtime, provisioner (inkl. Lua-Kommentare und Lua-Syntaxtest), talk, worlds, samt zugehöriger Log-Tests
 - [ ] 06-28-PLAN.md , Kommentare/Docstrings Englisch (D-26) Teil 4: Testsuite ohne die Log-Tests aus 06-25/06-26
 
@@ -439,4 +439,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
 | 5. Backup und Restore | 9/9 | Complete   | 2026-10-24 |
-| 6. Store-Release | 13/28 | In Progress|  |
+| 6. Store-Release | 21/28 | In Progress|  |

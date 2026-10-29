@@ -27,3 +27,15 @@
 ### Talk-Bot 401 und Raum-Anlegen 404 im Log
 
 - `.dev/exapp.log`: "Bot-Nachricht nicht gesendet: Status 401" (23:55) und "Talk-Anlegen für Welt d41684555773 gescheitert: TalkUnavailableError" nach "Talk-Aufruf gescheitert: Status 404" (00:05, K8-Welt eines frischen Verwalters, gleiche Ursache wie oben möglich). K8 prüft keinen Bot-Text; beobachten.
+
+### 06-25: tests/test_admin_snapshot.py::test_ex_admin_gets_no_attempt_or_review_after_check schlägt schon an der Basis fehl
+
+- Befund 29.10.2026: Der Test scheitert auch am Basis-Stand 579a162 (Prüfung in einer `git archive`-Kopie mit PYTHONPATH auf die Kopie): der Rückblick kommt nicht in `fake_notifier.calls` an (erwartet {"Unbekannter Spielername in {world}", "Tagesrückblick"}, vorhanden nur der Fremdversuch-Text). Nicht von 06-25 verursacht (06-25 ändert nur Kommentare, Docstrings und Log-Texte). Ursache offen (Uhrzeit/Zeitzone gegen `_epoch(20, 1)` oder Rückblick-Fenster); gehört in einen eigenen Fix.
+
+### 06-25: Aktionsnamen in backup/files.py bleiben deutsch im Log
+
+- `_map_error(exc, "Upload"|"Auflisten"|"Abfrage"|"Download"|"Löschen")` übergibt deutsche Aktionsnamen als %s-Argument an die englisch gewordene Log-Zeile "Nextcloud files: %s failed ...". Das sind Code-Argumente außerhalb des Log-Aufrufs (D-29 verbietet Code-Änderungen in 06-25, Zeilenangaben in tests/i18n_exceptions.tsv hängen daran). Beim nächsten Pass, der Code anfassen darf, auf englische Labels umstellen.
+
+### 06-25: Negativ-Log-Asserts ohne Positivkontrolle (Bestand)
+
+- tests/test_backup_archive.py (`GEHEIMNAME` not in caplog.text), tests/test_notify_loop.py (`mama`), tests/test_bot_events.py (`Lena`/`lena`) haben keinen Positiv-Assert auf einen vorhandenen Log-Eintrag. Von 06-25 nicht verändert (AST-Gleichheit); bei Gelegenheit je ein `assert caplog.records` ergänzen.
