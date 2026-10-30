@@ -52,6 +52,7 @@ export default {
 	'core.orphans.unavailable': 'La recherche de restes est impossible pour le moment\u00a0: {error} La vérification de l’installation ci-dessus indique ce qui manque.',
 
 	// backup.js
+	'core.backup.kilobytes': '{value}\u00a0Ko',
 	'core.backup.megabytes': '{value}\u00a0Mo',
 	'core.backup.gigabytes': '{value}\u00a0Go',
 	'core.backup.playersOnline.one': '{count} enfant joue en ce moment dans le monde et sera brièvement déconnecté.',

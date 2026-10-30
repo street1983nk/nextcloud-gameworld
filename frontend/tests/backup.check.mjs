@@ -15,8 +15,12 @@ setLanguage('de')
 const MIB = 1048576
 const GIB = 1073741824
 
-// formatBytes: limits around 1 GiB
-assert.equal(formatBytes(0), '0 MB')
+// formatBytes: KB below 1 MiB (never "0 MB" for a small world), limits around 1 MiB and 1 GiB
+assert.equal(formatBytes(0), '0 KB')
+assert.equal(formatBytes(1), '1 KB')
+assert.equal(formatBytes(420 * 1024), '420 KB')
+assert.equal(formatBytes(MIB - 600), '1023 KB')
+assert.equal(formatBytes(MIB - 1), '1 MB')
 assert.equal(formatBytes(MIB), '1 MB')
 assert.equal(formatBytes(GIB - 1), '1024 MB')
 assert.equal(formatBytes(GIB), '1 GB')
@@ -75,6 +79,7 @@ assert.equal(formatDate('2026-10-23T09:05:00'), '23/10/2026 09:05')
 setLanguage('fr')
 assert.equal(formatBytes(GIB * 1.5), '1,5\u00a0Go')
 assert.equal(formatBytes(MIB), '1\u00a0Mo')
+assert.equal(formatBytes(420 * 1024), '420\u00a0Ko')
 assert.equal(playersWarning(3), '3 enfants jouent en ce moment dans le monde et seront brièvement déconnectés.')
 assert.equal(jobNote({ kind: 'backup', state: 'failed', message: 'Disque plein.' }), 'Échec de la sauvegarde\u00a0: Disque plein.')
 setLanguage('de')

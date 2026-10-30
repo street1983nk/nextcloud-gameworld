@@ -51,6 +51,7 @@ export default {
 	'core.orphans.unavailable': 'Searching for leftovers isn\'t possible right now: {error} The setup check above shows what is missing.',
 
 	// backup.js
+	'core.backup.kilobytes': '{value} KB',
 	'core.backup.megabytes': '{value} MB',
 	'core.backup.gigabytes': '{value} GB',
 	'core.backup.playersOnline.one': '{count} child is playing in the world right now and will be briefly disconnected.',

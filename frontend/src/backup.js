@@ -2,12 +2,18 @@
 // frontend/tests/backup.check.mjs. All texts come from the i18n dictionaries (area core).
 import { dateLocale, t, tn } from './i18n/index.js'
 
+const KIB = 1024
 const MIB = 1048576
 const GIB = 1073741824
 
-// Below 1 GiB whole MB, from 1 GiB on GB with at most one decimal ("1 GB", "1,5 GB" in
-// German); the decimal separator follows the UI language, no digit grouping.
+// Below 1 MiB whole KB (small worlds would otherwise show "0 MB"; any content at least
+// "1 KB"), below 1 GiB whole MB, from 1 GiB on GB with at most one decimal ("1 GB",
+// "1,5 GB" in German); the decimal separator follows the UI language, no digit grouping.
 export function formatBytes(bytes) {
+	const kb = bytes > 0 ? Math.max(1, Math.round(bytes / KIB)) : 0
+	if (kb < KIB) {
+		return t('core.backup.kilobytes', { value: kb })
+	}
 	if (bytes < GIB) {
 		return t('core.backup.megabytes', { value: Math.round(bytes / MIB) })
 	}

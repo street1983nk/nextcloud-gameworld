@@ -52,6 +52,7 @@ export default {
 	'core.orphans.unavailable': 'Die Suche nach Resten ist gerade nicht möglich: {error} Der Setup-Check oben zeigt, was fehlt.',
 
 	// backup.js
+	'core.backup.kilobytes': '{value} KB',
 	'core.backup.megabytes': '{value} MB',
 	'core.backup.gigabytes': '{value} GB',
 	'core.backup.playersOnline.one': 'In der Welt spielt gerade {count} Kind, es wird kurz getrennt.',
