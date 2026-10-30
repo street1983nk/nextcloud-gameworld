@@ -307,6 +307,7 @@ Recent decisions affecting current work:
 |---|-------------|------|--------|-----------|
 | 261021-481 | Kindertexte ohne 0 Uhr und Mitternacht | 2026-10-21 | d328457 | [261021-481-kindertexte-ohne-0-uhr-und-mitternacht](./quick/261021-481-kindertexte-ohne-0-uhr-und-mitternacht/) |
 | 261023-kq1 | Phase 04.2 Security-Fixes: CR-01 Body-Limit, T-04.2-36 uvicorn-Logfilter, REPORT-Update | 2026-10-23 | 6e68d3a | [261023-kq1-phase-04-2-security-fixes-cr-01-body-lim](./quick/261023-kq1-phase-04-2-security-fixes-cr-01-body-lim/) |
+| 261030-sbz | Setup-Check zeigt Proxy-Befehle zum Kopieren (AIO/Compose, eine Quelle, Drift-Test), SECURITY.md, CONTRIBUTING.md | 2026-10-30 | 5fe6bdd | [261030-sbz-setup-check-copy-commands-and-security-c](./quick/261030-sbz-setup-check-copy-commands-and-security-c/) |
 
 ## Deferred Items
 
