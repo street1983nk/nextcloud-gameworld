@@ -112,9 +112,9 @@
 							:world="world"
 							@changed="refresh" />
 					</td>
-					<td>{{ world.preset_title }}</td>
-					<td>{{ world.port }}</td>
-					<td>
+					<td :data-label="t('parent.view.column.gameType')">{{ world.preset_title }}</td>
+					<td :data-label="t('parent.view.column.port')">{{ world.port }}</td>
+					<td :data-label="t('parent.view.column.status')">
 						<NcChip
 							class="gameworld__status"
 							:text="world.status_text"
@@ -140,10 +140,10 @@
 							{{ jobNote(world.backup_job) }}
 						</div>
 					</td>
-					<td class="gameworld__invited">
+					<td class="gameworld__invited" :data-label="t('parent.view.column.players')">
 						{{ invitedText(world) }}
 					</td>
-					<td class="gameworld__memory">
+					<td class="gameworld__memory" :data-label="t('parent.view.column.memory')">
 						<template v-if="world.memory_used_bytes !== null && world.memory_limit_bytes">
 							<NcProgressBar
 								:value="memoryPercent(world)"
@@ -837,5 +837,73 @@ onUnmounted(() => {
 	padding: 8px;
 	text-align: start;
 	border-bottom: 1px solid var(--color-border);
+}
+
+/* Phone: seven columns do not fit into 390 px. Each world becomes a card: name block on
+   top, then one line per column with its label (data-label), actions wrap below. */
+@media (max-width: 480px) {
+	.gameworld__list,
+	.gameworld__list tbody,
+	.gameworld__list tr,
+	.gameworld__list td {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+	}
+
+	.gameworld__list thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+
+	.gameworld__list tr {
+		margin-bottom: 16px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-large);
+	}
+
+	.gameworld__list td {
+		border-bottom: none;
+		white-space: normal;
+	}
+
+	.gameworld__list td[data-label] {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 8px;
+		align-items: center;
+	}
+
+	/* Same label size in every line, also where the cell itself has smaller text. */
+	.gameworld__list td[data-label]::before {
+		content: attr(data-label);
+		flex: 0 0 100%;
+		font-size: calc(var(--default-font-size) * 0.9);
+		color: var(--color-text-maxcontrast);
+	}
+
+	.gameworld__memory > * {
+		flex: 1 1 100%;
+	}
+
+	.gameworld__list td.gameworld__actions {
+		display: flex;
+	}
+
+	.gameworld__name,
+	.gameworld__memory {
+		min-width: 0;
+	}
+
+	.gameworld__name {
+		font-weight: bold;
+	}
+
+	.gameworld__name > * {
+		font-weight: normal;
+	}
 }
 </style>
