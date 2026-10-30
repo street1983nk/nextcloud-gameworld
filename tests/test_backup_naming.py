@@ -9,10 +9,12 @@ import pytest
 
 from gameworld.backup.naming import (
     BACKUPS_ROOT,
+    all_folder_paths,
     backup_file_name,
     folder_name,
     folder_path,
     with_suffix,
+    world_folder_path,
 )
 
 WORLD_ID = "a1b2c3d4e5f6"
@@ -94,3 +96,46 @@ def test_with_suffix() -> None:
     assert with_suffix("Burg-2026-10-23-1405.tar.gz", 1) == "Burg-2026-10-23-1405.tar.gz"
     assert with_suffix("Burg-2026-10-23-1405.tar.gz", 2) == "Burg-2026-10-23-1405-2.tar.gz"
     assert with_suffix("Burg-2026-10-23-1405-vor-restore.tar.gz", 3) == "Burg-2026-10-23-1405-vor-restore-3.tar.gz"
+
+
+# --- Names in the account language (owner decision 30.10.2026) -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("language", "root", "suffix", "fallback"),
+    [
+        ("de", "Gameworld/Sicherungen", "vor-restore", "Welt"),
+        ("en", "Gameworld/Backups", "before-restore", "World"),
+        ("fr", "Gameworld/Sauvegardes", "avant-restauration", "Monde"),
+    ],
+)
+def test_names_follow_the_language(language: str, root: str, suffix: str, fallback: str) -> None:
+    when = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
+    assert world_folder_path("Burg", WORLD_ID, language) == f"{root}/Burg"
+    assert world_folder_path("..", WORLD_ID, language) == f"{root}/{fallback}-a1b2c3"
+    assert backup_file_name("Burg", when, "vor-restore", zone=BERLIN, language=language) == (
+        f"Burg-2026-10-23-1400-{suffix}.tar.gz"
+    )
+    assert backup_file_name("..", when, "backup", zone=BERLIN, language=language) == (
+        f"{fallback}-2026-10-23-1400.tar.gz"
+    )
+
+
+def test_unknown_language_and_default_stay_german() -> None:
+    assert world_folder_path("Burg", WORLD_ID, "es") == "Gameworld/Sicherungen/Burg"
+    assert world_folder_path("Burg", WORLD_ID) == "Gameworld/Sicherungen/Burg"
+    assert folder_path("Burg", "en") == "Gameworld/Backups/Burg"
+
+
+def test_all_folder_paths_name_every_language_once() -> None:
+    assert all_folder_paths("Burg", WORLD_ID) == [
+        "Gameworld/Sicherungen/Burg",
+        "Gameworld/Backups/Burg",
+        "Gameworld/Sauvegardes/Burg",
+    ]
+    # Fallback names differ per language, still one folder per language.
+    assert all_folder_paths("..", WORLD_ID) == [
+        "Gameworld/Sicherungen/Welt-a1b2c3",
+        "Gameworld/Backups/World-a1b2c3",
+        "Gameworld/Sauvegardes/Monde-a1b2c3",
+    ]

@@ -53,7 +53,7 @@ export default {
 
 	// BackupSection.vue
 	'parent.backup.title': 'Backups of {name}',
-	'parent.backup.hint': 'Backups are stored in your Nextcloud files under Gameworld/Sicherungen. You can clean them up there.',
+	'parent.backup.hint': 'Backups are stored in your Nextcloud files under Gameworld/Backups. You can clean them up there.',
 	'parent.backup.empty': 'No backup for this world yet.',
 	'parent.backup.beforeRestore': 'before restoring',
 	'parent.backup.restore': 'Restore',

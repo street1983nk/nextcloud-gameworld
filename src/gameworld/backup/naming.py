@@ -7,6 +7,11 @@ reserved names (pitfall 4). Unusable names are therefore replaced by
 ``Welt-<id6>``. The affiliation of a backup never comes from the
 folder name, but from the DB entry. The caller passes the household time zone
 (TimeEngine.zone()).
+
+Folder, fallback names and the suffix of the safety backup follow the account
+language of the manager in whose files the backup lands (de, en, fr). After a
+language change, older backups stay in the folder of the previous language;
+``all_folder_paths`` therefore names the folder of a world in every language.
 """
 
 from __future__ import annotations
@@ -16,9 +21,13 @@ from datetime import datetime, tzinfo
 
 from gameworld.backup.archive import KIND_BACKUP, KIND_VOR_RESTORE
 
-BACKUPS_ROOT = "Gameworld/Sicherungen"
-FALLBACK_PREFIX = "Welt-"
-FALLBACK_FILE_BASE = "Welt"
+# Language-dependent names; German is the source and the default.
+BACKUPS_ROOTS = {"de": "Gameworld/Sicherungen", "en": "Gameworld/Backups", "fr": "Gameworld/Sauvegardes"}
+FALLBACK_FILE_BASES = {"de": "Welt", "en": "World", "fr": "Monde"}
+PRE_RESTORE_SUFFIXES = {"de": "vor-restore", "en": "before-restore", "fr": "avant-restauration"}
+NAME_LANGUAGES = tuple(BACKUPS_ROOTS)
+DEFAULT_NAME_LANGUAGE = "de"
+BACKUPS_ROOT = BACKUPS_ROOTS[DEFAULT_NAME_LANGUAGE]
 ARCHIVE_SUFFIX = ".tar.gz"
 MAX_PART_LENGTH = 64
 RESERVED_NAMES = frozenset(
@@ -42,16 +51,38 @@ def _clean(world_name: str) -> str | None:
     return name
 
 
-def folder_name(world_name: str, world_id: str) -> str:
-    """Folder of the world under BACKUPS_ROOT; never empty, ``.``, ``..``, reserved or with a slash."""
-    return _clean(world_name) or f"{FALLBACK_PREFIX}{world_id[:6]}"
+def _name_language(language: str) -> str:
+    return language if language in BACKUPS_ROOTS else DEFAULT_NAME_LANGUAGE
 
 
-def folder_path(folder: str) -> str:
-    return f"{BACKUPS_ROOT}/{folder}"
+def folder_name(world_name: str, world_id: str, language: str = DEFAULT_NAME_LANGUAGE) -> str:
+    """Folder of the world under the backups root; never empty, ``.``, ``..``, reserved or with a slash."""
+    return _clean(world_name) or f"{FALLBACK_FILE_BASES[_name_language(language)]}-{world_id[:6]}"
 
 
-def backup_file_name(world_name: str, when: datetime, kind: str, *, zone: tzinfo | None = None) -> str:
+def folder_path(folder: str, language: str = DEFAULT_NAME_LANGUAGE) -> str:
+    return f"{BACKUPS_ROOTS[_name_language(language)]}/{folder}"
+
+
+def world_folder_path(world_name: str, world_id: str, language: str = DEFAULT_NAME_LANGUAGE) -> str:
+    """Folder for new backups of a world in ``language``."""
+    return folder_path(folder_name(world_name, world_id, language), language)
+
+
+def all_folder_paths(world_name: str, world_id: str) -> list[str]:
+    """Folder of the world in every language, without duplicates (listing and restore search all)."""
+    paths = [world_folder_path(world_name, world_id, language) for language in NAME_LANGUAGES]
+    return list(dict.fromkeys(paths))
+
+
+def backup_file_name(
+    world_name: str,
+    when: datetime,
+    kind: str,
+    *,
+    zone: tzinfo | None = None,
+    language: str = DEFAULT_NAME_LANGUAGE,
+) -> str:
     """``<worldname>-YYYY-MM-DD-HHMM.tar.gz`` (D-02), with a suffix for ``vor-restore`` (D-05).
 
     ``when`` must carry a time zone; ``zone`` converts the timestamp into the
@@ -62,9 +93,10 @@ def backup_file_name(world_name: str, when: datetime, kind: str, *, zone: tzinfo
     if kind not in (KIND_BACKUP, KIND_VOR_RESTORE):
         raise ValueError(f"Unbekannte Art der Sicherung: {kind}")
     local = when.astimezone(zone) if zone is not None else when
-    base = f"{_clean(world_name) or FALLBACK_FILE_BASE}-{local:%Y-%m-%d-%H%M}"
+    name_language = _name_language(language)
+    base = f"{_clean(world_name) or FALLBACK_FILE_BASES[name_language]}-{local:%Y-%m-%d-%H%M}"
     if kind == KIND_VOR_RESTORE:
-        base = f"{base}-{KIND_VOR_RESTORE}"
+        base = f"{base}-{PRE_RESTORE_SUFFIXES[name_language]}"
     return f"{base}{ARCHIVE_SUFFIX}"
 
 

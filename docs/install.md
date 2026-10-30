@@ -371,7 +371,8 @@ After every change to the proxy, restart the service and choose "Check again" on
 
 ### Where the backups are
 
-- In the management view, every world has the area "Backups". "Back up now" puts a file into your own Nextcloud files: `Gameworld/Sicherungen/<world name>/<world name>-YYYY-MM-DD-HHMM.tar.gz` (time in the household time zone).
+- In the management view, every world has the area "Backups". "Back up now" puts a file into your own Nextcloud files: `Gameworld/Backups/<world name>/<world name>-YYYY-MM-DD-HHMM.tar.gz` (time in the household time zone).
+- The folder name follows the account language of the manager: `Gameworld/Backups` (English), `Gameworld/Sicherungen` (German), `Gameworld/Sauvegardes` (French). After a language change, older backups stay in their folder and remain in the list.
 - The file lies in the files of the manager who made the backup. It can be downloaded, shared or included in your own server backup like any other file.
 - The list shows date and size per backup, below it the total size. Gameworld never deletes a backup on its own, not even when the world is deleted. The manager deletes old backups in Nextcloud Files.
 - With several managers, each sees only their own backups in the list. Everyone can restore from their own backups only.
@@ -390,7 +391,7 @@ After every change to the proxy, restart the service and choose "Check again" on
 ### Restore
 
 - "Restore" on a backup resets the world to that state. The confirmation names the file; without confirmation nothing happens.
-- Before that, Gameworld stores the current state as its own backup with the suffix `vor-restore` (before restore) next to it. Whoever made a mistake simply restores that file.
+- Before that, Gameworld stores the current state as its own backup with the suffix `before-restore` next to it. Whoever made a mistake simply restores that file.
 - Gameworld checks every backup before applying it: only backups of this world, unchanged since they were stored, are applied. Gameworld refuses a changed or foreign file, and the world then stays as it was.
 - Space on the server: a restore temporarily needs up to three times the backup size in free space (downloaded backup, backup of the current state, unpacked world). A backup needs about the single size.
 

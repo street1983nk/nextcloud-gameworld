@@ -127,7 +127,7 @@ SRP verifiers), the rules file and a usage ledger with player names and seconds.
 ## What leaves your control
 
 - **Backups** are files in Nextcloud Files of the manager who created them, under
-  `Gameworld/Sicherungen/<world>/`. From there they follow your Nextcloud: sharing,
+  `Gameworld/Backups/<world>/`. From there they follow your Nextcloud: sharing,
   external storage, server backups.
 - **Talk** (if installed): every world gets its own room. Messages of the bot and of the
   members are stored by Talk, not by Gameworld. Room members follow the invitations of

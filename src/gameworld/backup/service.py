@@ -65,7 +65,7 @@ from gameworld.backup.archive import (
     write_snapshot,
 )
 from gameworld.backup.files import MSG_FILE_GONE, BackupFiles, FilesEntry, FilesError, get_backup_files
-from gameworld.backup.naming import backup_file_name, folder_name, folder_path, with_suffix
+from gameworld.backup.naming import all_folder_paths, backup_file_name, with_suffix, world_folder_path
 from gameworld.config import load_settings
 from gameworld.i18n import translate
 from gameworld.notify.links import app_link
@@ -315,8 +315,11 @@ class BackupService:
             await anyio.to_thread.run_sync(self._verify, ticket, spool)
             now = self._clock()
             zone = await anyio.to_thread.run_sync(self.worlds.time.zone)
-            base_name = backup_file_name(ticket.name, datetime.fromtimestamp(now, UTC), KIND_BACKUP, zone=zone)
-            folder = folder_path(folder_name(ticket.name, world_id))
+            # Folder and file name in the account language of the manager whose files receive it.
+            language = await get_role_service().language(uid)
+            when = datetime.fromtimestamp(now, UTC)
+            base_name = backup_file_name(ticket.name, when, KIND_BACKUP, zone=zone, language=language)
+            folder = world_folder_path(ticket.name, world_id, language)
             entry = await self._files().upload(uid, folder, base_name, cast(BinaryIO, spool), info.size, with_suffix)
             await anyio.to_thread.run_sync(self._finish_ok, ticket, uid, entry, info, started_at, _iso(now))
         finally:
@@ -538,10 +541,11 @@ class BackupService:
         loaded. If the file_id is missing, the backup is gone (MSG_FILE_GONE).
         Size and SHA-256 remain the authority (_check_integrity).
         """
-        folder = folder_path(folder_name(ticket.name, ticket.world_id))
-        for entry in await self._files().listdir(uid, folder):
-            if entry.file_id == proof.file_id:
-                return entry.path
+        # Every language folder: after a language change the backup lies in the previous one.
+        for folder in all_folder_paths(ticket.name, ticket.world_id):
+            for entry in await self._files().listdir(uid, folder):
+                if entry.file_id == proof.file_id:
+                    return entry.path
         raise FilesError(MSG_FILE_GONE)
 
     def _check_restore_space(self, proof: BackupRow) -> None:
@@ -622,8 +626,10 @@ class BackupService:
         await anyio.to_thread.run_sync(self._verify, ticket, spool)
         now = self._clock()
         zone = await anyio.to_thread.run_sync(self.worlds.time.zone)
-        base_name = backup_file_name(ticket.name, datetime.fromtimestamp(now, UTC), KIND_VOR_RESTORE, zone=zone)
-        folder = folder_path(folder_name(ticket.name, ticket.world_id))
+        language = await get_role_service().language(uid)
+        when = datetime.fromtimestamp(now, UTC)
+        base_name = backup_file_name(ticket.name, when, KIND_VOR_RESTORE, zone=zone, language=language)
+        folder = world_folder_path(ticket.name, ticket.world_id, language)
         entry = await self._files().upload(uid, folder, base_name, cast(BinaryIO, spool), info.size, with_suffix)
         await anyio.to_thread.run_sync(self._add_proof, ticket, uid, entry, info, KIND_VOR_RESTORE, _iso(now))
         return spool
@@ -726,7 +732,12 @@ class BackupService:
         if row is None:
             raise WorldNotFoundError(NOT_FOUND)
         proofs = await anyio.to_thread.run_sync(self.worlds.store.backups_for, uid, world_id)
-        files = await self._files().listdir(uid, folder_path(folder_name(row.name, world_id)))
+        # Every language folder (account language may have changed since older backups).
+        files = [
+            entry
+            for folder in all_folder_paths(row.name, world_id)
+            for entry in await self._files().listdir(uid, folder)
+        ]
         present = {(entry.file_id, entry.size): entry for entry in files}
         entries: list[BackupItem] = []
         for proof in proofs:

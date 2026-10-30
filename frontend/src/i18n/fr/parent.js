@@ -54,7 +54,7 @@ export default {
 
 	// BackupSection.vue
 	'parent.backup.title': 'Sauvegardes de {name}',
-	'parent.backup.hint': 'Les sauvegardes se trouvent dans tes fichiers Nextcloud, sous Gameworld/Sicherungen. C’est là que tu peux faire le ménage.',
+	'parent.backup.hint': 'Les sauvegardes se trouvent dans tes fichiers Nextcloud, sous Gameworld/Sauvegardes. C’est là que tu peux faire le ménage.',
 	'parent.backup.empty': 'Aucune sauvegarde pour ce monde pour l’instant.',
 	'parent.backup.beforeRestore': 'avant restauration',
 	'parent.backup.restore': 'Restaurer',

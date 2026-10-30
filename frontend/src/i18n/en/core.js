@@ -55,7 +55,7 @@ export default {
 	'core.backup.gigabytes': '{value} GB',
 	'core.backup.playersOnline.one': '{count} child is playing in the world right now and will be briefly disconnected.',
 	'core.backup.playersOnline.other': '{count} children are playing in the world right now and will be briefly disconnected.',
-	'core.backup.restoreQuestion': 'The world will be reset to the state of {file}. The current state is saved first as a backup with the suffix vor-restore.',
+	'core.backup.restoreQuestion': 'The world will be reset to the state of {file}. The current state is saved first as a backup with the suffix before-restore.',
 	'core.backup.job.backupFailed': 'Backup failed: {reason}',
 	'core.backup.job.restoreFailed': 'Restore failed: {reason}',
 	'core.backup.job.backupRunning': 'Backup in progress ...',

@@ -372,6 +372,7 @@ Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite
 ### Wo die Sicherungen liegen
 
 - In der Verwaltungsansicht hat jede Welt den Bereich "Sicherungen". "Jetzt sichern" legt eine Datei in den eigenen Nextcloud-Dateien ab: `Gameworld/Sicherungen/<Weltname>/<weltname>-JJJJ-MM-TT-HHMM.tar.gz` (Uhrzeit in der Haushalts-Zeitzone).
+- Der Ordnername folgt der Kontosprache des Verwalters: `Gameworld/Sicherungen` (Deutsch), `Gameworld/Backups` (Englisch), `Gameworld/Sauvegardes` (Französisch). Nach einem Sprachwechsel bleiben ältere Sicherungen in ihrem Ordner und weiter in der Liste.
 - Die Datei liegt in den Dateien des Verwalters, der gesichert hat. Sie lässt sich wie jede andere Datei herunterladen, teilen oder in eine eigene Datensicherung des Servers aufnehmen.
 - Die Liste zeigt je Sicherung Datum und Größe, darunter die Gesamtgröße. Gameworld löscht nie selbst eine Sicherung, auch nicht beim Löschen der Welt. Alte Sicherungen löscht der Verwalter in Nextcloud Files.
 - Mehrere Verwalter sehen in der Liste nur ihre eigenen Sicherungen. Wiederherstellen kann jeder nur aus seinen eigenen.

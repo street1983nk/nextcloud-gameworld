@@ -798,3 +798,31 @@ async def test_all_spools_are_closed(
     assert len(opened) == expected
     assert all(Path(cast(str, directory)) == app_env / "tmp" for directory, _handle in opened)
     assert all(handle.closed for _directory, handle in opened)
+
+
+async def test_restore_after_language_change_uses_both_folders(
+    backup: BackupService,
+    service: WorldService,
+    fake: FakeProvisioner,
+    fake_files: FakeBackupFiles,
+    store: WorldStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backup in the German folder, account now French: found and restored; the safety
+    backup lands in the French folder with the French suffix (owner decision 30.10.2026)."""
+    from gameworld.access import roles
+    from tests import conftest
+
+    world_id, proof = await _backed_up(backup, service, fake, fake_files, store)
+    monkeypatch.setitem(conftest.FAKE_LANGUAGES, ADMIN, "fr")
+    monkeypatch.setattr(roles, "_role_service", roles.RoleService(conftest.fake_lookup))
+
+    await _restore(backup, world_id, proof)
+
+    assert _job_state(store, world_id) == ("ok", None)
+    assert proof.path.startswith("Gameworld/Sicherungen/")
+    assert ("download_to", ADMIN, proof.path) in fake_files.calls
+    uploads = [path for method, _uid, path in fake_files.calls if method == "upload"]
+    assert uploads == ["Gameworld/Sauvegardes/Welt/Welt-2026-10-23-1400-avant-restauration.tar.gz"]
+    kinds = {row.name: row.kind for row in store.backups_for(ADMIN, world_id)}
+    assert kinds["Welt-2026-10-23-1400-avant-restauration.tar.gz"] == "vor-restore"

@@ -793,3 +793,64 @@ def test_halt_grace_covers_a_full_time_mod_tick() -> None:
     assert match is not None
     assert int(match.group(1)) == 5
     assert int(match.group(1)) + 2 <= backup_module.HALT_GRACE_SECONDS
+
+
+# --- Folder and suffix in the account language (owner decision 30.10.2026) ------------------
+
+
+def _account_language(monkeypatch: pytest.MonkeyPatch, uid: str, language: str) -> None:
+    from gameworld.access import roles
+    from tests import conftest
+
+    monkeypatch.setitem(conftest.FAKE_LANGUAGES, uid, language)
+    monkeypatch.setattr(roles, "_role_service", roles.RoleService(conftest.fake_lookup))
+
+
+@pytest.mark.parametrize(
+    ("language", "folder"),
+    [("en", "Gameworld/Backups/Burg"), ("fr", "Gameworld/Sauvegardes/Burg"), ("de", "Gameworld/Sicherungen/Burg")],
+)
+async def test_backup_lands_in_the_folder_of_the_account_language(
+    backup: BackupService,
+    service: WorldService,
+    fake: FakeProvisioner,
+    fake_files: FakeBackupFiles,
+    store: WorldStore,
+    monkeypatch: pytest.MonkeyPatch,
+    language: str,
+    folder: str,
+) -> None:
+    _account_language(monkeypatch, ADMIN, language)
+    world_id = await _world(service, fake, name="Burg")
+
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+
+    [row] = store.backups_for(ADMIN, world_id)
+    assert row.path == f"{folder}/Burg-2026-10-23-1400.tar.gz"
+    assert (ADMIN, row.path) in fake_files.files
+
+
+async def test_list_keeps_backups_of_the_previous_language(
+    backup: BackupService,
+    service: WorldService,
+    fake: FakeProvisioner,
+    fake_files: FakeBackupFiles,
+    store: WorldStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world_id = await _world(service, fake, name="Burg")
+    german = "Gameworld/Sicherungen/Burg/Burg-2026-10-22-1000.tar.gz"
+    old = fake_files.put(ADMIN, german, b"a" * 10)
+    store.add_backup(_proof(world_id, old, german, 10, created="2026-10-22"))
+    _account_language(monkeypatch, ADMIN, "en")
+    await backup.start_backup(world_id, ADMIN, confirm_disconnect=False)
+    await backup.drain()
+
+    listing = await backup.list_backups(world_id, ADMIN)
+
+    names = [entry.name for entry in listing.entries]
+    assert names == ["Burg-2026-10-23-1400.tar.gz", "Burg-2026-10-22-1000.tar.gz"]
+    assert ("listdir", ADMIN, "Gameworld/Backups/Burg") in fake_files.calls
+    assert ("listdir", ADMIN, "Gameworld/Sicherungen/Burg") in fake_files.calls
+    assert listing.other_files == 0
