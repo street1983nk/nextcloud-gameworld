@@ -1,5 +1,7 @@
 [English](README.md) | [Deutsch](README.de.md) | **Français**
 
+![Gameworld : des mondes de jeu privés pour les familles, sur votre propre Nextcloud](docs/images/gameworld-banner-v1.jpg)
+
 # Gameworld pour Nextcloud
 
 [![Image build](https://img.shields.io/github/actions/workflow/status/street1983nk/nextcloud-gameworld/image.yml?label=image%20build)](https://github.com/street1983nk/nextcloud-gameworld/actions/workflows/image.yml)
