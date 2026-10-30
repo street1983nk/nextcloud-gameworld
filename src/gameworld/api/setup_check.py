@@ -16,6 +16,7 @@ from gameworld.access.roles import require_verwalter
 from gameworld.api.language import LangDep
 from gameworld.config import load_settings
 from gameworld.i18n import translate
+from gameworld.provisioner.proxy_setup import proxy_commands
 from gameworld.provisioner.setup_check import run_setup_check
 
 # Every route of this router is management: second lock next to the AppAPI route ADMIN.
@@ -29,9 +30,17 @@ class CheckItemOut(BaseModel):
     message: str
 
 
+class ProxyCommandOut(BaseModel):
+    id: Literal["compose", "aio"]
+    network: str
+    command: str
+
+
 class SetupCheckOut(BaseModel):
     ok: bool
     items: list[CheckItemOut]
+    # Ready-to-copy proxy commands; language-neutral, only for a missing default proxy.
+    proxy_commands: list[ProxyCommandOut] = []
 
 
 @router.get("/setup-check")
@@ -44,4 +53,6 @@ async def setup_check(language: LangDep) -> SetupCheckOut:
         return SetupCheckOut(ok=False, items=[CheckItemOut(id="config", ok=False, severity="error", message=message)])
     result = await anyio.to_thread.run_sync(run_setup_check, docker_url)
     items = [CheckItemOut(**{**asdict(item), "message": translate(item.message, language)}) for item in result.items]
-    return SetupCheckOut(ok=result.ok, items=items)
+    failed_ids = [item.id for item in result.items if not item.ok]
+    commands = [ProxyCommandOut(**asdict(command)) for command in proxy_commands(failed_ids, docker_url)]
+    return SetupCheckOut(ok=result.ok, items=items, proxy_commands=commands)
