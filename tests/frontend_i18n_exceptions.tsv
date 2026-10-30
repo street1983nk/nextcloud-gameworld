@@ -1,9 +1,9 @@
 # file	line	literal	reason (tab separated; non-display values only, see tests/test_frontend_i18n.py)
 frontend/src/App.vue	30	pause	page id of the pause page (route.js PAGES), never shown
-frontend/src/api.js	258	${}/api/pause	backend route path
-frontend/src/api.js	264	${}/api/pause	backend route path
-frontend/src/api.js	270	${}/api/pause/end	backend route path
-frontend/src/api.js	276	${}/api/pause/schluss	backend route path
+frontend/src/api.js	270	${}/api/pause	backend route path
+frontend/src/api.js	276	${}/api/pause	backend route path
+frontend/src/api.js	282	${}/api/pause/end	backend route path
+frontend/src/api.js	288	${}/api/pause/schluss	backend route path
 frontend/src/components/OrphanSection.vue	148	noch von einem Container benutzt	match marker for the German backend 409 detail (MSG_ORPHAN_IN_USE), compared, never shown
 frontend/src/components/PlaytimeDialog.vue	102	keine	preset id of the API (PRESETS), label comes from kids.playtimeDialog.preset.keine
 frontend/src/components/PlaytimeDialog.vue	110	keine	preset id of the API (PRESETS), never shown

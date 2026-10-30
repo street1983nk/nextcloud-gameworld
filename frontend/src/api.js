@@ -8,7 +8,7 @@
 import axios from '@nextcloud/axios'
 import { loadState } from '@nextcloud/initial-state'
 import { generateOcsUrl, generateUrl } from '@nextcloud/router'
-import { t } from './i18n/index.js'
+import { currentLanguage, t } from './i18n/index.js'
 
 const fallback = { apiBase: generateUrl('/apps/app_api/proxy/gameworld') }
 
@@ -28,6 +28,18 @@ function readConfig() {
 }
 
 export const apiBase = readConfig().apiBase ?? fallback.apiBase
+
+// The UI language goes along with every request to the ExApp API, so that server
+// texts match the UI even right after a language change (the backend caches the
+// account language for 30 s). Requests to Nextcloud itself stay untouched.
+export const UI_LANGUAGE_HEADER = 'X-Gameworld-Language'
+
+axios.interceptors.request.use((config) => {
+	if (typeof config.url === 'string' && config.url.startsWith(apiBase)) {
+		config.headers.set(UI_LANGUAGE_HEADER, currentLanguage())
+	}
+	return config
+})
 
 // IN-08: every change goes out as JSON, even without content. The backend rejects
 // state-changing requests without Content-Type application/json (403), so that

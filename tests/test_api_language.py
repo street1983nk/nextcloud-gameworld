@@ -28,7 +28,7 @@ from gameworld.api import me as me_api
 from gameworld.api import playtime as playtime_api
 from gameworld.api import setup_check as setup_check_api
 from gameworld.api import worlds as worlds_api
-from gameworld.api.language import LangDep, install_language_handlers
+from gameworld.api.language import UI_LANGUAGE_HEADER, LangDep, install_language_handlers
 from gameworld.backup import service as backup_service
 from gameworld.config import load_settings
 from gameworld.i18n import translate
@@ -282,6 +282,39 @@ async def test_lang_dependency(mini: httpx.AsyncClient, lang: Any) -> None:
     assert (await mini.get("/who", headers={"X-Test-User": KID})).json() == {"uid": KID, "language": "fr"}
 
 
+UI = UI_LANGUAGE_HEADER
+
+
+async def test_ui_language_wins_over_the_account_language(mini: httpx.AsyncClient, lang: Any) -> None:
+    lang(KID, "fr")
+    sent = await mini.get("/who", headers={"X-Test-User": KID, UI: "en"})
+    unsent = await mini.get("/who", headers={"X-Test-User": KID})
+    assert sent.json() == {"uid": KID, "language": "en"}
+    # Positive control: the same account without the header gets its account language.
+    assert unsent.json() == {"uid": KID, "language": "fr"}
+
+
+@pytest.mark.parametrize("value", ["es", "en-US", "", "  ", "deutsch", "EN"])
+async def test_ui_language_only_accepts_supported_codes(mini: httpx.AsyncClient, lang: Any, value: str) -> None:
+    lang(KID, "fr")
+    language = (await mini.get("/who", headers={"X-Test-User": KID, UI: value})).json()["language"]
+    # "EN" is lower-cased like the frontend's own codes, anything else falls back to the account.
+    assert language == ("en" if value == "EN" else "fr")
+
+
+async def test_ui_language_ignored_without_account(mini: httpx.AsyncClient) -> None:
+    response = await mini.get("/who", headers={UI: "de"})
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not logged in."}
+
+
+async def test_ui_language_translates_errors(mini: httpx.AsyncClient) -> None:
+    english = await mini.get("/locked", headers={"X-Test-User": "admin", UI: "en"})
+    german = await mini.get("/locked", headers={"X-Test-User": "admin"})
+    assert english.json() == {"detail": "Not logged in."}
+    assert german.json() == {"detail": roles.MSG_NOT_LOGGED_IN}
+
+
 async def test_status_and_headers_survive_translation(mini: httpx.AsyncClient, lang: Any) -> None:
     lang(KID, "en")
     english = await mini.get("/locked", headers={"X-Test-User": KID})
@@ -449,6 +482,25 @@ async def test_my_worlds_in_english(client: httpx.AsyncClient, worlds_env: World
     assert english[W3]["status_text"] == "This world has a problem right now. Tell your parents."
     for item in english.values():
         assert not german_in(item["status_text"]), item
+
+
+async def test_presets_follow_the_ui_language(client: httpx.AsyncClient) -> None:
+    german = (await client.get("/api/presets", headers=appapi_headers())).json()["presets"]
+    english = (await client.get("/api/presets", headers={**appapi_headers(), UI: "en"})).json()["presets"]
+    assert [item["title"] for item in german] == [preset.title for preset in presets.PRESETS.values()]
+    assert [item["title"] for item in english] == ["Build (creative)", "Adventure (gentle)"]
+
+
+async def test_my_worlds_follow_the_ui_language(client: httpx.AsyncClient, worlds_env: WorldStore) -> None:
+    del worlds_env
+    invited = await client.post(
+        f"/api/worlds/{W3}/invites", json={"kind": "user", "target": KID}, headers=appapi_headers()
+    )
+    assert invited.status_code == 200, invited.text
+    german = (await client.get("/api/my/worlds", headers=appapi_headers(KID))).json()["worlds"]
+    english = (await client.get("/api/my/worlds", headers={**appapi_headers(KID), UI: "en"})).json()["worlds"]
+    assert german[0]["status_text"] == me_api.TEXT_WELT_PROBLEM
+    assert english[0]["status_text"] == "This world has a problem right now. Tell your parents."
 
 
 def _all_setup_items() -> list[CheckItem]:

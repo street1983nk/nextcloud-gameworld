@@ -18,9 +18,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from gameworld.access.roles import RolesDep, RoleService, get_role_service
-from gameworld.i18n import FALLBACK_LANGUAGE, SOURCE_LANGUAGE, translate
+from gameworld.i18n import FALLBACK_LANGUAGE, SOURCE_LANGUAGE, SUPPORTED_LANGUAGES, translate
 
 LOG = logging.getLogger(__name__)
+
+# Set by frontend/src/api.js on every request to the ExApp API.
+UI_LANGUAGE_HEADER = "X-Gameworld-Language"
 
 # Prefix pydantic puts in front of the message of a ValueError raised in a validator.
 VALUE_ERROR_PREFIX = "Value error, "
@@ -37,15 +40,32 @@ async def language_of(scope_user: object, roles: RoleService) -> str:
         return FALLBACK_LANGUAGE
 
 
+def ui_language(request: Request) -> str | None:
+    """UI language the frontend sends along (UI_LANGUAGE_HEADER), only for a signed-in account.
+
+    The UI switches with the account language at once, the cached account language
+    (CACHE_SECONDS) only later; the header keeps both in step. The language grants
+    nothing, so the value is trusted as long as it is one of the supported codes.
+    """
+    scope_user = request.scope.get("username")
+    if not isinstance(scope_user, str) or not scope_user:
+        return None
+    value = request.headers.get(UI_LANGUAGE_HEADER, "").strip().lower()
+    return value if value in SUPPORTED_LANGUAGES else None
+
+
 async def request_language(request: Request, roles: RolesDep) -> str:
-    """FastAPI dependency: language of the signed-in account (scope["username"]), else the fallback."""
-    return await language_of(request.scope.get("username"), roles)
+    """FastAPI dependency: UI language of the frontend, else the signed-in account's language, else the fallback."""
+    return ui_language(request) or await language_of(request.scope.get("username"), roles)
 
 
 LangDep = Annotated[str, Depends(request_language)]
 
 
 async def _handler_language(request: Request) -> str:
+    sent = ui_language(request)
+    if sent is not None:
+        return sent
     try:
         roles = get_role_service()
     except Exception as exc:  # no role service, no account language

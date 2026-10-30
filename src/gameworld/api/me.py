@@ -17,7 +17,7 @@ next opening window, never plans, usage history or values of other children.
 from __future__ import annotations
 
 import anyio.to_thread
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from gameworld.access.roles import (
@@ -31,6 +31,7 @@ from gameworld.access.roles import (
 )
 from gameworld.access.secret import SecretUnavailableError
 from gameworld.api.invites import JOIN_HOST_KEY, AccessDep
+from gameworld.api.language import ui_language
 from gameworld.api.playtime import TimeDep
 from gameworld.api.worlds import ServiceDep
 from gameworld.i18n import translate
@@ -156,7 +157,7 @@ async def me(uid: UserDep, roles: RolesDep) -> MeOut:
 
 @router.get("/my/worlds")
 async def my_worlds(
-    uid: UserDep, roles: RolesDep, access: AccessDep, service: ServiceDep, playtime: TimeDep
+    request: Request, uid: UserDep, roles: RolesDep, access: AccessDep, service: ServiceDep, playtime: TimeDep
 ) -> MyWorldsOut:
     try:
         profile = await roles.profile(uid)
@@ -165,8 +166,8 @@ async def my_worlds(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
     if not mine:
         return MyWorldsOut(worlds=[])
-    # After the profile lookup: the language comes from the same cached self-lookup (T-06-76).
-    language = await roles.language(uid)
+    # After the profile lookup: the language comes from the UI or the same cached self-lookup (T-06-76).
+    language = ui_language(request) or await roles.language(uid)
     host = await anyio.to_thread.run_sync(service.store.get_meta, JOIN_HOST_KEY) or None
     views = {view.id: view for view in await service.list_worlds()}
     try:
