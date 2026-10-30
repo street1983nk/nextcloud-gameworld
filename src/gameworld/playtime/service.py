@@ -69,6 +69,8 @@ LOG = logging.getLogger(__name__)
 
 # Data minimization: at most this many holiday periods (T-04-23).
 MAX_HOLIDAYS = 50
+# Display name lookups at Nextcloud running at the same time for the playtime list.
+DISPLAY_NAME_LOOKUPS = 8
 MSG_TOO_MANY_HOLIDAYS = f"Es sind höchstens {MAX_HOLIDAYS} Ferienzeiträume möglich."
 MSG_NO_HOLIDAY = "Diesen Ferienzeitraum gibt es nicht."
 MSG_ADMIN_NO_RULES = "Verwalter haben keine Spielzeitregeln."
@@ -469,10 +471,18 @@ class TimeService:
         """All accounts with a player row (without managers), each with rules, usage and evaluation."""
         await self.refresh_admins(acting_uid)
         snapshot = await anyio.to_thread.run_sync(self._snapshot)
-        children: list[ChildView] = []
-        for row in snapshot.rows:
-            display = await self._display_name(acting_uid, row.nc_user)
-            children.append(replace(row, display_name=display))
+        # One Nextcloud lookup per child; run side by side (one after the other took ~2 s per child).
+        names: dict[str, str] = {}
+        limiter = anyio.CapacityLimiter(DISPLAY_NAME_LOOKUPS)
+
+        async def lookup(nc_user: str) -> None:
+            async with limiter:
+                names[nc_user] = await self._display_name(acting_uid, nc_user)
+
+        async with anyio.create_task_group() as group:
+            for row in snapshot.rows:
+                group.start_soon(lookup, row.nc_user)
+        children = [replace(row, display_name=names[row.nc_user]) for row in snapshot.rows]
         return PlaytimeView(time_zone=snapshot.time_zone, holidays=snapshot.holidays, children=children)
 
     async def set_child(

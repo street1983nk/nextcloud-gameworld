@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
 
+import anyio
 import httpx
 import pytest
 
-from gameworld.access.directory import DirectoryUnavailableError
+from gameworld.access.directory import DirectoryUnavailableError, DirectoryUser
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
 from gameworld.provisioner.client import DockerProvisioner
@@ -655,3 +656,40 @@ async def test_world_list_never_fails_on_admin_refresh_error(
     fake_directory.error = RuntimeError("kaputt")
     response = await client.get("/api/worlds", headers=appapi_headers())
     assert response.status_code == 200, response.text
+
+
+async def test_display_names_are_looked_up_side_by_side(
+    client: httpx.AsyncClient,
+    service: WorldService,
+    store: WorldStore,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del service
+    for name in ("gw-kind2", "gw-kind3", "gw-kind4"):
+        store.insert_player(PlayerRow(nc_user=name, player_name=name, rotation=0))
+    plain_user = fake_directory.user
+    running = 0
+    peak = 0
+
+    async def slow_user(acting_uid: str, uid: str) -> DirectoryUser | None:
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await anyio.sleep(0.05)
+        running -= 1
+        return await plain_user(acting_uid, uid)
+
+    plain = (await client.get("/api/playtime", headers=appapi_headers())).json()["children"]
+    monkeypatch.setattr(fake_directory, "user", slow_user)
+    children = (await client.get("/api/playtime", headers=appapi_headers())).json()["children"]
+    assert peak > 1
+    # Same rows, order and names as with the plain lookup; unknown accounts keep their ID.
+    assert children == plain
+    names = {child["nc_user"]: child["display_name"] for child in children}
+    assert names == {
+        "gw-kind": "Kind (Dev)",
+        "gw-kind2": "Kind 2 (Dev)",
+        "gw-kind3": "gw-kind3",
+        "gw-kind4": "gw-kind4",
+    }
