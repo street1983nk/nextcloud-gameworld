@@ -226,7 +226,9 @@ def test_readme_fr_links_english_docs() -> None:
     assert ".de.md" not in text.replace("README.de.md", "")
 
 
-def test_store_listing_draft_marker() -> None:
+def test_store_listing_acceptance_marker() -> None:
+    """Owner approval of the store texts (06-13 task 4) with date; no open draft marker left."""
     text = _read(STORE_LISTING)
-    assert "Abnahme: offen" in text
+    assert re.search(r"^Abnahme: Owner, \d{2}\.\d{2}\.\d{4}$", text, re.M)
+    assert "Abnahme: offen" not in text
     assert "## Was bewusst nicht drinsteht" in text

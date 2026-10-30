@@ -140,12 +140,12 @@ INTERFACE_LINE = {
 OLD_INTERFACE_LINES = {"- Interface: German", "- Oberfläche: Deutsch", "- Interface : allemand"}
 SCREENSHOT_BASE = "https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/"
 SCREENSHOTS = [
-    "worlds-v1.png",
-    "invite-v1.png",
-    "kids-view-v1.png",
-    "backups-v1.png",
-    "playtime-v1.png",
-    "mobile-v1.png",
+    "worlds-v1-en.png",
+    "invite-v1-en.png",
+    "kids-view-v1-en.png",
+    "backups-v1-en.png",
+    "playtime-v1-en.png",
+    "mobile-v1-en.png",
 ]
 DOC_BASE = "https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/"
 

@@ -173,12 +173,12 @@ Du même développeur : Findling Search (recherche plein texte dans la barre de 
 	<website>https://github.com/street1983nk/nextcloud-gameworld</website>
 	<bugs>https://github.com/street1983nk/nextcloud-gameworld/issues</bugs>
 	<repository type="git">https://github.com/street1983nk/nextcloud-gameworld.git</repository>
-	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/worlds-v1.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/invite-v1.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/kids-view-v1.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/backups-v1.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/playtime-v1.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/mobile-v1.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/worlds-v1-en.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/invite-v1-en.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/kids-view-v1-en.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/backups-v1-en.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/playtime-v1-en.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/mobile-v1-en.png</screenshot>
 	<dependencies>
 		<nextcloud min-version="33" max-version="35"/>
 	</dependencies>

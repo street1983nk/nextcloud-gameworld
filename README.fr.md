@@ -73,17 +73,12 @@ flowchart LR
 
 ## Screenshots
 
-Les captures d'écran suivront avec la validation de la version 1.0.0 pour le store (mondes,
-invitation, vue enfant, sauvegardes, temps de jeu, vue mobile).
-
-<!-- Draft for the store acceptance (06-13 task 4): replaces the sentence above once the owner approves.
 ![Liste des mondes](docs/screenshots/worlds-v1-fr.png)
 ![Inviter](docs/screenshots/invite-v1-fr.png)
 ![Vue enfant](docs/screenshots/kids-view-v1-fr.png)
 ![Sauvegardes](docs/screenshots/backups-v1-fr.png)
 ![Temps de jeu](docs/screenshots/playtime-v1-fr.png)
 ![Vue téléphone](docs/screenshots/mobile-v1-fr.png)
--->
 
 ## Prérequis
 

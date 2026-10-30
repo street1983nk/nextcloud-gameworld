@@ -72,17 +72,12 @@ flowchart LR
 
 ## Screenshots
 
-The screenshots follow with the store acceptance of version 1.0.0 (worlds, invite, child view,
-backups, play time, phone view).
-
-<!-- Draft for the store acceptance (06-13 task 4): replaces the sentence above once the owner approves.
 ![World list](docs/screenshots/worlds-v1-en.png)
 ![Invite](docs/screenshots/invite-v1-en.png)
 ![Child view](docs/screenshots/kids-view-v1-en.png)
 ![Backups](docs/screenshots/backups-v1-en.png)
 ![Play time](docs/screenshots/playtime-v1-en.png)
 ![Phone view](docs/screenshots/mobile-v1-en.png)
--->
 
 ## Requirements
 

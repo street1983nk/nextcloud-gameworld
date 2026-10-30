@@ -37,3 +37,16 @@ Für das SUMMARY übernehmen.
 - Erwachsen-Marke hinkt 1 bis 2 s nach dem Umschalten
 - Talk-Hinweis Ex-Verwalter erscheint erst nach Neuladen (Talk-Stand wird nicht gepollt)
 - Luanti 5.18.0 seit 29.10. stabil: Wechsel später, nicht Teil von v1
+
+# 06-13 Task 4: Owner-Freigabe der Store-Texte (30.10.2026)
+
+- Texte EN/DE/FR inklusive der drei Cross-Promo-Sätze vollständig gezeigt. Owner wörtlich:
+  "Ok das passt so" (Texte unverändert, auch die geraden Apostrophe im Französischen).
+- Bildsatz für die Store-info.xml: "EN (Empfohlen)" -> sechs `-v1-en.png` in info.xml,
+  tests/test_info_xml.py und docs/store-listing.md.
+- Forum-Thread: Owner wörtlich "Thread später". Abweichung: info.xml bleibt ohne
+  discussion-Element; 06-16 prüft das vor dem Tag.
+- README-Einbettung (D-24): README.md -v1-en, README.de.md -v1, README.fr.md -v1-fr, je 6
+  Bilder, Platzhalter-Satz entfernt.
+- docs/store-listing.md: "Abnahme: Owner, 30.10.2026"; tests/test_docs.py prüft jetzt den
+  Vermerk mit Datum statt des Entwurfs-Markers.

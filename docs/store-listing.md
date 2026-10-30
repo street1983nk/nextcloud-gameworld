@@ -33,13 +33,13 @@ Stand: Entwurf zur Owner-Abnahme vor dem Tag v1.0.0 (Plan 06-13).
 
 - Kategorien: `games`, `tools`
 - Doku: user und admin `https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md`, developer `.../docs/dev-setup.md`
-- Screenshots (Namen verbindlich für 06-13, Spiegel holt Bilder nie neu, darum `-v1`):
-  1. `docs/screenshots/worlds-v1.png` (Weltliste)
-  2. `docs/screenshots/invite-v1.png` (Einladen)
-  3. `docs/screenshots/kids-view-v1.png` (Kinder-Ansicht)
-  4. `docs/screenshots/backups-v1.png` (Sicherungen)
-  5. `docs/screenshots/playtime-v1.png` (Spielzeit-Dialog)
-  6. `docs/screenshots/mobile-v1.png` (Handy-Ansicht)
+- Screenshots (englischer Satz, Owner-Wahl 30.10.2026; Namen verbindlich, Spiegel holt Bilder nie neu, darum `-v1`):
+  1. `docs/screenshots/worlds-v1-en.png` (Weltliste)
+  2. `docs/screenshots/invite-v1-en.png` (Einladen)
+  3. `docs/screenshots/kids-view-v1-en.png` (Kinder-Ansicht)
+  4. `docs/screenshots/backups-v1-en.png` (Sicherungen)
+  5. `docs/screenshots/playtime-v1-en.png` (Spielzeit-Dialog)
+  6. `docs/screenshots/mobile-v1-en.png` (Handy-Ansicht)
 - URL-Schema: `https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/<name>`
 
 ## Englisch (ohne `lang`)
@@ -215,4 +215,4 @@ Dieser Abschnitt ist die Begründung und gehört nicht in die `info.xml`.
 
 ## Abnahme
 
-Abnahme: offen (Owner-Abnahme in 06-13, vor dem Tag v1.0.0).
+Abnahme: Owner, 30.10.2026
