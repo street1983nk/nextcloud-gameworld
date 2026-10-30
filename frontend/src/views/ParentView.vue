@@ -91,7 +91,7 @@
 			</thead>
 			<tbody>
 				<tr v-for="world in worlds" :key="world.id" :data-world-id="world.id">
-					<td>
+					<td class="gameworld__name">
 						{{ world.name }}
 						<div v-if="world.status === 'running'" class="gameworld__players">
 							{{ playersText(world) }}
@@ -718,7 +718,7 @@ onUnmounted(() => {
 
 <style scoped>
 .gameworld {
-	max-width: 1040px;
+	max-width: 1120px;
 	padding: 24px;
 }
 
@@ -793,6 +793,11 @@ onUnmounted(() => {
 
 .gameworld__memory {
 	min-width: 160px;
+}
+
+/* Room for the language selection: below about 210 px its label and value are cut off. */
+.gameworld__name {
+	min-width: 210px;
 }
 
 .gameworld__mine {
