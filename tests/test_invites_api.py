@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import cast
 
@@ -11,9 +12,11 @@ import anyio
 import httpx
 import pytest
 
+from gameworld.access import service as access_service
 from gameworld.access.accounts import derive_password
 from gameworld.access.directory import DirectoryUnavailableError
 from gameworld.access.secret import SecretUnavailableError
+from gameworld.api import worlds
 from gameworld.api.worlds import get_service
 from gameworld.config import load_settings
 from gameworld.provisioner.client import DockerProvisioner, DockerUnavailableError
@@ -594,3 +597,144 @@ async def test_actor_lookup_failure_is_503(
     monkeypatch.setattr(RoleService, "profile", failing_profile)
     response = await _invite(client)
     assert response.status_code == 503
+
+
+# --- Reconciliation on a manager visit runs beside GET /api/worlds (06-13, owner decision 30.10.) ---
+# The world list answers without waiting for the Nextcloud group queries; the reconciliation
+# keeps its rules (throttle, revocation, no removal on outage). These tests use their own
+# client without the drain hook of the ``client`` fixture.
+
+
+@pytest.fixture
+async def raw(app_env: object) -> AsyncIterator[httpx.AsyncClient]:
+    """Client like the frontend, but without waiting for the visit reconciliation."""
+    del app_env
+    from gameworld.main import APP
+
+    transport = httpx.ASGITransport(app=APP)
+    headers = {"Content-Type": "application/json"}
+    async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=headers) as http:
+        yield http
+    await worlds.drain_visits()
+
+
+def _hold_sync(monkeypatch: pytest.MonkeyPatch) -> tuple[anyio.Event, list[str]]:
+    """sync_all waits for the returned event; every call is recorded."""
+    release = anyio.Event()
+    calls: list[str] = []
+    plain = access_service.AccessService.sync_all
+
+    async def held(self: access_service.AccessService, actor: access_service.Actor) -> bool:
+        calls.append(actor.uid)
+        await release.wait()
+        return await plain(self, actor)
+
+    monkeypatch.setattr(access_service.AccessService, "sync_all", held)
+    return release, calls
+
+
+async def test_world_list_does_not_wait_for_the_reconciliation(
+    raw: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del service
+    release, calls = _hold_sync(monkeypatch)
+    with anyio.fail_after(5):
+        response = await raw.get("/api/worlds", headers=appapi_headers())
+    assert response.status_code == 200
+    assert [world["id"] for world in response.json()["worlds"]] == [W1]
+    # Positive control: the reconciliation did start and is still waiting.
+    assert calls == ["admin"]
+    assert worlds._VISIT_TASKS  # pyright: ignore[reportPrivateUsage]
+    release.set()
+    await worlds.drain_visits()
+    assert not worlds._VISIT_TASKS  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_only_one_reconciliation_at_a_time(
+    raw: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del service
+    release, calls = _hold_sync(monkeypatch)
+    for _ in range(3):
+        assert (await raw.get("/api/worlds", headers=appapi_headers())).status_code == 200
+    assert calls == ["admin"]
+    release.set()
+    await worlds.drain_visits()
+    # Once finished, the next visit may start one again (the throttle decides inside).
+    assert (await raw.get("/api/worlds", headers=appapi_headers())).status_code == 200
+    assert calls == ["admin", "admin"]
+
+
+async def test_revocation_still_applies_after_the_visit(
+    raw: httpx.AsyncClient,
+    service: WorldService,
+    store: WorldStore,
+    fake_directory: FakeDirectory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del service
+    clock = [5000.0]
+    monkeypatch.setattr(access_service, "monotonic", lambda: clock[0])
+    assert (await _invite(raw, GROUP)).status_code == 200
+    assert set(store.world_access(W1)) == {"gw-kind"}
+    fake_directory.groups["familie"].remove("gw-kind")
+    assert (await raw.get("/api/worlds", headers=appapi_headers())).status_code == 200
+    await worlds.drain_visits()
+    assert store.world_access(W1) == {}
+
+
+async def test_outage_in_the_background_removes_nobody_and_is_logged(
+    raw: httpx.AsyncClient,
+    service: WorldService,
+    store: WorldStore,
+    fake_directory: FakeDirectory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    del service
+    assert (await _invite(raw, GROUP)).status_code == 200
+    access_service.SYNC_STATE.last = None
+    fake_directory.error = DirectoryUnavailableError("weg")
+    caplog.set_level(logging.WARNING)
+    response = await raw.get("/api/worlds", headers=appapi_headers())
+    assert response.status_code == 200
+    await worlds.drain_visits()
+    assert set(store.world_access(W1)) == {"gw-kind"}, "Nextcloud weg entfernt niemanden"
+    assert not worlds._VISIT_TASKS  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_error_in_the_visit_never_reaches_the_world_list(
+    raw: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    del service
+
+    async def broken(self: access_service.AccessService, actor: access_service.Actor) -> bool:
+        raise RuntimeError("kaputt")
+
+    monkeypatch.setattr(access_service.AccessService, "sync_all", broken)
+    caplog.set_level(logging.WARNING)
+    assert (await raw.get("/api/worlds", headers=appapi_headers())).status_code == 200
+    await worlds.drain_visits()
+    assert "Invitation reconciliation on manager visit failed: RuntimeError" in caplog.text
+
+
+async def test_kids_start_no_reconciliation(
+    raw: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del service
+    _release, calls = _hold_sync(monkeypatch)
+    assert (await raw.get("/api/worlds", headers=appapi_headers("gw-kind"))).status_code == 403
+    assert calls == []
+    assert not worlds._VISIT_TASKS  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_shutdown_cancels_a_hanging_reconciliation(
+    raw: httpx.AsyncClient, service: WorldService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del service
+    _release, calls = _hold_sync(monkeypatch)
+    assert (await raw.get("/api/worlds", headers=appapi_headers())).status_code == 200
+    assert calls == ["admin"]
+    with anyio.fail_after(5):
+        assert await worlds.shutdown_visits(grace_seconds=0.05) == 1
+    assert not worlds._VISIT_TASKS  # pyright: ignore[reportPrivateUsage]
+    assert await worlds.shutdown_visits() == 0

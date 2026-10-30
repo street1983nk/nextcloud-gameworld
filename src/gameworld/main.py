@@ -92,6 +92,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        # Visit reconciliation beside a world list request: wait briefly, otherwise cancel.
+        try:
+            cancelled = await worlds.shutdown_visits()
+        except Exception as exc:
+            LOG.warning("Visit reconciliation not finished on shutdown: %s", type(exc).__name__)
+        else:
+            if cancelled:
+                LOG.info("%d visit reconciliations cancelled on shutdown", cancelled)
         # Do not orphan the Talk hooks of the parent requests (create, reconcile, delete) (IN-06).
         try:
             cancelled = await shutdown_talk()

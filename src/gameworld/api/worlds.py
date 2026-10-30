@@ -6,6 +6,7 @@ There is deliberately no field for visibility (ZUGANG-01): unknown fields such a
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from collections.abc import Callable
@@ -16,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from gameworld.access.directory import Directory, get_directory
-from gameworld.access.roles import RolesDep, require_verwalter
+from gameworld.access.roles import RolesDep, RoleService, require_verwalter
 from gameworld.access.secret import PlayerSecret, get_player_secret
 from gameworld.access.service import AccessService, actor_of
 from gameworld.api.language import LangDep
@@ -197,9 +198,24 @@ async def list_worlds(
     roles: RolesDep,
     language: LangDep,
 ) -> WorldListOut:
+    _start_visit(service, uid, directory, secret, roles)
+    views = await service.list_worlds()
+    return WorldListOut(worlds=[_out(view, language) for view in views])
+
+
+# Reconciliation tasks of manager visits; at most one at a time (both steps are throttled globally anyway).
+_VISIT_TASKS: set[asyncio.Task[None]] = set()
+VISIT_SHUTDOWN_SECONDS = 5.0
+
+
+async def _visit(
+    service: WorldService, uid: str, directory: Directory, secret: PlayerSecret, roles: RoleService
+) -> None:
     # Reconciliation on a manager visit (T-03-26), throttled to once per minute.
-    # It must never block the world list (T-03-33): errors only as a warning.
-    # On behalf of a group manager it never removes because of a 404 (P-01).
+    # It must never block the world list (T-03-33): it runs beside the request, because
+    # one group query at Nextcloud takes about a second and a visit asks one per group
+    # and world; errors only as a warning. On behalf of a group manager it never
+    # removes because of a 404 (P-01).
     try:
         actor = actor_of(await roles.profile(uid))
         await AccessService(service.store, service, directory, secret).sync_all(actor)
@@ -211,8 +227,36 @@ async def list_worlds(
         await TimeService(service, directory).refresh_admins(uid, blocking=False)
     except Exception as exc:
         LOG.warning("Manager state not updated on manager visit: %s", type(exc).__name__)
-    views = await service.list_worlds()
-    return WorldListOut(worlds=[_out(view, language) for view in views])
+
+
+def _start_visit(
+    service: WorldService, uid: str, directory: Directory, secret: PlayerSecret, roles: RoleService
+) -> None:
+    """Starts the visit reconciliation unless one is still running; the world list does not wait for it."""
+    if _VISIT_TASKS:
+        return
+    task = asyncio.create_task(_visit(service, uid, directory, secret, roles))
+    _VISIT_TASKS.add(task)
+    task.add_done_callback(_VISIT_TASKS.discard)
+
+
+async def drain_visits() -> None:
+    """Waits until the running visit reconciliation is finished (tests)."""
+    while _VISIT_TASKS:
+        await asyncio.gather(*list(_VISIT_TASKS), return_exceptions=True)
+
+
+async def shutdown_visits(grace_seconds: float = VISIT_SHUTDOWN_SECONDS) -> int:
+    """Lifespan end: wait up to ``grace_seconds``, then cancel the visit reconciliation; number cancelled."""
+    pending = set(_VISIT_TASKS)
+    if not pending:
+        return 0
+    _done, still = await asyncio.wait(pending, timeout=grace_seconds)
+    for task in still:
+        task.cancel()
+    if still:
+        await asyncio.gather(*still, return_exceptions=True)
+    return len(still)
 
 
 @router.post("/worlds", status_code=status.HTTP_201_CREATED)

@@ -92,6 +92,7 @@ def app_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     from gameworld.playtime import service as playtime_service
 
     monkeypatch.setattr(worlds, "_service", None)
+    monkeypatch.setattr(worlds, "_VISIT_TASKS", set())
     # Throttle of the reconciliation on a manager visit starts fresh per test.
     monkeypatch.setattr(access_service, "SYNC_STATE", access_service.SyncState())
     # Likewise the throttle of the manager snapshot (04-05).
@@ -607,7 +608,18 @@ async def client(app_env: Path) -> AsyncIterator[httpx.AsyncClient]:
     # Like the Gameworld frontend: every request as JSON (IN-08). Tests of the JSON requirement
     # set the Content-Type explicitly to something else (tests/test_csrf.py).
     headers = {"Content-Type": "application/json"}
-    async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=headers) as http:
+    from gameworld.api.worlds import drain_visits
+
+    async def finish_visit(response: httpx.Response) -> None:
+        # The visit reconciliation runs beside GET /api/worlds; tests see its result
+        # right after the response, as before. tests/test_visit_background.py checks
+        # without this hook that the response does not wait for it.
+        del response
+        await drain_visits()
+
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers=headers, event_hooks={"response": [finish_visit]}
+    ) as http:
         yield http
     # Finish open Talk hooks (tracked tasks) before closing the loop.
     from gameworld.talk import service as talk_service
