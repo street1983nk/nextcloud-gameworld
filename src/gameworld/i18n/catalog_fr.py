@@ -21,7 +21,7 @@ from gameworld.playtime import pause as playtime_pause
 from gameworld.playtime import plan
 from gameworld.playtime import service as playtime_service
 from gameworld.provisioner import archive as game_archive
-from gameworld.provisioner import client, presets, setup_check
+from gameworld.provisioner import client, luanti_conf, presets, setup_check
 from gameworld.talk import rooms
 from gameworld.worlds import ports, status
 from gameworld.worlds import service as world_service
@@ -134,6 +134,11 @@ MESSAGES: dict[str, str] = {
     # provisioner/client.py
     client.NOT_FOUND_MESSAGE: _NOT_FOUND,
     client.SNAPSHOT_RUNNING: "Le monde tourne encore\u00a0; une sauvegarde nécessite un monde arrêté.",
+    # provisioner/luanti_conf.py
+    luanti_conf.NAME_ERROR: (
+        "Le nom du monde doit faire 1 à 40 caractères et ne contenir que des lettres, des chiffres, "
+        "des espaces, des points, des traits d\u2019union et des tirets bas."
+    ),
     # provisioner/presets.py
     presets.MTG_KREATIV.title: "Construire (créatif)",
     presets.MTG_KREATIV.description: "Minetest Game\u00a0: blocs illimités, pas de dégâts, vol autorisé.",

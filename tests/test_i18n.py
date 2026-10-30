@@ -107,6 +107,7 @@ _CONSTANT_FILES = (
     "notify/links.py",
     "play/ticket_api.py",
     "provisioner/archive.py",
+    "provisioner/luanti_conf.py",
     "provisioner/presets.py",
     "provisioner/setup_check.py",
     "provisioner/client.py",
@@ -141,6 +142,8 @@ EXTRA_TEXTS: dict[str, tuple[str, ...]] = {
         "RESTORE_SWAP_FAILED",
     ),
     "provisioner/client.py": ("SNAPSHOT_RUNNING",),
+    # The world name rule, answered as 422 when a world is created (found by the 06-13 FR screenshots).
+    "provisioner/luanti_conf.py": ("NAME_ERROR",),
     "api/alerts.py": ("DELETED_WORLD",),
 }
 GERMAN = re.compile(r"[äöüÄÖÜß]|\b(der|die|das|und|nicht|bitte|ist|kein|gerade|welt)\b", re.IGNORECASE)
