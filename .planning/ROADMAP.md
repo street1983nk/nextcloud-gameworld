@@ -411,7 +411,7 @@ Plans:
 
 **Wave 15** *(blocked on Wave 14 completion)*
 
-- [ ] 06-13-PLAN.md , Owner-Abnahme per Playwright inkl. Sprachen, Screenshots DE/EN/FR -v1, Cross-Promo-Sätze und Forum-Thread mit discussion-Link (D-28), Freigabe der Store-Texte (nicht autonom)
+- [x] 06-13-PLAN.md , Owner-Abnahme per Playwright inkl. Sprachen, Screenshots DE/EN/FR -v1, Cross-Promo-Sätze und Forum-Thread mit discussion-Link (D-28), Freigabe der Store-Texte (nicht autonom)
 
 **Wave 16** *(blocked on Wave 15 completion)*
 
