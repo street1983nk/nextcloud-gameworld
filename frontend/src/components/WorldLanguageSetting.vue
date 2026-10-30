@@ -86,6 +86,8 @@ async function choose(option) {
 	gap: 4px;
 	margin-top: 8px;
 	max-width: 100%;
+	/* The world table cell inherits nowrap; without this the hint stays on one line and widens the table past the page. */
+	white-space: normal;
 }
 
 /* NcSelect brings a minimum width; at 390 px it takes the full cell width. */

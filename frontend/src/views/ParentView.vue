@@ -803,12 +803,15 @@ onUnmounted(() => {
 	margin-top: 32px;
 }
 
+/* The table cells inherit nowrap; notes and job lines wrap instead of widening the table past the page. */
 .gameworld__restart {
 	margin-top: 8px;
+	white-space: normal;
 }
 
 .gameworld__job {
 	margin-top: 8px;
+	white-space: normal;
 	font-size: 0.9em;
 	color: var(--color-text-maxcontrast);
 }
