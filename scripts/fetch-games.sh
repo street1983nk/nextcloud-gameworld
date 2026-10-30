@@ -24,7 +24,11 @@ SUMS_FILE="${GAMES_DIR}/SHA256SUMS"
 
 # Files to fetch as "filename URL", one line per game.
 # VoxeLibre 0.92.4, ContentDB package Wuzzy/mineclone2, release 39534.
-GAMES='mineclone2-39534.zip https://cdn.content.luanti.org/uploads/3e11bd7181.zip'
+# The release download link of ContentDB, not the CDN upload address: since
+# 27.10.2026 cdn.content.luanti.org serves a certificate for *.b-cdn.net and
+# curl refuses it. The link redirects to content.luanti.org/storage; the file
+# is byte for byte the same (SHA256SUMS unchanged).
+GAMES='mineclone2-39534.zip https://content.luanti.org/packages/Wuzzy/mineclone2/releases/39534/download/'
 
 fail() {
 	printf 'FEHLER: %s\n' "$1" >&2
