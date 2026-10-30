@@ -2,8 +2,8 @@
 
 | File | Source | Release | License |
 |-------|--------|---------|--------|
-| `minetest_game-38214.zip` | ContentDB, Paket `Luanti/minetest_game` (https://content.luanti.org/packages/Luanti/minetest_game/) | 38214 vom 17.08.2026 | Code LGPL-2.1-or-later, Medien CC-BY-SA-3.0 |
-| `mineclone2-39534.zip` (VoxeLibre 0.92.4) | ContentDB, Paket `Wuzzy/mineclone2` (https://content.luanti.org/packages/Wuzzy/mineclone2/) | 39534 vom 18.10.2026 | Code GPL-3.0-or-later, Medien CC-BY-SA-4.0 |
+| `minetest_game-38214.zip` | ContentDB, package `Luanti/minetest_game` (https://content.luanti.org/packages/Luanti/minetest_game/) | 38214 (2026-08-17) | Code LGPL-2.1-or-later, media CC-BY-SA-3.0 |
+| `mineclone2-39534.zip` (VoxeLibre 0.92.4) | ContentDB, package `Wuzzy/mineclone2` (https://content.luanti.org/packages/Wuzzy/mineclone2/) | 39534 (2026-10-18) | Code GPL-3.0-or-later, media CC-BY-SA-4.0 |
 
 - The checksum is in `SHA256SUMS`. Before every use, Gameworld checks it in code against the constant in the preset (`src/gameworld/provisioner/presets.py`, check in `archive.py`) and aborts on a mismatch.
 - Gameworld never downloads anything from ContentDB at runtime. There are no external calls, the game comes exclusively from this file.
