@@ -38,7 +38,12 @@ assert.match(langBody, /await post\(`\$\{apiBase\}\/api\/worlds\/\$\{encodeURICo
 assert.doesNotMatch(langBody, /await del\(/)
 
 // errorText (D-25): the own fallback comes from the dictionary, a backend detail stays unchanged.
-assert.match(source, /import \{ t \} from '\.\/i18n\/index\.js'/)
+assert.match(source, /import \{[^}]*\bt\b[^}]*\} from '\.\/i18n\/index\.js'/)
+
+// UI language header (06-13): set only for requests to the ExApp API, value from the UI language.
+assert.match(source, /export const UI_LANGUAGE_HEADER = 'X-Gameworld-Language'/)
+assert.match(source, /config\.url\.startsWith\(apiBase\)/)
+assert.match(source, /config\.headers\.set\(UI_LANGUAGE_HEADER, currentLanguage\(\)\)/)
 const errorFn = source.slice(source.indexOf('export function errorText('))
 const errorBody = errorFn.slice(0, errorFn.indexOf('\n}\n'))
 assert.match(errorBody, /return detail\n/)

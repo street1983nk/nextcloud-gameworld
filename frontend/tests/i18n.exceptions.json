@@ -1,6 +1,7 @@
 [
   { "file": "frontend/src/i18n/en/core.js", "key": "core.orphans.script.end", "reason": "Sentence end after a code segment, only the full stop" },
   { "file": "frontend/src/i18n/fr/core.js", "key": "core.orphans.script.end", "reason": "Sentence end after a code segment, only the full stop" },
+  { "file": "frontend/src/i18n/en/core.js", "key": "core.backup.kilobytes", "reason": "Unit symbol KB is the same in German and English" },
   { "file": "frontend/src/i18n/en/core.js", "key": "core.backup.megabytes", "reason": "Unit symbol MB is the same in German and English" },
   { "file": "frontend/src/i18n/en/core.js", "key": "core.backup.gigabytes", "reason": "Unit symbol GB is the same in German and English" },
   { "file": "frontend/src/i18n/en/core.js", "key": "core.playtime.duration.minutes", "reason": "Unit symbol min is the same in German and English" },
