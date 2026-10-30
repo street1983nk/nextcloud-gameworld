@@ -415,7 +415,7 @@ Plans:
 
 **Wave 16** *(blocked on Wave 15 completion)*
 
-- [ ] 06-14-PLAN.md , Push nach Owner-Wort, Image 1.0.0-rc.1, ghcr-Paket öffentlich (nicht autonom)
+- [x] 06-14-PLAN.md , Push nach Owner-Wort, Image 1.0.0-rc.1, ghcr-Paket öffentlich (nicht autonom)
 
 **Wave 17** *(blocked on Wave 16 completion)*
 
