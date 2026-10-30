@@ -12,6 +12,7 @@ from gameworld import config, nc
 from gameworld.access import accounts, directory, roles, secret
 from gameworld.access import service as access_service
 from gameworld.api import admin, alerts, backups, csrf, invites, me, pause, talk, talk_bot
+from gameworld.api import language as api_language
 from gameworld.api import playtime as playtime_api
 from gameworld.backup import archive, files
 from gameworld.backup import service as backup_service
@@ -329,6 +330,9 @@ MESSAGES.update(
         client.MSG_EVENTS_UNREADABLE: "Le fichier d\u2019événements du monde est illisible.",
         # provisioner/archive.py
         game_archive.MSG_NO_GAME_CONF: "Le fichier de jeu fourni ne contient pas de game.conf.",
+        # api/language.py (pydantic messages for de and fr accounts)
+        api_language.MSG_INVALID_INPUT: "La saisie n\u2019est pas valide.",
+        api_language.MSG_REQUEST_FAILED: "Gameworld ne peut pas exécuter cette requête.",
     }
 )
 TEMPLATES.update(

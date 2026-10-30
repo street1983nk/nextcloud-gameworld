@@ -337,6 +337,40 @@ async def test_validator_message_is_translated(mini: httpx.AsyncClient, lang: An
     ]
 
 
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("de", "Die Eingabe ist ungültig."),
+        ("fr", "La saisie n\u2019est pas valide."),
+        ("en", "Input should be a valid integer, unable to parse string as an integer"),
+    ],
+)
+async def test_pydantic_message_in_the_account_language(
+    mini: httpx.AsyncClient, lang: Any, language: str, expected: str
+) -> None:
+    lang(KID, language)
+    response = await mini.post("/body", json={"count": "x"}, headers={"X-Test-User": KID})
+    assert response.status_code == 422
+    assert [entry["msg"] for entry in response.json()["detail"]] == [expected]
+
+
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("de", "Diese Anfrage kann Gameworld nicht ausführen."),
+        ("fr", "Gameworld ne peut pas exécuter cette requête."),
+        ("en", "Not Found"),
+    ],
+)
+async def test_unknown_route_in_the_account_language(
+    mini: httpx.AsyncClient, lang: Any, language: str, expected: str
+) -> None:
+    lang(KID, language)
+    response = await mini.get("/gibt-es-nicht", headers={"X-Test-User": KID})
+    assert response.status_code == 404
+    assert response.json() == {"detail": expected}
+
+
 async def test_validator_message_stays_german(mini: httpx.AsyncClient) -> None:
     response = await mini.post("/body", json={"count": 1, "note": "bad"}, headers={"X-Test-User": "admin"})
     assert response.status_code == 422
