@@ -82,7 +82,7 @@ Private Luanti game worlds for families and schools, on your own Nextcloud serve
 ### Before you install
 
 - Nextcloud 33 to 35 with AppAPI and a HaRP deploy daemon
-- The scoped docker-socket-proxy in the same Docker network as Gameworld, set up by the admin (guide below)
+- The scoped docker-socket-proxy in the same Docker network as Gameworld, set up by the admin (guide below; if it is missing, the setup check shows a ready-to-copy command)
 - Interface: German, English, French (follows the Nextcloud account language); in-game texts per world
 
 ### Uninstalling and updates
@@ -131,7 +131,7 @@ Private Luanti-Spielwelten für Familien und Schulen, auf dem eigenen Nextcloud-
 ### Vor der Installation
 
 - Nextcloud 33 bis 35 mit AppAPI und einem HaRP-Deploy-Daemon
-- Der gescopte docker-socket-proxy im selben Docker-Netz wie Gameworld, eingerichtet vom Admin (Anleitung unten)
+- Der gescopte docker-socket-proxy im selben Docker-Netz wie Gameworld, eingerichtet vom Admin (Anleitung unten; fehlt er, zeigt der Setup-Check einen fertigen Befehl zum Kopieren)
 - Oberfläche: Deutsch, Englisch, Französisch (folgt der Nextcloud-Kontosprache); Spieltexte je Welt
 
 ### Deinstallieren und Updates
@@ -180,7 +180,7 @@ Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre pro
 ### Avant l'installation
 
 - Nextcloud 33 à 35 avec AppAPI et un démon de déploiement HaRP
-- Le docker-socket-proxy restreint dans le même réseau Docker que Gameworld, mis en place par l'administrateur (guide ci-dessous, en anglais)
+- Le docker-socket-proxy restreint dans le même réseau Docker que Gameworld, mis en place par l'administrateur (guide ci-dessous, en anglais ; s'il manque, la vérification de configuration affiche une commande prête à copier)
 - Interface : allemand, anglais, français (selon la langue du compte Nextcloud) ; textes du jeu par monde
 
 ### Désinstallation et mises à jour

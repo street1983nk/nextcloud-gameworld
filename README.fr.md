@@ -94,6 +94,8 @@ flowchart LR
    anglais ; Compose standard et Nextcloud All-in-One).
 2. Installer Gameworld depuis le Nextcloud App Store (catégorie Jeux).
 3. Ouvrir Gameworld ; la vérification de configuration teste le proxy avant le premier monde.
+   Si le proxy manque, elle affiche une commande `docker run` prête à copier pour All-in-One
+   et pour votre propre fichier Compose.
 
 Désactiver ou mettre à jour Gameworld arrête et supprime les conteneurs des mondes ; volumes
 et sauvegardes restent, et les mondes reviennent d'eux-mêmes. La désinstallation laisse

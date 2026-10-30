@@ -32,6 +32,8 @@ Voraussetzungen:
 
 ## 3. Deploy-Daemon und Docker-Proxy
 
+Kürzer geht es mit dem Setup-Check: Fehlt der Proxy, zeigt die Gameworld-Seite den passenden `docker run`-Befehl für All-in-One und für das eigene Compose zum Kopieren (siehe [Abschnitt 7](#7-setup-check)). Die folgenden Abschnitte erklären jede Einstellung.
+
 ### 3a. Standard: eigenes Compose mit HaRP
 
 HaRP, die ExApps und der Docker-Proxy teilen ein eigenes Docker-Netz `gameworld`. Der Proxy hat keinen Host-Port.

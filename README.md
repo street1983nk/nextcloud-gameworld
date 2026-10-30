@@ -92,7 +92,9 @@ flowchart LR
 1. Set up HaRP and the Docker proxy, see [docs/install.md](docs/install.md) (standard Compose
    and Nextcloud All-in-One).
 2. Install Gameworld from the Nextcloud App Store (category Games).
-3. Open Gameworld; the setup check tests the proxy before the first world.
+3. Open Gameworld; the setup check tests the proxy before the first world. If the proxy is
+   missing, it shows a ready-to-copy `docker run` command for All-in-One and for your own
+   Compose file.
 
 Disabling and updating Gameworld stops and removes the world containers; volumes and backups
 stay, and the worlds come back on their own. Uninstalling leaves world volumes and backups in
