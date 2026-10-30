@@ -9,7 +9,7 @@ English version: [install.md](install.md)
 
 Anleitung für Nextcloud-Admins. Was Gameworld darf und warum, steht ausführlich in [privacy.de.md](privacy.de.md).
 
-Die Oberfläche von Gameworld ist auf Deutsch.
+Die Oberfläche von Gameworld folgt der Sprache des Nextcloud-Kontos (Deutsch, Englisch oder Französisch); Texte im Spiel und im Talk-Raum folgen der Sprache der Welt. Meldungen sind unten so zitiert, wie sie auf Deutsch erscheinen.
 
 ## 1. Installation aus dem App Store
 

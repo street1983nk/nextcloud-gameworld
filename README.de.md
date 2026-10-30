@@ -28,7 +28,7 @@ Nextcloud-Konten ein und legen Weltsicherungen in Nextcloud Files ab.
 - Ein Talk-Raum je Welt mit Gameworld-Bot (optional, wenn Talk installiert ist)
 - Welten nur im Heimnetz, nie in einer Serverliste
 - Keine Telemetrie, kein Nach-Hause-Telefonieren
-- Oberfläche: Deutsch
+- Oberfläche: Deutsch, Englisch, Französisch (folgt der Nextcloud-Kontosprache); Spieltexte je Welt
 
 ## Was Gameworld braucht und warum
 
@@ -73,6 +73,15 @@ flowchart LR
 
 Die Bilder folgen mit der Store-Abnahme von Version 1.0.0 (Weltliste, Einladen,
 Kinder-Ansicht, Sicherungen, Spielzeit, Handy-Ansicht).
+
+<!-- Draft for the store acceptance (06-13 task 4): replaces the sentence above once the owner approves.
+![Weltliste](docs/screenshots/worlds-v1.png)
+![Einladen](docs/screenshots/invite-v1.png)
+![Kinder-Ansicht](docs/screenshots/kids-view-v1.png)
+![Sicherungen](docs/screenshots/backups-v1.png)
+![Spielzeit](docs/screenshots/playtime-v1.png)
+![Handy-Ansicht](docs/screenshots/mobile-v1.png)
+-->
 
 ## Voraussetzungen
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -129,7 +130,14 @@ PRIVILEGES_HEADING = {
     "de": "Was diese App darf und warum",
     "fr": "Ce que cette application peut faire et pourquoi",
 }
-INTERFACE_LINE = {None: "Interface: German", "de": "Oberfläche: Deutsch", "fr": "Interface : allemand"}
+# D-25: the interface follows the account language (de, en, fr); in-game texts follow the world.
+INTERFACE_LINE = {
+    None: "- Interface: German, English, French (follows the Nextcloud account language); in-game texts per world",
+    "de": "- Oberfläche: Deutsch, Englisch, Französisch (folgt der Nextcloud-Kontosprache); Spieltexte je Welt",
+    "fr": "- Interface : allemand, anglais, français (selon la langue du compte Nextcloud) ; textes du jeu par monde",
+}
+# Lines from before D-25 that must be gone, not merely extended.
+OLD_INTERFACE_LINES = {"- Interface: German", "- Oberfläche: Deutsch", "- Interface : allemand"}
 SCREENSHOT_BASE = "https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/"
 SCREENSHOTS = [
     "worlds-v1.png",
@@ -209,7 +217,8 @@ def test_description_leads_with_privileges() -> None:
 
 def test_description_names_interface_language() -> None:
     for lang, text in _by_lang("description").items():
-        assert INTERFACE_LINE[lang] in text, lang
+        assert INTERFACE_LINE[lang] in text.splitlines(), lang
+        assert not OLD_INTERFACE_LINES & set(text.splitlines()), lang
 
 
 def test_description_honest_about_uninstall() -> None:
@@ -263,3 +272,88 @@ def test_store_listing_matches_info_xml() -> None:
     for tag in ("name", "summary", "description"):
         for lang, text in _by_lang(tag).items():
             assert text in listing, (tag, lang)
+
+
+# --- Cross-promotion of the sister apps (06-13, D-28, T-06-107) --------------------------
+
+CROSS_PROMO_LEAD = {None: "From the same developer: ", "de": "Vom selben Entwickler: ", "fr": "Du même développeur : "}
+SISTER_APPS = ("Findling Search", "MCP Connector")
+# Marketing words that a fact-style sentence never needs (lowercase, matched as whole words).
+PROMO_WORDS = {
+    "best",
+    "easy",
+    "easily",
+    "now",
+    "amazing",
+    "powerful",
+    "simple",
+    "simply",
+    "beste",
+    "besten",
+    "einfach",
+    "jetzt",
+    "toll",
+    "stark",
+    "meilleur",
+    "meilleure",
+    "facile",
+    "facilement",
+    "maintenant",
+    "puissant",
+}
+
+
+def _listing_section(listing: str, lang: str | None) -> str:
+    """The description block of one language in docs/store-listing.md."""
+    heading = "### `<description>`" if lang is None else f'### `<description lang="{lang}">`'
+    start = listing.index(heading)
+    fence = "```markdown\n"
+    block_start = listing.index(fence, start) + len(fence)
+    return listing[block_start : listing.index("\n```", block_start)]
+
+
+def _cross_promo_sentence(listing: str, lang: str | None) -> str:
+    lines = [line for line in _listing_section(listing, lang).splitlines() if line.startswith(CROSS_PROMO_LEAD[lang])]
+    assert len(lines) == 1, (lang, lines)
+    return lines[0]
+
+
+def _cross_promo_problems(sentence: str, description: str) -> list[str]:
+    """Empty if the sentence names both sister apps, is plain fact and sits once, verbatim, at the end."""
+    problems = []
+    if description.count(sentence) != 1:
+        problems.append("not exactly once in the description")
+    if not description.rstrip().endswith(sentence):
+        problems.append("not at the end of the description")
+    for app in SISTER_APPS:
+        if sentence.count(app) != 1:
+            problems.append(f"names {app} not exactly once")
+    words = set(re.findall(r"[^\W\d_]+", sentence.lower()))
+    if words & PROMO_WORDS:
+        problems.append(f"marketing words {sorted(words & PROMO_WORDS)}")
+    if sentence.count(".") != 1 or not sentence.endswith("."):
+        problems.append("not exactly one sentence")
+    return problems
+
+
+def test_cross_promo_sentence_per_language() -> None:
+    listing = (ROOT / "docs" / "store-listing.md").read_text(encoding="utf-8")
+    for lang, description in _by_lang("description").items():
+        sentence = _cross_promo_sentence(listing, lang)
+        assert _cross_promo_problems(sentence, description) == [], lang
+
+
+def test_cross_promo_check_rejects_variants() -> None:
+    """Positive control: the same check refuses altered, promotional or misplaced sentences."""
+    listing = (ROOT / "docs" / "store-listing.md").read_text(encoding="utf-8")
+    description = _by_lang("description")[None]
+    sentence = _cross_promo_sentence(listing, None)
+    assert "to Nextcloud)" in sentence
+    altered = sentence.replace("to Nextcloud)", "to Nextcloud files)")
+    assert _cross_promo_problems(altered, description) != []
+    promotional = sentence.replace("From the same developer", "Now from the same developer")
+    assert _cross_promo_problems(promotional, description.replace(sentence, promotional)) != []
+    missing_app = sentence.replace("MCP Connector", "another app")
+    assert _cross_promo_problems(missing_app, description.replace(sentence, missing_app)) != []
+    moved = sentence + "\n\nMore text."
+    assert _cross_promo_problems(sentence, description.replace(sentence, moved)) != []

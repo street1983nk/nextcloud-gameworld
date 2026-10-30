@@ -92,7 +92,7 @@ Gameworld keeps one SQLite database in its own volume `nc_app_gameworld_data`. I
 
 | Data | Form and purpose |
 |------|------------------|
-| Worlds | name, port, container and volume name, game type, desired state, last error |
+| Worlds | name, port, container and volume name, game type, language of the in-game texts, desired state, last error |
 | Invitations | world, invited account or group, who invited, when |
 | Player names | one game name per Nextcloud account plus a counter for "new password" |
 | Game passwords | never stored. They are derived on demand from a secret in the ExApp configuration of Nextcloud. Each world only receives an SRP verifier, not the password |

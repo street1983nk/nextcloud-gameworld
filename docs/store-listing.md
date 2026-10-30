@@ -25,7 +25,8 @@ Stand: Entwurf zur Owner-Abnahme vor dem Tag v1.0.0 (Plan 06-13).
 | Keine Backticks und keine Tabellen in einer Beschreibung, Absätze durch Leerzeilen | Nextcloud rendert nur Überschriften, Absätze, Listen, Links und Hervorhebungen |
 | Die Zeichenfolgen "public" und "announce" kommen nirgends in der `info.xml` vor, auch nicht als Teil eines Wortes (englisch, französisch) | `test_no_public_or_announce_setting`: keine Einstellung und kein Text darf nach Sichtbarkeit im Internet klingen (ZUGANG-01) |
 | Abschnitt "What this app may do and why" zuerst, nach höchstens einem Einleitungssatz | D-11, Roadmap-Kriterium 4 |
-| Oberflächensprache ehrlich nennen: "Interface: German" | F-10, P-11 |
+| Oberflächensprachen ehrlich nennen: "Interface: German, English, French", die Oberfläche folgt der Kontosprache, Spieltexte je Welt | F-10, P-11, D-25 |
+| Am Ende jeder Beschreibung genau ein Satz auf die Schwester-Apps Findling Search und MCP Connector, im Fakten-Ton, wortgleich hier und in der `info.xml` | D-28 |
 | Faktenliste, kein Marketing, keine Gedankenstriche, keine Emojis, echte Umlaute und Akzente | Owner-Regeln |
 
 ## Feste Felder
@@ -82,7 +83,7 @@ Private Luanti game worlds for families and schools, on your own Nextcloud serve
 
 - Nextcloud 33 to 35 with AppAPI and a HaRP deploy daemon
 - The scoped docker-socket-proxy in the same Docker network as Gameworld, set up by the admin (guide below)
-- Interface: German
+- Interface: German, English, French (follows the Nextcloud account language); in-game texts per world
 
 ### Uninstalling and updates
 
@@ -92,6 +93,8 @@ Private Luanti game worlds for families and schools, on your own Nextcloud serve
 Privacy and privileges: [docs/privacy.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.md)
 
 Installation guide: [docs/install.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md)
+
+From the same developer: Findling Search (full text search in the Nextcloud search bar) and MCP Connector (connects MCP assistants to Nextcloud).
 ```
 
 ## Deutsch (`lang="de"`)
@@ -129,7 +132,7 @@ Private Luanti-Spielwelten für Familien und Schulen, auf dem eigenen Nextcloud-
 
 - Nextcloud 33 bis 35 mit AppAPI und einem HaRP-Deploy-Daemon
 - Der gescopte docker-socket-proxy im selben Docker-Netz wie Gameworld, eingerichtet vom Admin (Anleitung unten)
-- Oberfläche: Deutsch
+- Oberfläche: Deutsch, Englisch, Französisch (folgt der Nextcloud-Kontosprache); Spieltexte je Welt
 
 ### Deinstallieren und Updates
 
@@ -139,6 +142,8 @@ Private Luanti-Spielwelten für Familien und Schulen, auf dem eigenen Nextcloud-
 Datenschutz und Privilegien: [docs/privacy.de.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.de.md)
 
 Installationsanleitung: [docs/install.de.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.de.md)
+
+Vom selben Entwickler: Findling Search (Volltextsuche über die Nextcloud-Suchleiste) und MCP Connector (verbindet MCP-Assistenten mit Nextcloud).
 ```
 
 ## Französisch (`lang="fr"`)
@@ -176,7 +181,7 @@ Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre pro
 
 - Nextcloud 33 à 35 avec AppAPI et un démon de déploiement HaRP
 - Le docker-socket-proxy restreint dans le même réseau Docker que Gameworld, mis en place par l'administrateur (guide ci-dessous, en anglais)
-- Interface : allemand
+- Interface : allemand, anglais, français (selon la langue du compte Nextcloud) ; textes du jeu par monde
 
 ### Désinstallation et mises à jour
 
@@ -186,6 +191,8 @@ Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre pro
 Confidentialité et privilèges : [docs/privacy.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.md)
 
 Guide d'installation : [docs/install.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md)
+
+Du même développeur : Findling Search (recherche plein texte dans la barre de recherche de Nextcloud) et MCP Connector (connecte les assistants MCP à Nextcloud).
 ```
 
 ## Was bewusst nicht drinsteht
@@ -197,9 +204,9 @@ Dieser Abschnitt ist die Begründung und gehört nicht in die `info.xml`.
   verspricht, würde zu Portfreigaben verleiten (P-11).
 - **Kein Minecraft.** Gameworld 1.0.0 kann nur Luanti. Minecraft ist ein eigener späterer
   Meilenstein mit EULA-Prüfung und wird nicht angekündigt.
-- **Keine weiteren Oberflächensprachen.** Die Oberfläche ist nur Deutsch; die Store-Texte
-  sind dreisprachig, damit Admins vor der Installation wissen, worauf sie sich einlassen,
-  nicht weil die App übersetzt wäre.
+- **Keine weiteren Oberflächensprachen.** Die Oberfläche gibt es auf Deutsch, Englisch und
+  Französisch, mehr nicht; andere Kontosprachen sehen die englische Oberfläche. Das Listing
+  verspricht keine weitere Sprache.
 - **Kein Wort über die Sichtbarkeit des Images.** Dass das ghcr-Paket für jeden abrufbar sein
   muss, ist Release-Mechanik und steht in den Release-Plänen, nicht im Listing.
 - **Keine Zahlen, die nicht gemessen sind.** Speichergrenzen und Portbereich stehen so im Code;

@@ -29,7 +29,7 @@ enfants et amis via leurs comptes Nextcloud et conservent les sauvegardes dans N
 - Un salon Talk par monde avec un bot Gameworld (facultatif, si Talk est installé)
 - Mondes réservés au réseau domestique, jamais listés sur une liste de serveurs
 - Pas de télémétrie, aucun appel vers l'extérieur
-- Interface : allemand
+- Interface : allemand, anglais, français (selon la langue du compte Nextcloud) ; textes du jeu par monde
 
 ## Ce dont Gameworld a besoin et pourquoi
 
@@ -75,6 +75,15 @@ flowchart LR
 
 Les captures d'écran suivront avec la validation de la version 1.0.0 pour le store (mondes,
 invitation, vue enfant, sauvegardes, temps de jeu, vue mobile).
+
+<!-- Draft for the store acceptance (06-13 task 4): replaces the sentence above once the owner approves.
+![Liste des mondes](docs/screenshots/worlds-v1-fr.png)
+![Inviter](docs/screenshots/invite-v1-fr.png)
+![Vue enfant](docs/screenshots/kids-view-v1-fr.png)
+![Sauvegardes](docs/screenshots/backups-v1-fr.png)
+![Temps de jeu](docs/screenshots/playtime-v1-fr.png)
+![Vue téléphone](docs/screenshots/mobile-v1-fr.png)
+-->
 
 ## Prérequis
 

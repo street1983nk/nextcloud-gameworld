@@ -93,7 +93,7 @@ Gameworld führt eine SQLite-Datenbank im eigenen Volume `nc_app_gameworld_data`
 
 | Daten | Form und Zweck |
 |-------|----------------|
-| Welten | Name, Port, Container- und Volume-Name, Spielart, Soll-Zustand, letzter Fehler |
+| Welten | Name, Port, Container- und Volume-Name, Spielart, Sprache der Spieltexte, Soll-Zustand, letzter Fehler |
 | Einladungen | Welt, eingeladenes Konto oder Gruppe, wer eingeladen hat, wann |
 | Spielernamen | ein Spielername je Nextcloud-Konto plus Zähler für "Neues Passwort" |
 | Spielpasswörter | nie gespeichert. Sie werden bei Bedarf aus einem Geheimnis in der ExApp-Konfiguration von Nextcloud abgeleitet. Jede Welt bekommt nur einen SRP-Verifier, nicht das Passwort |
