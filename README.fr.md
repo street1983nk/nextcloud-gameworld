@@ -106,6 +106,7 @@ volontairement les volumes des mondes et les sauvegardes en place ;
 - [Guide d'installation](docs/install.md) (en anglais)
 - [Confidentialité, privilèges et flux de données](docs/privacy.md) (en anglais)
 - [Environnement de développement](docs/dev-setup.md)
+- [Contribuer](CONTRIBUTING.md) et [politique de sécurité](SECURITY.md) (en anglais)
 
 ## Licence
 

@@ -103,6 +103,7 @@ sie, siehe [docs/install.de.md#cleanup](docs/install.de.md#cleanup).
 - [Installationsanleitung](docs/install.de.md) ([English](docs/install.md))
 - [Datenschutz, Privilegien und Datenfluss](docs/privacy.de.md) ([English](docs/privacy.md))
 - [Entwicklungsumgebung](docs/dev-setup.md)
+- [Mitwirken](CONTRIBUTING.md) und [Sicherheitsrichtlinie](SECURITY.md) (Englisch)
 
 ## Lizenz
 

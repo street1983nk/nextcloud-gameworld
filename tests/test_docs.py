@@ -29,7 +29,7 @@ PRIVACY_DE = DOCS / "privacy.de.md"
 READMES = [ROOT / "README.md", ROOT / "README.de.md", ROOT / "README.fr.md"]
 STORE_LISTING = DOCS / "store-listing.md"
 
-PUBLIC_DOCS = sorted(DOCS.glob("*.md")) + READMES
+PUBLIC_DOCS = sorted(DOCS.glob("*.md")) + READMES + [ROOT / "SECURITY.md", ROOT / "CONTRIBUTING.md"]
 
 # Emoji blocks (pictographs, symbols, dingbats, variation selector); arrows and
 # mathematical symbols stay allowed.

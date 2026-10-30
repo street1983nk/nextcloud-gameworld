@@ -104,6 +104,7 @@ place on purpose; `scripts/gameworld-orphans.sh` lists and removes leftovers, se
 - [Installation guide](docs/install.md) ([Deutsch](docs/install.de.md))
 - [Privacy, privileges and data flow](docs/privacy.md) ([Deutsch](docs/privacy.de.md))
 - [Development setup](docs/dev-setup.md)
+- [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)
 
 ## Licence
 
