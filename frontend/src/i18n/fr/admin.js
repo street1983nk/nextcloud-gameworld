@@ -43,6 +43,13 @@ export default {
 	'admin.setup.unreachable': 'Gameworld ne répond pas. Vérifie l’application dans les paramètres de Nextcloud.',
 	'admin.setup.proxyWarning': 'Avertissement de sécurité sur le proxy Docker',
 	'admin.setup.recheck': 'Vérifier à nouveau',
+	'admin.setup.commandsHeading': 'Créer le proxy Docker en une commande',
+	'admin.setup.commandsHint': 'Exécute la commande correspondante sur le serveur avec un utilisateur qui a les droits Docker, puis choisis «\u00a0Vérifier à nouveau\u00a0». Elle crée le conteneur gameworld-docker-proxy avec exactement les réglages du guide, sans port sur l’hôte. Si un conteneur porte déjà ce nom, supprime-le d’abord avec docker rm -f gameworld-docker-proxy. Avec ton propre fichier Compose, le réseau gameworld doit déjà exister (il est créé par le fichier Compose de HaRP).',
+	'admin.setup.commandCompose': 'Ton propre fichier Compose avec HaRP (réseau gameworld)',
+	'admin.setup.commandAio': 'Nextcloud All-in-One (réseau nextcloud-aio)',
+	'admin.setup.copyCommand': 'Copier la commande',
+	'admin.setup.copied': 'Copié',
+	'admin.setup.copyFailed': 'La copie n’a pas fonctionné. Sélectionne la commande et copie-la à la main.',
 
 	// JoinHostSettings.vue
 	'admin.joinHost.title': 'Paramètres',

@@ -198,6 +198,8 @@ The Gameworld page checks the Docker proxy when it opens. The check changes noth
 | Unexpected answer from the Docker proxy to method and path: HTTP code | unexpected answer | Compare proxy image and flags with section 3 |
 | Gameworld is not responding | Gameworld does not answer | Check the ExApp in the Nextcloud settings (AppAPI) |
 
+If the proxy is missing or unreachable (`proxy_dns`, `proxy_refused`, `proxy_timeout`) and `GAMEWORLD_DOCKER_URL` is the default address, the Gameworld page additionally shows a ready-to-copy `docker run` command for AIO and one for your own Compose file, each with a copy button. Both create the container `gameworld-docker-proxy` with the same settings as section 3a and 3b and no host port.
+
 After every change to the proxy, restart the service and choose "Check again" on the Gameworld page.
 
 ## 8. Memory, restarts and updates
