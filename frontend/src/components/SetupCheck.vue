@@ -221,7 +221,7 @@ function check() {
 	return runCheck(false)
 }
 
-function onVisibilityChange() {
+function onTabChange() {
 	if (document.hidden) {
 		clearAuto()
 	} else if (!stopped && !isGreen()) {
@@ -230,7 +230,7 @@ function onVisibilityChange() {
 }
 
 onMounted(() => {
-	document.addEventListener('visibilitychange', onVisibilityChange)
+	document.addEventListener('visibilitychange', onTabChange)
 	check()
 })
 
@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
 	stopped = true
 	clearAuto()
 	clearTimeout(copiedTimer)
-	document.removeEventListener('visibilitychange', onVisibilityChange)
+	document.removeEventListener('visibilitychange', onTabChange)
 })
 </script>
 
