@@ -96,3 +96,14 @@ def test_adult_confirmation_keeps_its_own_escape() -> None:
     assert source.index('@keydown.capture="onKeydown"') < confirmation
     assert "@keydown" not in source[confirmation : source.index("</template>\n\n<script setup>")]
     assert '@update:open="onConfirmOpen"' in source
+
+
+def test_world_table_does_not_wait_for_own_worlds() -> None:
+    """B2: refresh() shows the world table right after listWorlds; listMyWorlds follows, both behind the seq check."""
+    source = (ROOT / "frontend" / "src" / "views" / "ParentView.vue").read_text(encoding="utf-8")
+    body = source[source.index("async function refresh() {") :]
+    body = body[: body.index("\n}\n")]
+    assert body.index("await listWorlds()") < body.index("worlds.value = result") < body.index("await listMyWorlds()")
+    assert body.index("loading.value = false") < body.index("await listMyWorlds()")
+    assert body.count("seq === refreshSeq") == 3
+    assert "myWorlds.value = mine" in body[body.index("await listMyWorlds()") :]

@@ -536,23 +536,26 @@ let refreshSeq = 0
 
 async function refresh() {
 	const seq = ++refreshSeq
+	let result
 	try {
-		const result = await listWorlds()
-		// After the manager list (whose sync comes first): own worlds, errors here only silent.
-		const mine = await listMyWorlds().catch(() => null)
-		if (seq === refreshSeq) {
-			worlds.value = result
-			listError.value = ''
-			if (mine !== null) {
-				myWorlds.value = mine
-			}
-		}
+		result = await listWorlds()
 	} catch (err) {
 		if (seq === refreshSeq) {
 			listError.value = errorText(err)
 		}
-	} finally {
 		loading.value = false
+		return
+	}
+	// The table shows at once (B2); it no longer waits for the own worlds below.
+	if (seq === refreshSeq) {
+		worlds.value = result
+		listError.value = ''
+	}
+	loading.value = false
+	// After the manager list (whose sync comes first): own worlds, errors here only silent.
+	const mine = await listMyWorlds().catch(() => null)
+	if (seq === refreshSeq && mine !== null) {
+		myWorlds.value = mine
 	}
 }
 
