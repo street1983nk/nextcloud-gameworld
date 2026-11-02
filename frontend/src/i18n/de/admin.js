@@ -49,6 +49,16 @@ export default {
 	'admin.setup.copyCommand': 'Befehl kopieren',
 	'admin.setup.copied': 'Kopiert',
 	'admin.setup.copyFailed': 'Kopieren hat nicht geklappt. Markiere den Befehl und kopiere ihn von Hand.',
+	'admin.setup.commandDetected': 'Netz {network} (aus der laufenden Gameworld ermittelt)',
+	'admin.setup.commandOther': 'Anderes Netz: ersetze <docker-network> durch den Netznamen deines Deploy-Daemons',
+	'admin.setup.networkNotDetected': 'Das Docker-Netz von Gameworld ließ sich nicht automatisch ermitteln. Nimm den Befehl für deine Installation. Läuft dein Deploy-Daemon in einem anderen Netz, nimm den letzten Befehl und ersetze den Platzhalter <docker-network>.',
+	'admin.setup.downloadCompose': 'Compose-Datei herunterladen',
+	'admin.setup.composeHint': 'Statt des Befehls geht auch die Compose-Datei: speichern und auf dem Server mit docker compose -f gameworld-docker-proxy.yaml up -d starten. Sie enthält dieselben Einstellungen, ohne Host-Port.',
+	'admin.setup.autoRecheck': 'Gameworld prüft von selbst regelmäßig erneut und wird grün, sobald der Docker-Proxy antwortet.',
+	'admin.setup.firewallHeading': 'Firewall: UDP-Ports {range} nur im Heimnetz freigeben',
+	'admin.setup.firewallHint': 'Führe auf dem Server den Befehl für deine Firewall aus und ersetze vorher <lan-network> durch dein Heimnetz in der Form Netzadresse/Präfixlänge, wie es dein Router anzeigt. Keine Portweiterleitung im Router und kein UPnP: Welten sind nur fürs Heimnetz gedacht.',
+	'admin.setup.firewallUfw': 'ufw (zum Beispiel Ubuntu, Debian)',
+	'admin.setup.firewallFirewalld': 'firewalld (zum Beispiel Fedora, RHEL, openSUSE)',
 
 	// JoinHostSettings.vue
 	'admin.joinHost.title': 'Einstellungen',

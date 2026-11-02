@@ -50,6 +50,16 @@ export default {
 	'admin.setup.copyCommand': 'Copier la commande',
 	'admin.setup.copied': 'Copié',
 	'admin.setup.copyFailed': 'La copie n’a pas fonctionné. Sélectionne la commande et copie-la à la main.',
+	'admin.setup.commandDetected': 'Réseau {network} (détecté à partir de Gameworld en cours d’exécution)',
+	'admin.setup.commandOther': 'Autre réseau\u00a0: remplace <docker-network> par le nom du réseau de ton démon de déploiement',
+	'admin.setup.networkNotDetected': 'Le réseau Docker de Gameworld n’a pas pu être détecté automatiquement. Prends la commande qui correspond à ton installation. Si ton démon de déploiement tourne dans un autre réseau, prends la dernière commande et remplace l’espace réservé <docker-network>.',
+	'admin.setup.downloadCompose': 'Télécharger le fichier Compose',
+	'admin.setup.composeHint': 'Au lieu de la commande, tu peux aussi utiliser le fichier Compose\u00a0: enregistre-le et démarre-le sur le serveur avec docker compose -f gameworld-docker-proxy.yaml up -d. Il contient les mêmes réglages, sans port sur l’hôte.',
+	'admin.setup.autoRecheck': 'Gameworld vérifie à nouveau de lui-même à intervalles réguliers et passe au vert dès que le proxy Docker répond.',
+	'admin.setup.firewallHeading': 'Pare-feu\u00a0: ouvrir les ports UDP {range} uniquement dans le réseau domestique',
+	'admin.setup.firewallHint': 'Exécute sur le serveur la commande de ton pare-feu et remplace d’abord <lan-network> par ton réseau domestique sous la forme adresse réseau/longueur de préfixe, comme l’affiche ton routeur. Pas de redirection de port dans le routeur et pas d’UPnP\u00a0: les mondes sont prévus uniquement pour le réseau domestique.',
+	'admin.setup.firewallUfw': 'ufw (par exemple Ubuntu, Debian)',
+	'admin.setup.firewallFirewalld': 'firewalld (par exemple Fedora, RHEL, openSUSE)',
 
 	// JoinHostSettings.vue
 	'admin.joinHost.title': 'Paramètres',

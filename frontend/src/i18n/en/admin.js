@@ -49,6 +49,16 @@ export default {
 	'admin.setup.copyCommand': 'Copy command',
 	'admin.setup.copied': 'Copied',
 	'admin.setup.copyFailed': 'Copying did not work. Select the command and copy it by hand.',
+	'admin.setup.commandDetected': 'Network {network} (detected from the running Gameworld)',
+	'admin.setup.commandOther': 'Other network: replace <docker-network> with the network name of your deploy daemon',
+	'admin.setup.networkNotDetected': 'The Docker network of Gameworld could not be detected automatically. Use the command for your installation. If your deploy daemon runs in another network, use the last command and replace the placeholder <docker-network>.',
+	'admin.setup.downloadCompose': 'Download Compose file',
+	'admin.setup.composeHint': 'Instead of the command you can also use the Compose file: save it and start it on the server with docker compose -f gameworld-docker-proxy.yaml up -d. It contains the same settings, without a host port.',
+	'admin.setup.autoRecheck': 'Gameworld checks again on its own at regular intervals and turns green as soon as the Docker proxy answers.',
+	'admin.setup.firewallHeading': 'Firewall: open UDP ports {range} in the home network only',
+	'admin.setup.firewallHint': 'Run the command for your firewall on the server and first replace <lan-network> with your home network in the form network address/prefix length, as your router shows it. No port forwarding in the router and no UPnP: worlds are meant for the home network only.',
+	'admin.setup.firewallUfw': 'ufw (for example Ubuntu, Debian)',
+	'admin.setup.firewallFirewalld': 'firewalld (for example Fedora, RHEL, openSUSE)',
 
 	// JoinHostSettings.vue
 	'admin.joinHost.title': 'Settings',
