@@ -15,7 +15,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from gameworld.provisioner.setup_check import DOCS_URL
+from gameworld.provisioner.setup_check import DOCS_URL, DOCS_URL_DE
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
@@ -79,6 +79,13 @@ def test_install_has_fixed_anchors(path: Path) -> None:
 def test_setup_check_url_points_at_anchor() -> None:
     path, anchor = _url_anchor(DOCS_URL)
     assert path == "docs/install.md"
+    assert anchor == "setup-check"
+    assert anchor in _ids(_read(ROOT / path))
+
+
+def test_german_setup_check_url_points_at_german_anchor() -> None:
+    path, anchor = _url_anchor(DOCS_URL_DE)
+    assert path == "docs/install.de.md"
     assert anchor == "setup-check"
     assert anchor in _ids(_read(ROOT / path))
 

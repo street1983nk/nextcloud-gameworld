@@ -12,8 +12,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from gameworld.i18n import translate
 from gameworld.playtime.plan import (
     DEFAULT_TIME_ZONE,
+    MSG_LIMIT_RANGE,
     ChildState,
     DayRule,
     Holiday,
@@ -313,3 +315,22 @@ def test_day_starts_spring_change() -> None:
     assert starts[:2] == SO_29_03
     assert starts[1] - starts[0] == 23 * 3600
     assert all(later > earlier for earlier, later in itertools.pairwise(starts))
+
+
+@pytest.mark.parametrize("minutes", [0, 1441, -1])
+@pytest.mark.parametrize("language", ["de", "en", "fr"])
+def test_limit_out_of_range_message_has_no_python_none(minutes: int, language: str) -> None:
+    """B6: the daily limit message names no Python value, in any language."""
+    with pytest.raises(ValueError, match="1440") as raised:
+        DayRule(allowed=True, limit_minutes=minutes, window_start=None, window_end=None)
+    assert str(raised.value) == MSG_LIMIT_RANGE
+    text = translate(str(raised.value), language)
+    assert "None" not in text
+    assert "1440" in text
+    if language != "de":
+        assert text != MSG_LIMIT_RANGE
+
+
+@pytest.mark.parametrize("minutes", [1, 1440, None])
+def test_limit_bounds_and_no_limit_stay_valid(minutes: int | None) -> None:
+    assert DayRule(allowed=True, limit_minutes=minutes, window_start=None, window_end=None).limit_minutes == minutes

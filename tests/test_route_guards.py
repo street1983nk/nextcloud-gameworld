@@ -204,7 +204,11 @@ async def test_child_gets_403_on_every_guarded_route(
 ) -> None:
     response = await client.request(method, path, json={}, headers=appapi_headers(KID))
     assert response.status_code == 403, response.text
-    assert response.json() == {"detail": MSG_NC_ADMIN_ONLY if admin else MSG_FORBIDDEN}
+    if admin:
+        expected = "Nur Nextcloud-Admins dürfen das sehen." if method == "GET" else MSG_NC_ADMIN_ONLY
+    else:
+        expected = MSG_FORBIDDEN
+    assert response.json() == {"detail": expected}
     assert no_service == []
     assert fake_directory.calls == []
     assert fake_directory.group_calls == []

@@ -14,7 +14,7 @@ from typing import cast
 
 import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from gameworld.access import roles
 from gameworld.access.directory import DirectoryRejectedError, DirectoryUnavailableError
@@ -22,6 +22,7 @@ from gameworld.access.roles import (
     ADMIN_GROUP,
     META_VERWALTER_GROUPS,
     MSG_NC_ADMIN_ONLY,
+    MSG_NC_ADMIN_ONLY_READ,
     ROLE_SPIELER,
     ROLE_VERWALTER,
     Profile,
@@ -148,9 +149,14 @@ async def test_invalidate_drops_cached_profiles() -> None:
 # require_nc_admin (T-06-02): only group admin, never from the cache
 
 
+def _request(method: str) -> Request:
+    """Bare request; require_nc_admin only reads its method for the refusal text."""
+    return Request({"type": "http", "method": method, "headers": [], "path": "/api/admin/groups"})
+
+
 async def test_nc_admin_passes_for_admin() -> None:
     service = RoleService(fake_lookup, _groups(WITH_TEACHERS))
-    assert await require_nc_admin("admin", service) == "admin"
+    assert await require_nc_admin("admin", service, _request("POST")) == "admin"
 
 
 async def test_verwalter_from_extra_group_is_not_nc_admin() -> None:
@@ -158,10 +164,55 @@ async def test_verwalter_from_extra_group_is_not_nc_admin() -> None:
     # Precondition: the teacher really is a manager (otherwise the 403 would prove nothing).
     assert await service.role(LEHRER) == ROLE_VERWALTER
     with pytest.raises(HTTPException) as caught:
-        await require_nc_admin(LEHRER, service)
+        await require_nc_admin(LEHRER, service, _request("POST"))
     assert caught.value.status_code == 403
     assert caught.value.detail == MSG_NC_ADMIN_ONLY
     assert MSG_NC_ADMIN_ONLY == "Nur Nextcloud-Admins dürfen das ändern."
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [
+        ("GET", "Nur Nextcloud-Admins dürfen das sehen."),
+        ("HEAD", "Nur Nextcloud-Admins dürfen das sehen."),
+        ("get", "Nur Nextcloud-Admins dürfen das sehen."),
+        ("POST", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("PUT", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("PATCH", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("DELETE", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("OPTIONS", "Nur Nextcloud-Admins dürfen das ändern."),
+    ],
+)
+async def test_nc_admin_refusal_text_follows_the_method(method: str, expected: str) -> None:
+    """B8: the method picks only the text; a manager without group admin is refused for every method."""
+    calls: list[str] = []
+    service = RoleService(_counting_lookup(calls), _groups(WITH_TEACHERS))
+    assert await service.role(LEHRER) == ROLE_VERWALTER
+    with pytest.raises(HTTPException) as caught:
+        await require_nc_admin(LEHRER, service, _request(method))
+    assert caught.value.status_code == 403
+    assert caught.value.detail == expected
+    # Fresh lookup at Nextcloud for this request too (role cache warm, still asked again).
+    assert calls == [LEHRER, LEHRER]
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST", "DELETE"])
+async def test_nc_admin_passes_for_admin_with_every_method(method: str) -> None:
+    calls: list[str] = []
+    service = RoleService(_counting_lookup(calls), _groups(WITH_TEACHERS))
+    assert await require_nc_admin("admin", service, _request(method)) == "admin"
+    assert calls == ["admin"]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+async def test_nc_admin_outage_is_503_for_every_method(method: str) -> None:
+    async def failing(uid: str) -> Profile:
+        raise ConnectionError(uid)
+
+    with pytest.raises(HTTPException) as caught:
+        await require_nc_admin("admin", RoleService(failing), _request(method))
+    assert caught.value.status_code == 503
+    assert caught.value.detail == roles.MSG_UNAVAILABLE
 
 
 async def test_nc_admin_lookup_error_gives_503() -> None:
@@ -169,7 +220,7 @@ async def test_nc_admin_lookup_error_gives_503() -> None:
         raise ConnectionError(uid)
 
     with pytest.raises(HTTPException) as caught:
-        await require_nc_admin("admin", RoleService(failing))
+        await require_nc_admin("admin", RoleService(failing), _request("POST"))
     assert caught.value.status_code == 503
     assert caught.value.detail == roles.MSG_UNAVAILABLE
 
@@ -180,8 +231,8 @@ async def test_nc_admin_asks_nextcloud_on_every_call() -> None:
     await service.role("admin")
     assert calls == ["admin"]
     # The role cache is warm, require_nc_admin asks anew every time anyway.
-    await require_nc_admin("admin", service)
-    await require_nc_admin("admin", service)
+    await require_nc_admin("admin", service, _request("POST"))
+    await require_nc_admin("admin", service, _request("POST"))
     assert calls == ["admin", "admin", "admin"]
 
 
@@ -192,10 +243,10 @@ async def test_nc_admin_sees_loss_of_admin_group_immediately() -> None:
         return Profile(user_id=uid, display_name=uid, groups=groups.get(uid, ()))
 
     service = RoleService(lookup)
-    assert await require_nc_admin("admin", service) == "admin"
+    assert await require_nc_admin("admin", service, _request("POST")) == "admin"
     groups["admin"] = ("lehrkraefte",)
     with pytest.raises(HTTPException) as caught:
-        await require_nc_admin("admin", service)
+        await require_nc_admin("admin", service, _request("POST"))
     assert caught.value.status_code == 403
 
 
@@ -690,7 +741,7 @@ async def test_admin_routes_are_403_for_everyone_but_nc_admins(
     fake_directory.group_calls.clear()
     response = await client.request(method, path, json=body, headers=appapi_headers(user))
     assert response.status_code == 403
-    assert response.json() == {"detail": MSG_NC_ADMIN_ONLY}
+    assert response.json() == {"detail": MSG_NC_ADMIN_ONLY_READ if method == "GET" else MSG_NC_ADMIN_ONLY}
     assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) == ["lehrkraefte"]
     assert fake_directory.search_calls == []
     assert fake_directory.group_calls == []

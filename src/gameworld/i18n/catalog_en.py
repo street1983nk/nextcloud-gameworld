@@ -38,6 +38,7 @@ MESSAGES: dict[str, str] = {
     roles.MSG_UNAVAILABLE: _UNAVAILABLE,
     roles.MSG_FORBIDDEN: "Only parents can manage worlds.",
     roles.MSG_NC_ADMIN_ONLY: "Only Nextcloud admins can change this.",
+    roles.MSG_NC_ADMIN_ONLY_READ: "Only Nextcloud admins can see this.",
     # access/accounts.py, directory.py, secret.py, service.py
     accounts.MSG_INVALID_NAME: "The player name can have 1 to 20 characters: letters without accents, digits, _ and -.",
     directory.MSG_UNAVAILABLE: _UNAVAILABLE,
@@ -233,28 +234,28 @@ TEMPLATES: dict[str, str] = {
     # provisioner/setup_check.py
     setup_check.TEXT_PROXY_DNS: (
         "Gameworld cannot find the service {host}. It must run in the same Docker network as "
-        "Gameworld (the network of the deploy daemon, nextcloud-aio for AIO). Guide: {docs_url}"
+        "Gameworld (the network of the deploy daemon, nextcloud-aio for AIO). " + _GUIDE
     ),
     setup_check.TEXT_PROXY_TIMEOUT: (
         "The Docker proxy at {host}:{port} is not responding. Usually it is in a different "
-        "Docker network, or a firewall blocks port {port}. Guide: {docs_url}"
+        "Docker network, or a firewall blocks port {port}. " + _GUIDE
     ),
     setup_check.TEXT_PROXY_REFUSED: (
         "The Docker proxy at {host}:{port} does not accept connections. Is the "
-        "gameworld-docker-proxy container running? Guide: {docs_url}"
+        "gameworld-docker-proxy container running? " + _GUIDE
     ),
     setup_check.TEXT_PROXY_UNREACHABLE: (
         "Gameworld cannot reach the Docker proxy at {docker_url}. Please start the "
-        "gameworld-docker-proxy service and check GAMEWORLD_DOCKER_URL. Guide: {docs_url}"
+        "gameworld-docker-proxy service and check GAMEWORLD_DOCKER_URL. " + _GUIDE
     ),
     setup_check.TEXT_ENGINE_TOO_OLD: (
-        "Docker Engine too old, API 1.44 or newer required (reported: {shown}). Please update Docker. Guide: {docs_url}"
+        "Docker Engine too old, API 1.44 or newer required (reported: {shown}). Please update Docker. " + _GUIDE
     ),
     setup_check.TEXT_API_SUPPORTED: "Docker API {version} is supported.",
     setup_check.TEXT_UNEXPECTED_ANSWER: (
-        "Unexpected answer from the Docker proxy to {method} {path}: HTTP {code}. Guide: {docs_url}"
+        "Unexpected answer from the Docker proxy to {method} {path}: HTTP {code}. " + _GUIDE
     ),
-    setup_check.TEXT_REQUEST_FAILED: "The request to the Docker proxy ({path}) failed: {error_type}. Guide: {docs_url}",
+    setup_check.TEXT_REQUEST_FAILED: "The request to the Docker proxy ({path}) failed: {error_type}. " + _GUIDE,
     # worlds/ports.py
     ports.TEXT_PORTS_TAKEN: "All UDP ports in the range {low}-{high} are in use.",
     # worlds/status.py
@@ -273,7 +274,9 @@ MESSAGES.update(
         playtime_api.MSG_CLOSED_DAY_WINDOW: "A closed day has no time window.",
         playtime_api.MSG_OPEN_DAY_NEEDS_TIMES: "An open day needs the start and end of its time window.",
         # playtime/plan.py (rules, 422 via str(exc))
-        plan.MSG_LIMIT_RANGE: "The daily limit is between 1 and 1440 minutes or None.",
+        plan.MSG_LIMIT_RANGE: (
+            "The daily limit must be between 1 and 1440 minutes. Without a value there is no daily limit."
+        ),
         plan.MSG_WINDOW_BOTH_OR_NONE: "A time window needs both start and end, or neither.",
         plan.MSG_WINDOW_START_RANGE: "The window start is between 0 and 1439 minutes.",
         plan.MSG_WINDOW_END_RANGE: "The window end is between 1 and 1440 minutes.",
@@ -315,6 +318,4 @@ TEMPLATES.update(
 MESSAGES[presets.unknown_preset_message([preset.title for preset in presets.PRESETS.values()])] = TEMPLATES[
     presets.TEXT_UNKNOWN_PRESET_ID
 ].format(titles=", ".join(MESSAGES[preset.title] for preset in presets.PRESETS.values()))
-MESSAGES[setup_check.MSG_ENGINE_VERSION_UNKNOWN] = TEMPLATES[setup_check.TEXT_ENGINE_TOO_OLD].format(
-    shown="unknown", docs_url=setup_check.DOCS_URL
-)
+MESSAGES[setup_check.MSG_ENGINE_VERSION_UNKNOWN] = TEMPLATES[setup_check.TEXT_ENGINE_TOO_OLD].format(shown="unknown")
