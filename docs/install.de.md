@@ -200,7 +200,11 @@ Die Gameworld-Seite prüft beim Öffnen den Docker-Proxy. Die Prüfung veränder
 | Unerwartete Antwort auf Pfad mit HTTP-Code | Proxy-Image und Flags mit Abschnitt 3 vergleichen |
 | Gameworld antwortet nicht | ExApp in den Nextcloud-Einstellungen (AppAPI) prüfen |
 
-Fehlt der Proxy oder ist er nicht erreichbar (`proxy_dns`, `proxy_refused`, `proxy_timeout`) und steht `GAMEWORLD_DOCKER_URL` auf der Standardadresse, zeigt die Gameworld-Seite zusätzlich einen fertigen `docker run`-Befehl für AIO und einen für das eigene Compose, jeweils mit Kopier-Knopf. Beide legen den Container `gameworld-docker-proxy` mit denselben Einstellungen wie in Abschnitt 3a und 3b an, ohne Host-Port.
+Fehlt der Proxy oder ist er nicht erreichbar (`proxy_dns`, `proxy_refused`, `proxy_timeout`) und steht `GAMEWORLD_DOCKER_URL` auf der Standardadresse, zeigt die Gameworld-Seite zusätzlich einen fertigen `docker run`-Befehl mit Kopier-Knopf. Gameworld ermittelt sein Docker-Netz selbst: Es fragt den internen Namensdienst von Docker nach dem eigenen Container `nc_app_gameworld`, ohne zusätzliche Rechte. Dann zeigt es einen Befehl für genau dieses Netz. Klappt das nicht, zeigt es die Befehle für das eigene Compose (`gameworld`) und AIO (`nextcloud-aio`) und einen mit dem Platzhalter `<docker-network>`, den du durch das Netz deines Deploy-Daemons ersetzt. Jeden Befehl gibt es auch als Compose-Datei `gameworld-docker-proxy.yaml` zum Herunterladen (Start mit `docker compose -f gameworld-docker-proxy.yaml up -d`). Befehl und Datei legen den Container `gameworld-docker-proxy` mit denselben Einstellungen wie in Abschnitt 3a und 3b an, ohne Host-Port.
+
+Solange etwas fehlt, prüft die Gameworld-Seite von selbst alle 15 Sekunden erneut (später jede Minute) und wird ohne Neuladen grün. Sie hört auf, sobald alles grün ist oder du die Seite verlässt.
+
+Außerdem zeigt die Seite Firewall-Befehle für ufw und firewalld, die den eingestellten `GAMEWORLD_PORT_RANGE` (UDP) nur fürs Heimnetz freigeben. Ersetze `<lan-network>` durch dein Heimnetz in der Form Netzadresse/Präfixlänge, wie es dein Router anzeigt. Keine Portweiterleitung im Router und kein UPnP (Abschnitt 5).
 
 Nach jeder Änderung am Proxy den Dienst neu starten und auf der Gameworld-Seite "Erneut prüfen" wählen.
 
