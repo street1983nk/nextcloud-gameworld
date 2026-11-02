@@ -18,14 +18,19 @@ import pytest
 from gameworld.api import setup_check as setup_check_api
 from gameworld.provisioner import proxy_setup
 from gameworld.provisioner.proxy_setup import (
+    LAN_PLACEHOLDER,
     NETWORK_AIO,
     NETWORK_COMPOSE,
+    NETWORK_PLACEHOLDER,
     PROXY_ENV,
     PROXY_IMAGE,
     PROXY_NAME,
     PROXY_RESTART,
     PROXY_SOCKET_MOUNT,
+    commands_wanted,
+    compose_file,
     docker_run_command,
+    firewall_commands,
     proxy_commands,
 )
 from gameworld.provisioner.setup_check import CheckItem, SetupCheckResult
@@ -157,17 +162,70 @@ def test_proxy_env_closes_everything_except_the_four_needed() -> None:
     assert env["INFO"] == "0"
 
 
-@pytest.mark.parametrize("network", ["bridge", "host", "gameworld; rm -rf /", "", "nextcloud-aio "])
+@pytest.mark.parametrize("network", ["gameworld-dev_default", "my.net", "net2", "Nextcloud_AIO", NETWORK_PLACEHOLDER])
+def test_docker_run_command_accepts_valid_networks(network: str) -> None:
+    command = docker_run_command(network)
+    assert f"--network {network} " in command
+
+
+REJECTED_NETWORKS = [
+    "gameworld; rm -rf /",
+    "$(id)",
+    "`id`",
+    "a b",
+    "",
+    "-x",
+    "--privileged",
+    "nextcloud-aio ",
+    "net\nwork",
+    "a" * 129,
+    "<other>",
+    # Reserved Docker networks: host would put the proxy on a host port, the others
+    # have no embedded DNS, so Gameworld could not find the proxy by name.
+    "host",
+    "bridge",
+    "none",
+]
+
+
+@pytest.mark.parametrize("network", REJECTED_NETWORKS)
 def test_docker_run_command_rejects_other_networks(network: str) -> None:
     with pytest.raises(ValueError, match="unsupported network"):
         docker_run_command(network)
 
 
+@pytest.mark.parametrize("network", REJECTED_NETWORKS)
+def test_compose_file_rejects_other_networks(network: str) -> None:
+    with pytest.raises(ValueError, match="unsupported network"):
+        compose_file(network)
+
+
 @pytest.mark.parametrize("failed", ["proxy_dns", "proxy_refused", "proxy_timeout"])
-def test_proxy_commands_for_proxy_failures(failed: str) -> None:
+def test_proxy_commands_fallback_without_detected_network(failed: str) -> None:
     commands = proxy_commands([failed], DEFAULT_URL)
-    assert [(c.id, c.network) for c in commands] == [("compose", NETWORK_COMPOSE), ("aio", NETWORK_AIO)]
-    assert commands[0].command == docker_run_command(NETWORK_COMPOSE)
+    assert [(c.id, c.network) for c in commands] == [
+        ("compose", NETWORK_COMPOSE),
+        ("aio", NETWORK_AIO),
+        ("other", NETWORK_PLACEHOLDER),
+    ]
+    for command in commands:
+        assert command.command == docker_run_command(command.network)
+        assert command.compose == compose_file(command.network)
+
+
+@pytest.mark.parametrize("network", ["nextcloud-aio", "gameworld", "gameworld-dev_default"])
+def test_proxy_commands_for_detected_network(network: str) -> None:
+    commands = proxy_commands(["proxy_dns"], DEFAULT_URL, network)
+    assert len(commands) == 1
+    assert (commands[0].id, commands[0].network) == ("detected", network)
+    assert commands[0].command == docker_run_command(network)
+    assert commands[0].compose == compose_file(network)
+
+
+@pytest.mark.parametrize("detected", ["$(id)", "host", "", "-evil", NETWORK_PLACEHOLDER])
+def test_invalid_detected_network_falls_back(detected: str) -> None:
+    commands = proxy_commands(["proxy_dns"], DEFAULT_URL, detected)
+    assert [c.id for c in commands] == ["compose", "aio", "other"]
 
 
 @pytest.mark.parametrize(
@@ -182,6 +240,97 @@ def test_proxy_commands_for_proxy_failures(failed: str) -> None:
 )
 def test_no_proxy_commands_otherwise(failed: list[str], url: str) -> None:
     assert proxy_commands(failed, url) == []
+    assert proxy_commands(failed, url, "nextcloud-aio") == []
+    assert commands_wanted(failed, url) is False
+
+
+@pytest.mark.parametrize("failed", ["proxy_dns", "proxy_refused", "proxy_timeout"])
+def test_commands_wanted(failed: str) -> None:
+    assert commands_wanted([failed, "images"], DEFAULT_URL) is True
+    assert commands_wanted([failed], "http://gameworld-docker-proxy") is True
+
+
+# --- Compose file ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("network", [NETWORK_COMPOSE, NETWORK_AIO, "gameworld-dev_default", NETWORK_PLACEHOLDER])
+def test_compose_file_has_no_drift(network: str) -> None:
+    text = compose_file(network)
+    wrapped = f"### 3x.\n```yaml\n{text}```\n"
+    assert _service_drift(wrapped, "### 3x.", network) == []
+    assert text.endswith(f"networks:\n  {network}:\n    external: true\n")
+    assert "ports" not in text
+    assert "#" not in text
+    assert "\t" not in text
+
+
+def test_compose_file_exact_shape() -> None:
+    env = "".join(f"      {key}: {value}\n" for key, value in PROXY_ENV)
+    assert compose_file(NETWORK_AIO) == (
+        "services:\n"
+        f"  {PROXY_NAME}:\n"
+        f"    image: {PROXY_IMAGE}\n"
+        f"    restart: {PROXY_RESTART}\n"
+        "    environment:\n"
+        f"{env}"
+        "    volumes:\n"
+        f"      - {PROXY_SOCKET_MOUNT}\n"
+        "    networks:\n"
+        "      - nextcloud-aio\n"
+        "networks:\n"
+        "  nextcloud-aio:\n"
+        "    external: true\n"
+    )
+
+
+@pytest.mark.parametrize("network", ["1234", "true", "Yes", "null", "0x1f", "1e3", "on", "y", "N"])
+def test_compose_file_quotes_yaml_ambiguous_networks(network: str) -> None:
+    text = compose_file(network)
+    assert f'      - "{network}"\n' in text
+    assert f'  "{network}":\n    external: true\n' in text
+
+
+def test_compose_drift_helper_notices_mutation() -> None:
+    """Positive control for the compose drift test."""
+    text = compose_file(NETWORK_AIO).replace("EXEC: 0", "EXEC: 1")
+    assert _service_drift(f"### 3x.\n```yaml\n{text}```\n", "### 3x.", NETWORK_AIO) != []
+
+
+# --- Firewall commands ----------------------------------------------------------------------
+
+
+FIREWALLD_RANGE = (
+    'sudo firewall-cmd --permanent --add-rich-rule=\'rule family="ipv4" source address="<lan-network>"'
+    ' port port="30000-30019" protocol="udp" accept\' && sudo firewall-cmd --reload'
+)
+
+
+def test_firewall_commands_for_a_range() -> None:
+    commands = firewall_commands((30000, 30019))
+    assert [(c.id, c.command) for c in commands] == [
+        ("ufw", "sudo ufw allow proto udp from <lan-network> to any port 30000:30019"),
+        ("firewalld", FIREWALLD_RANGE),
+    ]
+    assert LAN_PLACEHOLDER == "<lan-network>"
+
+
+def test_firewall_commands_for_a_single_port() -> None:
+    commands = firewall_commands((30000, 30000))
+    assert commands[0].command == "sudo ufw allow proto udp from <lan-network> to any port 30000"
+    assert 'port port="30000" protocol="udp"' in commands[1].command
+    assert "30000-30000" not in commands[1].command
+
+
+@pytest.mark.parametrize("port_range", [(0, 10), (10, 5), (1, 65536), (-1, 3)])
+def test_firewall_commands_reject_invalid_ranges(port_range: tuple[int, int]) -> None:
+    assert firewall_commands(port_range) == []
+
+
+def test_firewall_commands_are_lan_only() -> None:
+    for command in firewall_commands((30000, 30019)):
+        assert command.command.count(LAN_PLACEHOLDER) == 1
+        assert "tcp" not in command.command
+        assert "0.0.0.0" not in command.command  # noqa: S104 - asserts the address is absent
 
 
 def test_module_documents_its_role() -> None:
@@ -198,15 +347,63 @@ def _result(*failed: str) -> SetupCheckResult:
     return SetupCheckResult(ok=not failed, items=items)
 
 
+@pytest.fixture
+def detect_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Spy on the network probe: records every call and answers "not detected"."""
+    calls: list[str] = []
+
+    def fake_detect() -> None:
+        calls.append("called")
+
+    monkeypatch.setattr(setup_check_api, "detect_docker_network", fake_detect)
+    return calls
+
+
+def _command_json(command_id: str, network: str) -> dict[str, str]:
+    return {
+        "id": command_id,
+        "network": network,
+        "command": docker_run_command(network),
+        "compose": compose_file(network),
+    }
+
+
+FIREWALL_JSON = {
+    "port_range": "30000-30019",
+    "commands": [{"id": c.id, "command": c.command} for c in firewall_commands((30000, 30019))],
+}
+
+
 @pytest.mark.parametrize("failed", ["proxy_dns", "proxy_refused", "proxy_timeout"])
-async def test_api_returns_commands(client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, failed: str) -> None:
+async def test_api_returns_fallback_commands(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, detect_calls: list[str], failed: str
+) -> None:
     monkeypatch.setenv("GAMEWORLD_DOCKER_URL", DEFAULT_URL)
+    monkeypatch.delenv("GAMEWORLD_PORT_RANGE", raising=False)
     monkeypatch.setattr(setup_check_api, "run_setup_check", lambda docker_url: _result(failed))
     body = (await client.get("/api/setup-check", headers=appapi_headers())).json()
     assert body["proxy_commands"] == [
-        {"id": "compose", "network": NETWORK_COMPOSE, "command": docker_run_command(NETWORK_COMPOSE)},
-        {"id": "aio", "network": NETWORK_AIO, "command": docker_run_command(NETWORK_AIO)},
+        _command_json("compose", NETWORK_COMPOSE),
+        _command_json("aio", NETWORK_AIO),
+        _command_json("other", NETWORK_PLACEHOLDER),
     ]
+    assert body["firewall"] == FIREWALL_JSON
+    assert detect_calls == ["called"]
+
+
+async def test_api_returns_detected_command(client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def fake_detect() -> str:
+        calls.append(1)
+        return "nextcloud-aio"
+
+    monkeypatch.setenv("GAMEWORLD_DOCKER_URL", DEFAULT_URL)
+    monkeypatch.setattr(setup_check_api, "detect_docker_network", fake_detect)
+    monkeypatch.setattr(setup_check_api, "run_setup_check", lambda docker_url: _result("proxy_dns"))
+    body = (await client.get("/api/setup-check", headers=appapi_headers())).json()
+    assert body["proxy_commands"] == [_command_json("detected", "nextcloud-aio")]
+    assert calls == [1]
 
 
 @pytest.mark.parametrize(
@@ -214,17 +411,41 @@ async def test_api_returns_commands(client: httpx.AsyncClient, monkeypatch: pyte
     [((), DEFAULT_URL), (("containers",), DEFAULT_URL), (("proxy_dns",), "tcp://other-proxy:2375")],
 )
 async def test_api_returns_no_commands(
-    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, failed: tuple[str, ...], url: str
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    detect_calls: list[str],
+    failed: tuple[str, ...],
+    url: str,
 ) -> None:
     monkeypatch.setenv("GAMEWORLD_DOCKER_URL", url)
+    monkeypatch.delenv("GAMEWORLD_PORT_RANGE", raising=False)
     monkeypatch.setattr(setup_check_api, "run_setup_check", lambda docker_url: _result(*failed))
     body = (await client.get("/api/setup-check", headers=appapi_headers())).json()
     assert body["proxy_commands"] == []
+    # The firewall cannot be checked from inside, so its commands come also when ok.
+    assert body["firewall"] == FIREWALL_JSON
+    assert detect_calls == []
 
 
-async def test_api_config_error_has_no_commands(client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_api_firewall_follows_port_range(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, detect_calls: list[str]
+) -> None:
+    monkeypatch.setenv("GAMEWORLD_DOCKER_URL", DEFAULT_URL)
+    monkeypatch.setenv("GAMEWORLD_PORT_RANGE", "31000-31004")
+    monkeypatch.setattr(setup_check_api, "run_setup_check", lambda docker_url: _result())
+    body = (await client.get("/api/setup-check", headers=appapi_headers())).json()
+    assert body["firewall"]["port_range"] == "31000-31004"
+    assert body["firewall"]["commands"][0]["command"].endswith("port 31000:31004")
+    assert detect_calls == []
+
+
+async def test_api_config_error_has_no_commands(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, detect_calls: list[str]
+) -> None:
     monkeypatch.setenv("GAMEWORLD_DOCKER_URL", DEFAULT_URL)
     monkeypatch.setenv("GAMEWORLD_PORT_RANGE", "kaputt")
     body = (await client.get("/api/setup-check", headers=appapi_headers())).json()
     assert body["items"][0]["id"] == "config"
     assert body["proxy_commands"] == []
+    assert body["firewall"] is None
+    assert detect_calls == []

@@ -42,7 +42,15 @@ def no_service(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     from gameworld.main import APP
 
     monkeypatch.setitem(APP.dependency_overrides, worlds.get_service, forbidden_service)
+
+    def forbidden_probe() -> object:
+        calls.append("detect_docker_network")
+        raise AssertionError("Netzerkennung für Nicht-Verwalter aufgerufen")
+
     monkeypatch.setattr(setup_check, "run_setup_check", forbidden_check)
+    monkeypatch.setattr(setup_check, "detect_docker_network", forbidden_probe)
+    # Default proxy address: for a manager this would trigger commands and the probe.
+    monkeypatch.setenv("GAMEWORLD_DOCKER_URL", "tcp://gameworld-docker-proxy:2375")
     return calls
 
 
@@ -55,6 +63,9 @@ async def test_admin_routes_forbidden_for_players(
     assert response.status_code == 403
     assert response.json()["detail"] == FORBIDDEN
     assert no_service == []
+    # Children never see a proxy or firewall command.
+    for forbidden in ("docker run", "docker-socket-proxy", "ufw", "firewall-cmd", "compose"):
+        assert forbidden not in response.text
 
 
 async def test_admin_lists_worlds(client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
