@@ -98,6 +98,7 @@ async function tryStep(lang, user, width, where, fn) {
 
 // --- throw-away world (created by gw-lehrer, also visible to the NC admin) -----------
 let world = null
+let holidayId = null
 const baselineIds = baselineWorldIds(OUT)
 
 async function setupWorld() {
@@ -124,6 +125,12 @@ async function setupWorld() {
 	// mia as a player so that the player dialogs (password, rename, adult) exist.
 	const inv = await api(page, 'de', 'POST', `/api/worlds/${world.id}/invites`, { kind: 'user', target: 'mia' })
 	report.push({ lang: 'de', user: 'admin', width: 0, where: 'setup invite mia', hits: {}, status: inv.status, note: `status ${inv.status} ${inv.detail}` })
+	// HOLIDAY=1: a future holiday (no effect today) so that the holiday remove dialog exists.
+	if (process.env.HOLIDAY === '1') {
+		const h = await api(page, 'de', 'POST', '/api/playtime/holidays', { label: 'audit261102', start_date: '2027-07-01', end_date: '2027-07-02' })
+		holidayId = h.body?.id ?? null
+		report.push({ lang: 'de', user: 'admin', width: 0, where: 'setup holiday', hits: {}, status: h.status, note: `status ${h.status} id ${holidayId}` })
+	}
 	await ctx.close()
 }
 
@@ -132,6 +139,10 @@ async function teardownWorld() {
 	const ctx = await browser.newContext({ viewport: VIEWPORTS[1280] })
 	const page = await ctx.newPage()
 	await login(page, 'admin')
+	if (holidayId !== null) {
+		const h = await api(page, 'de', 'DELETE', `/api/playtime/holidays/${holidayId}`)
+		report.push({ lang: 'de', user: 'admin', width: 0, where: 'teardown holiday', hits: {}, status: h.status, note: `status ${h.status}` })
+	}
 	await api(page, 'de', 'POST', `/api/worlds/${world.id}/invites/remove`, { kind: 'user', target: 'mia' })
 	assertThrowaway(world, baselineIds)
 	const del = await api(page, 'de', 'DELETE', `/api/worlds/${world.id}`)
@@ -211,7 +222,8 @@ async function auditManager(page, lang, user, width, t) {
 	}
 	// Holiday remove dialog (only if holidays exist), cancelled.
 	await tryStep(lang, user, width, 'dialog holiday remove', async () => {
-		const btn = page.locator('main .holidays').getByRole('button', { name: t['kids.holidays.remove'], exact: true })
+		// The button carries an aria-label ("<label> entfernen"), so match its visible text.
+		const btn = page.locator('main .holidays button', { hasText: t['kids.holidays.remove'] })
 		if (!(await btn.count())) { report.push({ lang, user, width, where: 'dialog holiday remove', hits: {}, note: 'no holiday entered' }); return }
 		await btn.first().click({ timeout: 5000 })
 		await page.waitForTimeout(1200)
