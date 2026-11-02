@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+import anyio
 import httpx
 import pytest
 from fastapi import HTTPException, Request
@@ -382,6 +383,63 @@ async def test_teacher_without_admin_right_keeps_admin_stand(
     assert school.group_calls == [(LEHRER, "admin"), (LEHRER, "lehrkraefte")]
     assert _raw_snapshot(_db(app_env)) == {"admin": ["admin"], "lehrkraefte": [LEHRER]}
     assert _raw_meta(_db(app_env), META_TIME_ADMINS) == ["admin", LEHRER]
+
+
+class _SlowDirectory:
+    """Group source with a fixed delay per call; records how many calls run at the same time."""
+
+    def __init__(self, groups: dict[str, list[str]], delay: float, failing: str | None = None) -> None:
+        self.groups = groups
+        self.delay = delay
+        self.failing = failing
+        self.running = 0
+        self.peak = 0
+        self.calls: list[tuple[str, str]] = []
+
+    async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
+        self.calls.append((acting_uid, gid))
+        self.running += 1
+        self.peak = max(self.peak, self.running)
+        try:
+            await anyio.sleep(self.delay)
+            if gid == self.failing:
+                raise RuntimeError(f"broken {gid}")
+            if gid == "admin" and acting_uid != "admin":
+                raise DirectoryRejectedError("403")
+            return list(self.groups.get(gid, []))
+        finally:
+            self.running -= 1
+
+
+async def test_manager_groups_are_read_side_by_side(service: WorldService, store: WorldStore, app_env: Path) -> None:
+    """B1: the groups are read in parallel; the stored state equals the one-after-the-other result."""
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte", "eltern"]))
+    slow = _SlowDirectory({"admin": ["admin"], "lehrkraefte": [LEHRER], "eltern": ["papa"]}, delay=0.3)
+    started = anyio.current_time()
+    await TimeService(service, cast(Any, slow)).refresh_admins("admin", force=True)
+    elapsed = anyio.current_time() - started
+    assert slow.peak == 3
+    assert elapsed < 0.8, elapsed
+    assert sorted(slow.calls) == [("admin", "admin"), ("admin", "eltern"), ("admin", "lehrkraefte")]
+    assert _raw_snapshot(_db(app_env)) == {"admin": ["admin"], "eltern": ["papa"], "lehrkraefte": [LEHRER]}
+    assert _raw_meta(_db(app_env), META_TIME_ADMINS) == ["admin", LEHRER, "papa"]
+
+
+async def test_parallel_read_keeps_the_403_rule_per_group(service: WorldService, app_env: Path) -> None:
+    """Negative test: a teacher refused on admin (403) still leaves the admin state untouched."""
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte"]))
+    slow = _SlowDirectory({"admin": ["admin"], "lehrkraefte": [LEHRER]}, delay=0.05)
+    await TimeService(service, cast(Any, slow)).refresh_admins(LEHRER, force=True)
+    assert _raw_snapshot(_db(app_env)) == {"admin": ["admin"], "lehrkraefte": [LEHRER]}
+
+
+async def test_parallel_read_raises_an_unexpected_error_unwrapped(service: WorldService, app_env: Path) -> None:
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte"]))
+    before = _raw_snapshot(_db(app_env))
+    slow = _SlowDirectory({"admin": ["admin"], "lehrkraefte": [LEHRER]}, delay=0.05, failing="lehrkraefte")
+    with pytest.raises(RuntimeError, match="broken lehrkraefte"):
+        await TimeService(service, cast(Any, slow)).refresh_admins("admin", force=True)
+    assert _raw_snapshot(_db(app_env)) == before
 
 
 async def test_outage_on_one_group_keeps_only_that_stand(

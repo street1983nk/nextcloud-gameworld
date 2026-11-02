@@ -6,147 +6,150 @@
 		:name="t('parent.players.title', { name: world.name })"
 		size="large"
 		@update:open="onOpen">
-		<NcLoadingIcon v-if="loading" :size="32" />
-		<template v-else>
-			<NcNoteCard v-if="loadError" type="error">
-				{{ loadError }}
-			</NcNoteCard>
-			<NcNoteCard v-if="error" type="error">
-				{{ error }}
-			</NcNoteCard>
-			<NcNoteCard v-if="notice" type="success">
-				{{ notice }}
-			</NcNoteCard>
-			<NcNoteCard v-if="notApplied" type="info">
-				{{ t('parent.common.notApplied') }}
-			</NcNoteCard>
-			<NcNoteCard v-if="adultNotApplied" type="info">
-				{{ notAppliedMessage() }}
-			</NcNoteCard>
-			<NcNoteCard v-if="info" type="info">
-				{{ info }}
-			</NcNoteCard>
+		<div class="players" @keydown.capture="onKeydown">
+			<NcLoadingIcon v-if="loading" :size="32" />
+			<template v-else>
+				<NcNoteCard v-if="loadError" type="error">
+					{{ loadError }}
+				</NcNoteCard>
+				<NcNoteCard v-if="error" type="error">
+					{{ error }}
+				</NcNoteCard>
+				<NcNoteCard v-if="notice" type="success">
+					{{ notice }}
+				</NcNoteCard>
+				<NcNoteCard v-if="notApplied" type="info">
+					{{ t('parent.common.notApplied') }}
+				</NcNoteCard>
+				<NcNoteCard v-if="adultNotApplied" type="info">
+					{{ notAppliedMessage() }}
+				</NcNoteCard>
+				<NcNoteCard v-if="info" type="info">
+					{{ info }}
+				</NcNoteCard>
 
-			<p v-if="!loadError && players.length === 0" class="players__empty">
-				{{ t('parent.players.empty') }}
-			</p>
+				<p v-if="!loadError && players.length === 0" class="players__empty">
+					{{ t('parent.players.empty') }}
+				</p>
 
-			<ul v-else class="players__list">
-				<li
-					v-for="player in players"
-					:key="player.nc_user"
-					class="players__item"
-					:data-nc-user="player.nc_user">
-					<div class="players__head">
-						<strong>{{ player.display_name }}</strong>
-						<NcChip
-							v-if="player.verwalter"
-							variant="tertiary"
-							:text="t('parent.players.verwalter')"
-							no-close />
-						<NcChip
-							v-else-if="player.adult"
-							variant="secondary"
-							:text="t('parent.players.adult')"
-							no-close />
-						<span class="players__via">{{ viaText(player.via) }}</span>
-					</div>
-
-					<!-- Managers play without rules anyway and get no switch (D-06). -->
-					<div v-if="!player.verwalter" class="players__adult">
-						<NcCheckboxRadioSwitch
-							type="switch"
-							:model-value="Boolean(adultShown[player.nc_user])"
-							:disabled="busy || adultSaving === player.nc_user"
-							:description="switchMeta()"
-							@update:model-value="(on) => toggleAdult(player, on)">
-							{{ t('parent.players.adult') }}
-						</NcCheckboxRadioSwitch>
-					</div>
-
-					<NcFormBox>
-						<NcFormBoxCopyButton :label="t('parent.players.playerName')" :value="player.player_name" />
-						<NcFormBoxCopyButton
-							v-if="revealed[player.nc_user]"
-							:label="t('parent.players.password')"
-							:value="player.password" />
-					</NcFormBox>
-
-					<div class="players__password">
-						<span v-if="!revealed[player.nc_user]" class="players__masked" :aria-label="t('parent.players.passwordHidden')">
-							{{ t('parent.players.passwordMasked') }}
-						</span>
-						<NcButton variant="tertiary" @click="toggleReveal(player)">
-							{{ revealed[player.nc_user] ? t('parent.players.hide') : t('parent.players.show') }}
-						</NcButton>
-						<NcButton
-							v-if="!revealed[player.nc_user]"
-							variant="tertiary"
-							@click="copyPassword(player)">
-							{{ copied === player.nc_user ? t('parent.players.copied') : t('parent.players.copyPassword') }}
-						</NcButton>
-					</div>
-
-					<div class="players__actions">
-						<NcButton :disabled="busy" @click="askRotate(player)">
-							{{ t('parent.players.newPassword') }}
-						</NcButton>
-						<NcButton :disabled="busy" @click="startRename(player)">
-							{{ t('parent.players.rename') }}
-						</NcButton>
-					</div>
-
-					<NcNoteCard v-if="rotating === player.nc_user" type="warning">
-						<p>{{ t('parent.players.rotateWarning') }}</p>
-						<div class="players__confirm">
-							<NcButton variant="tertiary" :disabled="busy" @click="rotating = ''">
-								{{ t('parent.common.cancel') }}
-							</NcButton>
-							<NcButton variant="warning" :disabled="busy" @click="confirmRotate(player)">
-								{{ t('parent.players.rotateConfirm') }}
-							</NcButton>
+				<ul v-else class="players__list">
+					<li
+						v-for="player in players"
+						:key="player.nc_user"
+						class="players__item"
+						:data-nc-user="player.nc_user">
+						<div class="players__head">
+							<strong>{{ player.display_name }}</strong>
+							<NcChip
+								v-if="player.verwalter"
+								variant="tertiary"
+								:text="t('parent.players.verwalter')"
+								no-close />
+							<!-- Same state as the switch below: chip and switch change and jump back together (B1). -->
+							<NcChip
+								v-else-if="adultShown[player.nc_user]"
+								variant="secondary"
+								:text="t('parent.players.adult')"
+								no-close />
+							<span class="players__via">{{ viaText(player.via) }}</span>
 						</div>
-					</NcNoteCard>
 
-					<div v-if="renaming === player.nc_user" class="players__rename">
-						<NcNoteCard type="warning">
-							{{ t('parent.players.renameWarning') }}
-						</NcNoteCard>
-						<NcTextField
-							v-model="newName"
-							:label="t('parent.players.newPlayerName')"
-							:maxlength="20"
-							:disabled="busy" />
-						<div class="players__confirm">
-							<NcButton variant="tertiary" :disabled="busy" @click="renaming = ''">
-								{{ t('parent.common.cancel') }}
+						<!-- Managers play without rules anyway and get no switch (D-06). -->
+						<div v-if="!player.verwalter" class="players__adult">
+							<NcCheckboxRadioSwitch
+								type="switch"
+								:model-value="Boolean(adultShown[player.nc_user])"
+								:disabled="busy || adultSaving === player.nc_user"
+								:description="switchMeta()"
+								@update:model-value="(on) => toggleAdult(player, on)">
+								{{ t('parent.players.adult') }}
+							</NcCheckboxRadioSwitch>
+						</div>
+
+						<NcFormBox>
+							<NcFormBoxCopyButton :label="t('parent.players.playerName')" :value="player.player_name" />
+							<NcFormBoxCopyButton
+								v-if="revealed[player.nc_user]"
+								:label="t('parent.players.password')"
+								:value="player.password" />
+						</NcFormBox>
+
+						<div class="players__password">
+							<span v-if="!revealed[player.nc_user]" class="players__masked" :aria-label="t('parent.players.passwordHidden')">
+								{{ t('parent.players.passwordMasked') }}
+							</span>
+							<NcButton variant="tertiary" @click="toggleReveal(player)">
+								{{ revealed[player.nc_user] ? t('parent.players.hide') : t('parent.players.show') }}
 							</NcButton>
 							<NcButton
-								variant="primary"
-								:disabled="busy || newName.trim() === ''"
-								@click="confirmRename(player)">
-								{{ t('parent.players.saveName') }}
+								v-if="!revealed[player.nc_user]"
+								variant="tertiary"
+								@click="copyPassword(player)">
+								{{ copied === player.nc_user ? t('parent.players.copied') : t('parent.players.copyPassword') }}
 							</NcButton>
 						</div>
-					</div>
-				</li>
-			</ul>
 
-			<h3 class="players__title">
-				{{ t('parent.players.invitesTitle') }}
-			</h3>
-			<p v-if="invites.length === 0" class="players__empty">
-				{{ t('parent.players.noInvites') }}
-			</p>
-			<ul v-else class="players__invites">
-				<li v-for="entry in invites" :key="`${entry.kind}:${entry.target}`" class="players__invite">
-					<span>{{ inviteText(entry) }}</span>
-					<NcButton variant="error" :disabled="busy" @click="remove(entry)">
-						{{ t('parent.players.remove') }}
-					</NcButton>
-				</li>
-			</ul>
-		</template>
+						<div class="players__actions">
+							<NcButton class="players__rotate" :disabled="busy" @click="askRotate(player)">
+								{{ t('parent.players.newPassword') }}
+							</NcButton>
+							<NcButton class="players__rename-start" :disabled="busy" @click="startRename(player)">
+								{{ t('parent.players.rename') }}
+							</NcButton>
+						</div>
+
+						<NcNoteCard v-if="rotating === player.nc_user" type="warning">
+							<p>{{ t('parent.players.rotateWarning') }}</p>
+							<div class="players__confirm">
+								<NcButton variant="tertiary" :disabled="busy" @click="cancelRotate(player)">
+									{{ t('parent.common.cancel') }}
+								</NcButton>
+								<NcButton variant="warning" :disabled="busy" @click="confirmRotate(player)">
+									{{ t('parent.players.rotateConfirm') }}
+								</NcButton>
+							</div>
+						</NcNoteCard>
+
+						<div v-if="renaming === player.nc_user" class="players__rename">
+							<NcNoteCard type="warning">
+								{{ t('parent.players.renameWarning') }}
+							</NcNoteCard>
+							<NcTextField
+								v-model="newName"
+								:label="t('parent.players.newPlayerName')"
+								:maxlength="20"
+								:disabled="busy" />
+							<div class="players__confirm">
+								<NcButton variant="tertiary" :disabled="busy" @click="cancelRename(player)">
+									{{ t('parent.common.cancel') }}
+								</NcButton>
+								<NcButton
+									variant="primary"
+									:disabled="busy || newName.trim() === ''"
+									@click="confirmRename(player)">
+									{{ t('parent.players.saveName') }}
+								</NcButton>
+							</div>
+						</div>
+					</li>
+				</ul>
+
+				<h3 class="players__title">
+					{{ t('parent.players.invitesTitle') }}
+				</h3>
+				<p v-if="invites.length === 0" class="players__empty">
+					{{ t('parent.players.noInvites') }}
+				</p>
+				<ul v-else class="players__invites">
+					<li v-for="entry in invites" :key="`${entry.kind}:${entry.target}`" class="players__invite">
+						<span>{{ inviteText(entry) }}</span>
+						<NcButton variant="error" :disabled="busy" @click="remove(entry)">
+							{{ t('parent.players.remove') }}
+						</NcButton>
+					</li>
+				</ul>
+			</template>
+		</div>
 
 		<template #actions>
 			<NcButton variant="tertiary" @click="emit('close')">
@@ -223,6 +226,7 @@ import {
 	rulesKeptText,
 	switchMeta,
 } from '../adult.js'
+import { escapeShouldClose } from '../dialogKeys.js'
 import { t } from '../i18n/index.js'
 import { notAppliedMessage } from '../playtime.js'
 
@@ -441,6 +445,27 @@ function askRotate(player) {
 	rotating.value = player.nc_user
 }
 
+// Cancel removes the focused button from the page; without the focus inside the dialog
+// NcModal no longer sees Escape (B3). The focus goes back to the button that opened the step.
+async function focusRowButton(ncUser, selector) {
+	await nextTick()
+	setTimeout(() => {
+		const rows = document.querySelectorAll('.players__item')
+		const row = [...rows].find((item) => item.dataset.ncUser === ncUser)
+		row?.querySelector(`${selector} button, button${selector}`)?.focus()
+	}, 0)
+}
+
+function cancelRotate(player) {
+	rotating.value = ''
+	focusRowButton(player.nc_user, '.players__rotate')
+}
+
+function cancelRename(player) {
+	renaming.value = ''
+	focusRowButton(player.nc_user, '.players__rename-start')
+}
+
 function startRename(player) {
 	resetMessages()
 	rotating.value = ''
@@ -467,13 +492,19 @@ async function change(action, success) {
 	}
 }
 
-function confirmRotate(player) {
-	change(() => rotatePassword(player.nc_user), t('parent.players.rotated', { name: player.display_name }))
+async function confirmRotate(player) {
+	await change(() => rotatePassword(player.nc_user), t('parent.players.rotated', { name: player.display_name }))
+	if (rotating.value === '') {
+		focusRowButton(player.nc_user, '.players__rotate')
+	}
 }
 
-function confirmRename(player) {
+async function confirmRename(player) {
 	const name = newName.value.trim()
-	change(() => renamePlayer(player.nc_user, name), t('parent.players.renamed', { name: player.display_name, newName: name }))
+	await change(() => renamePlayer(player.nc_user, name), t('parent.players.renamed', { name: player.display_name, newName: name }))
+	if (renaming.value === '') {
+		focusRowButton(player.nc_user, '.players__rename-start')
+	}
 }
 
 async function remove(entry) {
@@ -494,6 +525,15 @@ async function remove(entry) {
 
 function onOpen(open) {
 	if (!open) {
+		emit('close')
+	}
+}
+
+// Escape with the focus on a switch or in the name field: NcModal ignores it there (dialogKeys.js).
+// The adult confirmation is its own dialog (v-else), so this never closes it.
+function onKeydown(event) {
+	if (escapeShouldClose(event)) {
+		event.stopPropagation()
 		emit('close')
 	}
 }

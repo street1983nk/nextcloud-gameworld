@@ -71,6 +71,8 @@ LOG = logging.getLogger(__name__)
 MAX_HOLIDAYS = 50
 # Display name lookups at Nextcloud running at the same time for the playtime list.
 DISPLAY_NAME_LOOKUPS = 8
+# Manager groups read at Nextcloud at the same time for the manager snapshot.
+GROUP_READS = 8
 MSG_TOO_MANY_HOLIDAYS = f"Es sind höchstens {MAX_HOLIDAYS} Ferienzeiträume möglich."
 MSG_NO_HOLIDAY = "Diesen Ferienzeitraum gibt es nicht."
 MSG_ADMIN_NO_RULES = "Verwalter haben keine Spielzeitregeln."
@@ -446,25 +448,41 @@ class TimeService:
     async def _read_groups(self, groups: list[str], candidates: list[str]) -> dict[str, _GroupRead]:
         """Each group as the candidates in turn, until one reads it and is in it.
 
-        Outside any lock (lock rule); an error affects only that one group.
+        Outside any lock (lock rule); an error affects only that one group. The
+        groups are read side by side (one after the other took ~2 s per group, B1);
+        within a group the candidates stay in their order. Any other error is
+        raised unwrapped, the first one in group order, as before.
         """
-        reads: dict[str, _GroupRead] = {}
-        for gid in groups:
-            read = _GroupRead()
-            for uid in candidates:
-                try:
-                    members = await self._directory.group_members(uid, gid)
-                except DirectoryRejectedError:
-                    read.rejected.add(uid)
-                    continue
-                except DirectoryUnavailableError:
-                    read.outage = True
-                    continue
-                read.answer = frozenset(members or ())
-                if uid in read.answer:
-                    read.confirmed.add(uid)
-                    break
-            reads[gid] = read
+        reads: dict[str, _GroupRead] = {gid: _GroupRead() for gid in groups}
+        errors: dict[str, BaseException] = {}
+        limiter = anyio.CapacityLimiter(GROUP_READS)
+
+        async def read_group(gid: str) -> None:
+            read = reads[gid]
+            async with limiter:
+                for uid in candidates:
+                    try:
+                        members = await self._directory.group_members(uid, gid)
+                    except DirectoryRejectedError:
+                        read.rejected.add(uid)
+                        continue
+                    except DirectoryUnavailableError:
+                        read.outage = True
+                        continue
+                    except Exception as exc:  # re-raised unwrapped below
+                        errors[gid] = exc
+                        return
+                    read.answer = frozenset(members or ())
+                    if uid in read.answer:
+                        read.confirmed.add(uid)
+                        break
+
+        async with anyio.create_task_group() as task_group:
+            for gid in reads:
+                task_group.start_soon(read_group, gid)
+        for gid in reads:
+            if gid in errors:
+                raise errors[gid]
         return reads
 
     async def list_children(self, acting_uid: str) -> PlaytimeView:
