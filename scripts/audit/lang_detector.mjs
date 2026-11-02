@@ -20,8 +20,9 @@ const DATA_GROUPS = {
 	worlds: 'Baumhaus Inselabenteuer Treehouse Island adventure La cabane Île aux aventures audit261102',
 	// Game and product names.
 	products: 'Browser Minetest VoxeLibre Nextcloud Gameworld Luanti Talk MineClone',
-	// Account names, display names and Nextcloud group IDs of the dev instance.
-	accounts: 'mama oma mamie maman grandma mom leo mia Kind Frau Weber Familie Family Famille klasse lehrkraefte gw-lehrer gw-kind admin localhost',
+	// Account names, display names and Nextcloud group IDs of the dev instance
+	// ("eltern" verified 02.11.2026: group ID in the manager-groups list, not UI text).
+	accounts: 'mama oma mamie maman grandma mom leo mia Kind Frau Weber Familie Family Famille klasse lehrkraefte eltern parents gw-lehrer gw-kind admin localhost',
 	// Language names in their own language (language switch, world language select).
 	languages: 'Deutsch English Français',
 	// Time zone names (IANA ids are data).

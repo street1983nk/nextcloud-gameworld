@@ -26,10 +26,17 @@ and permission tests against throw-away worlds, load times.
 ```sh
 uv run python scripts/audit/dump_catalog.py .dev/audit/server.json
 node scripts/audit/selftest.mjs . .dev/audit/server.json          # must exit 0
+NODE_PATH=... node scripts/audit/layout_selftest.mjs                # layout probe controls, must exit 0
 NODE_PATH=... node scripts/audit/audit.mjs . .dev/audit/261102       # language + layout
 NODE_PATH=... node scripts/audit/functional.mjs . .dev/audit/261102  # actions + permissions
 NODE_PATH=... node scripts/audit/loadtimes.mjs . .dev/audit/261102   # load times
+NODE_PATH=... node scripts/audit/cleanup.mjs . .dev/audit/261102     # leftovers (--dry-run to list)
 ```
+
+`audit.mjs` writes `baseline-worlds.json` on its first run; `functional.mjs` needs it.
+`functional.mjs` accepts `SECTIONS=1,2,3,4,5` to run parts separately; `audit.mjs`
+accepts `LANGS` and `USERS`. Shared helpers live in `common.mjs`, the in-page layout
+probe in `layout_probe.mjs`.
 
 Output goes to `.dev/audit/<run>/` (gitignored): `baseline.txt`, `report.json`,
 `functional.json`, `loadtimes.json`, `shots/`, text dumps.
