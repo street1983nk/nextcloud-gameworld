@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 DEFAULT_TIME_ZONE = "Europe/Berlin"
 # Rule texts (German = message ID, D-25); they reach the client as 422 via str(exc).
-MSG_LIMIT_RANGE = "Das Tageslimit liegt zwischen 1 und 1440 Minuten oder ist None."
+MSG_LIMIT_RANGE = "Das Tageslimit muss zwischen 1 und 1440 Minuten liegen. Ohne Angabe gilt kein Tageslimit."
 MSG_WINDOW_BOTH_OR_NONE = "Ein Zeitfenster braucht Anfang und Ende oder keins von beiden."
 MSG_WINDOW_START_RANGE = "Der Fensteranfang liegt zwischen 0 und 1439 Minuten."
 MSG_WINDOW_END_RANGE = "Das Fensterende liegt zwischen 1 und 1440 Minuten."

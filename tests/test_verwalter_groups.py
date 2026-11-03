@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+import anyio
 import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from gameworld.access import roles
 from gameworld.access.directory import DirectoryRejectedError, DirectoryUnavailableError
@@ -22,6 +23,7 @@ from gameworld.access.roles import (
     ADMIN_GROUP,
     META_VERWALTER_GROUPS,
     MSG_NC_ADMIN_ONLY,
+    MSG_NC_ADMIN_ONLY_READ,
     ROLE_SPIELER,
     ROLE_VERWALTER,
     Profile,
@@ -148,9 +150,14 @@ async def test_invalidate_drops_cached_profiles() -> None:
 # require_nc_admin (T-06-02): only group admin, never from the cache
 
 
+def _request(method: str) -> Request:
+    """Bare request; require_nc_admin only reads its method for the refusal text."""
+    return Request({"type": "http", "method": method, "headers": [], "path": "/api/admin/groups"})
+
+
 async def test_nc_admin_passes_for_admin() -> None:
     service = RoleService(fake_lookup, _groups(WITH_TEACHERS))
-    assert await require_nc_admin("admin", service) == "admin"
+    assert await require_nc_admin("admin", service, _request("POST")) == "admin"
 
 
 async def test_verwalter_from_extra_group_is_not_nc_admin() -> None:
@@ -158,10 +165,55 @@ async def test_verwalter_from_extra_group_is_not_nc_admin() -> None:
     # Precondition: the teacher really is a manager (otherwise the 403 would prove nothing).
     assert await service.role(LEHRER) == ROLE_VERWALTER
     with pytest.raises(HTTPException) as caught:
-        await require_nc_admin(LEHRER, service)
+        await require_nc_admin(LEHRER, service, _request("POST"))
     assert caught.value.status_code == 403
     assert caught.value.detail == MSG_NC_ADMIN_ONLY
     assert MSG_NC_ADMIN_ONLY == "Nur Nextcloud-Admins dürfen das ändern."
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [
+        ("GET", "Nur Nextcloud-Admins dürfen das sehen."),
+        ("HEAD", "Nur Nextcloud-Admins dürfen das sehen."),
+        ("get", "Nur Nextcloud-Admins dürfen das sehen."),
+        ("POST", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("PUT", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("PATCH", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("DELETE", "Nur Nextcloud-Admins dürfen das ändern."),
+        ("OPTIONS", "Nur Nextcloud-Admins dürfen das ändern."),
+    ],
+)
+async def test_nc_admin_refusal_text_follows_the_method(method: str, expected: str) -> None:
+    """B8: the method picks only the text; a manager without group admin is refused for every method."""
+    calls: list[str] = []
+    service = RoleService(_counting_lookup(calls), _groups(WITH_TEACHERS))
+    assert await service.role(LEHRER) == ROLE_VERWALTER
+    with pytest.raises(HTTPException) as caught:
+        await require_nc_admin(LEHRER, service, _request(method))
+    assert caught.value.status_code == 403
+    assert caught.value.detail == expected
+    # Fresh lookup at Nextcloud for this request too (role cache warm, still asked again).
+    assert calls == [LEHRER, LEHRER]
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST", "DELETE"])
+async def test_nc_admin_passes_for_admin_with_every_method(method: str) -> None:
+    calls: list[str] = []
+    service = RoleService(_counting_lookup(calls), _groups(WITH_TEACHERS))
+    assert await require_nc_admin("admin", service, _request(method)) == "admin"
+    assert calls == ["admin"]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+async def test_nc_admin_outage_is_503_for_every_method(method: str) -> None:
+    async def failing(uid: str) -> Profile:
+        raise ConnectionError(uid)
+
+    with pytest.raises(HTTPException) as caught:
+        await require_nc_admin("admin", RoleService(failing), _request(method))
+    assert caught.value.status_code == 503
+    assert caught.value.detail == roles.MSG_UNAVAILABLE
 
 
 async def test_nc_admin_lookup_error_gives_503() -> None:
@@ -169,7 +221,7 @@ async def test_nc_admin_lookup_error_gives_503() -> None:
         raise ConnectionError(uid)
 
     with pytest.raises(HTTPException) as caught:
-        await require_nc_admin("admin", RoleService(failing))
+        await require_nc_admin("admin", RoleService(failing), _request("POST"))
     assert caught.value.status_code == 503
     assert caught.value.detail == roles.MSG_UNAVAILABLE
 
@@ -180,8 +232,8 @@ async def test_nc_admin_asks_nextcloud_on_every_call() -> None:
     await service.role("admin")
     assert calls == ["admin"]
     # The role cache is warm, require_nc_admin asks anew every time anyway.
-    await require_nc_admin("admin", service)
-    await require_nc_admin("admin", service)
+    await require_nc_admin("admin", service, _request("POST"))
+    await require_nc_admin("admin", service, _request("POST"))
     assert calls == ["admin", "admin", "admin"]
 
 
@@ -192,10 +244,10 @@ async def test_nc_admin_sees_loss_of_admin_group_immediately() -> None:
         return Profile(user_id=uid, display_name=uid, groups=groups.get(uid, ()))
 
     service = RoleService(lookup)
-    assert await require_nc_admin("admin", service) == "admin"
+    assert await require_nc_admin("admin", service, _request("POST")) == "admin"
     groups["admin"] = ("lehrkraefte",)
     with pytest.raises(HTTPException) as caught:
-        await require_nc_admin("admin", service)
+        await require_nc_admin("admin", service, _request("POST"))
     assert caught.value.status_code == 403
 
 
@@ -331,6 +383,63 @@ async def test_teacher_without_admin_right_keeps_admin_stand(
     assert school.group_calls == [(LEHRER, "admin"), (LEHRER, "lehrkraefte")]
     assert _raw_snapshot(_db(app_env)) == {"admin": ["admin"], "lehrkraefte": [LEHRER]}
     assert _raw_meta(_db(app_env), META_TIME_ADMINS) == ["admin", LEHRER]
+
+
+class _SlowDirectory:
+    """Group source with a fixed delay per call; records how many calls run at the same time."""
+
+    def __init__(self, groups: dict[str, list[str]], delay: float, failing: str | None = None) -> None:
+        self.groups = groups
+        self.delay = delay
+        self.failing = failing
+        self.running = 0
+        self.peak = 0
+        self.calls: list[tuple[str, str]] = []
+
+    async def group_members(self, acting_uid: str, gid: str) -> list[str] | None:
+        self.calls.append((acting_uid, gid))
+        self.running += 1
+        self.peak = max(self.peak, self.running)
+        try:
+            await anyio.sleep(self.delay)
+            if gid == self.failing:
+                raise RuntimeError(f"broken {gid}")
+            if gid == "admin" and acting_uid != "admin":
+                raise DirectoryRejectedError("403")
+            return list(self.groups.get(gid, []))
+        finally:
+            self.running -= 1
+
+
+async def test_manager_groups_are_read_side_by_side(service: WorldService, store: WorldStore, app_env: Path) -> None:
+    """B1: the groups are read in parallel; the stored state equals the one-after-the-other result."""
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte", "eltern"]))
+    slow = _SlowDirectory({"admin": ["admin"], "lehrkraefte": [LEHRER], "eltern": ["papa"]}, delay=0.3)
+    started = anyio.current_time()
+    await TimeService(service, cast(Any, slow)).refresh_admins("admin", force=True)
+    elapsed = anyio.current_time() - started
+    assert slow.peak == 3
+    assert elapsed < 0.8, elapsed
+    assert sorted(slow.calls) == [("admin", "admin"), ("admin", "eltern"), ("admin", "lehrkraefte")]
+    assert _raw_snapshot(_db(app_env)) == {"admin": ["admin"], "eltern": ["papa"], "lehrkraefte": [LEHRER]}
+    assert _raw_meta(_db(app_env), META_TIME_ADMINS) == ["admin", LEHRER, "papa"]
+
+
+async def test_parallel_read_keeps_the_403_rule_per_group(service: WorldService, app_env: Path) -> None:
+    """Negative test: a teacher refused on admin (403) still leaves the admin state untouched."""
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte"]))
+    slow = _SlowDirectory({"admin": ["admin"], "lehrkraefte": [LEHRER]}, delay=0.05)
+    await TimeService(service, cast(Any, slow)).refresh_admins(LEHRER, force=True)
+    assert _raw_snapshot(_db(app_env)) == {"admin": ["admin"], "lehrkraefte": [LEHRER]}
+
+
+async def test_parallel_read_raises_an_unexpected_error_unwrapped(service: WorldService, app_env: Path) -> None:
+    _write_meta_raw(_db(app_env), json.dumps(["lehrkraefte"]))
+    before = _raw_snapshot(_db(app_env))
+    slow = _SlowDirectory({"admin": ["admin"], "lehrkraefte": [LEHRER]}, delay=0.05, failing="lehrkraefte")
+    with pytest.raises(RuntimeError, match="broken lehrkraefte"):
+        await TimeService(service, cast(Any, slow)).refresh_admins("admin", force=True)
+    assert _raw_snapshot(_db(app_env)) == before
 
 
 async def test_outage_on_one_group_keeps_only_that_stand(
@@ -690,7 +799,7 @@ async def test_admin_routes_are_403_for_everyone_but_nc_admins(
     fake_directory.group_calls.clear()
     response = await client.request(method, path, json=body, headers=appapi_headers(user))
     assert response.status_code == 403
-    assert response.json() == {"detail": MSG_NC_ADMIN_ONLY}
+    assert response.json() == {"detail": MSG_NC_ADMIN_ONLY_READ if method == "GET" else MSG_NC_ADMIN_ONLY}
     assert _raw_meta(_db(app_env), META_VERWALTER_GROUPS) == ["lehrkraefte"]
     assert fake_directory.search_calls == []
     assert fake_directory.group_calls == []

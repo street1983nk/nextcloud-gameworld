@@ -12,18 +12,19 @@ import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
-from pydantic import AfterValidator, BaseModel
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from gameworld.access import roles
 from gameworld.access.roles import Profile, RoleService, UserDep
 from gameworld.api import admin as admin_api
 from gameworld.api import csrf as csrf_api
+from gameworld.api import language as api_language
 from gameworld.api import me as me_api
 from gameworld.api import playtime as playtime_api
 from gameworld.api import setup_check as setup_check_api
@@ -101,9 +102,58 @@ async def test_forbidden_stays_german_for_a_german_kid(client: httpx.AsyncClient
 
 async def test_nc_admin_only_in_english(client: httpx.AsyncClient, lang: Any) -> None:
     lang("gw-lehrer", "en")
-    response = await client.get("/api/admin/verwalter-groups", headers=appapi_headers("gw-lehrer"))
+    response = await client.post(
+        "/api/admin/verwalter-groups/add", json={"gid": "lehrkraefte"}, headers=appapi_headers("gw-lehrer")
+    )
     assert response.status_code == 403
     assert response.json() == {"detail": "Only Nextcloud admins can change this."}
+
+
+READ_TEXTS = {
+    "de": "Nur Nextcloud-Admins dürfen das sehen.",
+    "en": "Only Nextcloud admins can see this.",
+    "fr": "Seuls les administrateurs Nextcloud peuvent voir ceci.",
+}
+CHANGE_TEXTS = {
+    "de": "Nur Nextcloud-Admins dürfen das ändern.",
+    "en": "Only Nextcloud admins can change this.",
+    "fr": "Seuls les administrateurs Nextcloud peuvent modifier ceci.",
+}
+
+
+@pytest.mark.parametrize("user", ["gw-lehrer", KID])
+@pytest.mark.parametrize("language", ["de", "en", "fr"])
+@pytest.mark.parametrize("path", ["/api/admin/groups?search=leh", "/api/admin/verwalter-groups", "/api/admin/orphans"])
+async def test_reading_admin_routes_say_see(client: httpx.AsyncClient, user: str, language: str, path: str) -> None:
+    """B8: reading admin routes refuse with "see this", in the UI language; still 403."""
+    response = await client.get(path, headers={**appapi_headers(user), UI: language})
+    assert response.status_code == 403
+    assert response.json() == {"detail": READ_TEXTS[language]}
+
+
+@pytest.mark.parametrize("user", ["gw-lehrer", KID])
+@pytest.mark.parametrize("language", ["de", "en", "fr"])
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/api/admin/verwalter-groups/add", {"gid": "lehrkraefte"}),
+        ("/api/admin/verwalter-groups/remove", {"gid": "lehrkraefte"}),
+        ("/api/admin/orphans/container/remove", {"id": "a" * 64}),
+        ("/api/admin/orphans/volume/remove", {"name": "gameworld-fremd"}),
+    ],
+)
+async def test_changing_admin_routes_still_say_change(
+    client: httpx.AsyncClient, user: str, language: str, path: str, body: dict[str, str]
+) -> None:
+    response = await client.post(path, json=body, headers={**appapi_headers(user), UI: language})
+    assert response.status_code == 403
+    assert response.json() == {"detail": CHANGE_TEXTS[language]}
+
+
+@pytest.mark.parametrize("language", ["de", "en", "fr"])
+async def test_admin_still_reads_admin_routes(client: httpx.AsyncClient, language: str) -> None:
+    response = await client.get("/api/admin/verwalter-groups", headers={**appapi_headers(), UI: language})
+    assert response.status_code == 200, response.text
 
 
 # --- language source and failure behavior ---------------------------------------------------------
@@ -229,6 +279,14 @@ class Body(BaseModel):
     note: Annotated[str, AfterValidator(_german_note)] = ""
 
 
+class Shapes(BaseModel):
+    """Pattern, literal and length rules like the world, playtime and window routes."""
+
+    world_id: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{12}$")]
+    step: Literal[15, 30, 60]
+    days: Annotated[list[int], Field(min_length=7, max_length=7)]
+
+
 class UserFromHeader:
     """Test middleware: puts X-Test-User into scope["username"] like AppAPIAuthMiddleware."""
 
@@ -259,6 +317,10 @@ def _mini_app() -> FastAPI:
     @app.post("/body")
     async def body(payload: Body) -> dict[str, int]:  # pyright: ignore[reportUnusedFunction]
         return {"count": payload.count}
+
+    @app.post("/shapes")
+    async def shapes(payload: Shapes) -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+        return {"world_id": payload.world_id}
 
     return app
 
@@ -332,7 +394,7 @@ async def test_validator_message_is_translated(mini: httpx.AsyncClient, lang: An
     assert response.status_code == 422
     messages = sorted(entry["msg"] for entry in response.json()["detail"])
     assert messages == [
-        "Input should be a valid integer, unable to parse string as an integer",
+        "The input is not valid.",
         "Value error, Not logged in.",
     ]
 
@@ -342,7 +404,7 @@ async def test_validator_message_is_translated(mini: httpx.AsyncClient, lang: An
     [
         ("de", "Die Eingabe ist ungültig."),
         ("fr", "La saisie n\u2019est pas valide."),
-        ("en", "Input should be a valid integer, unable to parse string as an integer"),
+        ("en", "The input is not valid."),
     ],
 )
 async def test_pydantic_message_in_the_account_language(
@@ -359,7 +421,7 @@ async def test_pydantic_message_in_the_account_language(
     [
         ("de", "Diese Anfrage kann Gameworld nicht ausführen."),
         ("fr", "Gameworld ne peut pas exécuter cette requête."),
-        ("en", "Not Found"),
+        ("en", "Gameworld cannot carry out this request."),
     ],
 )
 async def test_unknown_route_in_the_account_language(
@@ -369,6 +431,59 @@ async def test_unknown_route_in_the_account_language(
     response = await mini.get("/gibt-es-nicht", headers={"X-Test-User": KID})
     assert response.status_code == 404
     assert response.json() == {"detail": expected}
+
+
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("de", "Die Eingabe ist ungültig."),
+        ("fr", "La saisie n\u2019est pas valide."),
+        ("en", "The input is not valid."),
+    ],
+)
+async def test_pattern_literal_and_length_errors_are_never_raw(
+    mini: httpx.AsyncClient, lang: Any, language: str, expected: str
+) -> None:
+    """B7: no pydantic text (pattern, literal, list length) reaches any account, en included."""
+    lang(KID, language)
+    response = await mini.post(
+        "/shapes", json={"world_id": "XYZ", "step": 20, "days": [1, 2, 3, 4, 5, 6]}, headers={"X-Test-User": KID}
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert [entry["msg"] for entry in detail] == [expected] * 3
+    assert sorted(entry["loc"][-1] for entry in detail) == ["days", "step", "world_id"]
+    for raw in ("should match pattern", "Input should be", "should have at least"):
+        assert raw not in response.text
+
+
+async def test_valid_shapes_still_pass(mini: httpx.AsyncClient, lang: Any) -> None:
+    """Positive control for the test above: the same model accepts valid input."""
+    lang(KID, "en")
+    response = await mini.post(
+        "/shapes",
+        json={"world_id": "aaaaaaaaaaa1", "step": 30, "days": [1, 2, 3, 4, 5, 6, 7]},
+        headers={"X-Test-User": KID},
+    )
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize("language", ["de", "en", "fr"])
+async def test_value_error_keeps_the_account_language(mini: httpx.AsyncClient, lang: Any, language: str) -> None:
+    lang(KID, language)
+    response = await mini.post("/body", json={"count": 1, "note": "bad"}, headers={"X-Test-User": KID})
+    assert response.status_code == 422
+    expected = translate(roles.MSG_NOT_LOGGED_IN, language)
+    assert [entry["msg"] for entry in response.json()["detail"]] == [f"Value error, {expected}"]
+
+
+@pytest.mark.parametrize("language", ["de", "en", "fr"])
+async def test_method_not_allowed_is_never_raw(mini: httpx.AsyncClient, lang: Any, language: str) -> None:
+    lang(KID, language)
+    response = await mini.delete("/who", headers={"X-Test-User": KID})
+    assert response.status_code == 405
+    assert response.json() == {"detail": translate(api_language.MSG_REQUEST_FAILED, language)}
+    assert "Method Not Allowed" not in response.text
 
 
 async def test_validator_message_stays_german(mini: httpx.AsyncClient) -> None:
@@ -570,6 +685,16 @@ async def test_setup_check_in_english(client: httpx.AsyncClient, monkeypatch: py
     for item in english:
         assert not german_in(item["message"]), item
         assert setup_texts.DOCS_URL in item["message"] or "Guide" not in item["message"]
+        assert "install.de.md" not in item["message"], item
+    for item in german:
+        assert setup_texts.DOCS_URL_DE in item["message"] or "Anleitung" not in item["message"]
+        assert "install.md#" not in item["message"], item
+    lang("admin", "fr")
+    french = (await client.get("/api/setup-check", headers=appapi_headers())).json()["items"]
+    assert sum(setup_texts.DOCS_URL in item["message"] for item in french) > 10
+    for item in french:
+        assert setup_texts.DOCS_URL in item["message"] or "Guide" not in item["message"]
+        assert "install.de.md" not in item["message"], item
 
 
 async def test_setup_check_config_error_in_english(

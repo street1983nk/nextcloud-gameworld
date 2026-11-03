@@ -44,6 +44,9 @@ MSG_NOT_LOGGED_IN = "Nicht angemeldet."
 MSG_UNAVAILABLE = "Nextcloud antwortet gerade nicht. Bitte gleich noch einmal versuchen."
 MSG_FORBIDDEN = "Nur Eltern können Welten verwalten."
 MSG_NC_ADMIN_ONLY = "Nur Nextcloud-Admins dürfen das ändern."
+MSG_NC_ADMIN_ONLY_READ = "Nur Nextcloud-Admins dürfen das sehen."
+# Reading methods get MSG_NC_ADMIN_ONLY_READ; the method only picks the text, never the decision.
+_READ_METHODS = frozenset({"GET", "HEAD"})
 
 
 @dataclass(frozen=True)
@@ -231,14 +234,23 @@ async def require_verwalter(uid: UserDep, roles: RolesDep) -> str:
     return uid
 
 
-async def require_nc_admin(uid: UserDep, roles: RolesDep) -> str:
-    """Lock on the admin sections (D-02): 403 also for managers without the group admin, 503 on outage."""
+def nc_admin_only_text(method: str) -> str:
+    """Refusal text of require_nc_admin: "see" for reading requests, "change" for all others."""
+    return MSG_NC_ADMIN_ONLY_READ if method.upper() in _READ_METHODS else MSG_NC_ADMIN_ONLY
+
+
+async def require_nc_admin(uid: UserDep, roles: RolesDep, request: Request) -> str:
+    """Lock on the admin sections (D-02): 403 also for managers without the group admin, 503 on outage.
+
+    The request method only selects the refusal text (nc_admin_only_text); the
+    check itself asks Nextcloud fresh on every request, for every method.
+    """
     try:
         is_admin = await roles.nc_admin(uid)
     except RoleUnavailableError:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=MSG_UNAVAILABLE) from None
     if not is_admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=MSG_NC_ADMIN_ONLY)
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=nc_admin_only_text(request.method))
     return uid
 
 

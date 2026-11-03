@@ -16,6 +16,7 @@ import requests
 
 from gameworld.provisioner.setup_check import (
     DOCS_URL,
+    DOCS_URL_DE,
     CheckItem,
     SetupCheckResult,
     check_docker_url,
@@ -125,7 +126,7 @@ def test_missing_containers(fake_proxy: FakeProxy) -> None:
     item = _item(result, "containers")
     assert (item.ok, item.severity) == (False, "error")
     assert "CONTAINERS=1" in item.message
-    assert "docs/install.md" in item.message
+    assert "docs/install.de.md" in item.message
 
 
 def test_containers_probe_uses_label_filter(fake_proxy: FakeProxy) -> None:
@@ -234,10 +235,12 @@ def test_unreachable_proxy_stops_after_one_item() -> None:
     assert (item.id, item.ok, item.severity) == ("proxy_refused", False, "error")
     assert f"127.0.0.1:{port}" in item.message
     assert "gameworld-docker-proxy" in item.message
-    assert item.message.endswith(f" Anleitung: {DOCS_URL}")
+    assert item.message.endswith(f" Anleitung: {DOCS_URL_DE}")
 
 
-DOCS_SUFFIX = " Anleitung: https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md#setup-check"
+DOCS_SUFFIX = (
+    " Anleitung: https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.de.md#setup-check"
+)
 
 
 def _dns_error() -> requests.ConnectionError:
@@ -403,6 +406,21 @@ def test_every_failed_message_links_the_guide(fake_proxy: FakeProxy) -> None:
     for item in failed:
         assert item.message.endswith(DOCS_SUFFIX), item
         assert "siehe docs/install.md" not in item.message
+
+
+def test_german_messages_link_the_german_guide(fake_proxy: FakeProxy) -> None:
+    """B4: German texts point at install.de.md, never at the English guide."""
+    assert DOCS_URL_DE != DOCS_URL
+    assert DOCS_URL_DE.endswith("docs/install.de.md#setup-check")
+    for key in list(fake_proxy.statuses):
+        if key != ("GET", "/_ping"):
+            fake_proxy.statuses[key] = 403
+    fake_proxy.statuses[("GET", "/info")] = 200
+    failed = [item for item in run_setup_check(fake_proxy.url).items if not item.ok]
+    assert failed
+    for item in failed:
+        assert DOCS_URL_DE in item.message, item
+        assert "install.md#" not in item.message, item
 
 
 def test_setup_check_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:

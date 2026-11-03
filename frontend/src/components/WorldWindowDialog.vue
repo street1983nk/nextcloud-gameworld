@@ -5,7 +5,7 @@
 		:name="t('kids.worldWindow.title', { name: world.name })"
 		size="large"
 		@update:open="onOpen">
-		<div class="world-window">
+		<div class="world-window" @keydown.capture="onKeydown">
 			<p class="world-window__hint">
 				{{ t('kids.worldWindow.hint') }}
 			</p>
@@ -57,6 +57,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import DayTiles from './DayTiles.vue'
 import { clearWorldWindow, errorText, setWorldWindow } from '../api.js'
+import { escapeShouldClose } from '../dialogKeys.js'
 import { t } from '../i18n/index.js'
 import { fromWindowDays, notAppliedText, toWindowDays, validateDays } from '../playtime.js'
 
@@ -106,6 +107,14 @@ function close() {
 
 function onOpen(open) {
 	if (!open) {
+		close()
+	}
+}
+
+// Escape with the focus on a day switch or time field: NcModal ignores it there (dialogKeys.js).
+function onKeydown(event) {
+	if (escapeShouldClose(event)) {
+		event.stopPropagation()
 		close()
 	}
 }

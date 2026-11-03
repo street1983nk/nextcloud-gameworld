@@ -6,60 +6,62 @@
 		:name="t('parent.invite.title', { name: world.name })"
 		size="normal"
 		@update:open="onOpen">
-		<p class="invite__hint">
-			{{ t('parent.invite.hint') }}
-		</p>
-		<template v-if="me?.nc_admin === false">
-			<p v-if="scope" class="invite__scope">
-				{{ scope }}
+		<div class="invite" @keydown.capture="onKeydown">
+			<p class="invite__hint">
+				{{ t('parent.invite.hint') }}
 			</p>
-			<NcNoteCard v-else type="info">
-				{{ noScopeText() }}
+			<template v-if="me?.nc_admin === false">
+				<p v-if="scope" class="invite__scope">
+					{{ scope }}
+				</p>
+				<NcNoteCard v-else type="info">
+					{{ noScopeText() }}
+				</NcNoteCard>
+			</template>
+			<NcSelectUsers
+				v-model="selected"
+				:options="options"
+				:loading="searching"
+				:disabled="inviting"
+				:input-label="t('parent.invite.searchLabel')"
+				:placeholder="t('parent.invite.searchPlaceholder')"
+				multiple
+				keep-open
+				@search="onSearch" />
+
+			<!-- ROLLE-04 (D-06): only for individually chosen accounts, confirmation only on clicking Einladen. -->
+			<div ref="adultRow" class="invite__adult">
+				<NcCheckboxRadioSwitch
+					v-model="inviteAdult"
+					type="switch"
+					:disabled="inviting || singleAccounts.length === 0"
+					:description="inviteSwitchMeta()">
+					{{ t('parent.invite.asAdult') }}
+				</NcCheckboxRadioSwitch>
+			</div>
+
+			<NcNoteCard v-if="invitedLabels.length > 0" type="success">
+				{{ invitedLabel(invitedLabels) }}
 			</NcNoteCard>
-		</template>
-		<NcSelectUsers
-			v-model="selected"
-			:options="options"
-			:loading="searching"
-			:disabled="inviting"
-			:input-label="t('parent.invite.searchLabel')"
-			:placeholder="t('parent.invite.searchPlaceholder')"
-			multiple
-			keep-open
-			@search="onSearch" />
-
-		<!-- ROLLE-04 (D-06): only for individually chosen accounts, confirmation only on clicking Einladen. -->
-		<div ref="adultRow" class="invite__adult">
-			<NcCheckboxRadioSwitch
-				v-model="inviteAdult"
-				type="switch"
-				:disabled="inviting || singleAccounts.length === 0"
-				:description="inviteSwitchMeta()">
-				{{ t('parent.invite.asAdult') }}
-			</NcCheckboxRadioSwitch>
+			<NcNoteCard
+				v-for="warning in adultFailures"
+				:key="`adult-${warning.key}`"
+				type="warning">
+				{{ warning.text }}
+			</NcNoteCard>
+			<NcNoteCard v-if="notApplied" type="info">
+				{{ t('parent.common.notApplied') }}
+			</NcNoteCard>
+			<NcNoteCard v-if="searchError" type="warning">
+				{{ searchError }}
+			</NcNoteCard>
+			<NcNoteCard
+				v-for="failure in failures"
+				:key="failure.key"
+				type="error">
+				{{ failure.label }}: {{ failure.detail }}
+			</NcNoteCard>
 		</div>
-
-		<NcNoteCard v-if="invitedLabels.length > 0" type="success">
-			{{ invitedLabel(invitedLabels) }}
-		</NcNoteCard>
-		<NcNoteCard
-			v-for="warning in adultFailures"
-			:key="`adult-${warning.key}`"
-			type="warning">
-			{{ warning.text }}
-		</NcNoteCard>
-		<NcNoteCard v-if="notApplied" type="info">
-			{{ t('parent.common.notApplied') }}
-		</NcNoteCard>
-		<NcNoteCard v-if="searchError" type="warning">
-			{{ searchError }}
-		</NcNoteCard>
-		<NcNoteCard
-			v-for="failure in failures"
-			:key="failure.key"
-			type="error">
-			{{ failure.label }}: {{ failure.detail }}
-		</NcNoteCard>
 
 		<template #actions>
 			<NcButton variant="tertiary" :disabled="inviting" @click="close">
@@ -124,6 +126,7 @@ import {
 	invitedLabel,
 	inviteSwitchMeta,
 } from '../adult.js'
+import { escapeShouldClose } from '../dialogKeys.js'
 import { t } from '../i18n/index.js'
 import { noScopeText, scopeHint } from '../roles.js'
 
@@ -305,6 +308,14 @@ function close() {
 
 function onOpen(open) {
 	if (!open) {
+		close()
+	}
+}
+
+// Escape with the focus in the search or the switch: NcModal ignores it there (dialogKeys.js).
+function onKeydown(event) {
+	if (escapeShouldClose(event)) {
+		event.stopPropagation()
 		close()
 	}
 }

@@ -18,12 +18,16 @@ from urllib.parse import urlsplit
 import requests
 
 MIN_API_VERSION = (1, 44)
+# Guide link per language: German texts point at the German guide, the English and
+# French catalogs at the English one (there is no French guide).
 DOCS_URL = "https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md#setup-check"
-DOCS = f"Anleitung: {DOCS_URL}"
+DOCS_URL_DE = "https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.de.md#setup-check"
+DOCS = f"Anleitung: {DOCS_URL_DE}"
 
 # Messages as module constants (German = message ID, D-25); messages with data are
 # templates with {name} placeholders, formatted at the call site. The guide link is
-# a placeholder too, so "Anleitung:" is part of the translated text.
+# fixed text of each language (never a placeholder), so a translation never carries
+# the German guide link along.
 MSG_CONTAINERS_OK = "Zugriff auf Container ist erlaubt."
 MSG_CONTAINERS_DENIED = f"Der Docker-Proxy erlaubt keinen Zugriff auf Container. Bitte CONTAINERS=1 setzen. {DOCS}"
 MSG_POST_OK = "Schreibende Anfragen sind erlaubt."
@@ -54,29 +58,28 @@ MSG_PROXY_EXPOSED = (
 MSG_REACHABLE = "Der Docker-Proxy ist erreichbar."
 TEXT_PROXY_DNS = (
     "Gameworld findet den Dienst {host} nicht. Er muss im selben Docker-Netz laufen wie "
-    "Gameworld (das Netz des Deploy-Daemons, bei AIO nextcloud-aio). Anleitung: {docs_url}"
+    "Gameworld (das Netz des Deploy-Daemons, bei AIO nextcloud-aio). " + DOCS
 )
 TEXT_PROXY_TIMEOUT = (
     "Der Docker-Proxy unter {host}:{port} antwortet nicht. Meist hängt er in einem anderen "
-    "Docker-Netz, oder eine Firewall sperrt Port {port}. Anleitung: {docs_url}"
+    "Docker-Netz, oder eine Firewall sperrt Port {port}. " + DOCS
 )
 TEXT_PROXY_REFUSED = (
     "Der Docker-Proxy unter {host}:{port} nimmt keine Verbindung an. Läuft der Container "
-    "gameworld-docker-proxy? Anleitung: {docs_url}"
+    "gameworld-docker-proxy? " + DOCS
 )
 TEXT_PROXY_UNREACHABLE = (
     "Gameworld erreicht den Docker-Proxy unter {docker_url} nicht. Bitte den Dienst "
-    "gameworld-docker-proxy starten und GAMEWORLD_DOCKER_URL prüfen. Anleitung: {docs_url}"
+    "gameworld-docker-proxy starten und GAMEWORLD_DOCKER_URL prüfen. " + DOCS
 )
 TEXT_ENGINE_TOO_OLD = (
-    "Docker-Engine zu alt, benötigt API 1.44 oder neuer (gemeldet: {shown}). "
-    "Bitte Docker aktualisieren. Anleitung: {docs_url}"
+    "Docker-Engine zu alt, benötigt API 1.44 oder neuer (gemeldet: {shown}). Bitte Docker aktualisieren. " + DOCS
 )
 # Without a readable version the inserted value is a German word, so this case is its own message.
-MSG_ENGINE_VERSION_UNKNOWN = TEXT_ENGINE_TOO_OLD.format(shown="unbekannt", docs_url=DOCS_URL)
+MSG_ENGINE_VERSION_UNKNOWN = TEXT_ENGINE_TOO_OLD.format(shown="unbekannt")
 TEXT_API_SUPPORTED = "Docker-API {version} wird unterstützt."
-TEXT_UNEXPECTED_ANSWER = "Unerwartete Antwort des Docker-Proxys auf {method} {path}: HTTP {code}. Anleitung: {docs_url}"
-TEXT_REQUEST_FAILED = "Die Anfrage an den Docker-Proxy ({path}) ist fehlgeschlagen: {error_type}. Anleitung: {docs_url}"
+TEXT_UNEXPECTED_ANSWER = "Unerwartete Antwort des Docker-Proxys auf {method} {path}: HTTP {code}. " + DOCS
+TEXT_REQUEST_FAILED = "Die Anfrage an den Docker-Proxy ({path}) ist fehlgeschlagen: {error_type}. " + DOCS
 
 Severity = Literal["error", "warning"]
 
@@ -281,27 +284,27 @@ class _Checker:
                 id="proxy_dns",
                 ok=False,
                 severity="error",
-                message=TEXT_PROXY_DNS.format(host=host, docs_url=DOCS_URL),
+                message=TEXT_PROXY_DNS.format(host=host),
             )
         if exc is not None and _has_cause(exc, requests.exceptions.Timeout):
             return CheckItem(
                 id="proxy_timeout",
                 ok=False,
                 severity="error",
-                message=TEXT_PROXY_TIMEOUT.format(host=host, port=port, docs_url=DOCS_URL),
+                message=TEXT_PROXY_TIMEOUT.format(host=host, port=port),
             )
         if exc is not None:
             return CheckItem(
                 id="proxy_refused",
                 ok=False,
                 severity="error",
-                message=TEXT_PROXY_REFUSED.format(host=host, port=port, docs_url=DOCS_URL),
+                message=TEXT_PROXY_REFUSED.format(host=host, port=port),
             )
         return CheckItem(
             id="reachable",
             ok=False,
             severity="error",
-            message=TEXT_PROXY_UNREACHABLE.format(docker_url=self.docker_url, docs_url=DOCS_URL),
+            message=TEXT_PROXY_UNREACHABLE.format(docker_url=self.docker_url),
         )
 
     def ping(self) -> CheckItem:
@@ -326,11 +329,7 @@ class _Checker:
             raw = None
         parsed = _parse_version(raw)
         if parsed is None or parsed < MIN_API_VERSION:
-            message = (
-                TEXT_ENGINE_TOO_OLD.format(shown=raw, docs_url=DOCS_URL)
-                if isinstance(raw, str)
-                else MSG_ENGINE_VERSION_UNKNOWN
-            )
+            message = TEXT_ENGINE_TOO_OLD.format(shown=raw) if isinstance(raw, str) else MSG_ENGINE_VERSION_UNKNOWN
             return CheckItem(id="version", ok=False, severity="error", message=message)
         return CheckItem(id="version", ok=True, severity="error", message=TEXT_API_SUPPORTED.format(version=raw))
 
@@ -352,7 +351,7 @@ class _Checker:
             id=item_id,
             ok=False,
             severity=severity,
-            message=TEXT_UNEXPECTED_ANSWER.format(method=method, path=path, code=code, docs_url=DOCS_URL),
+            message=TEXT_UNEXPECTED_ANSWER.format(method=method, path=path, code=code),
         )
 
     @staticmethod
@@ -361,7 +360,7 @@ class _Checker:
             id=item_id,
             ok=False,
             severity="error",
-            message=TEXT_REQUEST_FAILED.format(path=path, error_type=type(exc).__name__, docs_url=DOCS_URL),
+            message=TEXT_REQUEST_FAILED.format(path=path, error_type=type(exc).__name__),
         )
 
     def run(self) -> list[CheckItem]:

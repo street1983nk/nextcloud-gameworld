@@ -200,7 +200,11 @@ The Gameworld page checks the Docker proxy when it opens. The check changes noth
 | Unexpected answer from the Docker proxy to method and path: HTTP code | unexpected answer | Compare proxy image and flags with section 3 |
 | Gameworld is not responding | Gameworld does not answer | Check the ExApp in the Nextcloud settings (AppAPI) |
 
-If the proxy is missing or unreachable (`proxy_dns`, `proxy_refused`, `proxy_timeout`) and `GAMEWORLD_DOCKER_URL` is the default address, the Gameworld page additionally shows a ready-to-copy `docker run` command for AIO and one for your own Compose file, each with a copy button. Both create the container `gameworld-docker-proxy` with the same settings as section 3a and 3b and no host port.
+If the proxy is missing or unreachable (`proxy_dns`, `proxy_refused`, `proxy_timeout`) and `GAMEWORLD_DOCKER_URL` is the default address, the Gameworld page additionally shows a ready-to-copy `docker run` command with a copy button. Gameworld determines its Docker network itself: it asks Docker's internal name service about its own container `nc_app_gameworld`, without extra rights. It then shows one command for exactly this network. If that fails, it shows the commands for your own Compose file (`gameworld`) and AIO (`nextcloud-aio`) plus one with the placeholder `<docker-network>`, which you replace with the network of your deploy daemon. Every command can also be downloaded as Compose file `gameworld-docker-proxy.yaml` (start it with `docker compose -f gameworld-docker-proxy.yaml up -d`). Command and file create the container `gameworld-docker-proxy` with the same settings as section 3a and 3b and no host port.
+
+While something is missing, the Gameworld page checks again by itself every 15 seconds (later every minute) and turns green without a reload. It stops as soon as everything is green or you leave the page.
+
+The page also shows firewall commands for ufw and firewalld that open the configured `GAMEWORLD_PORT_RANGE` (UDP) for the home network only. Replace `<lan-network>` with your home network in the form network address/prefix length, as your router shows it. No port forwarding in the router and no UPnP (section 5).
 
 After every change to the proxy, restart the service and choose "Check again" on the Gameworld page.
 

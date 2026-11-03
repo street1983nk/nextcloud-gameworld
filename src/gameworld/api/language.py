@@ -23,9 +23,9 @@ from gameworld.i18n import FALLBACK_LANGUAGE, SOURCE_LANGUAGE, SUPPORTED_LANGUAG
 
 LOG = logging.getLogger(__name__)
 
-# Replaces pydantic's English-only messages (type, pattern, literal) for de and fr accounts.
+# Replaces pydantic's technical messages (type, pattern, literal, length) in every language.
 MSG_INVALID_INPUT = "Die Eingabe ist ungültig."
-# Replaces Starlette's English status phrases (e.g. "Not Found") for de and fr accounts.
+# Replaces Starlette's status phrases (e.g. "Not Found") in every language.
 MSG_REQUEST_FAILED = "Diese Anfrage kann Gameworld nicht ausführen."
 
 # Set by frontend/src/api.js on every request to the ExApp API.
@@ -83,13 +83,11 @@ async def _handler_language(request: Request) -> str:
 def translate_validation_message(message: str, language: str) -> str:
     """Translates the text behind ``"Value error, "``.
 
-    pydantic's own messages exist only in English; English accounts keep them,
-    the others get MSG_INVALID_INPUT in their language instead of an English text.
+    pydantic's own messages are technical (patterns, type names, list lengths) and
+    exist only in English; every account gets MSG_INVALID_INPUT in its language instead.
     """
     if message.startswith(VALUE_ERROR_PREFIX):
         return VALUE_ERROR_PREFIX + translate(message[len(VALUE_ERROR_PREFIX) :], language)
-    if language == "en":
-        return message
     return translate(MSG_INVALID_INPUT, language)
 
 
@@ -97,8 +95,8 @@ async def _translated_http_exception(request: Request, exc: Exception) -> Respon
     assert isinstance(exc, StarletteHTTPException)  # noqa: S101 (registered for this type only)
     if isinstance(exc.detail, str):
         language = await _handler_language(request)
-        if language != "en" and exc.detail == HTTPStatus(exc.status_code).phrase:
-            # Starlette's own English texts (unknown route "Not Found", "Method Not Allowed").
+        if exc.detail == HTTPStatus(exc.status_code).phrase:
+            # Starlette's own status phrases (unknown route "Not Found", "Method Not Allowed"), in every language.
             exc = StarletteHTTPException(exc.status_code, detail=MSG_REQUEST_FAILED, headers=exc.headers)
         if language != SOURCE_LANGUAGE:
             exc = StarletteHTTPException(exc.status_code, detail=translate(exc.detail, language), headers=exc.headers)

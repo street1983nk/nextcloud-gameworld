@@ -39,6 +39,7 @@ MESSAGES: dict[str, str] = {
     roles.MSG_UNAVAILABLE: _UNAVAILABLE,
     roles.MSG_FORBIDDEN: "Seuls les parents peuvent gérer les mondes.",
     roles.MSG_NC_ADMIN_ONLY: "Seuls les administrateurs Nextcloud peuvent modifier ceci.",
+    roles.MSG_NC_ADMIN_ONLY_READ: "Seuls les administrateurs Nextcloud peuvent voir ceci.",
     # access/accounts.py, directory.py, secret.py, service.py
     accounts.MSG_INVALID_NAME: (
         "Le nom de joueur peut avoir 1 à 20 caractères\u00a0: lettres sans accents, chiffres, _ et -."
@@ -258,31 +259,29 @@ TEMPLATES: dict[str, str] = {
     # provisioner/setup_check.py
     setup_check.TEXT_PROXY_DNS: (
         "Gameworld ne trouve pas le service {host}. Il doit tourner dans le même réseau Docker que "
-        "Gameworld (le réseau du démon de déploiement, nextcloud-aio pour AIO). Guide\u00a0: {docs_url}"
+        "Gameworld (le réseau du démon de déploiement, nextcloud-aio pour AIO). " + _GUIDE
     ),
     setup_check.TEXT_PROXY_TIMEOUT: (
         "Le proxy Docker à l\u2019adresse {host}:{port} ne répond pas. Le plus souvent, il se trouve dans un "
-        "autre réseau Docker, ou un pare-feu bloque le port {port}. Guide\u00a0: {docs_url}"
+        "autre réseau Docker, ou un pare-feu bloque le port {port}. " + _GUIDE
     ),
     setup_check.TEXT_PROXY_REFUSED: (
         "Le proxy Docker à l\u2019adresse {host}:{port} n\u2019accepte pas de connexion. Le conteneur "
-        "gameworld-docker-proxy tourne-t-il\u00a0? Guide\u00a0: {docs_url}"
+        "gameworld-docker-proxy tourne-t-il\u00a0? " + _GUIDE
     ),
     setup_check.TEXT_PROXY_UNREACHABLE: (
         "Gameworld ne parvient pas à joindre le proxy Docker à l\u2019adresse {docker_url}. Démarre le service "
-        "gameworld-docker-proxy et vérifie GAMEWORLD_DOCKER_URL. Guide\u00a0: {docs_url}"
+        "gameworld-docker-proxy et vérifie GAMEWORLD_DOCKER_URL. " + _GUIDE
     ),
     setup_check.TEXT_ENGINE_TOO_OLD: (
         "Docker Engine trop ancien, API 1.44 ou plus récente requise (signalée\u00a0: {shown}). "
-        "Mets Docker à jour. Guide\u00a0: {docs_url}"
+        "Mets Docker à jour. " + _GUIDE
     ),
     setup_check.TEXT_API_SUPPORTED: "L\u2019API Docker {version} est prise en charge.",
     setup_check.TEXT_UNEXPECTED_ANSWER: (
-        "Réponse inattendue du proxy Docker à {method} {path}\u00a0: HTTP {code}. Guide\u00a0: {docs_url}"
+        "Réponse inattendue du proxy Docker à {method} {path}\u00a0: HTTP {code}. " + _GUIDE
     ),
-    setup_check.TEXT_REQUEST_FAILED: (
-        "La requête au proxy Docker ({path}) a échoué\u00a0: {error_type}. Guide\u00a0: {docs_url}"
-    ),
+    setup_check.TEXT_REQUEST_FAILED: ("La requête au proxy Docker ({path}) a échoué\u00a0: {error_type}. " + _GUIDE),
     # worlds/ports.py
     ports.TEXT_PORTS_TAKEN: "Tous les ports UDP de la plage {low}-{high} sont occupés.",
     # worlds/status.py
@@ -303,7 +302,10 @@ MESSAGES.update(
         playtime_api.MSG_CLOSED_DAY_WINDOW: "Un jour fermé n\u2019a pas de plage horaire.",
         playtime_api.MSG_OPEN_DAY_NEEDS_TIMES: "Un jour ouvert a besoin du début et de la fin de sa plage horaire.",
         # playtime/plan.py (rules, 422 via str(exc))
-        plan.MSG_LIMIT_RANGE: "La limite quotidienne est comprise entre 1 et 1440 minutes ou vaut None.",
+        plan.MSG_LIMIT_RANGE: (
+            "La limite quotidienne doit être comprise entre 1 et 1440 minutes. "
+            "Sans valeur, il n\u2019y a pas de limite quotidienne."
+        ),
         plan.MSG_WINDOW_BOTH_OR_NONE: (
             "Une plage horaire a besoin d\u2019un début et d\u2019une fin, ou d\u2019aucun des deux."
         ),
@@ -351,6 +353,4 @@ TEMPLATES.update(
 MESSAGES[presets.unknown_preset_message([preset.title for preset in presets.PRESETS.values()])] = TEMPLATES[
     presets.TEXT_UNKNOWN_PRESET_ID
 ].format(titles=", ".join(MESSAGES[preset.title] for preset in presets.PRESETS.values()))
-MESSAGES[setup_check.MSG_ENGINE_VERSION_UNKNOWN] = TEMPLATES[setup_check.TEXT_ENGINE_TOO_OLD].format(
-    shown="inconnue", docs_url=setup_check.DOCS_URL
-)
+MESSAGES[setup_check.MSG_ENGINE_VERSION_UNKNOWN] = TEMPLATES[setup_check.TEXT_ENGINE_TOO_OLD].format(shown="inconnue")
