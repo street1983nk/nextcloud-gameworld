@@ -5,9 +5,9 @@
 
 # Forum thread for Gameworld on help.nextcloud.com
 
-Status: draft, posted by the owner
+Status: posted by the owner, approved 03.11.2026
 
-Thread URL:
+Thread URL: https://help.nextcloud.com/t/gameworld-private-luanti-game-worlds-for-families-and-schools-on-your-own-nextcloud/251686
 
 This is the draft of the own Gameworld thread in the Nextcloud forum (category "Apps", D-28). Only the owner posts it. After posting, the thread URL goes into the line above and, as the only `discussion` element, into `appinfo/info.xml`. The forum is English, so the thread text is English.
 

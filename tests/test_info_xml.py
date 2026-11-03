@@ -169,6 +169,7 @@ XSD_ORDER = [
     "documentation",
     "category",
     "website",
+    "discussion",
     "bugs",
     "repository",
     "screenshot",
@@ -298,3 +299,13 @@ def test_no_sister_app_sentence() -> None:
         block = listing.split(section, 1)[1].split("\n## ", 1)[0]
         for app in SISTER_APPS:
             assert app not in block, (section, app)
+
+
+FORUM_THREAD = "https://help.nextcloud.com/t/gameworld-private-luanti-game-worlds-for-families-and-schools-on-your-own-nextcloud/251686"
+
+
+def test_exactly_one_discussion_link_to_the_forum_thread() -> None:
+    """D-28: the store page links the own forum thread, the same URL as in docs/forum-thread.md."""
+    links = [(element.text or "").strip() for element in _root().findall("discussion")]
+    assert links == [FORUM_THREAD]
+    assert f"Thread URL: {FORUM_THREAD}" in (ROOT / "docs" / "forum-thread.md").read_text(encoding="utf-8")

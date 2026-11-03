@@ -32,6 +32,7 @@ Stand: Entwurf zur Owner-Abnahme vor dem Tag v1.0.0 (Plan 06-13).
 ## Feste Felder
 
 - Kategorien: `games`, `tools`
+- Discussion (seit 1.0.1): `https://help.nextcloud.com/t/gameworld-private-luanti-game-worlds-for-families-and-schools-on-your-own-nextcloud/251686`
 - Doku: user und admin `https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md`, developer `.../docs/dev-setup.md`
 - Screenshots (englischer Satz, Owner-Wahl 30.10.2026; Namen verbindlich, Spiegel holt Bilder nie neu, darum `-v1`). Der Store zeigt den ersten Screenshot als Titelbild, darum steht seit 1.0.1 das Banner vorn (in 1.0.0 vergessen, die Weltliste war Titelbild):
   1. `docs/images/gameworld-banner-v1.jpg` (Banner, Titelbild im Store)

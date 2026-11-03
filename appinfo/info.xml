@@ -165,6 +165,8 @@ Guide d'installation : [docs/install.md](https://github.com/street1983nk/nextclo
 	<category>games</category>
 	<category>tools</category>
 	<website>https://github.com/street1983nk/nextcloud-gameworld</website>
+	<!-- The forum thread for questions and feedback; the store page links it as "Discussion" (D-28, since 1.0.1). -->
+	<discussion>https://help.nextcloud.com/t/gameworld-private-luanti-game-worlds-for-families-and-schools-on-your-own-nextcloud/251686</discussion>
 	<bugs>https://github.com/street1983nk/nextcloud-gameworld/issues</bugs>
 	<repository type="git">https://github.com/street1983nk/nextcloud-gameworld.git</repository>
 	<screenshot>https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/images/gameworld-banner-v1.jpg</screenshot>
