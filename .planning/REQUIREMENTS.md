@@ -53,7 +53,7 @@
 
 ### Plattform
 
-- [ ] **PLATT-01**: Gameworld ist als ExApp über den Nextcloud App Store installierbar (AppAPI/HaRP, Ziel NC 33+)
+- [x] **PLATT-01**: Gameworld ist als ExApp über den Nextcloud App Store installierbar (AppAPI/HaRP, Ziel NC 33+)
 - [x] **PLATT-02**: Laufende Welten überleben ExApp-Updates und Host-Reboots: Zustand liegt in persistentem Storage, Container werden per Label-Reconciliation re-adoptiert
 
 ## v2 Requirements (deferred)
@@ -119,7 +119,7 @@
 | ROLLE-04 | Phase 6 | Pending |
 | BACKUP-01 | Phase 5 | Complete |
 | BACKUP-02 | Phase 5 | Complete |
-| PLATT-01 | Phase 6 | Pending |
+| PLATT-01 | Phase 6 | Complete |
 | PLATT-02 | Phase 2 | Complete |
 
 **Coverage:** 27/27 v1-Requirements gemappt (Stand 2026-10-22; ZEIT-03/04/05 und ROLLE-03 am 20.10.2026, ELTERN-01..03 und TALK-01/02 am 21.10.2026, ROLLE-04 am 22.10.2026 auf Owner-Wunsch ergänzt)

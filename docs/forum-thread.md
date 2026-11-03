@@ -17,32 +17,31 @@ Gameworld: private Luanti game worlds for families and schools on your own Nextc
 
 ## Text
 
-Gameworld is an External App (ExApp) that runs private Luanti game worlds on your own Nextcloud server. Parents and teachers create a world with one click, invite children and friends through their Nextcloud accounts and groups, and keep world backups in Nextcloud Files.
+Hi everyone,
 
-What it does:
+I have been building Gameworld, an External App that runs private Luanti game worlds on your own Nextcloud. Parents or teachers create a world with one click, invite kids and friends through their Nextcloud accounts or groups, and the backups end up in Nextcloud Files. Everything stays on your own server.
 
-- Worlds with one click: creative building or a gentle adventure
-- Only invited Nextcloud accounts or groups can join; every other player name is refused before the login
-- One game password per account, never stored; worlds only receive a verifier
-- Play time per child across all worlds, holidays, time windows per world and a pause for all children from the phone
-- Adult switch: marked adults play without pause and play time rules, never with management rights
-- Manager groups for schools and clubs, set by Nextcloud admins
+What you get:
+
+- Creative or gentle adventure worlds, one click each
+- Only invited accounts or groups get in, any other name is turned away before the login
+- One game password per account. Gameworld does not store it, the world only gets a verifier
+- Play time per child across all worlds, holidays, time windows per world and a pause for all kids that also works from the phone
+- An adult switch: adults play without the time rules, but never get management rights
+- Manager groups for schools and clubs, set by the Nextcloud admin
 - Backups in Nextcloud Files, checked before every restore
-- One Talk room per world with a Gameworld bot, if Talk is installed
+- A Talk room per world with a small bot, if Talk is installed
 - No telemetry
 
-Requirements:
+What you need: Nextcloud 33 to 35 with AppAPI and a HaRP deploy daemon, plus a scoped docker-socket-proxy in the same Docker network. The setup check finds that network for you and gives you a command or a Compose file to copy. I tested it on Docker Compose with Nextcloud 34 and 35 and on All-in-One with HaRP.
 
-- Nextcloud 33 to 35 with AppAPI and a HaRP deploy daemon
-- A scoped docker-socket-proxy in the same Docker network as Gameworld, set up by the admin
+A word on privileges, because they matter here. Gameworld talks to Docker through that proxy to create, start, stop and remove one container per world. Whoever can reach the proxy has root-equivalent rights on the host, so keep it inside the Docker network of Gameworld and never publish it on a host port. Each world also needs one UDP port (30000 to 30019 by default), meant for your home network only: no port forwarding, and worlds never show up on public server lists. The details and the remaining risk are here: https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.md
 
-Extra privileges, in short:
+The interface is in German, English and French and follows your Nextcloud language. In-game texts and the Talk room use the language chosen for each world.
 
-- Docker access through the scoped proxy: Gameworld creates, starts, stops and removes one container per world. Whoever reaches this proxy controls Docker with root-equivalent rights on the host, so it stays inside the Docker network of Gameworld and never on a host port.
-- One UDP port per world (default 30000 to 30019), meant for the home network only. No port forwarding, and no world is listed on any server list.
-- Details and the remaining risk: https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.md
+What comes next: for version 2 I want to add Minecraft Java Edition (once I have checked its licence terms), dedicated servers for Steam games and bigger worlds. Right now a world holds up to 8 players at the same time.
 
-Languages: the interface is German, English and French and follows the language of the Nextcloud account; in-game texts and the Talk room follow the language chosen per world.
+That is also why I am looking for a pilot: a school, a club or a public organisation that would like to try it with a larger group, say a class of 30. If that sounds interesting, reply here or send me a message. I speak German, English and French.
 
 Links:
 
@@ -50,4 +49,4 @@ Links:
 - Installation guide: https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md
 - Bug reports: https://github.com/street1983nk/nextcloud-gameworld/issues
 
-Questions, feedback and experiences with Gameworld belong in this thread. Bugs with steps to reproduce are easiest to track as a GitHub issue.
+Questions and feedback are welcome here. For bugs with steps to reproduce, a GitHub issue is easiest.

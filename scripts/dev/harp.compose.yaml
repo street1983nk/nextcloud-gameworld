@@ -19,18 +19,27 @@
 # Images by index digest (docker buildx imagetools inspect, retrieved on
 # 24.10.2026), so that a moved tag does not silently change what the run proves.
 # Exception harp-nc: same line as compose.yaml (nextcloud:34.0.3-apache).
-name: gameworld-dev-harp
+#
+# Parameters (plan 06-15, install tests NC 34 and NC 35 from ghcr.io), all with the
+# defaults of 06-12; harp-install.sh exports them for every compose call:
+#   GAMEWORLD_COMPOSE_PROJECT  project name and container name prefix (gameworld-dev-harp)
+#   GAMEWORLD_DEV_NETWORK      name of the stack network (<project>_default)
+#   GAMEWORLD_NC_IMAGE         Nextcloud image of harp-nc (nextcloud:34.0.3-apache)
+#   GAMEWORLD_HARP_PORT        loopback port of the front (8093)
+# Only one such stack can run at a time: AppAPI always names the ExApp container
+# nc_app_gameworld and the registry always binds 127.0.0.1:5000.
+name: ${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}
 
 services:
   harp-nc:
-    image: nextcloud:34.0.3-apache
-    container_name: gameworld-dev-harp-nc
+    image: ${GAMEWORLD_NC_IMAGE:-nextcloud:34.0.3-apache}
+    container_name: ${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}-nc
     restart: unless-stopped
     environment:
       SQLITE_DATABASE: nextcloud
       NEXTCLOUD_ADMIN_USER: admin
       # Pure dev account of a test instance without host port; reachable only through
-      # the front on 127.0.0.1:8093.
+      # the front on 127.0.0.1:${GAMEWORLD_HARP_PORT} (default 8093).
       NEXTCLOUD_ADMIN_PASSWORD: gameworld-harp-admin
       # localhost: acceptance and browser through the front; harp-front: HaRP and the
       # ExApp container (nextcloud_url of the daemon). The port is ignored in the comparison.
@@ -41,7 +50,7 @@ services:
   gameworld-docker-proxy:
     # Same image and same flags as in compose.yaml (docs/install.md).
     image: tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
-    container_name: gameworld-dev-harp-docker-proxy
+    container_name: ${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}-docker-proxy
     restart: unless-stopped
     environment:
       CONTAINERS: 1
@@ -69,7 +78,7 @@ services:
   appapi-harp:
     # Tag release, index digest of 24.10.2026.
     image: ghcr.io/nextcloud/nextcloud-appapi-harp:release@sha256:2c994c9b3d59fb04d09da236d9caccaadf8db22b848c7f48980fbb813d1de7d6
-    container_name: gameworld-dev-appapi-harp
+    container_name: ${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}-appapi-harp
     hostname: appapi-harp
     restart: unless-stopped
     environment:
@@ -97,7 +106,7 @@ services:
     # registry:2, index digest of 24.10.2026. Only for the locally built image,
     # no push to ghcr.io.
     image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
-    container_name: gameworld-dev-registry
+    container_name: ${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}-registry
     restart: unless-stopped
     ports:
       # Loopback only (T-06-53): the Docker daemon pulls from localhost:5000.
@@ -108,7 +117,7 @@ services:
   harp-front:
     # nginx:1.29-alpine, index digest of 24.10.2026.
     image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
-    container_name: gameworld-dev-harp-front
+    container_name: ${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}-front
     restart: unless-stopped
     depends_on:
       - appapi-harp
@@ -116,9 +125,14 @@ services:
     ports:
       # Loopback only (T-06-53): one address in front of both halves, like the web server
       # in front of a real Nextcloud.
-      - "127.0.0.1:8093:80"
+      - "127.0.0.1:${GAMEWORLD_HARP_PORT:-8093}:80"
     volumes:
       - ./harp-front.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+networks:
+  default:
+    # Explicit name, so that harp-install.sh (daemon --net) and the acceptance know it.
+    name: ${GAMEWORLD_DEV_NETWORK:-gameworld-dev-harp_default}
 
 volumes:
   harp-nextcloud: {}

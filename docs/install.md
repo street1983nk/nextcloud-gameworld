@@ -164,6 +164,7 @@ networks:
 - Do not set up port forwarding in the router and do not use UPnP on the router.
 - Remote access comes later through a VPN.
 - The firewall of the server has to allow the UDP range in the LAN.
+- If the server runs at a cloud provider, its firewall (for example an AWS security group) also needs a rule for the UDP range, for known addresses only.
 
 ## 6. Remaining risk, stated honestly
 

@@ -6,8 +6,23 @@
 # No push to ghcr.io, no certificate needed.
 #
 #   sh scripts/dev/harp-install.sh              install (idempotent)
+#   sh scripts/dev/harp-install.sh --source ghcr --tag 1.0.0-rc.2
+#                                               install the published image from ghcr.io
 #   sh scripts/dev/harp-install.sh --uninstall  remove registration, daemon and the
 #                                               whole test stack including volumes
+#
+# Options (plan 06-15):
+#   --source local|ghcr  local (default): build the image and push it to localhost:5000,
+#                        the info.xml copy names registry localhost:5000.
+#                        ghcr: no build, HaRP pulls ghcr.io/street1983nk/gameworld:<tag>;
+#                        the info.xml copy keeps registry and image and only gets the
+#                        image-tag <tag>. The registry service is not started.
+#   --tag <tag>          image tag; default is the image-tag of appinfo/info.xml.
+# Environment (exported to every compose call, defaults as in 06-12):
+#   GAMEWORLD_COMPOSE_PROJECT  project name and container prefix (gameworld-dev-harp)
+#   GAMEWORLD_DEV_NETWORK      network of the stack (<project>_default)
+#   GAMEWORLD_NC_IMAGE         Nextcloud image of the test instance (nextcloud:34.0.3-apache)
+#   GAMEWORLD_HARP_PORT        loopback port of the front (8093)
 #
 # The test instance (harp.compose.yaml) is separate from the dev stack: own
 # Nextcloud, own Docker proxy, own network. This script never touches the dev Nextcloud on 8091,
@@ -40,10 +55,21 @@ INFO_IN_CONTAINER=/tmp/info-harp.xml
 APP_ID=gameworld
 DAEMON=harp_dev
 NC_SERVICE=harp-nc
-HARP_CONTAINER=gameworld-dev-appapi-harp
-FRONT_URL=http://127.0.0.1:${GAMEWORLD_HARP_PORT:-8093}
+GAMEWORLD_COMPOSE_PROJECT=${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}
+GAMEWORLD_DEV_NETWORK=${GAMEWORLD_DEV_NETWORK:-${GAMEWORLD_COMPOSE_PROJECT}_default}
+GAMEWORLD_NC_IMAGE=${GAMEWORLD_NC_IMAGE:-nextcloud:34.0.3-apache}
+GAMEWORLD_HARP_PORT=${GAMEWORLD_HARP_PORT:-8093}
+export GAMEWORLD_COMPOSE_PROJECT GAMEWORLD_DEV_NETWORK GAMEWORLD_NC_IMAGE GAMEWORLD_HARP_PORT
+PROJECT=${GAMEWORLD_COMPOSE_PROJECT}
+NETWORK=${GAMEWORLD_DEV_NETWORK}
+NC_CONTAINER=${PROJECT}-nc
+HARP_CONTAINER=${PROJECT}-appapi-harp
+FRONT_URL=http://127.0.0.1:${GAMEWORLD_HARP_PORT}
 REGISTRY=localhost:5000
+GHCR_REGISTRY=ghcr.io
 IMAGE_NAME=street1983nk/gameworld
+# Docker name rule, used for project and network names (they end up in commands).
+NAME_RE='^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'
 EXAPP_CONTAINER=nc_app_gameworld
 # The scoped proxy of the test instance under its service name in the Compose network.
 DOCKER_URL=tcp://gameworld-docker-proxy:2375
@@ -68,7 +94,7 @@ new_key() {
 harp_compose() {
 	GAMEWORLD_HARP_KEY=$(cat "${KEY_FILE}")
 	export GAMEWORLD_HARP_KEY
-	docker compose -f "${HARP_COMPOSE}" "$@"
+	docker compose -p "${PROJECT}" -f "${HARP_COMPOSE}" "$@"
 }
 
 occ() {
@@ -101,9 +127,46 @@ unregister_daemon() {
 	fi
 }
 
-IMAGE_TAG=$(sed -n 's:.*<image-tag>\(.*\)</image-tag>.*:\1:p' "${INFO_XML}" | head -n 1)
+MODE=install
+SOURCE=local
+IMAGE_TAG=
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	--uninstall) MODE=uninstall ;;
+	--source)
+		[ "$#" -ge 2 ] || die "--source braucht local oder ghcr"
+		SOURCE=$2
+		shift
+		;;
+	--tag)
+		[ "$#" -ge 2 ] || die "--tag braucht einen Wert"
+		IMAGE_TAG=$2
+		shift
+		;;
+	*) die "unbekannte Option $1 (--uninstall, --source local|ghcr, --tag <tag>)" ;;
+	esac
+	shift
+done
+case "${SOURCE}" in
+local | ghcr) ;;
+*) die "--source ist local oder ghcr, nicht ${SOURCE}" ;;
+esac
+printf '%s\n' "${PROJECT}" | grep -Eq "${NAME_RE}" || die "ungültiger Projektname ${PROJECT}"
+printf '%s\n' "${NETWORK}" | grep -Eq "${NAME_RE}" || die "ungültiger Netzname ${NETWORK}"
+
+if [ -z "${IMAGE_TAG}" ]; then
+	IMAGE_TAG=$(sed -n 's:.*<image-tag>\(.*\)</image-tag>.*:\1:p' "${INFO_XML}" | head -n 1)
+fi
 [ -n "${IMAGE_TAG}" ] || die "aus ${INFO_XML} ließ sich kein image-tag lesen"
+# The tag ends up in sed and in the info.xml copy: strict Docker tag format only.
+printf '%s\n' "${IMAGE_TAG}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$' || die "ungültiges image-tag ${IMAGE_TAG}"
 LOCAL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+GHCR_IMAGE="${GHCR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+if [ "${SOURCE}" = ghcr ]; then
+	EXPECTED_IMAGE=${GHCR_IMAGE}
+else
+	EXPECTED_IMAGE=${LOCAL_IMAGE}
+fi
 
 for tool in docker curl sed grep; do
 	command -v "${tool}" >/dev/null 2>&1 || die "Werkzeug ${tool} fehlt"
@@ -118,19 +181,29 @@ if [ ! -s "${KEY_FILE}" ]; then
 	say "neuer HaRP-Schlüssel in .dev/harp.key"
 fi
 
-if [ "${1:-}" = "--uninstall" ]; then
-	if docker ps -q --filter "name=^gameworld-dev-harp-nc\$" | grep -q .; then
+if [ "${MODE}" = uninstall ]; then
+	if docker ps -q --filter "name=^${NC_CONTAINER}\$" | grep -q .; then
 		unregister_app
 		unregister_daemon
 	fi
-	say "baue den Test-Stack gameworld-dev-harp samt Volumes ab"
+	say "baue den Test-Stack ${PROJECT} samt Volumes ab"
 	harp_compose down -v --remove-orphans
 	exit 0
 fi
-[ -z "${1:-}" ] || die "unbekannte Option ${1} (nur --uninstall)"
 
-say "starte den Test-Stack gameworld-dev-harp"
-harp_compose up -d
+if [ "${SOURCE}" = ghcr ]; then
+	# Fail early and clearly if the tag is not published (or not public).
+	docker manifest inspect "${GHCR_IMAGE}" >/dev/null 2>&1 ||
+		die "${GHCR_IMAGE} ist nicht abrufbar (Tag nicht veröffentlicht oder nicht öffentlich)"
+fi
+
+say "starte den Test-Stack ${PROJECT} (${GAMEWORLD_NC_IMAGE}, Netz ${NETWORK}, Front ${FRONT_URL})"
+if [ "${SOURCE}" = ghcr ]; then
+	# The local registry is not needed when HaRP pulls from ghcr.io.
+	harp_compose up -d harp-nc gameworld-docker-proxy appapi-harp harp-front
+else
+	harp_compose up -d
+fi
 
 say "warte auf die Test-Nextcloud hinter ${FRONT_URL}"
 i=0
@@ -143,6 +216,10 @@ done
 occ app:enable app_api >/dev/null
 # The setup wizard would otherwise cover every page (pattern register-exapp.sh).
 occ app:disable firstrunwizard >/dev/null 2>&1 || true
+# German admin as in the dev stack: a fresh instance reports its default language (en),
+# and game texts of a world follow the creating manager (D-27); the acceptance creates
+# its first world as admin and expects German texts.
+occ user:setting admin core lang de >/dev/null
 # Talk for criterion 7 (as in docs/dev-setup.md "Talk im Dev-Stack", needs internet the first time).
 if ! occ app:list --output=json 2>/dev/null | grep -q '"spreed"'; then
 	say "installiere Talk (spreed) in der Test-Nextcloud"
@@ -150,26 +227,34 @@ if ! occ app:list --output=json 2>/dev/null | grep -q '"spreed"'; then
 fi
 occ app:enable spreed >/dev/null 2>&1 || true
 
-i=0
-until curl -sf "http://127.0.0.1:5000/v2/" >/dev/null 2>&1; do
-	i=$((i + 1))
-	[ "${i}" -lt 30 ] || die "die lokale Registry antwortet nicht unter 127.0.0.1:5000"
-	sleep 1
-done
+if [ "${SOURCE}" = local ]; then
+	i=0
+	until curl -sf "http://127.0.0.1:5000/v2/" >/dev/null 2>&1; do
+		i=$((i + 1))
+		[ "${i}" -lt 30 ] || die "die lokale Registry antwortet nicht unter 127.0.0.1:5000"
+		sleep 1
+	done
 
-say "baue ${LOCAL_IMAGE}"
-BUILD_CONTEXT=${REPO_ROOT}
-if command -v cygpath >/dev/null 2>&1; then
-	BUILD_CONTEXT=$(cygpath -m "${REPO_ROOT}")
+	say "baue ${LOCAL_IMAGE}"
+	BUILD_CONTEXT=${REPO_ROOT}
+	if command -v cygpath >/dev/null 2>&1; then
+		BUILD_CONTEXT=$(cygpath -m "${REPO_ROOT}")
+	fi
+	docker build -t "${LOCAL_IMAGE}" "${BUILD_CONTEXT}"
+	say "schiebe ${LOCAL_IMAGE} in die lokale Registry"
+	docker push "${LOCAL_IMAGE}"
+
+	# Rewrite the copy only; the original stays as it goes into the store.
+	sed -e "s|<registry>${GHCR_REGISTRY}</registry>|<registry>${REGISTRY}</registry>|" \
+		-e "s|<image-tag>[^<]*</image-tag>|<image-tag>${IMAGE_TAG}</image-tag>|" "${INFO_XML}" >"${INFO_COPY}"
+	grep -q "<registry>${REGISTRY}</registry>" "${INFO_COPY}" || die "die Kopie der info.xml nennt die lokale Registry nicht"
+else
+	# ghcr: registry and image stay as in the store listing, only the tag changes.
+	sed -e "s|<image-tag>[^<]*</image-tag>|<image-tag>${IMAGE_TAG}</image-tag>|" "${INFO_XML}" >"${INFO_COPY}"
+	grep -q "<registry>${GHCR_REGISTRY}</registry>" "${INFO_COPY}" || die "die Kopie der info.xml nennt ${GHCR_REGISTRY} nicht"
 fi
-docker build -t "${LOCAL_IMAGE}" "${BUILD_CONTEXT}"
-say "schiebe ${LOCAL_IMAGE} in die lokale Registry"
-docker push "${LOCAL_IMAGE}"
-
-# Rewrite the copy only; the original stays as it goes into the store.
-sed -e "s|<registry>ghcr.io</registry>|<registry>${REGISTRY}</registry>|" "${INFO_XML}" >"${INFO_COPY}"
-grep -q "<registry>${REGISTRY}</registry>" "${INFO_COPY}" || die "die Kopie der info.xml nennt die lokale Registry nicht"
 grep -q "<image>${IMAGE_NAME}</image>" "${INFO_COPY}" || die "die Kopie der info.xml nennt das Image ${IMAGE_NAME} nicht"
+grep -q "<image-tag>${IMAGE_TAG}</image-tag>" "${INFO_COPY}" || die "die Kopie der info.xml nennt das image-tag ${IMAGE_TAG} nicht"
 INFO_COPY_HOST=${INFO_COPY}
 if command -v cygpath >/dev/null 2>&1; then
 	INFO_COPY_HOST=$(cygpath -m "${INFO_COPY}")
@@ -194,7 +279,7 @@ unregister_app
 unregister_daemon
 say "registriere den Daemon ${DAEMON}"
 occ app_api:daemon:register "${DAEMON}" "HaRP Dev" docker-install http appapi-harp:8780 http://harp-front \
-	--net gameworld-dev-harp_default --harp --harp_frp_address appapi-harp:8782 \
+	--net "${NETWORK}" --harp --harp_frp_address appapi-harp:8782 \
 	--harp_shared_key "$(cat "${KEY_FILE}")" >/dev/null
 
 say "registriere ${APP_ID} über ${DAEMON} aus ${INFO_IN_CONTAINER} (wartet auf das Ende der Installation)"
@@ -206,5 +291,12 @@ occ app_api:app:list 2>/dev/null | grep "^${APP_ID} " | grep -qi enabled || die 
 USER_OF=$(docker inspect --format '{{.Config.User}}' "${EXAPP_CONTAINER}" 2>/dev/null | tr -d '\r' || true)
 [ "${USER_OF}" = "10001:10001" ] || die "der ExApp-Container läuft nicht als 10001:10001 (ist ${USER_OF:-leer})"
 docker inspect "${HARP_CONTAINER}" >/dev/null 2>&1 || die "HaRP-Container ${HARP_CONTAINER} fehlt"
-say "Gameworld läuft über ${DAEMON} aus ${LOCAL_IMAGE} als ${USER_OF} (Container ${EXAPP_CONTAINER})"
+IMAGE_OF=$(docker inspect --format '{{.Config.Image}}' "${EXAPP_CONTAINER}" 2>/dev/null | tr -d '\r' || true)
+[ "${IMAGE_OF}" = "${EXPECTED_IMAGE}" ] || die "der ExApp-Container läuft aus ${IMAGE_OF:-leer}, erwartet ${EXPECTED_IMAGE}"
+if [ "${SOURCE}" = ghcr ]; then
+	IMAGE_ID=$(docker inspect --format '{{.Image}}' "${EXAPP_CONTAINER}" 2>/dev/null | tr -d '\r' || true)
+	DIGESTS=$(docker image inspect --format '{{join .RepoDigests " "}}' "${IMAGE_ID}" 2>/dev/null | tr -d '\r' || true)
+	say "Image-Digest: ${DIGESTS:-unbekannt}"
+fi
+say "Gameworld läuft über ${DAEMON} aus ${IMAGE_OF} als ${USER_OF} (Container ${EXAPP_CONTAINER})"
 say "Test-Nextcloud: ${FRONT_URL} (admin, Passwort siehe harp.compose.yaml)"
