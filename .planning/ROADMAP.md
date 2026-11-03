@@ -419,7 +419,7 @@ Plans:
 
 **Wave 17** *(blocked on Wave 16 completion)*
 
-- [ ] 06-15-PLAN.md , Installationstests aus ghcr.io: Compose NC 34 und 35, AIO auf Cloud-VM (nicht autonom)
+- [x] 06-15-PLAN.md , Installationstests aus ghcr.io: Compose NC 34 und 35, AIO auf Cloud-VM (nicht autonom)
 
 **Wave 18** *(blocked on Wave 17 completion)*
 
@@ -439,4 +439,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Zugang und Rollen | 7/7 | Complete | 2026-10-20 |
 | 4. Spielzeitlimits | 8/8 | Complete    | 2026-10-21 |
 | 5. Backup und Restore | 9/9 | Complete   | 2026-10-24 |
-| 6. Store-Release | 24/28 | In Progress|  |
+| 6. Store-Release | 27/28 | In Progress|  |
