@@ -223,3 +223,10 @@ Abnahme: Owner, 30.10.2026
 - Image: ghcr.io/street1983nk/gameworld:1.0.0 (amd64, arm64), Digest sha256:90810bc2b6b1b438c966cc3c2c5704ee8f9ab9d5b4bed5272fa29025ce4edb2e
 - Store-Seite: https://apps.nextcloud.com/apps/gameworld (HTTP 200)
 - Ohne discussion-Link: Owner-Entscheid 03.11.2026 "Wir warten nicht", Link folgt in 1.0.1
+
+### 1.0.1 (03.11.2026)
+
+- Release 1.0.1 (POST /api/v1/apps/releases): HTTP 201, keine neue Registrierung
+- Release: https://github.com/street1983nk/nextcloud-gameworld/releases/tag/v1.0.1, Archiv gameworld-1.0.1.tar.gz (17903 Byte), Signatur über das heruntergeladene Archiv, lokal verifiziert
+- Image: ghcr.io/street1983nk/gameworld:1.0.1 (amd64, arm64), Digest sha256:7e40408a10eca8cfac704741a247e2b0f0ebd581f48f80374357964b5c7c0cad
+- Store-Seite bettet das Banner als erstes Bild ein und verlinkt den Forum-Thread als Discussion
