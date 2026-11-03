@@ -24,23 +24,25 @@ Stand: Entwurf zur Owner-Abnahme vor dem Tag v1.0.0 (Plan 06-13).
 | Je Elementart jeder Sprachcode nur einmal, kein Element leer | `uniqueNameL10n` und Verwandte; ein leeres Element scheitert beim Upload |
 | Keine Backticks und keine Tabellen in einer Beschreibung, Absätze durch Leerzeilen | Nextcloud rendert nur Überschriften, Absätze, Listen, Links und Hervorhebungen |
 | Die Zeichenfolgen "public" und "announce" kommen nirgends in der `info.xml` vor, auch nicht als Teil eines Wortes (englisch, französisch) | `test_no_public_or_announce_setting`: keine Einstellung und kein Text darf nach Sichtbarkeit im Internet klingen (ZUGANG-01) |
-| Abschnitt "What this app may do and why" zuerst, nach höchstens einem Einleitungssatz | D-11, Roadmap-Kriterium 4 |
+| Abschnitt "What it does" zuerst (nach höchstens einem Einleitungssatz), direkt danach "What this app may do and why", beide vor "Before you install" | D-11, Roadmap-Kriterium 4; Reihenfolge Owner-Entscheid 03.11.2026 (Release 1.0.1) |
 | Oberflächensprachen ehrlich nennen: "Interface: German, English, French", die Oberfläche folgt der Kontosprache, Spieltexte je Welt | F-10, P-11, D-25 |
-| Am Ende jeder Beschreibung genau ein Satz auf die Schwester-Apps Findling Search und MCP Connector, im Fakten-Ton, wortgleich hier und in der `info.xml` | D-28 |
+| Kein Hinweis auf die Schwester-Apps Findling Search und MCP Connector (bis 1.0.0 als Schlusssatz, D-28) | Owner-Entscheid 03.11.2026 (Release 1.0.1) |
 | Faktenliste, kein Marketing, keine Gedankenstriche, keine Emojis, echte Umlaute und Akzente | Owner-Regeln |
 
 ## Feste Felder
 
 - Kategorien: `games`, `tools`
+- Discussion (seit 1.0.1): `https://help.nextcloud.com/t/gameworld-private-luanti-game-worlds-for-families-and-schools-on-your-own-nextcloud/251686`
 - Doku: user und admin `https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md`, developer `.../docs/dev-setup.md`
-- Screenshots (englischer Satz, Owner-Wahl 30.10.2026; Namen verbindlich, Spiegel holt Bilder nie neu, darum `-v1`):
-  1. `docs/screenshots/worlds-v1-en.png` (Weltliste)
-  2. `docs/screenshots/invite-v1-en.png` (Einladen)
-  3. `docs/screenshots/kids-view-v1-en.png` (Kinder-Ansicht)
-  4. `docs/screenshots/backups-v1-en.png` (Sicherungen)
-  5. `docs/screenshots/playtime-v1-en.png` (Spielzeit-Dialog)
-  6. `docs/screenshots/mobile-v1-en.png` (Handy-Ansicht)
-- URL-Schema: `https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/docs/screenshots/<name>`
+- Screenshots (englischer Satz, Owner-Wahl 30.10.2026; Namen verbindlich, Spiegel holt Bilder nie neu, darum `-v1`). Der Store zeigt den ersten Screenshot als Titelbild, darum steht seit 1.0.1 das Banner vorn (in 1.0.0 vergessen, die Weltliste war Titelbild):
+  1. `docs/images/gameworld-banner-v1.jpg` (Banner, Titelbild im Store)
+  2. `docs/screenshots/worlds-v1-en.png` (Weltliste)
+  3. `docs/screenshots/invite-v1-en.png` (Einladen)
+  4. `docs/screenshots/kids-view-v1-en.png` (Kinder-Ansicht)
+  5. `docs/screenshots/backups-v1-en.png` (Sicherungen)
+  6. `docs/screenshots/playtime-v1-en.png` (Spielzeit-Dialog)
+  7. `docs/screenshots/mobile-v1-en.png` (Handy-Ansicht)
+- URL-Schema: `https://raw.githubusercontent.com/street1983nk/nextcloud-gameworld/master/<pfad>`
 
 ## Englisch (ohne `lang`)
 
@@ -61,12 +63,6 @@ Private Luanti worlds for families and schools, running on your own Nextcloud
 ```markdown
 Private Luanti game worlds for families and schools, on your own Nextcloud server.
 
-### What this app may do and why
-
-- Docker access through a scoped docker-socket-proxy: Gameworld creates, starts, stops and removes one container per world. Whoever reaches this proxy controls Docker with root-equivalent rights on the host. The proxy belongs inside the Docker network of Gameworld only, never on a host port; every container in that network can reach it (with All-in-One: every AIO container, Nextcloud included).
-- One UDP port per world (default 30000 to 30019), meant for the home network only. No port forwarding in the router, and no world is ever listed on any server list.
-- Every world runs in its own container as an unprivileged user, with fixed memory, CPU and process limits and no Luanti admin rights for anyone. Gameworld itself runs as uid 10001.
-
 ### What it does
 
 - Worlds with one click: creative building or a gentle adventure
@@ -78,6 +74,12 @@ Private Luanti game worlds for families and schools, on your own Nextcloud serve
 - Backups in Nextcloud Files, checked before every restore
 - One Talk room per world with a Gameworld bot, if Talk is installed
 - No telemetry
+
+### What this app may do and why
+
+- Docker access through a scoped docker-socket-proxy: Gameworld creates, starts, stops and removes one container per world. Whoever reaches this proxy controls Docker with root-equivalent rights on the host. The proxy belongs inside the Docker network of Gameworld only, never on a host port; every container in that network can reach it (with All-in-One: every AIO container, Nextcloud included).
+- One UDP port per world (default 30000 to 30019), meant for the home network only. No port forwarding in the router, and no world is ever listed on any server list.
+- Every world runs in its own container as an unprivileged user, with fixed memory, CPU and process limits and no Luanti admin rights for anyone. Gameworld itself runs as uid 10001.
 
 ### Before you install
 
@@ -93,8 +95,6 @@ Private Luanti game worlds for families and schools, on your own Nextcloud serve
 Privacy and privileges: [docs/privacy.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.md)
 
 Installation guide: [docs/install.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md)
-
-From the same developer: Findling Search (full text search in the Nextcloud search bar) and MCP Connector (connects MCP assistants to Nextcloud).
 ```
 
 ## Deutsch (`lang="de"`)
@@ -110,12 +110,6 @@ Private Luanti-Welten für Familien und Schulen, auf der eigenen Nextcloud
 ```markdown
 Private Luanti-Spielwelten für Familien und Schulen, auf dem eigenen Nextcloud-Server.
 
-### Was diese App darf und warum
-
-- Docker-Zugriff über einen gescopten docker-socket-proxy: Gameworld erstellt, startet, stoppt und entfernt einen Container je Welt. Wer diesen Proxy erreicht, steuert Docker mit root-gleichen Rechten auf dem Host. Der Proxy gehört nur ins Docker-Netz von Gameworld, nie an einen Host-Port; jeder Container in diesem Netz erreicht ihn (bei All-in-One: jeder AIO-Container, auch Nextcloud).
-- Ein UDP-Port je Welt (Standard 30000 bis 30019), nur für das Heimnetz gedacht. Keine Portfreigabe im Router, und keine Welt steht jemals in einer Serverliste.
-- Jede Welt läuft in einem eigenen Container als Benutzer ohne Rechte, mit festen Grenzen für Arbeitsspeicher, CPU und Prozesse und ohne Luanti-Adminrechte für irgendwen. Gameworld selbst läuft als uid 10001.
-
 ### Was Gameworld kann
 
 - Welten per Klick: kreatives Bauen oder ein sanftes Abenteuer
@@ -127,6 +121,12 @@ Private Luanti-Spielwelten für Familien und Schulen, auf dem eigenen Nextcloud-
 - Sicherungen in Nextcloud Files, geprüft vor jedem Wiederherstellen
 - Ein Talk-Raum je Welt mit Gameworld-Bot, wenn Talk installiert ist
 - Keine Telemetrie
+
+### Was diese App darf und warum
+
+- Docker-Zugriff über einen gescopten docker-socket-proxy: Gameworld erstellt, startet, stoppt und entfernt einen Container je Welt. Wer diesen Proxy erreicht, steuert Docker mit root-gleichen Rechten auf dem Host. Der Proxy gehört nur ins Docker-Netz von Gameworld, nie an einen Host-Port; jeder Container in diesem Netz erreicht ihn (bei All-in-One: jeder AIO-Container, auch Nextcloud).
+- Ein UDP-Port je Welt (Standard 30000 bis 30019), nur für das Heimnetz gedacht. Keine Portfreigabe im Router, und keine Welt steht jemals in einer Serverliste.
+- Jede Welt läuft in einem eigenen Container als Benutzer ohne Rechte, mit festen Grenzen für Arbeitsspeicher, CPU und Prozesse und ohne Luanti-Adminrechte für irgendwen. Gameworld selbst läuft als uid 10001.
 
 ### Vor der Installation
 
@@ -142,8 +142,6 @@ Private Luanti-Spielwelten für Familien und Schulen, auf dem eigenen Nextcloud-
 Datenschutz und Privilegien: [docs/privacy.de.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.de.md)
 
 Installationsanleitung: [docs/install.de.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.de.md)
-
-Vom selben Entwickler: Findling Search (Volltextsuche über die Nextcloud-Suchleiste) und MCP Connector (verbindet MCP-Assistenten mit Nextcloud).
 ```
 
 ## Französisch (`lang="fr"`)
@@ -159,12 +157,6 @@ Mondes Luanti privés pour familles et écoles, sur votre propre Nextcloud
 ```markdown
 Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre propre serveur Nextcloud.
 
-### Ce que cette application peut faire et pourquoi
-
-- Accès à Docker via un docker-socket-proxy restreint : Gameworld crée, démarre, arrête et supprime un conteneur par monde. Qui atteint ce proxy contrôle Docker avec des droits équivalents à root sur l'hôte. Le proxy doit rester dans le réseau Docker de Gameworld, jamais sur un port de l'hôte ; tout conteneur de ce réseau peut l'atteindre (avec All-in-One : tout conteneur AIO, Nextcloud compris).
-- Un port UDP par monde (par défaut 30000 à 30019), prévu pour le réseau domestique uniquement. Aucune redirection de port dans le routeur, et aucun monde n'est jamais listé sur une liste de serveurs.
-- Chaque monde tourne dans son propre conteneur avec un utilisateur sans privilèges, des limites fixes de mémoire, de CPU et de processus, et sans droits d'administrateur Luanti pour personne. Gameworld lui-même tourne avec l'uid 10001.
-
 ### Ce que fait Gameworld
 
 - Des mondes en un clic : construction créative ou aventure douce
@@ -176,6 +168,12 @@ Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre pro
 - Sauvegardes dans Nextcloud Files, vérifiées avant chaque restauration
 - Un salon Talk par monde avec un bot Gameworld, si Talk est installé
 - Pas de télémétrie
+
+### Ce que cette application peut faire et pourquoi
+
+- Accès à Docker via un docker-socket-proxy restreint : Gameworld crée, démarre, arrête et supprime un conteneur par monde. Qui atteint ce proxy contrôle Docker avec des droits équivalents à root sur l'hôte. Le proxy doit rester dans le réseau Docker de Gameworld, jamais sur un port de l'hôte ; tout conteneur de ce réseau peut l'atteindre (avec All-in-One : tout conteneur AIO, Nextcloud compris).
+- Un port UDP par monde (par défaut 30000 à 30019), prévu pour le réseau domestique uniquement. Aucune redirection de port dans le routeur, et aucun monde n'est jamais listé sur une liste de serveurs.
+- Chaque monde tourne dans son propre conteneur avec un utilisateur sans privilèges, des limites fixes de mémoire, de CPU et de processus, et sans droits d'administrateur Luanti pour personne. Gameworld lui-même tourne avec l'uid 10001.
 
 ### Avant l'installation
 
@@ -191,8 +189,6 @@ Des mondes de jeu Luanti privés pour les familles et les écoles, sur votre pro
 Confidentialité et privilèges : [docs/privacy.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/privacy.md)
 
 Guide d'installation : [docs/install.md](https://github.com/street1983nk/nextcloud-gameworld/blob/master/docs/install.md)
-
-Du même développeur : Findling Search (recherche plein texte dans la barre de recherche de Nextcloud) et MCP Connector (connecte les assistants MCP à Nextcloud).
 ```
 
 ## Was bewusst nicht drinsteht
@@ -216,3 +212,14 @@ Dieser Abschnitt ist die Begründung und gehört nicht in die `info.xml`.
 ## Abnahme
 
 Abnahme: Owner, 30.10.2026
+
+## Submit
+
+- Datum: 03.11.2026
+- Zertifikat: nextcloud/app-certificate-requests#1364 (gemergt 02.11.2026, CN=gameworld, gültig bis 07.02.2037), Modulus passt zum Schlüssel (Hash-Vergleich)
+- Registrierung der App-ID gameworld (POST /api/v1/apps): HTTP 201
+- Release 1.0.0 (POST /api/v1/apps/releases): HTTP 201
+- Release: https://github.com/street1983nk/nextcloud-gameworld/releases/tag/v1.0.0, Archiv gameworld-1.0.0.tar.gz (17933 Byte), Signatur über das heruntergeladene Archiv, lokal verifiziert
+- Image: ghcr.io/street1983nk/gameworld:1.0.0 (amd64, arm64), Digest sha256:90810bc2b6b1b438c966cc3c2c5704ee8f9ab9d5b4bed5272fa29025ce4edb2e
+- Store-Seite: https://apps.nextcloud.com/apps/gameworld (HTTP 200)
+- Ohne discussion-Link: Owner-Entscheid 03.11.2026 "Wir warten nicht", Link folgt in 1.0.1
