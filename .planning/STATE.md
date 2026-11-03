@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-15-PLAN.md
-last_updated: "2026-11-03T07:02:31.350Z"
+stopped_at: Completed 06-16-PLAN.md
+last_updated: "2026-11-03T20:30:00.000Z"
 last_activity: 2026-11-03
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 84
-  completed_plans: 83
-  percent: 88
+  completed_plans: 84
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-10-19)
 
 ## Current Position
 
-Phase: 6 — EXECUTING
-Plan: 27 of 28 complete (06-01 bis 06-15, 06-17 bis 06-28; offen: 06-16 Tag v1.0.0)
-Status: Ready to execute
-Last activity: 2026-11-03 - Completed 06-15: Installationstests aus ghcr.io (Compose NC 34/35, AIO)
+Phase: 6 — COMPLETE
+Plan: 28 of 28 complete (06-16: Store-Release 1.0.0 und 1.0.1, Installation aus dem Store belegt)
+Status: Phase complete, verification pending
+Last activity: 2026-11-03 - Completed 06-16: Gameworld 1.0.1 im Nextcloud App Store
 
-Progress: [██████████] 99%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -307,6 +307,7 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 261103-fwo | Release 1.0.1: Banner, Textreihenfolge, discussion-Link | 2026-11-03 | 2308e10 | [261103-fwo-release-1-0-1-banner](./quick/261103-fwo-release-1-0-1-banner/) |
 | 261021-481 | Kindertexte ohne 0 Uhr und Mitternacht | 2026-10-21 | d328457 | [261021-481-kindertexte-ohne-0-uhr-und-mitternacht](./quick/261021-481-kindertexte-ohne-0-uhr-und-mitternacht/) |
 | 261023-kq1 | Phase 04.2 Security-Fixes: CR-01 Body-Limit, T-04.2-36 uvicorn-Logfilter, REPORT-Update | 2026-10-23 | 6e68d3a | [261023-kq1-phase-04-2-security-fixes-cr-01-body-lim](./quick/261023-kq1-phase-04-2-security-fixes-cr-01-body-lim/) |
 | 261030-sbz | Setup-Check zeigt Proxy-Befehle zum Kopieren (AIO/Compose, eine Quelle, Drift-Test), SECURITY.md, CONTRIBUTING.md | 2026-10-30 | 5fe6bdd | [261030-sbz-setup-check-copy-commands-and-security-c](./quick/261030-sbz-setup-check-copy-commands-and-security-c/) |

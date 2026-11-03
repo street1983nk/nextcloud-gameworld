@@ -423,7 +423,7 @@ Plans:
 
 **Wave 18** *(blocked on Wave 17 completion)*
 
-- [ ] 06-16-PLAN.md , Store-Upload nach gemergtem Zertifikat: discussion-Link geprüft, Tag v1.0.0, Signatur, 2x HTTP 201 (nicht autonom)
+- [x] 06-16-PLAN.md , Store-Upload nach gemergtem Zertifikat: discussion-Link geprüft, Tag v1.0.0, Signatur, 2x HTTP 201 (nicht autonom)
 
 **UI hint**: yes
 
