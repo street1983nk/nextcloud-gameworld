@@ -5,7 +5,8 @@ name: gameworld-dev
 
 services:
   app:
-    image: nextcloud:34.0.3-apache
+    # GAMEWORLD_NC_IMAGE only for install tests on another Nextcloud line (plan 06-15).
+    image: ${GAMEWORLD_NC_IMAGE:-nextcloud:34.0.3-apache}
     ports:
       # Loopback binding here as well: the dev Nextcloud has a fixed
       # admin password from the repository; reachable in the LAN it would be a

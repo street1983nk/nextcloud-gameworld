@@ -105,10 +105,13 @@ manual)
 	PROXY_CONTAINER=gameworld-dev-gameworld-docker-proxy-1
 	;;
 harp)
+	# Same parameters and defaults as harp-install.sh (plan 06-15).
+	HARP_PROJECT=${GAMEWORLD_COMPOSE_PROJECT:-gameworld-dev-harp}
+	HARP_NETWORK=${GAMEWORLD_DEV_NETWORK:-${HARP_PROJECT}_default}
 	NEXTCLOUD_URL=http://localhost:${GAMEWORLD_HARP_PORT:-8093}
 	ADMIN_AUTH=admin:gameworld-harp-admin
-	NC_CONTAINER=gameworld-dev-harp-nc
-	PROXY_CONTAINER=gameworld-dev-harp-docker-proxy
+	NC_CONTAINER=${HARP_PROJECT}-nc
+	PROXY_CONTAINER=${HARP_PROJECT}-docker-proxy
 	;;
 *)
 	printf 'ABBRUCH: GAMEWORLD_DEPLOY ist manual oder harp, nicht %s\n' "${DEPLOY}" >&2
@@ -118,6 +121,9 @@ esac
 EXAPP_CONTAINER=nc_app_gameworld
 HARP_DAEMON=harp_dev
 LOCAL_IMAGE_PREFIX=localhost:5000/street1983nk/gameworld:
+# harp-install.sh --source ghcr --tag <tag>: the ExApp image must be exactly this reference
+# (for example ghcr.io/street1983nk/gameworld:1.0.0-rc.2); empty means the local registry.
+EXPECT_IMAGE=${GAMEWORLD_EXPECT_IMAGE:-}
 BACKEND_PORT=10040
 PROXY_BASE="${NEXTCLOUD_URL}/index.php/apps/app_api/proxy/gameworld"
 API_URL="${PROXY_BASE}/api"
@@ -157,7 +163,9 @@ ORPHAN_CONTAINER=gameworld-acceptance-orphan
 ORPHAN_VOLUME=gameworld-acceptance-orphan-x
 LUANTI_IMAGE=ghcr.io/luanti-org/luanti:5.17.0
 CONF_PATH=/var/lib/minetest/minetest.conf
-DOC_ANCHOR="install.md#setup-check"
+# The admin of both stacks is German (core lang de), and since quick-261102-s2p the German
+# setup check texts link the German guide; the English anchor is install.md#setup-check.
+DOC_ANCHOR="install.de.md#setup-check"
 # Kid texts from provisioner/time_mod.py and access_mod.py (substrings, literals of our own).
 TEXT_TAG="Heute ist kein Spieltag"
 TEXT_PAUSE="Kurze Pause!"
@@ -574,8 +582,13 @@ if [ "${DEPLOY}" = harp ]; then
 		awk -F'|' -v d="${HARP_DAEMON}" '{ for (i = 1; i <= NF; i++) gsub(/^ +| +$/, "", $i) }
 			$3 == d && $5 == "docker-install" && $9 == "yes" { found = 1 } END { exit !found }' "${WORK_DIR}/daemons.txt"
 	EXAPP_IMAGE=$(docker inspect --format '{{.Config.Image}}' "${EXAPP_CONTAINER}" 2>/dev/null | tr -d '\r' || true)
-	check "K1 ExApp-Container ${EXAPP_CONTAINER} aus der lokalen Registry (ist ${EXAPP_IMAGE:-leer})" \
-		matches "${EXAPP_IMAGE}" "^${LOCAL_IMAGE_PREFIX}"
+	if [ -n "${EXPECT_IMAGE}" ]; then
+		check "K1 ExApp-Container ${EXAPP_CONTAINER} aus ${EXPECT_IMAGE} (ist ${EXAPP_IMAGE:-leer})" \
+			eq "${EXAPP_IMAGE}" "${EXPECT_IMAGE}"
+	else
+		check "K1 ExApp-Container ${EXAPP_CONTAINER} aus der lokalen Registry (ist ${EXAPP_IMAGE:-leer})" \
+			matches "${EXAPP_IMAGE}" "^${LOCAL_IMAGE_PREFIX}"
+	fi
 	check "K1 ExApp-Container läuft als 10001:10001" \
 		eq "$(docker inspect --format '{{.Config.User}}' "${EXAPP_CONTAINER}" 2>/dev/null | tr -d '\r')" 10001:10001
 	check "K1 Healthcheck des ExApp-Containers (Heartbeat im Image) healthy" \
@@ -584,7 +597,7 @@ if [ "${DEPLOY}" = harp ]; then
 	EXAPP_MOUNTS=$(docker inspect --format '{{range .Mounts}}{{.Destination}} {{end}}' "${EXAPP_CONTAINER}" 2>/dev/null | tr -d '\r')
 	check "K1 ExApp-Container im Netz der Test-Instanz (${EXAPP_NETS}), ohne Docker-Socket (${EXAPP_MOUNTS})" \
 		sh -c 'contains() { case "$1" in *"$2"*) return 0 ;; esac; return 1; }
-		contains "$1" gameworld-dev-harp_default && ! contains "$2" docker.sock' _ "${EXAPP_NETS}" "${EXAPP_MOUNTS}"
+		contains "$1" "$3" && ! contains "$2" docker.sock' _ "${EXAPP_NETS}" "${EXAPP_MOUNTS}" "${HARP_NETWORK}"
 	CODE=$(curl -s -o /dev/null -w '%{http_code}' "${NEXTCLOUD_URL}/exapps/gameworld/api/me" 2>/dev/null || printf '000')
 	check "K1 Negativkontrolle: /exapps/gameworld/api/me über HaRP ohne Anmeldung abgewiesen (ist ${CODE})" \
 		matches "${CODE}" '^(401|403)$'
@@ -638,6 +651,21 @@ check "K2 Befund proxy_refused, proxy_dns oder proxy_timeout als Fehler" \
 		(.id == "proxy_refused" or .id == "proxy_dns" or .id == "proxy_timeout"))] | length > 0' "${WORK_DIR}/sc1.json" 2>/dev/null)" true
 check "K2 Befund verweist auf den Doku-Anker ${DOC_ANCHOR}" \
 	eq "$(jq -r --arg a "${DOC_ANCHOR}" '[.items[]? | select(.ok == false) | .message | contains($a)] | any' "${WORK_DIR}/sc1.json" 2>/dev/null)" true
+# Keep the finding as evidence (no secrets in it: commands, network names, port range).
+cp "${WORK_DIR}/sc1.json" "${REPO_ROOT}/.dev/acceptance-phase6-${DEPLOY}-setup-check-no-proxy.json" 2>/dev/null || true
+printf 'Setup-Check Proxy-Befehle: %s\n' \
+	"$(jq -c '[.proxy_commands[]? | {id, network}]' "${WORK_DIR}/sc1.json" 2>/dev/null)"
+if [ "${DEPLOY}" = harp ]; then
+	# Network detection via Docker DNS PTR (network_probe): in a HaRP deploy the ExApp
+	# container sits in a user-defined network, so the first command must be the detected
+	# network of this stack, and both the docker run line and the Compose file must name it.
+	check "K2 Setup-Check erkennt das Netz ${HARP_NETWORK} (proxy_commands[0] detected)" \
+		eq "$(jq -r '.proxy_commands[0] | "\(.id) \(.network)"' "${WORK_DIR}/sc1.json" 2>/dev/null)" "detected ${HARP_NETWORK}"
+	check "K2 docker-run-Befehl und Compose-Datei nennen ${HARP_NETWORK} (external)" \
+		eq "$(jq -r --arg n "${HARP_NETWORK}" '.proxy_commands[0] |
+			(.command | contains("--network " + $n)) and (.compose | contains($n)) and
+			(.compose | contains("external: true"))' "${WORK_DIR}/sc1.json" 2>/dev/null)" true
+fi
 proxy_start || fail "K2 Docker-Proxy ließ sich nicht wieder starten"
 check "K2 Docker-Proxy läuft wieder" \
 	eq "$(docker inspect --format '{{.State.Running}}' "${PROXY_CONTAINER}" 2>/dev/null | tr -d '\r')" true
