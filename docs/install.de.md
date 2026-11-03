@@ -164,6 +164,7 @@ networks:
 - Keine Portfreigabe im Router einrichten, UPnP am Router nicht nutzen.
 - Fernzugriff kommt später über VPN.
 - Die Firewall des Servers muss den UDP-Bereich im LAN erlauben.
+- Läuft der Server bei einem Cloud-Anbieter, braucht auch dessen Firewall (zum Beispiel eine AWS Security Group) eine Regel für den UDP-Bereich, nur für bekannte Adressen.
 
 ## 6. Restrisiko ehrlich benannt
 

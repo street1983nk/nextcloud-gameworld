@@ -315,7 +315,7 @@ if command -v ss >/dev/null 2>&1; then
 else
 	say "Hinweis: ss fehlt, UDP-Prüfung nur per docker port"
 fi
-say "Beitritt optional: Luanti-Client 5.17 auf ${HOST}:${PORT} (Konto ${TEST_USER} einladen); UDP ${PORT} in der VM-Firewall öffnen"
+say "Beitritt optional: Luanti-Client 5.17 auf ${HOST}:${PORT} (Konto ${TEST_USER} einladen); UDP ${PORT} in der VM-Firewall und der Firewall des Anbieters (z. B. Security Group) nur für bekannte Adressen öffnen"
 
 say "== 8 Zusammenfassung =="
 say "Nextcloud ${NC_VERSION:-unbekannt}, Daemon ${DAEMON}, Image ${EXAPP_IMAGE:-leer}"
